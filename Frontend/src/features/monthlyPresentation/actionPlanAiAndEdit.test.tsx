@@ -2,8 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextProps } from '../../context/auth';
-import { ApiError } from '../../lib/apiClient';
+import { ApiError, apiErrorMessage } from '../../lib/apiClient';
 import * as apiClientModule from '../../lib/apiClient';
+import { resolveTeamCardFocusKpiKey } from './components/actionPlanAiUtils';
 import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { INBOUND_TEAM_DEEP_DIVE_SEP_2026, type TeamDeepDiveData, type TeamLevelActionPlanCard } from './teamDeepDiveData';
@@ -353,8 +354,9 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(onSaveRole).not.toHaveBeenCalled();
     const roleCallInit = fetchSpy.mock.calls[1]?.[1] as RequestInit;
     const roleBody = JSON.parse(String(roleCallInit.body));
-    expect(roleBody.employee_id).toBeNull();
+    expect(roleBody.employee_id).toBe('EMP-HR-1');
     expect(roleBody.team).toBe('HR Specialist');
+    expect(roleBody.performance_level).toBe('Employee');
   });
 
   it('asks confirmation before overwriting unsaved manual edits and respects Discard Draft vs Apply AI Draft', async () => {
@@ -500,5 +502,125 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(screen.queryByRole('button', { name: /^Edit$/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.getByTestId('role-individual-trend-badge-EMP-HR-1')).toHaveTextContent('83.0% → 78.5%');
+  });
+
+  it('sends linked_kpi_key="Attendance" when clicking AI on Inbound built-in 3rd Whole-Team Action card', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue({
+      ...aiDraftResponse,
+      data: {
+        ...aiDraftResponse.data,
+        draft: {
+          ...aiDraftResponse.data.draft,
+          focus_kpi_key: 'Attendance',
+          focus_kpi_name: 'Attendance Rate',
+        },
+      },
+    });
+
+    render(
+      <TeamDeepDiveView
+        data={INBOUND_TEAM_DEEP_DIVE_SEP_2026}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+      />,
+    );
+
+    const attendanceCard = screen.getByTestId('team-action-card-team-act-inb-3');
+    expect(within(attendanceCard).getByText(/Rebalance afternoon shift overlaps & review shrinkage assumptions against the 75% Attendance benchmark/i)).toBeInTheDocument();
+
+    await user.click(
+      within(attendanceCard).getByRole('button', { name: /Generate AI recommendation/i }),
+    );
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    const callInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    const sentBody = JSON.parse(String(callInit.body));
+    expect(sentBody.team).toBe('Inbound');
+    expect(sentBody.employee_id).toBeNull();
+    expect(sentBody.linked_kpi_key).toBe('Attendance');
+  });
+
+  it('resolveTeamCardFocusKpiKey resolves target/title KPIs and skips Target Met KPIs', () => {
+    const kpis = [
+      { kpiKey: 'AHT', label: 'AHT (Handle Time)', shortLabel: 'AHT', verdictBadge: 'Execution Issue' },
+      { kpiKey: 'Booking', label: 'Booking Rate', shortLabel: 'Booking Rate', verdictBadge: 'Target Met' },
+      { kpiKey: 'Attendance', label: 'Attendance Rate', shortLabel: 'Attendance', verdictBadge: 'Execution Issue' },
+    ];
+
+    expect(
+      resolveTeamCardFocusKpiKey(
+        {
+          linkedKpiKey: null,
+          targetKpi: 'Attendance Rate · 68.2% → 73.0%+',
+          title: 'Rebalance shift overlaps',
+        },
+        kpis,
+        'AHT',
+      ),
+    ).toBe('Attendance');
+
+    // Target Met card returns null so backend chooses a below-target KPI
+    expect(
+      resolveTeamCardFocusKpiKey(
+        {
+          linkedKpiKey: null,
+          targetKpi: 'Booking Rate · 32.4% → 35.0%+',
+          title: 'Peer call-shadowing',
+        },
+        kpis,
+        'AHT',
+      ),
+    ).toBeNull();
+
+    // Unmatched card with Target Met explorer falls back to null; below-target explorer returns explorer key
+    expect(
+      resolveTeamCardFocusKpiKey(
+        { linkedKpiKey: null, targetKpi: 'General Coaching', title: 'Coaching plan' },
+        kpis,
+        'Booking',
+      ),
+    ).toBeNull();
+    expect(
+      resolveTeamCardFocusKpiKey(
+        { linkedKpiKey: null, targetKpi: 'General Coaching', title: 'Coaching plan' },
+        kpis,
+        'Attendance',
+      ),
+    ).toBe('Attendance');
+  });
+
+  it('apiErrorMessage keeps 500 generic with Reference and shows 503 SERVICE_UNAVAILABLE message with Reference', () => {
+    expect(
+      apiErrorMessage(
+        { message: 'Database detail leak', request_id: 'bc0ac6cb-1b86-460e-96ed-a182d43685ab' },
+        500,
+      ),
+    ).toBe('The server could not complete the request. Please try again. Reference: bc0ac6cb-1b86-460e-96ed-a182d43685ab');
+
+    expect(
+      apiErrorMessage(
+        {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Service is temporarily busy. Please try again in a moment.',
+          request_id: 'req-503-1',
+        },
+        503,
+      ),
+    ).toBe('Service is temporarily busy. Please try again in a moment. Reference: req-503-1');
+
+    expect(
+      apiErrorMessage(
+        {
+          code: 'OTHER_CODE',
+          message: 'Internal node error',
+          request_id: 'req-503-2',
+        },
+        503,
+      ),
+    ).toBe('The server could not complete the request. Please try again. Reference: req-503-2');
   });
 });

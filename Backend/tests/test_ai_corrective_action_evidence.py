@@ -859,3 +859,228 @@ def test_trend_summary_respects_region_isolation_for_shared_team_name():
     assert {item["employee_id"] for item in uae_bundle["kpi_items"]} == {"UAE-1"}
     assert uae_bundle["trend_summary"]["measured_periods"] == 1
     assert uae_bundle["trend_summary"]["current_score"] == 87.5
+
+
+def test_team_prior_actions_handle_duplicate_team_display_names_and_cohort_plan_rows():
+    """Shared Team display_name (employee + management) and cohort-plan rows never raise MultipleResultsFound."""
+    db = _make_db()
+    emp_team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    mgmt_team = Team(
+        id=uuid.uuid4(),
+        name="inbound management",
+        db_name="Inbound Management",
+        display_name="Inbound",
+        region="EGY",
+        team_level="management",
+        is_active=True,
+    )
+    db.add_all([emp_team, mgmt_team])
+    db.flush()
+
+    emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-DUP-1",
+        name="Agent One",
+        team_id=emp_team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add(emp)
+    db.flush()
+
+    record = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=emp.id,
+        team_id=emp_team.id,
+        month="September",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        branch_key=None,
+        score=76.0,
+        grade="C",
+        status="Below",
+        record_payload={"evaluation_basis": {"pinned": True, "version_number": 4, "policy": "employee_ratio"}},
+    )
+    db.add(record)
+    db.flush()
+    db.add(
+        KPIValue(
+            record_id=record.id,
+            record_year=2026,
+            kpi_key="Attendance",
+            actual_value=68.2,
+            target_value=75.0,
+            achievement_ratio=0.909,
+            weight_applied=0.3,
+            contribution=0.2727,
+        )
+    )
+    db.add_all(
+        [
+            # Pre-existing team action with employee_id=None and real linked_kpi_key
+            Action(
+                id=uuid.uuid4(),
+                employee_id=None,
+                team_id=emp_team.id,
+                month="August",
+                year=2026,
+                created_at=dt.datetime(2026, 8, 5, tzinfo=dt.timezone.utc),
+                action_type="Team Action",
+                action_text="Shift overlap coaching",
+                status="Open",
+                linked_kpi_key="Attendance",
+                evidence_reference="cohort-plan:team-act-inb-3",
+                is_active=True,
+            ),
+            # Presentation-only cohort-plan row WITHOUT linked_kpi_key -> skipped
+            Action(
+                id=uuid.uuid4(),
+                employee_id=None,
+                team_id=emp_team.id,
+                month="August",
+                year=2026,
+                created_at=dt.datetime(2026, 8, 6, tzinfo=dt.timezone.utc),
+                action_type="Team Action",
+                action_text="Placeholder cohort card",
+                status="Open",
+                linked_kpi_key=None,
+                evidence_reference="cohort-plan:team-act-inb-0",
+                is_active=True,
+            ),
+            # Inactive action -> skipped
+            Action(
+                id=uuid.uuid4(),
+                employee_id=None,
+                team_id=emp_team.id,
+                month="August",
+                year=2026,
+                created_at=dt.datetime(2026, 8, 7, tzinfo=dt.timezone.utc),
+                action_type="Coaching",
+                action_text="Deactivated action",
+                status="Cancelled",
+                linked_kpi_key="AHT",
+                is_active=False,
+            ),
+        ]
+    )
+    db.commit()
+
+    bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id=None, team="Inbound", month="September", year=2026
+    )
+    assert bundle["subject"] == "team"
+    assert bundle["scoring_basis"] == "pinned team-configuration version 4 (employee_ratio)"
+    assert len(bundle["prior_corrective_actions"]) == 1
+    assert bundle["prior_corrective_actions"][0]["linked_kpi_key"] == "Attendance"
+    assert bundle["prior_corrective_actions"][0]["action_type"] == "Team Action"
+
+
+def test_duplicate_employee_codes_prefer_active_row_without_multiple_results_found():
+    """Duplicate Employee.employee_id rows resolve deterministically without raising MultipleResultsFound."""
+    from sqlalchemy import text as sa_text
+
+    db = _make_db()
+    # Simulate legacy production schema where employee_id lacked a unique index
+    db.execute(sa_text("DROP TABLE employees"))
+    db.execute(
+        sa_text(
+            """
+            CREATE TABLE employees (
+                id VARCHAR(32) PRIMARY KEY,
+                employee_id VARCHAR(50) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                team_id VARCHAR(32) NOT NULL,
+                region VARCHAR(10) NOT NULL,
+                performance_level VARCHAR(20) NOT NULL,
+                position_name VARCHAR(255),
+                is_active BOOLEAN NOT NULL,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+            """
+        )
+    )
+    db.commit()
+
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add(team)
+    db.flush()
+
+    inactive_emp = Employee(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        employee_id="EMP-DUP",
+        name="Legacy Inactive",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=False,
+    )
+    active_emp = Employee(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        employee_id="EMP-DUP",
+        name="Active Duplicate",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([inactive_emp, active_emp])
+    db.flush()
+
+    rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=active_emp.id,
+        team_id=team.id,
+        month="September",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        score=70.0,
+        grade="C",
+        status="Below",
+    )
+    db.add(rec)
+    db.flush()
+    db.add(
+        KPIValue(
+            record_id=rec.id,
+            record_year=2026,
+            kpi_key="AHT",
+            actual_value=3.1,
+            target_value=2.6,
+            achievement_ratio=0.838,
+            weight_applied=0.3,
+            contribution=0.251,
+        )
+    )
+    db.commit()
+
+    bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-DUP", team="Inbound", month="September", year=2026
+    )
+    assert bundle["subject"] == "employee"
+    assert bundle["employee_name"] == "Active Duplicate"
+    assert len(bundle["kpi_items"]) == 1

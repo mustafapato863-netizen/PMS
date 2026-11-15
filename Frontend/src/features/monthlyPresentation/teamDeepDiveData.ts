@@ -1055,6 +1055,7 @@ export const INBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Workforce Analyst & Inbound Team Leader',
       expectedTeamImpact: '+1.2% Inbound team score lift',
       status: 'In Progress',
+      linkedKpiKey: 'AHT',
     },
     {
       id: 'team-act-inb-2',
@@ -1064,6 +1065,7 @@ export const INBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Call Center Trainer',
       expectedTeamImpact: '+0.9% Inbound team score lift',
       status: 'Open',
+      linkedKpiKey: 'Booking',
     },
     {
       id: 'team-act-inb-3',
@@ -1073,6 +1075,7 @@ export const INBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Inbound Team Leader & Workforce Analyst',
       expectedTeamImpact: '+0.7% Inbound team score lift',
       status: 'Open',
+      linkedKpiKey: 'Attendance',
     },
   ],
 };
@@ -1355,6 +1358,7 @@ export const OUTBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Outbound Team Leader & Workforce Analyst',
       expectedTeamImpact: '+2.4% Outbound team score lift',
       status: 'In Progress',
+      linkedKpiKey: 'Other',
     },
     {
       id: 'team-act-out-2',
@@ -1364,6 +1368,7 @@ export const OUTBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Outbound Team Leader & Performance Management',
       expectedTeamImpact: '+1.6% Outbound team score lift',
       status: 'Open',
+      linkedKpiKey: 'Other',
     },
     {
       id: 'team-act-out-3',
@@ -1373,6 +1378,7 @@ export const OUTBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
       owner: 'Call Center Trainer',
       expectedTeamImpact: '+0.9% Outbound team score lift',
       status: 'Open',
+      linkedKpiKey: 'Booking',
     },
   ],
 };

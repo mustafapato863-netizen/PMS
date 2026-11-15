@@ -250,7 +250,8 @@ class ReadOnlySessionGuard:
                     pass
             elif dialect_name == "postgresql" and not self._allow_preexisting_writes:
                 try:
-                    conn.execute(text("SET TRANSACTION READ ONLY"))
+                    with conn.begin_nested():
+                        conn.execute(text("SET TRANSACTION READ ONLY"))
                     self._read_only_transaction_applied = True
                 except SQLAlchemyError:
                     pass

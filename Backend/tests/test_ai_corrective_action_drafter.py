@@ -1205,3 +1205,102 @@ def test_live_provider_returns_a_validated_draft(db, capsys, label, overrides, e
         assert not any(ch.isdigit() for ch in step), step
         assert step.split()[0].casefold() in drafter_module.STEP_START_VERBS, step
     assert draft.measured_issue == payload.measured_facts[0]
+
+
+def test_team_suggestion_succeeds_with_duplicate_teams_and_cohort_plan_actions(db, client, monkeypatch):
+    """Multiple Team rows with display_name='Inbound' + cohort-plan Team Action rows return HTTP 200."""
+    emp_team, emp = _employee_with_kpis(
+        db,
+        employee_id="EMP-T1",
+        name="Inbound Agent",
+        kpis=[("Attendance", 68.2, 75.0, 0.909, 0.3), ("AHT", 3.01, 2.6, 0.86, 0.3)],
+        team="Inbound",
+        month="September",
+        year=2026,
+    )
+    mgmt_team = Team(
+        id=uuid.uuid4(),
+        name="inbound management",
+        db_name="Inbound Management",
+        display_name="Inbound",
+        region="EGY",
+        team_level="management",
+        is_active=True,
+    )
+    db.add(mgmt_team)
+    db.flush()
+    db.add(
+        Action(
+            id=uuid.uuid4(),
+            employee_id=None,
+            team_id=emp_team.id,
+            month="August",
+            year=2026,
+            created_at=datetime.datetime(2026, 8, 10, 0, 0, 0, tzinfo=datetime.timezone.utc),
+            action_type="Team Action",
+            action_text="Rebalance afternoon shift overlaps",
+            status="Open",
+            linked_kpi_key="Attendance",
+            evidence_reference="cohort-plan:team-act-inb-3",
+            is_active=True,
+        )
+    )
+    db.commit()
+    _enable_pilot(db)
+
+    model = _FakeModel(lambda ev: _ok(_supported_answer(ev)))
+    _install(monkeypatch, model)
+
+    response = client.post(
+        URL,
+        json=_body(employee_id=None, team="Inbound", linked_kpi_key="Attendance"),
+        headers=ADMIN_HEADERS,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["outcome"] == "suggested"
+    assert body["data"]["focus_kpi_key"] == "Attendance"
+
+
+def test_route_releases_prior_read_transaction_before_read_only_guard(db, client, monkeypatch):
+    """Prior ProductSetting/User reads before ReadOnlySessionGuard are released cleanly."""
+    from models.models import ProductSetting, User
+
+    _seed(db)
+    _enable_pilot(db)
+    # Seed a User row and force prior queries on the shared session inside require_authenticated_scope
+    admin_user = User(
+        id=uuid.uuid4(),
+        username="pilot_admin",
+        email="pilot_admin@example.com",
+        password_hash="hashed",
+        full_name="Pilot Admin",
+        role="Admin",
+        is_active=True,
+    )
+    db.add(admin_user)
+    db.commit()
+
+    def _scope_with_prior_queries(session, _request):
+        _ = session.query(ProductSetting).all()
+        _ = session.query(User).filter(User.username == "pilot_admin").first()
+        assert session.in_transaction() is True
+        return dict(ADMIN_SCOPE)
+
+    monkeypatch.setattr(ai_corrective_actions, "require_authenticated_scope", _scope_with_prior_queries)
+    _install(monkeypatch, _FakeModel(lambda ev: _ok(_supported_answer(ev))))
+
+    release_calls = []
+    original_release = ai_corrective_actions.release_read_transaction
+
+    def _spy_release(session):
+        release_calls.append(session.in_transaction())
+        return original_release(session)
+
+    monkeypatch.setattr(ai_corrective_actions, "release_read_transaction", _spy_release)
+
+    response = client.post(URL, json=_body(), headers=ADMIN_HEADERS)
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["outcome"] == "suggested"
+    assert release_calls and release_calls[0] is True

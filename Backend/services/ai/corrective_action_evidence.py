@@ -395,14 +395,16 @@ class CorrectiveActionEvidenceService:
             employee = (
                 self.db.query(Employee)
                 .filter(Employee.employee_id == resolved_employee_id)
-                .one_or_none()
+                .order_by(Employee.is_active.desc(), Employee.id.asc())
+                .first()
             )
             if employee is None and resolved_employee_id.upper().startswith(("SGHD", "SGHA")):
                 suffix = resolved_employee_id[4:]
                 employee = (
                     self.db.query(Employee)
                     .filter(Employee.employee_id == suffix)
-                    .one_or_none()
+                    .order_by(Employee.is_active.desc(), Employee.id.asc())
+                    .first()
                 )
             if employee is None:
                 raise ValueError(f"Unknown employee: {employee_id}")
@@ -560,15 +562,27 @@ class CorrectiveActionEvidenceService:
         # None rather than a guessed default. With no records for the period
         # there is no basis to report either.
         if records:
-            raw_records = (
-                self.db.query(PerformanceRecord)
-                .filter(
-                    PerformanceRecord.month == month_name,
-                    PerformanceRecord.year == year_value,
+            valid_uuids = [
+                u
+                for r in records
+                if (u := CorrectiveActionService._uuid(str(_entry_value(r, "id") or ""))) is not None
+            ]
+            if valid_uuids:
+                raw_records = (
+                    self.db.query(PerformanceRecord)
+                    .filter(PerformanceRecord.id.in_(valid_uuids))
+                    .all()
                 )
-                .all()
-            )
-            record_ids = {str(record.id) for record in records}
+            else:
+                raw_records = (
+                    self.db.query(PerformanceRecord)
+                    .filter(
+                        PerformanceRecord.month == month_name,
+                        PerformanceRecord.year == year_value,
+                    )
+                    .all()
+                )
+            record_ids = {str(_entry_value(record, "id") or "") for record in records}
             for raw in raw_records:
                 if str(raw.id) not in record_ids:
                     continue
@@ -942,16 +956,31 @@ class CorrectiveActionEvidenceService:
         requested_year: int,
     ) -> list[dict[str, Any]]:
         """Prior actions for a team, strictly scope-enforced and period-bounded."""
-        team_row = (
+        team_rows = (
             self.db.query(Team)
-            .filter(Team.display_name.ilike(team_name))
-            .one_or_none()
-            or self.db.query(Team).filter(Team.name.ilike(team_name)).one_or_none()
+            .filter(
+                Team.display_name.ilike(team_name)
+                | Team.name.ilike(team_name)
+                | Team.db_name.ilike(team_name)
+            )
+            .all()
         )
-        if team_row is None:
+        if not team_rows:
             return []
+        team_by_id = {t.id: t for t in team_rows}
 
-        rows = self.action_repository.get_by_team(team_row.id)
+        rows: list[Any] = []
+        seen_row_ids: set[Any] = set()
+        for t in team_rows:
+            for r in self.action_repository.get_by_team(t.id) or []:
+                key = getattr(r, "id", id(r))
+                if key is None:
+                    key = id(r)
+                if key in seen_row_ids:
+                    continue
+                seen_row_ids.add(key)
+                rows.append(r)
+
         user_scope = scope if isinstance(scope, dict) else {}
         accessible_branches = [b.casefold() for b in (user_scope.get("accessible_branches") or user_scope.get("allowed_branches") or []) if str(b).strip()]
         accessible_regions = [r.casefold() for r in (user_scope.get("accessible_regions") or []) if str(r).strip()]
@@ -965,6 +994,13 @@ class CorrectiveActionEvidenceService:
 
         filtered = []
         for row in rows:
+            if getattr(row, "is_active", True) is False:
+                continue
+
+            ev_ref = str(getattr(row, "evidence_reference", "") or "")
+            if ev_ref.startswith("cohort-plan:") and not getattr(row, "linked_kpi_key", None):
+                continue
+
             # Period boundary check
             if not _is_action_prior_to_period(row, requested_month, requested_year):
                 continue
@@ -976,6 +1012,8 @@ class CorrectiveActionEvidenceService:
                 if is_ambiguous or not branch or not any(b == branch.casefold() for b in accessible_branches):
                     continue
 
+            row_team = getattr(row, "team", None) or team_by_id.get(getattr(row, "team_id", None))
+
             # Regional scope check: user restricted to specific regions cannot see other regions
             if accessible_regions and not has_unrestricted:
                 perf_rec = self.corrective_action_service._performance_record_for_action(row)
@@ -983,7 +1021,7 @@ class CorrectiveActionEvidenceService:
                 act_region = (
                     rec_region
                     or getattr(getattr(row, "employee", None), "region", None)
-                    or getattr(team_row, "region", None)
+                    or getattr(row_team, "region", None)
                     or ""
                 )
                 if act_region and act_region.casefold() not in accessible_regions:
@@ -991,7 +1029,10 @@ class CorrectiveActionEvidenceService:
 
             # Team level scope check
             emp = getattr(row, "employee", None)
-            level = getattr(emp, "performance_level", "Employee") if emp else "Employee"
+            if emp is not None:
+                level = getattr(emp, "performance_level", "Employee") or "Employee"
+            else:
+                level = "Management" if getattr(row_team, "team_level", None) == "management" else "Employee"
             if not user_can_access_team_level(user_scope, team_name, level):
                 continue
 
