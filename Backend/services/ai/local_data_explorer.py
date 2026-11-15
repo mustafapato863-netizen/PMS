@@ -50,6 +50,7 @@ from services.ai.catalog import (
     user_can_access_branch,
     user_can_access_team,
 )
+from services.ai.claim_validator import build_claim_ledger, validate_claims
 from services.ai.contextual_assistant import is_self_only, normalize_team_name
 from services.ai.conversation_service import AiConversationService
 from services.ai.domain_policies import extract_prompt_signals
@@ -1928,19 +1929,28 @@ def build_fact_ledger_from_evidence(
         if call.tool in ("rank_employees", "get_employee_summary"):
             sp = d.get("spotlight") or d.get("agent_spotlight") or {}
             if sp.get("entity_name"):
-                sc = round(float(sp.get("score") or 0.0), 1)
+                raw_sc = sp.get("score")
+                is_missing = raw_sc is None or isinstance(raw_sc, bool) or not isinstance(raw_sc, (int, float))
+                sc = None if is_missing else round(float(raw_sc), 1)
+                raw_ties = sp.get("ties") or d.get("ties") or ()
+                ties_tuple = tuple(str(t) for t in raw_ties if t) if isinstance(raw_ties, (list, tuple, set)) else ()
                 ledger.append(
                     {
                         "fact_id": f"F{fact_idx}",
                         "part": "ranking",
                         "subject": str(sp.get("entity_name")),
                         "employee_id": str(sp.get("entity_id") or ""),
+                        "country": sp.get("region") or d.get("region"),
                         "team": str(sp.get("team") or call.team or ""),
+                        "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
                         "period": str(d.get("period") or call.period or ""),
-                        "direction": str(call.direction),
+                        "ranking_direction": str(call.direction),
+                        "direction": "lower_better" if (sp.get("kpi_direction") == "lower_better" or d.get("kpi_direction") == "lower_better") else "higher_better",
+                        "ties": ties_tuple,
                         "value": sc,
-                        "display": f"{sc:.1f}%",
+                        "display": "Unavailable" if sc is None else f"{sc:.1f}%",
                         "unit": "%",
+                        "is_missing": is_missing,
                     }
                 )
                 fact_idx += 1
@@ -1954,51 +1964,74 @@ def build_fact_ledger_from_evidence(
                         b_name = str(b_row.get("branch"))
                         if req_branches_cf and b_name.casefold() not in req_branches_cf:
                             continue
-                        b_val = b_row.get("bookings") if call.kpi_key == "TotalBookings" else b_row.get("average_score")
-                        if isinstance(b_val, (int, float)):
-                            ledger.append(
-                                {
-                                    "fact_id": f"F{fact_idx}",
-                                    "part": "compare_branches",
-                                    "subject": b_name,
-                                    "team": str(d.get("scope") or call.team or ""),
-                                    "period": str(d.get("period") or call.period or ""),
-                                    "value": int(b_val) if call.kpi_key == "TotalBookings" else round(float(b_val), 1),
-                                    "display": str(int(b_val)) if call.kpi_key == "TotalBookings" else f"{float(b_val):.1f}%",
-                                    "unit": "count" if call.kpi_key == "TotalBookings" else "%",
-                                }
-                            )
-                            fact_idx += 1
+                        is_bookings = call.kpi_key == "TotalBookings"
+                        b_val = b_row.get("bookings") if is_bookings else (
+                            b_row.get("average_score") if b_row.get("average_score") is not None else b_row.get("score")
+                        )
+                        explicitly_absent = (
+                            (is_bookings and b_row.get("booking_present") is False)
+                            or (not is_bookings and b_row.get("data_present") is False)
+                        )
+                        is_missing = explicitly_absent or b_val is None or isinstance(b_val, bool) or not isinstance(b_val, (int, float))
+                        val_norm = None if is_missing else (int(b_val) if is_bookings else round(float(b_val), 1))
+                        display_val = "Unavailable" if val_norm is None else (str(int(val_norm)) if is_bookings else f"{float(val_norm):.1f}%")
+                        ledger.append(
+                            {
+                                "fact_id": f"F{fact_idx}",
+                                "part": "compare_branches",
+                                "subject": b_name,
+                                "country": d.get("region") or b_row.get("region"),
+                                "team": str(d.get("scope") or call.team or ""),
+                                "branch": b_name,
+                                "period": str(d.get("period") or call.period or ""),
+                                "direction": "higher_better",
+                                "value": val_norm,
+                                "display": display_val,
+                                "unit": "count" if is_bookings else "%",
+                                "is_missing": is_missing,
+                            }
+                        )
+                        fact_idx += 1
                 continue
         if call.tool == "get_trend":
             tt = d.get("team_trend_spotlight") or d.get("spotlight") or {}
-            if isinstance(tt, dict) and tt.get("score") is not None:
-                sc = round(float(tt.get("score") or 0.0), 1)
+            if isinstance(tt, dict) and (tt.get("score") is not None or tt.get("team") or d.get("scope") or call.team):
+                raw_sc = tt.get("score")
+                is_missing = raw_sc is None or isinstance(raw_sc, bool) or not isinstance(raw_sc, (int, float))
+                sc = None if is_missing else round(float(raw_sc), 1)
                 ledger.append(
                     {
                         "fact_id": f"F{fact_idx}",
                         "part": "trend",
                         "subject": str(tt.get("team") or d.get("scope") or call.team or ""),
+                        "country": d.get("region") or tt.get("region"),
+                        "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
                         "period": str(d.get("period") or call.period or ""),
+                        "direction": "lower_better" if d.get("direction") == "lower_better" else "higher_better",
                         "value": sc,
-                        "display": f"{sc:.1f}%",
+                        "display": "Unavailable" if sc is None else f"{sc:.1f}%",
                         "unit": "%",
+                        "is_missing": is_missing,
                     }
                 )
                 fact_idx += 1
                 continue
         avg_sc = d.get("average_score")
-        if isinstance(avg_sc, (int, float)):
+        if isinstance(avg_sc, (int, float)) and not isinstance(avg_sc, bool):
             sc = round(float(avg_sc), 1)
             ledger.append(
                 {
                     "fact_id": f"F{fact_idx}",
                     "part": "score",
                     "subject": str(d.get("scope") or call.team or ""),
+                    "country": d.get("region"),
+                    "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
                     "period": str(d.get("period") or call.period or ""),
+                    "direction": "lower_better" if d.get("direction") == "lower_better" else "higher_better",
                     "value": sc,
                     "display": f"{sc:.1f}%",
                     "unit": "%",
+                    "is_missing": False,
                 }
             )
             fact_idx += 1
@@ -2023,128 +2056,15 @@ def validate_grounded_synthesis(
     if len(text) > 360 or _UNSAFE_PARAM_RE.search(text):
         return None, "unsafe_or_too_long"
 
-    known_by_id = {str(f.get("fact_id")): f for f in fact_ledger if f.get("fact_id")}
-    if any(not isinstance(fid, str) or fid not in known_by_id for fid in fact_ids):
-        return None, "unknown_fact_id"
-    if set(known_by_id.keys()) - set(fact_ids):
-        return None, "incomplete_fact_coverage"
-
-    text_lower = text.casefold()
-    allowed_numbers: set[float] = set()
-    allowed_months: set[str] = set()
-    subject_value_positions: list[tuple[str, float, int, int, str]] = []
-
-    all_canonical_months = {m.casefold() for m in MONTHS}
-    for f in fact_ledger:
-        val = f.get("value")
-        unit = str(f.get("unit") or "").strip()
-        if isinstance(val, (int, float)):
-            allowed_numbers.add(round(float(val), 1))
-        per = str(f.get("period") or "")
-        per_lower = per.casefold()
-        for m_name in all_canonical_months:
-            if m_name in per_lower:
-                allowed_months.add(m_name)
-        m_iso = re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", per.strip())
-        if m_iso:
-            m_human = REVERSE_MONTHS_BY_NUM.get(int(m_iso.group(2)))
-            if m_human:
-                allowed_months.add(m_human.casefold())
-        for num_tok in re.findall(r"\d+(?:\.\d+)?", per):
-            allowed_numbers.add(round(float(num_tok), 1))
-        emp_id = str(f.get("employee_id") or "")
-        for num_tok in re.findall(r"\d+", emp_id):
-            allowed_numbers.add(round(float(num_tok), 1))
-
-        subj = str(f.get("subject") or "").strip()
-        subj_pos = -1
-        if subj:
-            subj_cf = subj.casefold()
-            subj_pos = text_lower.find(subj_cf)
-            if subj_pos < 0:
-                first_word = subj.split()[0].casefold()
-                subj_pos = text_lower.find(first_word)
-                if subj_pos < 0:
-                    return None, "missing_subject"
-
-        if isinstance(val, (int, float)):
-            fval = float(val)
-            val_str_1 = f"{fval:.1f}"
-            val_str_0 = str(int(fval)) if fval.is_integer() else val_str_1
-            val_str_comma = f"{int(fval):,}" if fval.is_integer() else val_str_1
-            val_candidates = []
-            for cand in (val_str_1, val_str_0, val_str_comma):
-                if cand not in val_candidates:
-                    val_candidates.append(cand)
-
-            val_match_pos = -1
-            for cand in val_candidates:
-                m_val = re.search(rf"(?<![\d.]){re.escape(cand)}(?![\d.])", text)
-                if m_val:
-                    val_match_pos = m_val.start()
-                    break
-            if val_match_pos < 0:
-                return None, "missing_fact_value"
-
-            # Unit fidelity check: count values must not be rendered with '%', and '%' values must have '%'
-            if unit == "count":
-                for cand in val_candidates:
-                    if re.search(rf"(?<![\d.]){re.escape(cand)}\s*%", text):
-                        return None, "mismatched_unit"
-            elif unit == "%":
-                has_pct = any(
-                    re.search(rf"(?<![\d.]){re.escape(cand)}\s*%", text)
-                    for cand in val_candidates
-                )
-                if not has_pct:
-                    return None, "mismatched_unit"
-
-            if subj_pos >= 0:
-                subject_value_positions.append((subj.casefold(), round(fval, 1), subj_pos, val_match_pos, unit))
-
-    # Period month fidelity check: reject any month name in text that does not appear in fact_ledger
-    if allowed_months:
-        for m_name in all_canonical_months:
-            if re.search(rf"\b{re.escape(m_name)}\b", text_lower) and m_name not in allowed_months:
-                return None, "mismatched_period"
-
-    # Reject any numeric token if allowed_numbers is empty or if the number is not in allowed_numbers
-    for token in re.findall(r"\d[\d,]*(?:\.\d+)?", text):
-        num_val = round(float(token.replace(",", "")), 1)
-        if not allowed_numbers or num_val not in allowed_numbers:
-            return None, "invented_number"
-
-    # Subject-to-value binding and comparison direction check across distinct facts
-    for i in range(len(subject_value_positions)):
-        s_i, v_i, s_pos_i, v_pos_i, _ = subject_value_positions[i]
-        for j in range(i + 1, len(subject_value_positions)):
-            s_j, v_j, s_pos_j, v_pos_j, _ = subject_value_positions[j]
-            if s_i == s_j or v_i == v_j or s_pos_i == s_pos_j or v_pos_i == v_pos_j:
-                continue
-            # Relative order of subjects and their bound values must match
-            if (s_pos_i < s_pos_j) != (v_pos_i < v_pos_j):
-                return None, "swapped_fact_values"
-
-            # Check winner / loser comparison verbs between the two subjects
-            low_subj = s_i if v_i < v_j else s_j
-            high_subj = s_j if v_i < v_j else s_i
-            low_pos = s_pos_i if v_i < v_j else s_pos_j
-            high_pos = s_pos_j if v_i < v_j else s_pos_i
-            if low_pos < high_pos:
-                between = text_lower[low_pos:high_pos]
-                if re.search(
-                    r"\b(?:led|leads|leading|outperformed|beat|exceeded|topped|higher\s+than|more\s+(?:[a-z]+\s+)?than|ahead\s+of)\b",
-                    between,
-                ):
-                    return None, "contradictory_comparison"
-            else:
-                between = text_lower[high_pos:low_pos]
-                if re.search(
-                    r"\b(?:trailed|trails|trailing|lagged|behind|lower\s+than|fewer\s+(?:[a-z]+\s+)?than|less\s+(?:[a-z]+\s+)?than)\b",
-                    between,
-                ):
-                    return None, "contradictory_comparison"
-
+    claim_ledger = build_claim_ledger(fact_ledger=fact_ledger)
+    result = validate_claims(
+        headline=text,
+        bullets=None,
+        ledger=claim_ledger,
+        cited_fact_ids=fact_ids,
+    )
+    if not result.valid:
+        return None, result.reason_code
     return text, "ok"
 
 
@@ -2170,7 +2090,10 @@ def _compose_grounded_answer(
     sys_msg = (
         'Compose a concise 1-2 sentence English answer using ONLY the supplied facts. '
         'Include every fact_id in fact_ids and state each subject, period, and exact display value in headline. '
-        'Never invent numbers. Return compact JSON: {"fact_ids":["F1"],"headline":"..."}.'
+        'Respect KPI polarity: when direction is lower_better (e.g., AHT, Abandon Rate, Rejection Rate, TAT), smaller numeric values represent better performance. '
+        'When facts are tied (equal values or non-empty ties), explicitly state the tie and never claim a sole winner or loser. '
+        'Never invent numbers, causes (no because/due to), or HR/employment/join-date facts. '
+        'Return compact JSON: {"fact_ids":["F1"],"headline":"..."}.'
     )
     user_payload_str = json.dumps(
         {"question": question[:240], "facts": fact_ledger},

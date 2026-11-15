@@ -48,7 +48,7 @@ router = APIRouter(
 _OUTCOME_MESSAGES = {
     "suggested": "Draft suggestion generated for review. It is not saved or approved.",
     "insufficient_evidence": "There is not enough evidence to draft a suggestion for this selection.",
-    "model_unavailable": "The local AI model is unavailable. Retry later or enter the action manually.",
+    "model_unavailable": "The AI suggestion service is temporarily unavailable. Retry later or enter the action manually.",
     "draft_rejected": "The AI draft did not match the evidence and was discarded. Retry or enter the action manually.",
 }
 
