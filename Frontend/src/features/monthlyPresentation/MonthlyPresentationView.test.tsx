@@ -789,9 +789,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       'AHT at 5.03 min (vs 2.50 min target) & Booking Rate at 47.8%',
     );
     expect(slower.actionText).not.toBe(slowerStill.actionText);
-    expect(slower.actionText).toContain('Booking Rate at 40.4%');
-    expect(slowerStill.actionText).toContain('Booking Rate at 47.8%');
-    expect(slower.actionText).not.toContain('47.8%');
+    expect(slower.actionText).toContain('4.25 min');
+    expect(slowerStill.actionText).toContain('5.03 min');
+    expect(slower.actionText).not.toContain('Specific issue:');
     expect(teamActionDueLabel(undefined)).toBe('No due date');
     expect(teamActionDueLabel('   ')).toBe('No due date');
     expect(teamActionDueLabel('2026-11-02')).toBe('2026-11-02');
@@ -946,8 +946,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       'individual-action-text-Abdulrahman Said Sayed Helal',
     ).textContent ?? '';
     expect(maryamIssue).not.toBe(abdulrahmanIssue);
-    expect(maryamAction).toContain(maryamIssue);
-    expect(abdulrahmanAction).toContain(abdulrahmanIssue);
+    expect(maryamAction).not.toContain('Specific issue:');
+    expect(abdulrahmanAction).not.toContain('Specific issue:');
     expect(maryamAction).not.toBe(abdulrahmanAction);
 
     const teamActions = screen.getAllByTestId(/^team-action-card-/);
@@ -1021,7 +1021,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:AI\s*Draft|AI)Edit/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit/g, ''),
     );
 
     const expectPresenting = () => {
@@ -1067,7 +1067,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No corrective actions recorded for this role yet.')).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:AI\s*Draft|AI)Edit/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit/g, ''),
     );
 
     fireEvent.click(modeSwitch());

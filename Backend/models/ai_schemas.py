@@ -380,6 +380,9 @@ class AiCorrectiveActionSuggestionPeriod(BaseModel):
     year: int
 
 
+ObservationStatus = Literal["verified", "recorded_zero", "unverified_zero", "missing"]
+
+
 class AiCorrectiveActionSuggestionContext(BaseModel):
     subject: Literal["employee", "team"]
     employee_id: str | None = None
@@ -392,6 +395,7 @@ class AiCorrectiveActionSuggestionContext(BaseModel):
     performance_level: str
     scoring_basis: str | None = None
     linked_kpi_key: str | None = None
+    team_headcount: int | None = None
 
 
 class AiCorrectiveActionSuggestionKpiEvidence(BaseModel):
@@ -405,9 +409,30 @@ class AiCorrectiveActionSuggestionKpiEvidence(BaseModel):
     unit: str | None = None
     direction: str | None = None
     weight: float | None = None
+    achievement_ratio: float | None = None
     achievement_percent: float | None = None
     contributes_to_score: bool = True
     status: Literal["below_target", "at_or_above_target", "unknown"] = "unknown"
+    observation_status: ObservationStatus = "verified"
+    previous_actual: float | None = None
+    previous_period: str | None = None
+    projected_agent_score_lift: float | None = None
+
+
+class AiCorrectiveActionSuggestionTrendSummary(BaseModel):
+    measured_periods: int = 0
+    current_score: float | None = None
+    previous_score: float | None = None
+    previous_period: str | None = None
+    previous_is_adjacent: bool = True
+    missing_intermediate_periods: list[str] = Field(default_factory=list)
+    window_start_period: str | None = None
+    window_start_score: float | None = None
+    window_delta: float | None = None
+    score_delta: float | None = None
+    score_direction: str = "single_period"
+    kpi_trends: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    weak_kpis: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AiCorrectiveActionSuggestionPriorAction(BaseModel):
@@ -436,6 +461,10 @@ class AiCorrectiveActionSuggestionDraft(BaseModel):
     uncertainty: str
     uncertainty_source: Literal["pms_evidence"] = "pms_evidence"
     approval_status: Literal["unapproved_draft"] = "unapproved_draft"
+    responsible_role: str | None = None
+    recommended_follow_up: str | None = None
+    observation_status: ObservationStatus | None = None
+    formatted_next_step: str | None = None
 
 
 class AiCorrectiveActionSuggestionPayload(BaseModel):
@@ -454,6 +483,7 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     supporting_kpis: list[AiCorrectiveActionSuggestionKpiEvidence] = Field(default_factory=list)
     supporting_kpis_truncated: bool = False
     prior_actions: list[AiCorrectiveActionSuggestionPriorAction] = Field(default_factory=list)
+    trend_summary: AiCorrectiveActionSuggestionTrendSummary | None = None
     insufficient_evidence_reasons: list[str] = Field(default_factory=list)
     draft: AiCorrectiveActionSuggestionDraft | None = None
     model_latency_ms: float | None = None
@@ -468,6 +498,13 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
         elif self.draft is not None:
             raise ValueError("only a suggested outcome may carry a draft")
         return self
+
+
+KpiEvidenceItem = AiCorrectiveActionSuggestionKpiEvidence
+AiKpiEvidence = AiCorrectiveActionSuggestionKpiEvidence
+AiSuggestionContext = AiCorrectiveActionSuggestionContext
+TrendSummary = AiCorrectiveActionSuggestionTrendSummary
+AiTrendSummary = AiCorrectiveActionSuggestionTrendSummary
 
 
 class AiCorrectiveActionSuggestionResponse(BaseModel):

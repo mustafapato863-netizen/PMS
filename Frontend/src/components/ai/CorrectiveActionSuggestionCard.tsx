@@ -11,12 +11,14 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch, ApiError } from '../../lib/apiClient';
+import { formatInsufficientEvidenceReason } from '../../features/monthlyPresentation/components/actionPlanAiUtils';
 import type { ActionType } from '../../types';
 import type {
   AiCorrectiveActionSuggestionKpiEvidence,
   AiCorrectiveActionSuggestionPayload,
   AiCorrectiveActionSuggestionRequest,
   AiCorrectiveActionSuggestionResponse,
+  ObservationStatus,
 } from '../../features/ai/types';
 
 export interface CorrectiveActionSuggestionCardProps {
@@ -40,15 +42,26 @@ type CardState =
   | 'draft_rejected'
   | 'error';
 
-function formatKpiEvidenceValue(val?: number | null, unit?: string | null): string {
-  if (val === null || val === undefined) {
+function isPercentUnit(unit?: string | null): boolean {
+  const u = String(unit ?? '').trim().toLowerCase();
+  return u === '%' || u === 'percent' || u === 'percentage';
+}
+
+function formatKpiEvidenceValue(
+  val?: number | null,
+  unit?: string | null,
+  _target?: number | null,
+  observationStatus?: ObservationStatus,
+): string {
+  if (observationStatus === 'missing' || val === null || val === undefined) {
     return 'Unavailable';
   }
   if (val === 0) {
-    return unit === '%' ? '0.0%' : unit === 'min' ? '0.0 min' : '0';
+    const base = isPercentUnit(unit) ? '0.0%' : unit === 'min' ? '0.0 min' : '0';
+    return observationStatus === 'unverified_zero' ? `${base} (unverified)` : base;
   }
-  const formatted = val.toLocaleString(undefined, { maximumFractionDigits: 1 });
-  if (unit === '%') return `${formatted}%`;
+  const formatted = val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (isPercentUnit(unit)) return `${formatted}%`;
   if (unit === 'min') return `${formatted} min`;
   return unit ? `${formatted} ${unit}` : formatted;
 }
@@ -82,6 +95,7 @@ export default function CorrectiveActionSuggestionCard({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inFlightScopeRef = useRef<string | null>(null);
 
   // Stale request / context change protection:
   // Reset state during render when context changes (React recommended pattern)
@@ -93,6 +107,7 @@ export default function CorrectiveActionSuggestionCard({
     setData(null);
     setErrorMessage(null);
     setErrorStatus(null);
+    inFlightScopeRef.current = null;
   }
 
   // Abort active in-flight request when context changes or on unmount
@@ -102,17 +117,20 @@ export default function CorrectiveActionSuggestionCard({
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      inFlightScopeRef.current = null;
     };
   }, [employeeId, team, month, year, linkedKpiKey]);
 
   const handleGenerate = useCallback(async () => {
     if (!team || !month) return;
+    if (inFlightScopeRef.current === contextKey) return;
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    inFlightScopeRef.current = contextKey;
 
     setState('loading');
     setErrorMessage(null);
@@ -173,7 +191,9 @@ export default function CorrectiveActionSuggestionCard({
 
       if (err instanceof ApiError) {
         status = err.status;
-        if (status === 401 || status === 403) {
+        if (status === 401) {
+          message = 'Authentication required (401). Please sign in again or enter the action manually.';
+        } else if (status === 403) {
           message = 'Administrative access required to use the suggestion pilot.';
         } else if (status === 429) {
           message = 'Daily suggestion limit reached. Please enter the action manually.';
@@ -190,9 +210,12 @@ export default function CorrectiveActionSuggestionCard({
       setErrorMessage(message);
       setState('error');
     } finally {
-      if (abortControllerRef.current === controller) abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        inFlightScopeRef.current = null;
+      }
     }
-  }, [team, month, year, employeeId, linkedKpiKey]);
+  }, [contextKey, team, month, year, employeeId, linkedKpiKey]);
 
   const handleApplyDraft = useCallback(() => {
     if (!data?.draft) return;
@@ -319,25 +342,45 @@ export default function CorrectiveActionSuggestionCard({
                   Verified Performance Evidence:
                 </span>
                 <div className="space-y-1.5">
-                  {data.supporting_kpis.slice(0, 3).map((kpi: AiCorrectiveActionSuggestionKpiEvidence) => {
-                    const actualStr = formatKpiEvidenceValue(kpi.actual, kpi.unit);
-                    const targetStr = formatKpiEvidenceValue(kpi.target, kpi.unit);
+                  {data.supporting_kpis.slice(0, 4).map((kpi: AiCorrectiveActionSuggestionKpiEvidence) => {
+                    const actualStr = formatKpiEvidenceValue(
+                      kpi.actual,
+                      kpi.unit,
+                      kpi.target,
+                      kpi.observation_status,
+                    );
+                    const targetStr = formatKpiEvidenceValue(kpi.target, kpi.unit, kpi.target);
                     const isBelow = kpi.status === 'below_target';
                     const isMet = kpi.status === 'at_or_above_target';
+                    const isDiagnostic = kpi.contributes_to_score === false || kpi.weight === 0;
 
                     return (
                       <div
                         key={kpi.kpi_key}
                         data-testid={`kpi-evidence-row-${kpi.kpi_key}`}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-[var(--bg-sunken)] px-2.5 py-1.5 text-xs"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--bg-sunken)] px-2.5 py-1.5 text-xs"
                       >
-                        <span className="font-semibold text-[var(--text-primary)] truncate">
-                          {kpi.display_name}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-semibold text-[var(--text-primary)] truncate">
+                            {kpi.display_name}
+                          </span>
+                          <span className="rounded border border-[var(--border-light)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-xs font-medium text-[var(--text-muted)]">
+                            {isDiagnostic
+                              ? 'Diagnostic'
+                              : kpi.weight != null
+                                ? `Scored · ${kpi.weight <= 1 ? Math.round(kpi.weight * 100) : Math.round(kpi.weight)}%`
+                                : 'Scored'}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-medium text-[var(--text-secondary)]">
                             Actual: <strong className="text-[var(--text-primary)]">{actualStr}</strong> / Target: {targetStr}
                           </span>
+                          {kpi.projected_agent_score_lift != null && kpi.projected_agent_score_lift > 0 && (
+                            <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                              Projected impact if {kpi.display_name} reaches {targetStr} target: +{kpi.projected_agent_score_lift.toFixed(1)} pts (assuming other KPIs stay constant)
+                            </span>
+                          )}
                           <span
                             className={`rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider ${
                               isBelow
@@ -354,18 +397,46 @@ export default function CorrectiveActionSuggestionCard({
                     );
                   })}
                 </div>
+                {data.trend_summary && data.trend_summary.score_delta !== null && data.trend_summary.previous_period && (
+                  <div className="mt-2 border-t border-[var(--border-light)] pt-2 text-xs text-[var(--text-secondary)] space-y-0.5">
+                    <p>
+                      vs {data.trend_summary.previous_period}:{' '}
+                      <strong>
+                        {data.trend_summary.score_delta >= 0 ? '+' : ''}
+                        {data.trend_summary.score_delta.toFixed(1)} pts
+                      </strong>
+                      {data.trend_summary.missing_intermediate_periods?.length
+                        ? ` (missing ${data.trend_summary.missing_intermediate_periods.join(', ')})`
+                        : ''}
+                    </p>
+                    {data.trend_summary.window_delta !== null && data.trend_summary.window_start_period && (
+                      <p className="text-[var(--text-muted)]">
+                        Full window since {data.trend_summary.window_start_period}:{' '}
+                        {data.trend_summary.window_delta >= 0 ? '+' : ''}
+                        {data.trend_summary.window_delta.toFixed(1)} pts
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {/* AI Recommendation Details */}
             <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-2 dark:bg-purple-950/20">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold text-[var(--text-primary)]">
                   {data.draft.title}
                 </span>
-                <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-bold text-purple-700 dark:text-purple-300">
-                  {data.draft.action_type}
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {data.draft.responsible_role && (
+                    <span className="rounded-md border border-[var(--border-light)] bg-[var(--bg-surface)] px-2 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">
+                      {data.draft.responsible_role}
+                    </span>
+                  )}
+                  <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-bold text-purple-700 dark:text-purple-300">
+                    {data.draft.action_type}
+                  </span>
+                </div>
               </div>
 
               {/* Recommended Steps */}
@@ -382,11 +453,21 @@ export default function CorrectiveActionSuggestionCard({
                 </ol>
               </div>
 
+              {data.draft.recommended_follow_up && (
+                <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                  Follow-up: {data.draft.recommended_follow_up}
+                </div>
+              )}
+
               {/* Evidence Limitation / Uncertainty Caveat */}
               {(data.draft.uncertainty || (data.evidence_limitations && data.evidence_limitations[0])) && (
                 <div className="border-t border-purple-500/15 pt-2 text-xs font-medium text-[var(--text-muted)]">
                   <span className="font-bold text-[var(--text-secondary)]">Evidence Limitation: </span>
-                  {data.draft.uncertainty || data.evidence_limitations?.[0]}
+                  {data.draft.uncertainty ||
+                    formatInsufficientEvidenceReason(
+                      data.evidence_limitations?.[0],
+                      data.supporting_kpis,
+                    )}
                 </div>
               )}
             </div>
@@ -429,24 +510,36 @@ export default function CorrectiveActionSuggestionCard({
           <div data-testid="ai-card-insufficient-evidence" className="space-y-3 py-1">
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
               <Info size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-              <div>
+              <div className="space-y-1">
                 <p className="font-bold">Not enough verified performance data is available.</p>
-                <p className="mt-0.5 text-xs opacity-90">
-                  {data?.insufficient_evidence_reasons?.[0] ||
-                    'There is not enough recorded evidence to generate an actionable draft for this selection.'}
-                </p>
+                {(() => {
+                  const humanizedReason =
+                    formatInsufficientEvidenceReason(
+                      data?.insufficient_evidence_reasons?.[0],
+                      data?.supporting_kpis,
+                    ) ||
+                    'There is not enough recorded evidence to generate an actionable draft for this selection.';
+                  const limitation = formatInsufficientEvidenceReason(
+                    data?.evidence_limitations?.[0],
+                    data?.supporting_kpis,
+                  );
+                  const showLimitation =
+                    Boolean(limitation) && limitation.toLowerCase() !== humanizedReason.toLowerCase();
+                  return (
+                    <>
+                      <p className="text-xs opacity-90">{humanizedReason}</p>
+                      {showLimitation && (
+                        <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                          {limitation}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleGenerate}
-                className="flex items-center gap-1.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] cursor-pointer"
-              >
-                <RefreshCw size={13} />
-                Retry
-              </button>
-              {onDismiss && (
+            {onDismiss && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={onDismiss}
@@ -454,8 +547,8 @@ export default function CorrectiveActionSuggestionCard({
                 >
                   Enter Action Manually
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 

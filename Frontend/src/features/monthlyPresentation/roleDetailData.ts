@@ -1,4 +1,5 @@
 import type { PMSAction } from '../../types';
+import type { ObservationStatus } from '../ai/types';
 import {
   SUMMARY_BRANCHES,
   kpiRows,
@@ -10,14 +11,20 @@ import {
 import { executiveFunctionForTeam } from '../executive/functions';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
+  buildExpectedImpactText,
   decodeIndividualActionMeta,
+  defaultFollowUpForAction,
   deriveAgentTrendContext,
+  extractPriorActionsForAgent,
+  type AgentKpiEvidenceItem,
+  type PriorActionSummary,
   type WeakKpiContext,
 } from './teamDeepDiveData';
 import {
   canonicalFunctionNameFromSlug,
   formatKpiValue,
   fullGradeLabel,
+  mapWeakestKpiToOwner,
   normalizeFunctionSlug,
   slugifyIdentifier,
   type AgentKeyKpiItem,
@@ -43,6 +50,12 @@ export interface RoleIndividualActionPlan {
   employeeId: string;
   personName: string;
   score: number;
+  previousScore?: number | null;
+  changeVsPrev?: number | null;
+  previousPeriodLabel?: string | null;
+  previousIsAdjacent?: boolean;
+  missingIntermediatePeriods?: string[];
+  fullWindowComparisonLabel?: string | null;
   grade: GradeLetter;
   gradeFullLabel: FullGradeLabel;
   mainIssue: string;
@@ -55,6 +68,10 @@ export interface RoleIndividualActionPlan {
   performanceLevel?: string;
   scoreTrendLabel?: string | null;
   weakKpis?: WeakKpiContext[];
+  allKpiEvidence?: AgentKpiEvidenceItem[];
+  priorActions?: PriorActionSummary[];
+  followUpLabel?: string | null;
+  observationStatus?: ObservationStatus;
 }
 
 export interface RoleMemberItem {
@@ -1624,23 +1641,54 @@ export function buildRoleDetail(
     );
     const parsed = noteFields(storedForMember?.root_cause_note);
     const missedCells = (member.kpiCells ?? []).filter((c) => c.metTarget === false && c.achievementPct != null && c.actualFormatted !== '—');
+    const linkedKpiKey =
+      storedForMember?.linked_kpi_key ||
+      missedCells[0]?.kpiKey ||
+      primaryRoleKpi?.kpiKey ||
+      'role-kpi';
+    const focusEvidence =
+      trendCtx.allKpiEvidence.find((e) => e.kpiKey === linkedKpiKey) ??
+      trendCtx.allKpiEvidence.find((e) => e.contributesToScore && e.metTarget === false) ??
+      trendCtx.allKpiEvidence[0];
+    const observationStatus = focusEvidence?.observationStatus ?? 'verified';
+    const priorActions = extractPriorActionsForAgent(
+      actions,
+      member.employeeId,
+      member.personName,
+      linkedKpiKey,
+      storedForMember?.id,
+    );
     const derivedMainIssue =
-      member.signal ||
-      (missedCells.length > 0
-        ? missedCells
-            .slice(0, 2)
-            .map(
-              (c) =>
-                `${c.label} at ${c.actualFormatted} (vs ${c.targetFormatted} target, ${c.achievementPct?.toFixed(1)}% achievement)`,
-            )
-            .join(' & ')
-        : `${member.keyKpiLabel} at ${member.keyKpiActual} (vs ${member.keyKpiTarget} target)`);
+      focusEvidence?.observationStatus === 'missing'
+        ? `${focusEvidence.label} is unavailable (missing source record; target ${focusEvidence.targetFormatted})`
+        : focusEvidence?.observationStatus === 'unverified_zero'
+          ? `${focusEvidence.label} at ${focusEvidence.actualFormatted} (vs ${focusEvidence.targetFormatted} target)`
+          : member.signal ||
+            (missedCells.length > 0
+              ? missedCells
+                  .slice(0, 2)
+                  .map(
+                    (c) =>
+                      `${c.label} at ${c.actualFormatted} (vs ${c.targetFormatted} target, ${c.achievementPct?.toFixed(1)}% achievement)`,
+                  )
+                  .join(' & ')
+              : `${member.keyKpiLabel} at ${member.keyKpiActual} (vs ${member.keyKpiTarget} target)`);
     const mainIssue = parsed.mainIssue || derivedMainIssue;
 
     const defaultActionText =
-      member.score < 90
-        ? `Conduct weekly 1-on-1 coaching with ${member.personName} on ${member.keyKpiLabel} (${member.keyKpiActual} vs ${member.keyKpiTarget} target), audit root-cause bottlenecks, and track daily pacing checkpoints through ${data.monthLabel}.`
-        : `Sustain ${member.personName}'s benchmark execution (${member.score.toFixed(1)}%) and pair as peer reviewer on ${member.keyKpiLabel} workflows across ${roleTitle}.`;
+      observationStatus === 'missing'
+        ? `Verify source ${focusEvidence?.label || member.keyKpiLabel} records for ${member.personName} before assigning coaching.`
+        : observationStatus === 'unverified_zero'
+          ? `Verify ${focusEvidence?.label || member.keyKpiLabel} source records to confirm whether any evaluations occurred, then review a sample with ${member.personName} before coaching.`
+          : member.score < 90
+            ? `Conduct weekly 1-on-1 coaching with ${member.personName} on ${member.keyKpiLabel} (${member.keyKpiActual} vs ${member.keyKpiTarget} target), audit root-cause bottlenecks, and track daily pacing checkpoints through ${data.monthLabel}.`
+            : `Sustain ${member.personName}'s benchmark execution (${member.score.toFixed(1)}%) and pair as peer reviewer on ${member.keyKpiLabel} workflows across ${roleTitle}.`;
+
+    const fnSlug = normalizeFunctionSlug(data.functionSlug || data.functionName);
+    const fallbackOwner =
+      storedForMember?.owner?.name ||
+      mapWeakestKpiToOwner(linkedKpiKey, focusEvidence?.label || member.keyKpiLabel, fnSlug);
+    const fallbackImpact = buildExpectedImpactText(focusEvidence, Math.max(1, enrichedMembers.length));
 
     return {
       id: `ind-role-${resolvedCard.roleSlug}-${slugifyIdentifier(member.employeeId)}`,
@@ -1648,22 +1696,28 @@ export function buildRoleDetail(
       employeeId: member.employeeId,
       personName: member.personName,
       score: member.score,
+      previousScore: trendCtx.previousScore ?? null,
+      changeVsPrev: member.changeVsPrev ?? trendCtx.changeVsPrev ?? null,
+      previousPeriodLabel: trendCtx.previousPeriodLabel,
+      previousIsAdjacent: trendCtx.previousIsAdjacent,
+      missingIntermediatePeriods: trendCtx.missingIntermediatePeriods,
+      fullWindowComparisonLabel: trendCtx.fullWindowComparisonLabel,
       grade: member.grade,
       gradeFullLabel: member.gradeFullLabel,
       mainIssue,
       actionText: storedForMember?.action_text || defaultActionText,
-      owner: parsed.owner || storedForMember?.owner?.name || `${roleTitle} Lead`,
-      expectedImpact: parsed.expectedImpact || 'Impact to be confirmed',
+      owner: parsed.owner || fallbackOwner,
+      expectedImpact: parsed.expectedImpact || fallbackImpact,
       suggested: !storedForMember,
-      linkedKpiKey:
-        storedForMember?.linked_kpi_key ||
-        missedCells[0]?.kpiKey ||
-        primaryRoleKpi?.kpiKey ||
-        'role-kpi',
+      linkedKpiKey,
       recordTeam: memberRecord?.team || resolvedCard.roleTitle,
       performanceLevel: memberRecord?.level,
       scoreTrendLabel: trendCtx.scoreTrendLabel,
       weakKpis: trendCtx.weakKpis,
+      allKpiEvidence: trendCtx.allKpiEvidence,
+      priorActions,
+      followUpLabel: defaultFollowUpForAction(observationStatus, priorActions),
+      observationStatus,
     };
   });
 

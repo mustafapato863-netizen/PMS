@@ -790,4 +790,159 @@ describe('EmployeeActionModal Phase 3 Integration Tests', () => {
     expect(submitBtn).toBeInTheDocument();
     expect(submitBtn).not.toBeDisabled();
   });
+
+  it('normalizes % ratio evidence, renders Diagnostic & unverified_zero tags, omits Retry on insufficient_evidence, and distinguishes 401', async () => {
+    const user = userEvent.setup();
+    aiResponseHandler = async () => ({
+      success: true,
+      message: 'Draft generated',
+      data: {
+        ...createMockSuggestedPayload(),
+        supporting_kpis: [
+          {
+            kpi_key: 'conversion',
+            display_name: 'Conversion Rate',
+            actual: 98.0,
+            target: 95.0,
+            unit: '%',
+            direction: 'higher_better',
+            status: 'at_or_above_target',
+            weight: 0.3,
+            contributes_to_score: true,
+            observation_status: 'verified',
+          },
+          {
+            kpi_key: 'error_rate',
+            display_name: 'Error Rate',
+            actual: 0.98,
+            target: 1.0,
+            unit: '%',
+            direction: 'lower_better',
+            status: 'at_or_above_target',
+            weight: 0.1,
+            contributes_to_score: true,
+            observation_status: 'verified',
+          },
+          {
+            kpi_key: 'csat',
+            display_name: 'CSAT Survey',
+            actual: 0,
+            target: 90,
+            unit: '%',
+            direction: 'higher_better',
+            status: 'below_target',
+            weight: 0,
+            contributes_to_score: false,
+            observation_status: 'unverified_zero',
+          },
+          {
+            kpi_key: 'booking_rate',
+            display_name: 'Booking Rate',
+            actual: 65,
+            target: 80,
+            unit: '%',
+            direction: 'higher_better',
+            status: 'below_target',
+            weight: 0.4,
+            contributes_to_score: true,
+            observation_status: 'verified',
+            projected_agent_score_lift: 7.5,
+          },
+        ],
+        trend_summary: {
+          periods: ['May 2026', 'Aug 2026', 'Oct 2026'],
+          scores: [89.8, 89.6, 76.7],
+          score_delta: -12.9,
+          previous_period: 'Aug 2026',
+          previous_is_adjacent: false,
+          missing_intermediate_periods: ['Sep 2026'],
+          window_start_period: 'May 2026',
+          window_start_score: 89.8,
+          window_delta: -13.1,
+          direction: 'down',
+          kpi_trends: [],
+        },
+        draft: {
+          ...createMockSuggestedPayload().draft!,
+          responsible_role: 'Trainer',
+          recommended_follow_up: 'Recheck after 1 week',
+          observation_status: 'verified',
+        },
+      },
+    });
+
+    const { rerender } = render(
+      <CorrectiveActionSuggestionCard
+        employeeId="EMP-101"
+        team="Inbound"
+        month="October"
+        year={2026}
+        onApplyDraft={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    await waitFor(() => expect(screen.getByTestId('ai-card-suggested')).toBeInTheDocument());
+
+    expect(screen.getByTestId('kpi-evidence-row-conversion')).toHaveTextContent('98%');
+    expect(screen.getByTestId('kpi-evidence-row-conversion')).toHaveTextContent('95%');
+    expect(screen.getByTestId('kpi-evidence-row-error_rate')).toHaveTextContent('0.98%');
+    expect(screen.getByTestId('kpi-evidence-row-error_rate')).toHaveTextContent('1%');
+    expect(screen.getByTestId('kpi-evidence-row-csat')).toHaveTextContent('0.0% (unverified)');
+    expect(screen.getByTestId('kpi-evidence-row-csat')).toHaveTextContent('Diagnostic');
+    expect(screen.getByTestId('kpi-evidence-row-booking_rate')).toHaveTextContent(
+      'Projected impact if Booking Rate reaches 80% target: +7.5 pts (assuming other KPIs stay constant)',
+    );
+    expect(screen.getByText(/vs Aug 2026:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Follow-up: Recheck after 1 week/i)).toBeInTheDocument();
+    expect(screen.getByText('Trainer')).toBeInTheDocument();
+
+    // insufficient_evidence omits Retry and humanizes raw backend reason codes
+    aiResponseHandler = async () => ({
+      success: true,
+      message: 'Insufficient evidence',
+      data: {
+        ...createMockSuggestedPayload(),
+        outcome: 'insufficient_evidence',
+        provider_used: 'none',
+        draft: null,
+        insufficient_evidence_reasons: ['no_complete_kpi_below_target'],
+        evidence_limitations: ['Verify source records in the upload log.'],
+      },
+    });
+    rerender(
+      <CorrectiveActionSuggestionCard
+        employeeId="EMP-102"
+        team="Inbound"
+        month="October"
+        year={2026}
+        onApplyDraft={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    await waitFor(() => expect(screen.getByTestId('ai-card-insufficient-evidence')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/no_complete_kpi_below_target/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/All measured KPIs for this selection are meeting or above target\./i),
+    ).toBeInTheDocument();
+
+    // 401 shows authentication required message without Retry
+    aiResponseHandler = async () => {
+      throw new ApiError('Unauthorized', 401);
+    };
+    rerender(
+      <CorrectiveActionSuggestionCard
+        employeeId="EMP-103"
+        team="Inbound"
+        month="October"
+        year={2026}
+        onApplyDraft={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    await waitFor(() => expect(screen.getByTestId('ai-card-error')).toBeInTheDocument());
+    expect(screen.getByText(/Authentication required \(401\)/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument();
+  });
 });

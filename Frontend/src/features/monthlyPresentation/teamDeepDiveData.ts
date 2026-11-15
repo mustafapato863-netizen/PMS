@@ -1,4 +1,7 @@
 import { isHossamRecord, type AgentRecord, type PMSAction } from '../../types';
+import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
+import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
+import type { ObservationStatus } from '../ai/types';
 import {
   kpiRows,
   periodFromKey,
@@ -87,11 +90,41 @@ export interface WeakKpiContext {
   gapText: string;
 }
 
+export interface AgentKpiEvidenceItem {
+  kpiKey: string;
+  label: string;
+  actual: number | null;
+  target: number | null;
+  unit: string;
+  actualFormatted: string;
+  targetFormatted: string;
+  achievementPct: number | null;
+  metTarget: boolean | null;
+  weight: number | null;
+  contributesToScore: boolean;
+  observationStatus: ObservationStatus;
+  projectedAgentScoreLift: number | null;
+}
+
+export interface PriorActionSummary {
+  id: string;
+  actionType: string;
+  status: string;
+  month: string;
+  year: number;
+  linkedKpiKey?: string | null;
+}
+
 export interface AgentTrendContext {
   previousScore: number | null;
   changeVsPrev: number | null;
+  previousPeriodLabel: string | null;
+  previousIsAdjacent: boolean;
+  missingIntermediatePeriods: string[];
+  fullWindowComparisonLabel: string | null;
   scoreTrendLabel: string | null;
   weakKpis: WeakKpiContext[];
+  allKpiEvidence: AgentKpiEvidenceItem[];
 }
 
 export interface IndividualActionMeta {
@@ -194,7 +227,12 @@ export interface AgentAverageOrBelowRow {
   weakestKpiKey: string;
   weakestKpiLabel: string;
   scoreTrendLabel?: string | null;
+  previousPeriodLabel?: string | null;
+  previousIsAdjacent?: boolean;
+  missingIntermediatePeriods?: string[];
+  fullWindowComparisonLabel?: string | null;
   weakKpis?: WeakKpiContext[];
+  allKpiEvidence?: AgentKpiEvidenceItem[];
   recordTeam?: string;
   performanceLevel?: string;
 }
@@ -206,8 +244,16 @@ export interface IndividualActionPlanCard {
   score: number;
   previousScore?: number | null;
   changeVsPrev?: number | null;
+  previousPeriodLabel?: string | null;
+  previousIsAdjacent?: boolean;
+  missingIntermediatePeriods?: string[];
+  fullWindowComparisonLabel?: string | null;
   scoreTrendLabel?: string | null;
   weakKpis?: WeakKpiContext[];
+  allKpiEvidence?: AgentKpiEvidenceItem[];
+  priorActions?: PriorActionSummary[];
+  followUpLabel?: string | null;
+  observationStatus?: ObservationStatus;
   recordTeam?: string;
   performanceLevel?: string;
   grade: GradeLetter;
@@ -512,10 +558,217 @@ function isLowerBetterKpi(kpiKey: string, direction?: string | null): boolean {
   return LOWER_IS_BETTER_KEY_RE.test(kpiKey);
 }
 
+function isPercentageUnit(unit: string | null | undefined): boolean {
+  const u = String(unit ?? '').trim().toLowerCase();
+  return u === '%' || u === 'percent' || u === 'percentage';
+}
+
+function normalizeAgentKpiValue(
+  value: number | null | undefined,
+  target: number | null | undefined,
+  unit: string | null | undefined,
+  historicalRatioScale = false,
+): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  if (!isPercentageUnit(unit)) return value;
+  const targetNum = typeof target === 'number' && Number.isFinite(target) ? target : 0;
+  if (targetNum > 0 && targetNum <= 1) {
+    return normalizePercentageKpiForDisplay(value, targetNum, '%');
+  }
+  if ((targetNum <= 0 || target == null) && historicalRatioScale) {
+    return value * 100;
+  }
+  return value;
+}
+
+function formatPeriodShortLabel(period: ExecutivePeriod): string {
+  return `${period.month.slice(0, 3)} ${period.year}`;
+}
+
+function formatFullWindowRange(start: ExecutivePeriod, end: ExecutivePeriod): string {
+  if (start.year === end.year) {
+    return `${start.month.slice(0, 3)}–${end.month.slice(0, 3)} ${end.year}`;
+  }
+  return `${formatPeriodShortLabel(start)}–${formatPeriodShortLabel(end)}`;
+}
+
+const AUDIT_SURVEY_KPI_RE = /quality|csat|satisfaction|compliance|audit|assessment/i;
+const AUDIT_DENOM_KEY_RE =
+  /audit|audits|evaluat|sample|survey|response|qa_?count|review_?count|checked|denominator/i;
+const ACTIVITY_DENOM_KEY_RE =
+  /handled|calls|offered|assigned|submitted|approved|shifts|days|scheduled|attempts|contacts|volume|bookings|requests|claims|tickets|orders|denominator/i;
+const RAW_META_KEY_RE = /target|weight|contribution|achievement|benchmark|goal/i;
+
+function normalizeRawKey(key: string): string {
+  return key.replace(/^(?:A|KPI|M)\./i, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function rawValuesMissingForKpi(
+  rawData: Record<string, unknown> | null | undefined,
+  kpiKey: string,
+  kpiLabel: string,
+): boolean {
+  if (!rawData || typeof rawData !== 'object') return false;
+  const normKey = normalizeRawKey(kpiKey);
+  const normLabel = normalizeRawKey(kpiLabel);
+  if (!normKey && !normLabel) return false;
+  const matchedEntries = Object.entries(rawData).filter(([rawKey]) => {
+    if (RAW_META_KEY_RE.test(rawKey)) return false;
+    const candidate = normalizeRawKey(rawKey);
+    return (
+      candidate.length > 0 &&
+      (candidate === normKey ||
+        candidate === normLabel ||
+        (normKey.length >= 4 && candidate.includes(normKey)) ||
+        (normLabel.length >= 4 && candidate.includes(normLabel)))
+    );
+  });
+  if (matchedEntries.length === 0) return false;
+  return matchedEntries.every(([, val]) => val === null || val === undefined || String(val).trim() === '');
+}
+
+function counterStatusForPattern(
+  rawData: Record<string, unknown> | null | undefined,
+  pattern: RegExp,
+): { hasDenom: boolean; hasPositive: boolean } {
+  if (!rawData || typeof rawData !== 'object') {
+    return { hasDenom: false, hasPositive: false };
+  }
+  let hasDenom = false;
+  let hasPositive = false;
+  for (const [key, val] of Object.entries(rawData)) {
+    if (RAW_META_KEY_RE.test(key) || !pattern.test(key)) continue;
+    const num = typeof val === 'number' ? val : Number(String(val ?? '').trim());
+    if (!Number.isFinite(num)) continue;
+    hasDenom = true;
+    if (num > 0) hasPositive = true;
+  }
+  return { hasDenom, hasPositive };
+}
+
+function classifyAgentKpiObservation(
+  kpi: NonNullable<AgentRecord['kpi_values']>[number],
+  rawData: Record<string, unknown> | null | undefined,
+  lowerBetter: boolean,
+): ObservationStatus {
+  const actual = kpi.actual_value;
+  if (actual === null || actual === undefined || !Number.isFinite(actual)) {
+    return 'missing';
+  }
+  if (rawValuesMissingForKpi(rawData, kpi.kpi_key, kpi.label || kpi.kpi_key)) {
+    return 'missing';
+  }
+  if (actual === 0) {
+    if (lowerBetter) return 'recorded_zero';
+    const countsInScore = kpiCountsInScore(kpi.weight_applied);
+    if (!countsInScore) return 'unverified_zero';
+    if (AUDIT_SURVEY_KPI_RE.test(`${kpi.kpi_key} ${kpi.label || ''}`)) {
+      return counterStatusForPattern(rawData, AUDIT_DENOM_KEY_RE).hasPositive
+        ? 'recorded_zero'
+        : 'unverified_zero';
+    }
+    const activity = counterStatusForPattern(rawData, ACTIVITY_DENOM_KEY_RE);
+    if (activity.hasDenom && !activity.hasPositive) {
+      return 'unverified_zero';
+    }
+    return 'recorded_zero';
+  }
+  return 'verified';
+}
+
+function formatObservedKpiValue(
+  value: number | null,
+  unit: string,
+  status: ObservationStatus,
+): string {
+  if (status === 'missing' || value === null || !Number.isFinite(value)) {
+    return 'Unavailable';
+  }
+  const formatted = formatKpiValue(value, unit);
+  if (status === 'unverified_zero') {
+    return `${formatted} (unverified)`;
+  }
+  return formatted;
+}
+
+function computeProjectedScoreLift(
+  achievementRatio: number | null,
+  weight: number | null,
+  totalWeight: number,
+  observationStatus: ObservationStatus,
+  metTarget: boolean | null,
+  contributesToScore: boolean,
+): number | null {
+  if (!contributesToScore || weight === null || weight <= 0) return null;
+  if (observationStatus !== 'verified' && observationStatus !== 'recorded_zero') return null;
+  if (metTarget !== false || achievementRatio === null || !Number.isFinite(achievementRatio)) return null;
+  const clamped = Math.min(Math.max(achievementRatio, 0), 1);
+  if (clamped >= 1) return null;
+  const weightPct =
+    totalWeight > 0 && totalWeight <= 1.05
+      ? weight * 100
+      : totalWeight > 0
+        ? (weight / totalWeight) * 100
+        : weight <= 1
+          ? weight * 100
+          : weight;
+  const lift = round1((1 - clamped) * weightPct);
+  return lift > 0 ? lift : null;
+}
+
+export function buildExpectedImpactText(
+  evidence: AgentKpiEvidenceItem | undefined,
+  headcount: number,
+): string {
+  if (!evidence) return 'Impact to be confirmed';
+  if (evidence.observationStatus === 'missing' || evidence.observationStatus === 'unverified_zero') {
+    return 'Verify source records before estimating score impact';
+  }
+  if (!evidence.contributesToScore) {
+    return 'Diagnostic KPI (not weighted in overall score)';
+  }
+  if (evidence.projectedAgentScoreLift !== null && evidence.projectedAgentScoreLift > 0) {
+    const teamLift = round1(evidence.projectedAgentScoreLift / Math.max(1, headcount));
+    return `+${evidence.projectedAgentScoreLift.toFixed(1)} pts agent score if ${evidence.label} reaches ${evidence.targetFormatted} (+${teamLift.toFixed(1)} pts team lift)`;
+  }
+  return 'Impact to be confirmed';
+}
+
+export function extractPriorActionsForAgent(
+  actions: PMSAction[],
+  employeeId: string,
+  agentName: string,
+  linkedKpiKey: string,
+  excludeActionId?: string,
+): PriorActionSummary[] {
+  const normEmp = employeeId.trim().toLowerCase();
+  const normName = agentName.trim().toLowerCase();
+  const normKpi = normalizeKpiLabel(linkedKpiKey);
+  return actions
+    .filter((a) => {
+      if (excludeActionId && a.id === excludeActionId) return false;
+      const matchesPerson =
+        (a.employee_id && a.employee_id.trim().toLowerCase() === normEmp) ||
+        (a.employee_name && a.employee_name.trim().toLowerCase() === normName);
+      if (!matchesPerson) return false;
+      if (!normKpi) return true;
+      return !a.linked_kpi_key || normalizeKpiLabel(a.linked_kpi_key) === normKpi;
+    })
+    .slice(0, 4)
+    .map((a) => ({
+      id: a.id,
+      actionType: a.action_type || 'Coaching',
+      status: a.status || 'Open',
+      month: a.month || '',
+      year: a.year || 0,
+      linkedKpiKey: a.linked_kpi_key ?? null,
+    }));
+}
+
 /**
- * Derives trailing 6-month employee score trend, immediate prior-month delta,
- * and target-failing KPIs (respecting LOWER_IS_BETTER vs HIGHER_IS_BETTER)
- * without crossing future period boundaries or coercing missing values to 0.
+ * Derives trailing 6-month employee score trend, most recent prior measured delta
+ * (recording any skipped intermediate months), full-window change, and normalized
+ * scored + diagnostic KPI evidence without coercing missing values to 0.
  */
 export function deriveAgentTrendContext(
   empId: string,
@@ -552,76 +805,176 @@ export function deriveAgentTrendContext(
   }
 
   const resolvedCurrent = byPeriodKey.get(effectivePeriod.key) ?? currentRecord ?? null;
-  const prevPeriod = trail.length >= 2 ? trail[trail.length - 2] : null;
-  const prevRecord = prevPeriod ? byPeriodKey.get(prevPeriod.key) ?? null : null;
-
   const currentScore =
     resolvedCurrent && typeof resolvedCurrent.score === 'number' && Number.isFinite(resolvedCurrent.score)
       ? round1(resolvedCurrent.score)
       : null;
-  const previousScore =
-    prevRecord && typeof prevRecord.score === 'number' && Number.isFinite(prevRecord.score)
-      ? round1(prevRecord.score)
-      : null;
+
+  const measuredEntries: Array<{ period: ExecutivePeriod; score: number; index: number }> = [];
+  trail.forEach((p, index) => {
+    const rec = byPeriodKey.get(p.key);
+    if (rec && typeof rec.score === 'number' && Number.isFinite(rec.score)) {
+      measuredEntries.push({ period: p, score: round1(rec.score), index });
+    }
+  });
+
+  const priorEntries = measuredEntries.filter((entry) => entry.period.key !== effectivePeriod.key);
+  const prevEntry = priorEntries.length > 0 ? priorEntries[priorEntries.length - 1] : null;
+  const previousScore = prevEntry ? prevEntry.score : null;
   const changeVsPrev =
     currentScore !== null && previousScore !== null
       ? round1(currentScore - previousScore)
       : null;
+  const previousPeriodLabel = prevEntry ? formatPeriodShortLabel(prevEntry.period) : null;
+  const currentTrailIndex = trail.length - 1;
+  const previousIsAdjacent = prevEntry ? prevEntry.index === currentTrailIndex - 1 : true;
+  const missingIntermediatePeriods =
+    prevEntry && !previousIsAdjacent
+      ? trail
+          .slice(prevEntry.index + 1, currentTrailIndex)
+          .map((p) => formatPeriodShortLabel(p))
+      : [];
 
-  const measuredScores: number[] = [];
-  for (const p of trail) {
-    const rec = byPeriodKey.get(p.key);
-    if (rec && typeof rec.score === 'number' && Number.isFinite(rec.score)) {
-      measuredScores.push(round1(rec.score));
-    }
-  }
-
+  const measuredScores = measuredEntries.map((e) => e.score);
   let scoreTrendLabel: string | null = null;
-  if (measuredScores.length >= 2) {
-    const netDelta = round1(measuredScores[measuredScores.length - 1] - measuredScores[0]);
+  let fullWindowComparisonLabel: string | null = null;
+  if (measuredEntries.length >= 2) {
+    const first = measuredEntries[0];
+    const last = measuredEntries[measuredEntries.length - 1];
+    const netDelta = round1(last.score - first.score);
     const direction =
       netDelta <= -0.5 ? 'declining' : netDelta >= 0.5 ? 'improving' : 'stable';
     const deltaText = `${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(1)} pts`;
     scoreTrendLabel = `${measuredScores.map((s) => `${s.toFixed(1)}%`).join(' → ')} (${deltaText}, ${direction})`;
-  } else if (measuredScores.length === 1) {
+    fullWindowComparisonLabel = `Full window (${formatFullWindowRange(first.period, last.period)}): ${first.score.toFixed(1)}% → ${last.score.toFixed(1)}% (${deltaText})`;
+  } else if (measuredEntries.length === 1) {
     scoreTrendLabel = 'Single-month record';
   }
 
+  // Collect historical non-zero targets per KPI key for % scaling when current target is 0/missing
+  const historicalRatioKpis = new Set<string>();
+  for (const rec of matchingRecords) {
+    const kpiList = rec.rawAgent?.kpi_values?.length ? rec.rawAgent.kpi_values : rec.kpis;
+    for (const kpi of kpiList) {
+      if (
+        isPercentageUnit(kpi.unit) &&
+        typeof kpi.target_value === 'number' &&
+        Number.isFinite(kpi.target_value) &&
+        kpi.target_value > 0 &&
+        kpi.target_value <= 1
+      ) {
+        historicalRatioKpis.add(kpi.kpi_key);
+      }
+    }
+  }
+
+  const allKpiEvidence: AgentKpiEvidenceItem[] = [];
   const weakKpis: WeakKpiContext[] = [];
   if (resolvedCurrent) {
-    const rows = kpiRows([resolvedCurrent], []);
-    for (const row of rows) {
-      if (
-        typeof row.actual !== 'number' ||
-        !Number.isFinite(row.actual) ||
-        typeof row.target !== 'number' ||
-        !Number.isFinite(row.target)
-      ) {
-        continue;
+    const rawKpis =
+      resolvedCurrent.rawAgent?.kpi_values && resolvedCurrent.rawAgent.kpi_values.length > 0
+        ? resolvedCurrent.rawAgent.kpi_values
+        : resolvedCurrent.kpis;
+    const rawData = resolvedCurrent.rawAgent?.raw_data as Record<string, unknown> | undefined;
+    const totalWeight = rawKpis.reduce((sum, item) => {
+      if (!kpiCountsInScore(item.weight_applied)) return sum;
+      return sum + Number(item.weight_applied);
+    }, 0);
+
+    for (const rawKpi of rawKpis) {
+      const unit = rawKpi.unit ?? '%';
+      const lowerBetter = isLowerBetterKpi(rawKpi.kpi_key, rawKpi.direction);
+      const observationStatus = classifyAgentKpiObservation(rawKpi, rawData, lowerBetter);
+      const ratioHint = historicalRatioKpis.has(rawKpi.kpi_key);
+      const targetNorm = normalizeAgentKpiValue(rawKpi.target_value, rawKpi.target_value, unit, ratioHint);
+      const actualNorm =
+        observationStatus === 'missing'
+          ? null
+          : normalizeAgentKpiValue(rawKpi.actual_value, rawKpi.target_value, unit, ratioHint);
+      const contributesToScore = kpiCountsInScore(rawKpi.weight_applied);
+      const weight =
+        typeof rawKpi.weight_applied === 'number' && Number.isFinite(rawKpi.weight_applied)
+          ? rawKpi.weight_applied
+          : null;
+
+      let achievementPct: number | null = null;
+      let achievementRatio: number | null = null;
+      if (observationStatus !== 'missing' && actualNorm !== null && targetNorm !== null && targetNorm > 0) {
+        const rawRatio =
+          typeof rawKpi.achievement_ratio === 'number' && Number.isFinite(rawKpi.achievement_ratio)
+            ? rawKpi.achievement_ratio
+            : lowerBetter
+              ? actualNorm <= 0
+                ? 1
+                : targetNorm / actualNorm
+              : actualNorm / targetNorm;
+        achievementRatio = Math.min(Math.max(rawRatio, 0), 1);
+        achievementPct = round1(achievementRatio * 100);
       }
-      const lowerBetter = isLowerBetterKpi(row.kpi_key, row.kpi_direction);
-      const failing = lowerBetter ? row.actual > row.target : row.actual < row.target;
-      if (!failing) continue;
-      const unit = row.unit ?? '';
-      const diff = round1(Math.abs(row.actual - row.target));
-      const diffFormatted = formatKpiValue(diff, row.unit);
-      const gapText = `${formatKpiValue(row.actual, row.unit)} vs ${formatKpiValue(row.target, row.unit)} (${lowerBetter ? `+${diffFormatted} over` : `-${diffFormatted} gap`})`;
-      weakKpis.push({
-        key: row.kpi_key,
-        name: row.kpi_label,
-        actual: round1(row.actual),
-        target: round1(row.target),
+
+      const metTarget: boolean | null =
+        observationStatus === 'missing' || actualNorm === null || targetNorm === null
+          ? null
+          : lowerBetter
+            ? actualNorm <= targetNorm + 1e-6
+            : actualNorm >= targetNorm - 1e-6;
+
+      const actualRounded = actualNorm !== null ? round1(actualNorm) : null;
+      const targetRounded = targetNorm !== null ? round1(targetNorm) : null;
+      const actualFormatted = formatObservedKpiValue(actualNorm, unit, observationStatus);
+      const targetFormatted = formatKpiValue(targetNorm, unit);
+      const projectedAgentScoreLift = computeProjectedScoreLift(
+        achievementRatio,
+        weight,
+        totalWeight,
+        observationStatus,
+        metTarget,
+        contributesToScore,
+      );
+
+      const label = rawKpi.label || rawKpi.kpi_key;
+      allKpiEvidence.push({
+        kpiKey: rawKpi.kpi_key,
+        label,
+        actual: actualRounded,
+        target: targetRounded,
         unit,
-        gapText,
+        actualFormatted,
+        targetFormatted,
+        achievementPct,
+        metTarget,
+        weight,
+        contributesToScore,
+        observationStatus,
+        projectedAgentScoreLift,
       });
+
+      if (contributesToScore && metTarget === false && actualNorm !== null && targetNorm !== null) {
+        const diff = round1(Math.abs(actualNorm - targetNorm));
+        const diffFormatted = formatKpiValue(diff, unit);
+        const gapText = `${actualFormatted} vs ${targetFormatted} (${lowerBetter ? `+${diffFormatted} over` : `-${diffFormatted} gap`})`;
+        weakKpis.push({
+          key: rawKpi.kpi_key,
+          name: label,
+          actual: round1(actualNorm),
+          target: round1(targetNorm),
+          unit,
+          gapText,
+        });
+      }
     }
   }
 
   return {
     previousScore,
     changeVsPrev,
+    previousPeriodLabel,
+    previousIsAdjacent,
+    missingIntermediatePeriods,
+    fullWindowComparisonLabel,
     scoreTrendLabel,
     weakKpis,
+    allKpiEvidence,
   };
 }
 
@@ -671,12 +1024,20 @@ function statedActualForColumn(
   return null;
 }
 
-/** Keep a shared KPI recommendation, then cite this agent's own issue so lookalike cards are not interchangeable. */
-function citeMainIssue(actionText: string, mainIssue?: string): string {
-  const issue = mainIssue?.trim();
-  if (!issue) return actionText;
-  if (actionText.toLowerCase().includes(issue.toLowerCase())) return actionText;
-  return `${actionText} Specific issue: ${issue}.`;
+export function defaultFollowUpForAction(
+  observationStatus: ObservationStatus | undefined,
+  priorActions: PriorActionSummary[] = [],
+): string {
+  if (observationStatus === 'unverified_zero') {
+    return 'Recheck after 1 week';
+  }
+  if (observationStatus === 'missing') {
+    return 'Verify source records before coaching';
+  }
+  if (priorActions.some((a) => /open|in_progress|progress/i.test(a.status))) {
+    return 'Check prior open action before repeating';
+  }
+  return 'Review after 2 weeks';
 }
 
 export function recommendedActionForKpi(
@@ -685,28 +1046,44 @@ export function recommendedActionForKpi(
   team: string,
   actualFormatted: string,
   targetFormatted: string,
-  mainIssue?: string,
+  _mainIssue?: string,
+  observationStatus: ObservationStatus = 'verified',
 ): { actionText: string; owner: string } {
   const norm = `${kpiKey} ${kpiLabel}`.toLowerCase();
-  const measured = hasMeasuredValue(actualFormatted) && hasMeasuredValue(targetFormatted);
+  const measured =
+    observationStatus !== 'missing' &&
+    hasMeasuredValue(actualFormatted) &&
+    hasMeasuredValue(targetFormatted);
   let actionText: string;
   let owner: string;
+
+  if (observationStatus === 'missing') {
+    actionText = `Verify source ${kpiLabel || kpiKey} records for ${team} before assigning coaching.`;
+    owner = mapWeakestKpiToOwner(kpiKey, kpiLabel);
+    return { actionText, owner };
+  }
+
+  if (observationStatus === 'unverified_zero') {
+    actionText = `Verify ${kpiLabel || kpiKey} source records to confirm whether any evaluations occurred, then review a sample with the employee before coaching.`;
+    owner = mapWeakestKpiToOwner(kpiKey, kpiLabel);
+    return { actionText, owner };
+  }
 
   if (norm.includes('aht') || norm.includes('handle')) {
     actionText = measured
       ? `Shadow peak-hour calls exceeding 3.50 min, streamline hold/transfer lookup steps, and set daily ${targetFormatted} AHT pacing check-ins (currently ${actualFormatted}).`
       : 'Shadow peak-hour calls, streamline hold and transfer steps, and set daily AHT pacing check-ins.';
-    owner = 'Inbound Team Leader & Workforce Analyst';
+    owner = 'Workforce Analyst';
   } else if (norm.includes('booking')) {
     actionText = measured
       ? `Complete 2 weekly objection-handling and appointment-closing calibration sessions to lift Booking Rate from ${actualFormatted} toward the ${targetFormatted} benchmark.`
       : 'Complete weekly objection-handling and appointment-closing calibration sessions to lift Booking Rate.';
-    owner = 'Call Center Trainer';
+    owner = 'Trainer';
   } else if (norm.includes('reachability')) {
     actionText = measured
       ? `Shift outbound callback attempts to high-answer evening/morning patient windows and audit unanswered retry intervals (currently ${actualFormatted} vs ${targetFormatted}).`
       : 'Shift outbound callback attempts to high-answer windows and audit unanswered retry intervals.';
-    owner = 'Outbound Team Leader';
+    owner = 'Team Leader';
   } else if (norm.includes('quality')) {
     actionText = measured
       ? `Conduct targeted QA call listening & mandatory script verification review to resolve quality deductions (${actualFormatted} vs ${targetFormatted} target).`
@@ -716,15 +1093,15 @@ export function recommendedActionForKpi(
     actionText = measured
       ? `Realign wrap-up/AUX code usage and break adherence during high-volume intervals to raise Utilization from ${actualFormatted} to ${targetFormatted}.`
       : 'Realign wrap-up and AUX code usage during high-volume intervals to raise Utilization.';
-    owner = 'Workforce Analyst & Team Leader';
+    owner = 'Workforce Analyst';
   } else {
     actionText = measured
       ? `Enforce shift-start roster adherence and weekly attendance review to close the gap from ${actualFormatted} to the ${targetFormatted} target.`
       : `Enforce shift-start roster adherence and a weekly attendance review for ${team}.`;
-    owner = `${team} Team Leader`;
+    owner = mapWeakestKpiToOwner(kpiKey, kpiLabel);
   }
 
-  return { actionText: citeMainIssue(actionText, mainIssue), owner };
+  return { actionText, owner };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1751,32 +2128,53 @@ function buildGenericTeamDeepDive(
       effective.month,
       effective.year,
     );
+    const weakestKey = weakest?.kpi_key ?? kpis[0]?.kpiKey ?? 'general';
+    const focusEvidence =
+      trendCtx.allKpiEvidence.find((e) => e.kpiKey === weakestKey) ??
+      trendCtx.allKpiEvidence.find((e) => e.contributesToScore && e.metTarget === false) ??
+      trendCtx.allKpiEvidence[0];
+    const mainIssue =
+      focusEvidence?.observationStatus === 'missing'
+        ? `${focusEvidence.label} is unavailable (missing source record; target ${focusEvidence.targetFormatted})`
+        : focusEvidence?.observationStatus === 'unverified_zero'
+          ? `${focusEvidence.label} at ${focusEvidence.actualFormatted} (vs ${focusEvidence.targetFormatted} target)`
+          : weakest
+            ? `${weakest.kpi_label} at ${formatKpiValue(weakest.actual, weakest.unit)} (vs ${formatKpiValue(weakest.target, weakest.unit)} target)`
+            : 'Score below 90%';
     return {
       employeeId: agent.employeeId,
       agentName: agent.name,
       score: round1(agent.score),
       previousScore: trendCtx.previousScore,
       changeVsPrev: trendCtx.changeVsPrev,
+      previousPeriodLabel: trendCtx.previousPeriodLabel,
+      previousIsAdjacent: trendCtx.previousIsAdjacent,
+      missingIntermediatePeriods: trendCtx.missingIntermediatePeriods,
+      fullWindowComparisonLabel: trendCtx.fullWindowComparisonLabel,
       grade: g,
       gradeFullLabel: fullGradeLabel(g),
       kpiCells: kpis.map((kpi) => {
         const match = personalKpiForColumn(agentKpiRows, kpi);
+        const ev = trendCtx.allKpiEvidence.find((e) => e.kpiKey === kpi.kpiKey);
         return {
           kpiKey: kpi.kpiKey,
           label: kpi.shortLabel,
-          actualFormatted: match ? formatKpiValue(match.actual, match.unit ?? kpi.unit) : '—',
+          actualFormatted: ev
+            ? ev.actualFormatted
+            : match
+              ? formatKpiValue(match.actual, match.unit ?? kpi.unit)
+              : '—',
           targetFormatted: kpi.targetFormatted,
           achievementPct: match?.achievement_percent ?? 0,
           metTarget: match?.target_status === 'met',
         };
       }),
-      mainIssue: weakest
-        ? `${weakest.kpi_label} at ${formatKpiValue(weakest.actual, weakest.unit)}`
-        : 'Score below 90%',
-      weakestKpiKey: weakest?.kpi_key ?? kpis[0]?.kpiKey ?? 'general',
-      weakestKpiLabel: weakest?.kpi_label ?? 'KPI',
+      mainIssue,
+      weakestKpiKey: focusEvidence?.kpiKey ?? weakestKey,
+      weakestKpiLabel: focusEvidence?.label ?? weakest?.kpi_label ?? 'KPI',
       scoreTrendLabel: trendCtx.scoreTrendLabel,
       weakKpis: trendCtx.weakKpis,
+      allKpiEvidence: trendCtx.allKpiEvidence,
       recordTeam: agent.team,
       performanceLevel: agent.level,
     };
@@ -1823,10 +2221,32 @@ function buildGenericTeamDeepDive(
     agentsAverageOrBelow,
     individualActionPlans: agentsAverageOrBelow.map((row, index) => {
       const saved = savedFor(row);
+      const focusEvidence = row.allKpiEvidence?.find((e) => e.kpiKey === row.weakestKpiKey);
+      const observationStatus = focusEvidence?.observationStatus ?? 'verified';
+      const priorActions = extractPriorActionsForAgent(
+        actions,
+        row.employeeId,
+        row.agentName,
+        row.weakestKpiKey,
+        saved?.id,
+      );
+      const recommended = recommendedActionForKpi(
+        row.weakestKpiKey,
+        row.weakestKpiLabel,
+        canonicalTeam,
+        focusEvidence?.actualFormatted ??
+          row.kpiCells.find((cell) => cell.kpiKey === row.weakestKpiKey)?.actualFormatted ??
+          '',
+        focusEvidence?.targetFormatted ??
+          row.kpiCells.find((cell) => cell.kpiKey === row.weakestKpiKey)?.targetFormatted ??
+          '',
+        row.mainIssue,
+        observationStatus,
+      );
       const decoded = decodeIndividualActionMeta(
         saved?.root_cause_note,
-        saved?.owner?.name || `${canonicalTeam} lead`,
-        `+${Math.max(1, round1(90 - row.score)).toFixed(1)}% score lift`,
+        saved?.owner?.name || recommended.owner || mapWeakestKpiToOwner(row.weakestKpiKey, row.weakestKpiLabel, fnSlug),
+        buildExpectedImpactText(focusEvidence, headcount),
         row.mainIssue,
       );
       return {
@@ -1836,23 +2256,22 @@ function buildGenericTeamDeepDive(
         score: row.score,
         previousScore: row.previousScore ?? null,
         changeVsPrev: row.changeVsPrev ?? null,
+        previousPeriodLabel: row.previousPeriodLabel ?? null,
+        previousIsAdjacent: row.previousIsAdjacent ?? true,
+        missingIntermediatePeriods: row.missingIntermediatePeriods ?? [],
+        fullWindowComparisonLabel: row.fullWindowComparisonLabel ?? null,
         scoreTrendLabel: row.scoreTrendLabel ?? null,
         weakKpis: row.weakKpis,
+        allKpiEvidence: row.allKpiEvidence,
+        priorActions,
+        followUpLabel: defaultFollowUpForAction(observationStatus, priorActions),
+        observationStatus,
         recordTeam: row.recordTeam,
         performanceLevel: row.performanceLevel,
         grade: row.grade,
         gradeFullLabel: row.gradeFullLabel,
         mainIssue: decoded.mainIssue,
-        actionText:
-          saved?.action_text ||
-          recommendedActionForKpi(
-            row.weakestKpiKey,
-            row.weakestKpiLabel,
-            canonicalTeam,
-            row.kpiCells.find((cell) => cell.kpiKey === row.weakestKpiKey)?.actualFormatted ?? '',
-            row.kpiCells.find((cell) => cell.kpiKey === row.weakestKpiKey)?.targetFormatted ?? '',
-            row.mainIssue,
-          ).actionText,
+        actionText: saved?.action_text || recommended.actionText,
         owner: decoded.owner,
         expectedImpact: decoded.expectedImpact,
         linkedKpiKey: row.weakestKpiKey,
@@ -2074,32 +2493,59 @@ export function buildTeamDeepDiveFromRecords(
           const resolvedPrevScore = prevAgentScore ?? trendCtx.previousScore;
           const delta =
             resolvedPrevScore !== null ? round1(round1(agent.score) - resolvedPrevScore) : null;
+          const previousPeriodLabel =
+            prevAgentScore !== null && previous
+              ? formatPeriodShortLabel(previous)
+              : trendCtx.previousPeriodLabel;
+          const previousIsAdjacent =
+            prevAgentScore !== null ? true : trendCtx.previousIsAdjacent;
+          const missingIntermediatePeriods =
+            prevAgentScore !== null ? [] : trendCtx.missingIntermediatePeriods;
           const agentKpiRows = kpiRows([agent], []);
           const weakest = agentKpiRows[0];
           const secondWeakest = agentKpiRows[1];
+          const weakestKey = weakest?.kpi_key ?? kpiColumns[0]?.kpiKey ?? 'Booking';
+          const focusEvidence =
+            trendCtx.allKpiEvidence.find((e) => e.kpiKey === weakestKey) ??
+            trendCtx.allKpiEvidence.find((e) => e.contributesToScore && e.metTarget === false) ??
+            trendCtx.allKpiEvidence[0];
           const g = gradeForScore(agent.score);
 
           const kpiCells: AgentKpiCellValue[] = kpiColumns.map((col) => {
             const match = personalKpiForColumn(agentKpiRows, col);
+            const ev = trendCtx.allKpiEvidence.find((e) => e.kpiKey === col.kpiKey);
             return {
               kpiKey: col.kpiKey,
               label: col.shortLabel,
-              actualFormatted: match
-                ? formatKpiValue(match.actual, match.unit ?? col.unit)
-                : '—',
+              actualFormatted: ev
+                ? ev.actualFormatted
+                : match
+                  ? formatKpiValue(match.actual, match.unit ?? col.unit)
+                  : '—',
               targetFormatted: col.targetFormatted,
               achievementPct: match?.achievement_percent ?? 0,
               metTarget: match?.target_status === 'met',
             };
           });
 
-          const mainIssue = weakest
-            ? `${weakest.kpi_label} at ${formatKpiValue(weakest.actual, weakest.unit)} (vs ${formatKpiValue(weakest.target, weakest.unit)} target, ${(weakest.achievement_percent ?? 0).toFixed(1)}% achievement)${
-                secondWeakest && (secondWeakest.achievement_percent ?? 100) < 88
-                  ? ` & ${secondWeakest.kpi_label} at ${formatKpiValue(secondWeakest.actual, secondWeakest.unit)}`
-                  : ''
-              }`
-            : 'Score below 90% threshold';
+          const secondEvidence = secondWeakest
+            ? trendCtx.allKpiEvidence.find((e) => e.kpiKey === secondWeakest.kpi_key)
+            : undefined;
+          const secondSuffix =
+            secondWeakest &&
+            (secondWeakest.achievement_percent ?? 100) < 88 &&
+            secondEvidence?.observationStatus !== 'missing' &&
+            secondWeakest.actual != null
+              ? ` & ${secondWeakest.kpi_label} at ${secondEvidence?.actualFormatted ?? formatKpiValue(secondWeakest.actual, secondWeakest.unit)}`
+              : '';
+          const mainIssue =
+            focusEvidence?.observationStatus === 'missing'
+              ? `${focusEvidence.label} is unavailable (missing source record; target ${focusEvidence.targetFormatted})`
+              : focusEvidence?.observationStatus === 'unverified_zero'
+                ? `${focusEvidence.label} at ${focusEvidence.actualFormatted} (vs ${focusEvidence.targetFormatted} target)`
+                : weakest
+                  ? `${weakest.kpi_label} at ${formatKpiValue(weakest.actual, weakest.unit)} (vs ${formatKpiValue(weakest.target, weakest.unit)} target, ${(weakest.achievement_percent ?? 0).toFixed(1)}% achievement)${secondSuffix}`
+                  : 'Score below 90% threshold';
 
           return {
             employeeId: agent.employeeId,
@@ -2107,14 +2553,19 @@ export function buildTeamDeepDiveFromRecords(
             score: round1(agent.score),
             previousScore: resolvedPrevScore,
             changeVsPrev: delta,
+            previousPeriodLabel,
+            previousIsAdjacent,
+            missingIntermediatePeriods,
+            fullWindowComparisonLabel: trendCtx.fullWindowComparisonLabel,
             grade: g,
             gradeFullLabel: fullGradeLabel(g),
             kpiCells,
             mainIssue,
-            weakestKpiKey: weakest?.kpi_key ?? kpiColumns[0]?.kpiKey ?? 'Booking',
-            weakestKpiLabel: weakest?.kpi_label ?? kpiColumns[0]?.label ?? 'Booking Rate',
+            weakestKpiKey: focusEvidence?.kpiKey ?? weakestKey,
+            weakestKpiLabel: focusEvidence?.label ?? weakest?.kpi_label ?? kpiColumns[0]?.label ?? 'Booking Rate',
             scoreTrendLabel: trendCtx.scoreTrendLabel,
             weakKpis: trendCtx.weakKpis,
+            allKpiEvidence: trendCtx.allKpiEvidence,
             recordTeam: agent.team,
             performanceLevel: agent.level,
           };
@@ -2132,24 +2583,32 @@ export function buildTeamDeepDiveFromRecords(
             a.employee_name.toLowerCase() === row.agentName.toLowerCase()),
       );
       const weakestCell = row.kpiCells.find((c) => c.kpiKey === row.weakestKpiKey);
+      const focusEvidence = row.allKpiEvidence?.find((e) => e.kpiKey === row.weakestKpiKey);
+      const observationStatus = focusEvidence?.observationStatus ?? 'verified';
+      const priorActions = extractPriorActionsForAgent(
+        actions,
+        row.employeeId,
+        row.agentName,
+        row.weakestKpiKey,
+        savedAction?.id,
+      );
       const recommended = recommendedActionForKpi(
         row.weakestKpiKey,
         row.weakestKpiLabel,
         canonicalTeam,
-        weakestCell?.actualFormatted ?? '',
-        weakestCell?.targetFormatted ?? '',
+        focusEvidence?.actualFormatted ?? weakestCell?.actualFormatted ?? '',
+        focusEvidence?.targetFormatted ?? weakestCell?.targetFormatted ?? '',
         row.mainIssue,
+        observationStatus,
       );
 
-      const lift = Math.max(2.0, round1(91.5 - row.score));
-      const teamLift = round1(lift / Math.max(1, headcount));
       const fallbackOwner =
         savedAction?.owner?.name ||
         (savedAction ? mapWeakestKpiToOwner(row.weakestKpiKey, row.weakestKpiLabel) : recommended.owner);
       const decoded = decodeIndividualActionMeta(
         savedAction?.root_cause_note,
         fallbackOwner,
-        `+${lift.toFixed(1)}% agent score (+${teamLift.toFixed(1)}% team lift)`,
+        buildExpectedImpactText(focusEvidence, headcount),
         row.mainIssue,
       );
 
@@ -2160,8 +2619,16 @@ export function buildTeamDeepDiveFromRecords(
         score: row.score,
         previousScore: row.previousScore ?? null,
         changeVsPrev: row.changeVsPrev ?? null,
+        previousPeriodLabel: row.previousPeriodLabel ?? null,
+        previousIsAdjacent: row.previousIsAdjacent ?? true,
+        missingIntermediatePeriods: row.missingIntermediatePeriods ?? [],
+        fullWindowComparisonLabel: row.fullWindowComparisonLabel ?? null,
         scoreTrendLabel: row.scoreTrendLabel ?? null,
         weakKpis: row.weakKpis,
+        allKpiEvidence: row.allKpiEvidence,
+        priorActions,
+        followUpLabel: defaultFollowUpForAction(observationStatus, priorActions),
+        observationStatus,
         recordTeam: row.recordTeam,
         performanceLevel: row.performanceLevel,
         grade: row.grade,

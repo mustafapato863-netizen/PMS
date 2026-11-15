@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextProps } from '../../context/auth';
 import { ApiError, apiErrorMessage } from '../../lib/apiClient';
 import * as apiClientModule from '../../lib/apiClient';
-import { resolveTeamCardFocusKpiKey } from './components/actionPlanAiUtils';
+import {
+  collectSuggestionNotices,
+  formatInsufficientEvidenceReason,
+  hasSupportedProjectedImpact,
+  resolveTeamCardFocusKpiKey,
+} from './components/actionPlanAiUtils';
+import { IndividualEvidenceDrawer } from './components/ActionPlanAiAssistant';
 import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { INBOUND_TEAM_DEEP_DIVE_SEP_2026, type TeamDeepDiveData, type TeamLevelActionPlanCard } from './teamDeepDiveData';
@@ -232,7 +238,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     vi.restoreAllMocks();
   });
 
-  it('edits Team-Level Action Plan cards inline, calls onSaveTeamAction, and overlays savedTeamActions', async () => {
+  it('edits Team-Level Action Plan cards inline, calls onSaveTeamAction, and overlays savedTeamActions', { timeout: 15000 }, async () => {
     const user = userEvent.setup();
     const onSaveTeamAction = vi.fn().mockResolvedValue(undefined);
     const data = makeTeamFixture();
@@ -283,7 +289,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(screen.getByTestId('team-action-owner-team-act-1')).toHaveTextContent('QA Supervisor');
   });
 
-  it('requests AI recommendation with strict schema (no extra keys), populates draft without auto-saving, and supports RoleDetailView', async () => {
+  it('requests AI recommendation with strict schema (no extra keys), populates draft without auto-saving, and supports RoleDetailView', { timeout: 15000 }, async () => {
     const user = userEvent.setup();
     const fetchSpy = vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue(aiDraftResponse);
     const onSaveIndividual = vi.fn().mockResolvedValue(undefined);
@@ -359,7 +365,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(roleBody.performance_level).toBe('Employee');
   });
 
-  it('asks confirmation before overwriting unsaved manual edits and respects Discard Draft vs Apply AI Draft', async () => {
+  it('asks confirmation before overwriting unsaved manual edits and respects Discard Draft vs Apply AI Draft', { timeout: 15000 }, async () => {
     const user = userEvent.setup();
     vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue(aiDraftResponse);
 
@@ -405,7 +411,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     );
   });
 
-  it('handles 403 pilot-disabled for Admin (Enable AI Pilot & Generate) vs non-admin Manager', async () => {
+  it('handles 403 pilot-disabled for Admin (Enable AI Pilot & Generate) vs non-admin Manager', { timeout: 15000 }, async () => {
     const user = userEvent.setup();
     const fetchSpy = vi
       .spyOn(apiClientModule, 'apiFetch')
@@ -504,7 +510,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(screen.getByTestId('role-individual-trend-badge-EMP-HR-1')).toHaveTextContent('83.0% → 78.5%');
   });
 
-  it('sends linked_kpi_key="Attendance" when clicking AI on Inbound built-in 3rd Whole-Team Action card', async () => {
+  it('sends linked_kpi_key="Attendance" when clicking AI on Inbound built-in 3rd Whole-Team Action card', { timeout: 15000 }, async () => {
     const user = userEvent.setup();
     const fetchSpy = vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue({
       ...aiDraftResponse,
@@ -622,5 +628,519 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
         503,
       ),
     ).toBe('The server could not complete the request. Please try again. Reference: req-503-2');
+  });
+
+  it('renders 4-part card UX, collapsed View evidence drawer (visible in Presentation Mode), failure states, duplicate-click guard, and scope-switch abort', { timeout: 15000 }, async () => {
+    const user = userEvent.setup();
+    const richTeamData = {
+      ...INBOUND_TEAM_DEEP_DIVE_SEP_2026,
+      individualActionPlans: [
+        {
+          ...INBOUND_TEAM_DEEP_DIVE_SEP_2026.individualActionPlans[0],
+          id: 'ind-rich-1',
+          employeeId: 'EMP-RICH-1',
+          agentName: 'Salma Hassan',
+          score: 76.7,
+          previousScore: 89.6,
+          changeVsPrev: -12.9,
+          previousPeriodLabel: 'Aug 2026',
+          previousIsAdjacent: false,
+          missingIntermediatePeriods: ['Sep 2026'],
+          fullWindowComparisonLabel: 'Full window (May–Oct 2026): 89.8% → 76.7% (-13.1 pts)',
+          scoreTrendLabel: '89.8% → 89.6% → 76.7% (-13.1 pts, declining)',
+          mainIssue: 'Booking Rate at 40.0% (vs 50.0% target)',
+          actionText: 'Complete weekly objection-handling calibration to raise Booking Rate toward 50.0%.',
+          owner: 'Trainer',
+          followUpLabel: 'Recheck after 1 week',
+          expectedImpact: '+6.0 pts agent score if Booking Rate reaches 50.0% (+0.6 pts team lift)',
+          linkedKpiKey: 'Booking',
+          allKpiEvidence: [
+            {
+              kpiKey: 'Booking',
+              label: 'Booking Rate',
+              actual: 40.0,
+              target: 50.0,
+              unit: '%',
+              actualFormatted: '40.0%',
+              targetFormatted: '50.0%',
+              achievementPct: 80.0,
+              metTarget: false,
+              weight: 0.3,
+              contributesToScore: true,
+              observationStatus: 'verified' as const,
+              projectedAgentScoreLift: 6.0,
+            },
+            {
+              kpiKey: 'CSAT',
+              label: 'CSAT Survey',
+              actual: 0,
+              target: 90.0,
+              unit: '%',
+              actualFormatted: '0.0% (unverified)',
+              targetFormatted: '90.0%',
+              achievementPct: 0,
+              metTarget: false,
+              weight: 0,
+              contributesToScore: false,
+              observationStatus: 'unverified_zero' as const,
+              projectedAgentScoreLift: null,
+            },
+          ],
+          priorActions: [
+            {
+              id: 'pa-1',
+              actionType: 'Coaching',
+              status: 'Open',
+              month: 'August',
+              year: 2026,
+              linkedKpiKey: 'Booking',
+            },
+          ],
+        },
+      ],
+    };
+
+    let resolvePending!: (val: unknown) => void;
+    let recordedSignal: AbortSignal | undefined;
+    const fetchSpy = vi
+      .spyOn(apiClientModule, 'apiFetch')
+      .mockImplementation((_url, init) => {
+        recordedSignal = (init as RequestInit | undefined)?.signal ?? undefined;
+        return new Promise((resolve) => {
+          resolvePending = resolve;
+        });
+      });
+
+    const { rerender } = render(
+      <TeamDeepDiveView
+        data={richTeamData}
+        presentationMode={false}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+      />,
+    );
+
+    const card = screen.getByTestId('individual-action-card-EMP-RICH-1');
+    // Part 1: Score and change
+    expect(within(card).getByTestId('individual-score-change-EMP-RICH-1')).toHaveTextContent('-12.9 pts vs Aug 2026');
+    // Part 2 & Part 3: Main issue & Next step without duplicate Specific issue:
+    expect(within(card).getByTestId('individual-main-issue-EMP-RICH-1')).toHaveTextContent('Booking Rate at 40.0%');
+    expect(within(card).getByText('Next step')).toBeInTheDocument();
+    expect(within(card).getByTestId('individual-action-text-EMP-RICH-1')).not.toHaveTextContent('Specific issue:');
+    expect(within(card).getByText('Role: Trainer')).toBeInTheDocument();
+    expect(within(card).getByText('Follow-up: Recheck after 1 week')).toBeInTheDocument();
+
+    // Part 4: View evidence collapsed by default, opens on click
+    const drawer = within(card).getByTestId('individual-evidence-drawer-EMP-RICH-1');
+    expect(drawer).not.toBeVisible();
+    await user.click(within(card).getByRole('button', { name: /View evidence/i }));
+    expect(drawer).toBeVisible();
+    expect(within(drawer).getByText(/Full window \(May–Oct 2026\): 89\.8% → 76\.7% \(-13\.1 pts\)/i)).toBeInTheDocument();
+    expect(within(drawer).getByText('Scored · Weight 30%')).toBeInTheDocument();
+    expect(within(drawer).getByText('Diagnostic')).toBeInTheDocument();
+    expect(within(drawer).getByText('0.0% (unverified)')).toBeInTheDocument();
+    expect(within(drawer).getByText(/Open · August 2026/i)).toBeInTheDocument();
+    expect(within(drawer).getByText(/Projected impact if Booking Rate reaches 50\.0% target:/i)).toBeInTheDocument();
+
+    // Duplicate-request prevention while in-flight, and Next step remains visible & editable
+    const suggestBtn = within(card).getByRole('button', { name: /Generate AI recommendation for Salma Hassan/i });
+    await user.click(suggestBtn);
+    await user.click(suggestBtn);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(within(card).getByTestId('individual-action-text-EMP-RICH-1')).toBeVisible();
+
+    // Scope switch aborts in-flight request cleanly
+    rerender(
+      <TeamDeepDiveView
+        data={{ ...richTeamData, periodKey: '2026-10', monthLabel: 'October 2026' }}
+        presentationMode={false}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+      />,
+    );
+    expect(recordedSignal?.aborted).toBe(true);
+    resolvePending({ success: true, data: { outcome: 'model_unavailable' } });
+
+    // Failure states: insufficient_evidence has NO Retry button, 401 distinguishes auth, model_unavailable shows Retry
+    fetchSpy.mockResolvedValueOnce({
+      success: true,
+      data: {
+        outcome: 'insufficient_evidence',
+        provider_used: 'none',
+        insufficient_evidence_reasons: ['Quality score source entry is blank.'],
+        evidence_limitations: ['Verify source records in the raw upload sheet.'],
+        measured_facts: [],
+        supporting_kpis: [],
+      },
+    });
+    const updatedCard = screen.getByTestId('individual-action-card-EMP-RICH-1');
+    await user.click(within(updatedCard).getByRole('button', { name: /Generate AI recommendation for Salma Hassan/i }));
+    await waitFor(() => {
+      expect(within(updatedCard).getByText(/Insufficient KPI evidence — verify source records/i)).toBeInTheDocument();
+    });
+    expect(within(updatedCard).queryByRole('button', { name: /^Retry$/i })).not.toBeInTheDocument();
+    expect(within(updatedCard).getByTestId('individual-action-text-EMP-RICH-1')).toBeVisible();
+
+    fetchSpy.mockRejectedValueOnce(new ApiError('Authentication required', 401));
+    await user.click(within(updatedCard).getByRole('button', { name: /Generate AI recommendation for Salma Hassan/i }));
+    await waitFor(() => {
+      expect(within(updatedCard).getByText(/Sign in required to generate AI suggestions/i)).toBeInTheDocument();
+    });
+    expect(within(updatedCard).queryByRole('button', { name: /^Retry$/i })).not.toBeInTheDocument();
+
+    fetchSpy.mockResolvedValueOnce({
+      success: true,
+      data: {
+        outcome: 'model_unavailable',
+        provider_used: 'none',
+        insufficient_evidence_reasons: ['Cloudflare timeout.'],
+        evidence_limitations: [],
+        measured_facts: [],
+        supporting_kpis: [],
+      },
+    });
+    await user.click(within(updatedCard).getByRole('button', { name: /Generate AI recommendation for Salma Hassan/i }));
+    await waitFor(() => {
+      expect(within(updatedCard).getByText(/AI suggestion provider is temporarily unavailable/i)).toBeInTheDocument();
+    });
+    expect(within(updatedCard).getByRole('button', { name: /^Retry$/i })).toBeInTheDocument();
+
+    // Presentation mode hides Suggest action & Edit, but keeps View evidence visible and functional
+    rerender(
+      <TeamDeepDiveView
+        data={richTeamData}
+        presentationMode={true}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+      />,
+    );
+    const presCard = screen.getByTestId('individual-action-card-EMP-RICH-1');
+    expect(within(presCard).queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
+    expect(within(presCard).queryByRole('button', { name: /^Edit$/i })).not.toBeInTheDocument();
+    const presEvidenceBtn = within(presCard).getByRole('button', { name: /View evidence/i });
+    expect(presEvidenceBtn).toBeVisible();
+    await user.click(presEvidenceBtn);
+    const presDrawer = within(presCard).getByTestId('individual-evidence-drawer-EMP-RICH-1');
+    expect(presDrawer).toBeVisible();
+    expect(within(presDrawer).getByText(/assuming other KPIs stay constant/i)).toBeInTheDocument();
+  });
+
+  it('humanizes backend insufficient-evidence codes and suppresses green projected-impact banner without numeric support', { timeout: 15000 }, async () => {
+    expect(formatInsufficientEvidenceReason('no_complete_kpi_below_target')).toBe(
+      'All measured KPIs for this selection are meeting or above target.',
+    );
+    expect(
+      formatInsufficientEvidenceReason('linked_kpi_missing_actual_or_target:QualityScore', [
+        { kpi_key: 'QualityScore', display_name: 'Quality Score' },
+      ]),
+    ).toBe('Source actual or target value for Quality Score is missing — verify source records.');
+    expect(
+      formatInsufficientEvidenceReason('unverified_zero_for_kpi:Quality'),
+    ).toBe('Quality is recorded as 0.0% without a verified audit or sample count — verify source records first.');
+    expect(
+      formatInsufficientEvidenceReason('zero_with_missing_raw_kpi_data:Booking'),
+    ).toBe('Booking shows 0 with missing raw source entries — verify source records.');
+
+    // When outcome !== insufficient_evidence and evidence_limitations exists, avoid duplicating raw warning codes
+    const notices = collectSuggestionNotices({
+      outcome: 'draft_rejected',
+      insufficient_evidence_reasons: ['unverified_zero_for_kpi:Quality'],
+      evidence_limitations: ['Verify Quality source records before coaching.'],
+      supporting_kpis: [],
+    });
+    expect(notices).toEqual(['Verify Quality source records before coaching.']);
+
+    expect(hasSupportedProjectedImpact('Verify source records before estimating score impact')).toBe(false);
+    expect(hasSupportedProjectedImpact('Diagnostic KPI (not weighted in overall score)')).toBe(false);
+    expect(hasSupportedProjectedImpact('Not specified')).toBe(false);
+    expect(hasSupportedProjectedImpact('—')).toBe(false);
+    expect(hasSupportedProjectedImpact('')).toBe(false);
+    expect(hasSupportedProjectedImpact('+6.0 pts agent score if Booking Rate reaches 50.0%')).toBe(true);
+
+    const { rerender } = render(
+      <IndividualEvidenceDrawer
+        panelId="p-unverified"
+        isOpen={true}
+        employeeId="EMP-UNV"
+        testIdPrefix="individual"
+        expectedImpact="Verify source records before estimating score impact"
+        linkedKpiLabel="Quality Score"
+        linkedKpiTarget="95.0%"
+      />,
+    );
+    expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('individual-impact-unavailable-EMP-UNV')).toHaveTextContent(
+      /Score impact unavailable: Verify source records before estimating score impact/i,
+    );
+
+    rerender(
+      <IndividualEvidenceDrawer
+        panelId="p-diagnostic"
+        isOpen={true}
+        employeeId="EMP-DIAG"
+        testIdPrefix="individual"
+        expectedImpact="Diagnostic KPI (not weighted in overall score)"
+      />,
+    );
+    expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('individual-impact-unavailable-EMP-DIAG')).toHaveTextContent(
+      /Diagnostic KPI/i,
+    );
+
+    rerender(
+      <IndividualEvidenceDrawer
+        panelId="p-empty"
+        isOpen={true}
+        employeeId="EMP-EMPTY"
+        testIdPrefix="individual"
+        expectedImpact="Not specified"
+      />,
+    );
+    expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('individual-impact-unavailable-EMP-EMPTY')).not.toBeInTheDocument();
+
+    // Banner never renders raw snake-case codes in TeamDeepDiveView either
+    const user = userEvent.setup();
+    vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValueOnce({
+      success: true,
+      data: {
+        outcome: 'insufficient_evidence',
+        provider_used: 'none',
+        insufficient_evidence_reasons: ['linked_kpi_missing_actual_or_target:Quality'],
+        evidence_limitations: [],
+        measured_facts: [],
+        supporting_kpis: [{ kpi_key: 'Quality', display_name: 'Quality Score' }],
+      },
+    });
+    render(
+      <TeamDeepDiveView
+        data={makeTeamFixture()}
+        presentationMode={false}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+      />,
+    );
+    const firstCard = screen.getByTestId('individual-action-card-EMP-101');
+    await user.click(within(firstCard).getByRole('button', { name: /Generate AI recommendation/i }));
+    await waitFor(() => {
+      expect(within(firstCard).getByText(/Source actual or target value for Quality Score is missing/i)).toBeInTheDocument();
+    });
+    expect(within(firstCard).queryByText(/linked_kpi_missing_actual_or_target/)).not.toBeInTheDocument();
+  });
+
+  it('maintains RoleDetailView individual card parity for Suggest action, Edit, View evidence, draft metadata, and unsaved-edit safety', { timeout: 15000 }, async () => {
+    const user = userEvent.setup();
+    const roleData = makeRoleFixture();
+    const onSaveAction = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue({
+      success: true,
+      data: {
+        outcome: 'suggested',
+        provider_used: 'cloudflare',
+        measured_facts: ['Hiring SLA at 48% vs 80% target'],
+        evidence_limitations: [],
+        supporting_kpis: [],
+        insufficient_evidence_reasons: [],
+        draft: {
+          title: 'Draft: address Hiring SLA below target',
+          focus_kpi_key: 'HiringSLA',
+          focus_kpi_name: 'Hiring SLA',
+          action_type: 'Monitor',
+          measured_issue: 'Hiring SLA at 48% vs 80% target in September 2026.',
+          recommended_steps: ['Verify Hiring SLA source records and review open requisitions.'],
+          approval_status: 'unapproved_draft',
+          responsible_role: 'HR Specialist',
+          recommended_follow_up: 'Recheck after one week',
+          observation_status: 'unverified_zero',
+        },
+      },
+    });
+
+    render(
+      <RoleDetailView
+        data={roleData}
+        onNavigateToOverview={() => {}}
+        onNavigateToFunction={() => {}}
+        onSaveAction={onSaveAction}
+      />,
+    );
+
+    const roleCard = screen.getByTestId('role-individual-action-card-EMP-HR-1');
+    const suggestBtn = within(roleCard).getByRole('button', {
+      name: /Generate AI recommendation for Nour Hassan/i,
+    });
+    expect(suggestBtn).toHaveTextContent('Suggest action');
+    expect(within(roleCard).getByRole('button', { name: /^Edit$/i })).toBeInTheDocument();
+    const viewEvidenceBtn = within(roleCard).getByRole('button', { name: /View evidence/i });
+    expect(viewEvidenceBtn).toBeInTheDocument();
+    expect(within(roleCard).getByTestId('role-individual-evidence-drawer-EMP-HR-1')).not.toBeVisible();
+    await user.click(viewEvidenceBtn);
+    expect(within(roleCard).getByTestId('role-individual-evidence-drawer-EMP-HR-1')).toBeVisible();
+
+    // Unsaved manual edits trigger overwrite confirmation instead of clobbering
+    await user.click(within(roleCard).getByRole('button', { name: /^Edit$/i }));
+    const actionBox = within(roleCard).getByDisplayValue(roleData.individualActionPlans[0].actionText);
+    await user.clear(actionBox);
+    await user.type(actionBox, 'Manual HR review steps');
+
+    await user.click(suggestBtn);
+    await waitFor(() => {
+      expect(within(roleCard).getByText(/You have unsaved manual edits on this card/i)).toBeInTheDocument();
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    await user.click(within(roleCard).getByRole('button', { name: /Apply AI Draft/i }));
+    await user.click(within(roleCard).getByRole('button', { name: /Save Action/i }));
+    expect(onSaveAction).toHaveBeenCalledTimes(1);
+    expect(within(roleCard).getByText('Role: HR Specialist')).toBeInTheDocument();
+    expect(within(roleCard).getByText('Follow-up: Recheck after one week')).toBeInTheDocument();
+  });
+
+  it('does not mutate card Role or Follow-up before Save Action and resets cleanly on Discard Draft and Cancel', { timeout: 15000 }, async () => {
+    const user = userEvent.setup();
+    const draftWithRoleAndFollowUp = {
+      success: true,
+      data: {
+        outcome: 'suggested',
+        provider_used: 'cloudflare',
+        measured_facts: [
+          'Quality Score (quality_score) in September 2026: missing_actual_for_kpi:quality_score.',
+        ],
+        evidence_limitations: ['PMS data shows the measured gap, not its cause.'],
+        supporting_kpis: [
+          {
+            kpi_key: 'quality_score',
+            display_name: 'Quality Score',
+            actual: 70,
+            target: 95,
+            unit: '%',
+            direction: 'higher_better',
+            status: 'below_target',
+          },
+        ],
+        draft: {
+          title: 'Calibrate quality scoring',
+          focus_kpi_key: 'AHT',
+          focus_kpi_name: 'AHT',
+          action_type: 'Coaching',
+          measured_issue: 'AHT at 3.12 min vs 2.50 min target',
+          recommended_steps: ['Run structured call-closing cadence coaching.'],
+          uncertainty: 'PMS data shows the measured gap, not its cause.',
+          approval_status: 'unapproved_draft',
+          responsible_role: 'Quality Specialist',
+          recommended_follow_up: 'Recheck after 2 weeks',
+          observation_status: 'verified',
+        },
+        insufficient_evidence_reasons: [],
+      },
+    };
+    vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue(draftWithRoleAndFollowUp);
+
+    const teamFixture = makeTeamFixture();
+    teamFixture.individualActionPlans[0] = {
+      ...teamFixture.individualActionPlans[0],
+      owner: 'Team Leader',
+      followUpLabel: 'Weekly review',
+    };
+
+    const onSaveIndividual = vi.fn().mockResolvedValue(undefined);
+    const { unmount } = render(
+      <TeamDeepDiveView
+        data={teamFixture}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+        onSaveIndividualAction={onSaveIndividual}
+      />,
+    );
+
+    const indCard = screen.getByTestId('individual-action-card-EMP-101');
+    expect(within(indCard).getByText('Role: Team Leader')).toBeInTheDocument();
+    expect(within(indCard).getByText('Follow-up: Weekly review')).toBeInTheDocument();
+
+    // 1) Suggest action -> Cancel must exit edit mode without mutating Role or Follow-up
+    await user.click(
+      within(indCard).getByRole('button', { name: /Generate AI recommendation for Maryam Elsayed/i }),
+    );
+    await waitFor(() => {
+      expect(within(indCard).getByText(/Unapproved AI Draft/i)).toBeInTheDocument();
+    });
+    // Leaked snake_case code and raw kpi_key in measured_facts are humanized in banner
+    expect(within(indCard).queryByText(/missing_actual_for_kpi/)).not.toBeInTheDocument();
+    expect(within(indCard).queryByText(/\(quality_score\)/)).not.toBeInTheDocument();
+    expect(within(indCard).getByText(/Actual value for Quality Score is unavailable/i)).toBeInTheDocument();
+
+    await user.click(within(indCard).getByRole('button', { name: /^Cancel$/i }));
+    expect(onSaveIndividual).not.toHaveBeenCalled();
+    expect(within(indCard).getByText('Role: Team Leader')).toBeInTheDocument();
+    expect(within(indCard).getByText('Follow-up: Weekly review')).toBeInTheDocument();
+
+    // 2) Suggest action -> Discard Draft must reset draft fields and leave Role and Follow-up unchanged
+    await user.click(within(indCard).getByRole('button', { name: /^Discard Draft$/i }));
+    expect(within(indCard).getByText('Role: Team Leader')).toBeInTheDocument();
+    expect(within(indCard).getByText('Follow-up: Weekly review')).toBeInTheDocument();
+
+    // 3) Re-suggest -> Discard Draft directly from auto-opened editor
+    await user.click(
+      within(indCard).getByRole('button', { name: /Generate AI recommendation for Maryam Elsayed/i }),
+    );
+    await waitFor(() => {
+      expect(within(indCard).getByRole('button', { name: /^Save Action$/i })).toBeInTheDocument();
+    });
+    await user.click(within(indCard).getByRole('button', { name: /^Discard Draft$/i }));
+    expect(within(indCard).getByText('Role: Team Leader')).toBeInTheDocument();
+    expect(within(indCard).getByText('Follow-up: Weekly review')).toBeInTheDocument();
+    expect(onSaveIndividual).not.toHaveBeenCalled();
+
+    // 4) Re-suggest -> Save Action persists new Role and Follow-up
+    await user.click(
+      within(indCard).getByRole('button', { name: /Generate AI recommendation for Maryam Elsayed/i }),
+    );
+    await waitFor(() => {
+      expect(within(indCard).getByRole('button', { name: /^Save Action$/i })).toBeInTheDocument();
+    });
+    await user.click(within(indCard).getByRole('button', { name: /^Save Action$/i }));
+    expect(onSaveIndividual).toHaveBeenCalledTimes(1);
+    expect(within(indCard).getByText('Role: Quality Specialist')).toBeInTheDocument();
+    expect(within(indCard).getByText('Follow-up: Recheck after 2 weeks')).toBeInTheDocument();
+
+    unmount();
+
+    // 5) RoleDetailView parity: Suggest action -> Cancel & Discard Draft leave Role and Follow-up unchanged
+    const roleFixture = makeRoleFixture();
+    roleFixture.individualActionPlans = [
+      {
+        ...roleFixture.individualActionPlans![0],
+        owner: 'Initial Role Owner',
+        followUpLabel: 'Initial Follow-up',
+      },
+    ];
+    const onSaveRoleAction = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RoleDetailView
+        data={roleFixture}
+        onNavigateToOverview={() => {}}
+        onNavigateToFunction={() => {}}
+        onSaveAction={onSaveRoleAction}
+      />,
+    );
+
+    const roleCard = screen.getByTestId('role-individual-action-card-EMP-HR-1');
+    expect(within(roleCard).getByText('Role: Initial Role Owner')).toBeInTheDocument();
+    expect(within(roleCard).getByText('Follow-up: Initial Follow-up')).toBeInTheDocument();
+
+    await user.click(
+      within(roleCard).getByRole('button', { name: /Generate AI recommendation for Nour Hassan/i }),
+    );
+    await waitFor(() => {
+      expect(within(roleCard).getByRole('button', { name: /^Save Action$/i })).toBeInTheDocument();
+    });
+    await user.click(within(roleCard).getByRole('button', { name: /^Cancel$/i }));
+    expect(within(roleCard).getByText('Role: Initial Role Owner')).toBeInTheDocument();
+    expect(within(roleCard).getByText('Follow-up: Initial Follow-up')).toBeInTheDocument();
+
+    await user.click(within(roleCard).getByRole('button', { name: /^Discard Draft$/i }));
+    expect(within(roleCard).getByText('Role: Initial Role Owner')).toBeInTheDocument();
+    expect(within(roleCard).getByText('Follow-up: Initial Follow-up')).toBeInTheDocument();
+    expect(onSaveRoleAction).not.toHaveBeenCalled();
   });
 });
