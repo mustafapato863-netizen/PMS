@@ -8,7 +8,7 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 46. Test functions or `it` blocks: 579.
+Test files: 46. Test functions or `it` blocks: 584.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
@@ -30,9 +30,9 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 14 | not applicable |
 | `Backend/tests/test_ai_conversation_claim_ledger_paired.py` | test | `live-model`, `mocked` | 13 | partial |
-| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 44 | partial |
+| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 46 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter_unified.py` | test | `mocked` | 7 | partial |
-| `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 11 | not applicable |
+| `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 14 | not applicable |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
 | `Backend/tests/test_ai_data_access.py` | test | `synthetic` | 27 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 20 | partial |

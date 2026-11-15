@@ -39,6 +39,7 @@ from services.corrective_action_service import CorrectiveActionService
 from services.dashboard_record_service import DashboardRecordService
 from utils.performance_levels import normalize_performance_level
 from utils.report_scope import functions_for_team, user_can_access_team_level
+from utils.team_identity import logical_team_name
 
 __all__ = [
     "CorrectiveActionEvidenceService",
@@ -50,6 +51,55 @@ MONTH_MAP = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
 }
+
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _trailing_periods(month_name: str, year_value: int, count: int = 6) -> list[tuple[str, int]]:
+    """Return chronological ``(month, year)`` pairs ending at ``(month_name, year_value)``."""
+    month_idx = MONTH_MAP.get(str(month_name).strip().casefold())
+    if not month_idx or count <= 1:
+        return [(month_name, year_value)]
+    total = min(int(count), 12)
+    periods: list[tuple[str, int]] = []
+    for offset in range(total - 1, -1, -1):
+        zero_based = (year_value * 12 + (month_idx - 1)) - offset
+        y, m0 = divmod(zero_based, 12)
+        if 2000 <= y <= 2100:
+            periods.append((_MONTH_NAMES[m0], y))
+    return periods or [(month_name, year_value)]
+
+
+def _record_score(record: Any) -> float | None:
+    direct = _float_or_none(_entry_value(record, "score"))
+    if direct is not None:
+        return direct
+    evaluation = _entry_value(record, "evaluation")
+    if evaluation is not None:
+        nested = _float_or_none(_entry_value(evaluation, "score"))
+        if nested is not None:
+            return nested
+        return _float_or_none(_entry_value(evaluation, "total_score"))
+    return None
+
+
+def _kpi_entry_status(
+    actual: float | None,
+    target: float | None,
+    direction: Any,
+    achievement_percent: float | None,
+) -> str:
+    dir_str = str(direction or "").strip()
+    if actual is not None and target is not None and dir_str in {"higher_better", "lower_better"}:
+        if dir_str == "higher_better":
+            return "below_target" if actual < target else "at_or_above_target"
+        return "below_target" if actual > target else "at_or_above_target"
+    if actual is not None and target is not None and achievement_percent is not None:
+        return "below_target" if achievement_percent < 100.0 else "at_or_above_target"
+    return "unknown"
 
 
 def _parse_timestamp(val: Any) -> tuple[int | None, int | None, bool]:
@@ -338,20 +388,38 @@ class CorrectiveActionEvidenceService:
         )
 
         employee: Employee | None = None
+        resolved_employee_id: str | None = str(employee_id).strip() if employee_id else None
         subject = "team"
-        if employee_id:
+        if resolved_employee_id:
             subject = "employee"
             employee = (
                 self.db.query(Employee)
-                .filter(Employee.employee_id == str(employee_id).strip())
+                .filter(Employee.employee_id == resolved_employee_id)
                 .one_or_none()
             )
+            if employee is None and resolved_employee_id.upper().startswith(("SGHD", "SGHA")):
+                suffix = resolved_employee_id[4:]
+                employee = (
+                    self.db.query(Employee)
+                    .filter(Employee.employee_id == suffix)
+                    .one_or_none()
+                )
             if employee is None:
                 raise ValueError(f"Unknown employee: {employee_id}")
             # Authorisation first: raises PermissionError outside the caller's scope.
-            self.corrective_action_service.ensure_employee_scope(str(employee_id).strip(), scope)
-            employee_team = getattr(employee.team, "display_name", None) or getattr(employee.team, "name", None)
-            is_current_team = bool(employee_team and str(employee_team).strip().casefold() == team_name.casefold())
+            self.corrective_action_service.ensure_employee_scope(resolved_employee_id, scope)
+            resolved_employee_id = str(employee.employee_id).strip()
+            emp_team_obj = getattr(employee, "team", None)
+            employee_teams = {
+                str(val).strip().casefold()
+                for val in (
+                    getattr(emp_team_obj, "display_name", None),
+                    getattr(emp_team_obj, "name", None),
+                    logical_team_name(emp_team_obj) if emp_team_obj is not None else None,
+                )
+                if val and str(val).strip()
+            }
+            is_current_team = team_name.casefold() in employee_teams
             if not is_current_team:
                 # Check if employee had a historical record in the requested team for that period (transfers)
                 historical_query = (
@@ -361,7 +429,11 @@ class CorrectiveActionEvidenceService:
                         PerformanceRecord.employee_id == employee.id,
                         PerformanceRecord.month == month_name,
                         PerformanceRecord.year == year_value,
-                        (Team.display_name.ilike(team_name) | Team.name.ilike(team_name)),
+                        (
+                            Team.display_name.ilike(team_name)
+                            | Team.name.ilike(team_name)
+                            | Team.db_name.ilike(team_name)
+                        ),
                     )
                 )
 
@@ -387,22 +459,21 @@ class CorrectiveActionEvidenceService:
         records = self.dashboard_service.list_records(
             team=team_name,
             month=month_name,
-            employee_id=str(employee_id).strip() if employee_id else None,
+            employee_id=resolved_employee_id,
             performance_level=level,
             year=year_value,
             scope=scope,
         )
         records = list(records or [])
-        if employee_id:
+        if resolved_employee_id:
             records = [
                 record
                 for record in records
-                if str(_entry_value(record, "employee_id") or "").strip()
-                == str(employee_id).strip()
+                if str(_entry_value(record, "employee_id") or "").strip() == resolved_employee_id
             ]
 
         # Verify historical branch and region of actual scoped records (including transferred employees)
-        if employee_id and records:
+        if resolved_employee_id and records:
             for rec in records:
                 rec_branch = _entry_value(rec, "branch_key") or getattr(rec, "branch_key", None)
                 if is_branch_restricted and rec_branch and str(rec_branch).strip().casefold() not in user_branches:
@@ -414,7 +485,7 @@ class CorrectiveActionEvidenceService:
                     raise PermissionError(
                         "The employee's historical record for this period belongs to a region outside your authorized scope"
                     )
-        elif employee_id and not records and employee is not None:
+        elif resolved_employee_id and not records and employee is not None:
             # Check if record exists in DB for this period but was outside user's branch/region
             out_of_scope_rec = (
                 self.db.query(PerformanceRecord)
@@ -525,9 +596,29 @@ class CorrectiveActionEvidenceService:
             employee_name = None
             prior_actions = self._prior_actions_for_team(team_name, scope, month_name, year_value)
 
+        trend_summary = (
+            self._build_trend_summary(
+                subject=subject,
+                team_name=team_name,
+                month_name=month_name,
+                year_value=year_value,
+                level=level,
+                resolved_employee_id=resolved_employee_id,
+                current_records=records,
+                current_kpi_items=kpi_items,
+                scope=scope,
+                is_branch_restricted=is_branch_restricted,
+                user_branches=user_branches,
+                user_regions=user_regions,
+                has_unrestricted_scope=has_unrestricted_scope,
+            )
+            if records
+            else {}
+        )
+
         return {
             "subject": subject,
-            "employee_id": str(employee_id).strip() if employee_id else None,
+            "employee_id": resolved_employee_id if resolved_employee_id else None,
             "employee_name": employee_name,
             "country": country,
             "function": (functions_for_team(team_name) or [None])[0],
@@ -538,9 +629,264 @@ class CorrectiveActionEvidenceService:
             "linked_kpi_key": linked_key,
             "scoring_basis": scoring_basis,
             "kpi_items": kpi_items,
+            "trend_summary": trend_summary,
             "prior_corrective_actions": prior_actions,
             "insufficient_evidence_reasons": sorted(set(reasons)),
             "read_only": True,
+        }
+
+    def _build_trend_summary(
+        self,
+        *,
+        subject: str,
+        team_name: str,
+        month_name: str,
+        year_value: int,
+        level: str,
+        resolved_employee_id: str | None,
+        current_records: list[Any],
+        current_kpi_items: list[dict[str, Any]],
+        scope: dict,
+        is_branch_restricted: bool,
+        user_branches: list[str],
+        user_regions: list[str],
+        has_unrestricted_scope: bool,
+    ) -> dict[str, Any]:
+        """Compute bounded trailing 6-month score & KPI trends (strictly read-only, ``<=`` period)."""
+        window = _trailing_periods(month_name, year_value, 6)
+        prior_periods = window[:-1]
+        prior_by_key: dict[tuple[str, int], list[Any]] = {(m.casefold(), y): [] for m, y in prior_periods}
+
+        if prior_periods:
+            try:
+                raw_prior = self.dashboard_service.list_records(
+                    team=team_name,
+                    employee_id=resolved_employee_id,
+                    performance_level=level,
+                    periods=[(y, m) for m, y in prior_periods],
+                    scope=scope,
+                )
+            except TypeError:
+                raw_prior = []
+                for m, y in prior_periods:
+                    raw_prior.extend(
+                        self.dashboard_service.list_records(
+                            team=team_name,
+                            month=m,
+                            employee_id=resolved_employee_id,
+                            performance_level=level,
+                            year=y,
+                            scope=scope,
+                        )
+                        or []
+                    )
+
+            for rec in raw_prior or []:
+                if resolved_employee_id and str(_entry_value(rec, "employee_id") or "").strip() != resolved_employee_id:
+                    continue
+                rec_branch = _entry_value(rec, "branch_key") or getattr(rec, "branch_key", None)
+                if is_branch_restricted:
+                    if not rec_branch or str(rec_branch).strip().casefold() not in user_branches:
+                        continue
+                rec_reg = _entry_value(rec, "region") or getattr(rec, "region", None)
+                if user_regions and not has_unrestricted_scope:
+                    if not rec_reg or str(rec_reg).strip().casefold() not in user_regions:
+                        continue
+                rec_month = str(_entry_value(rec, "month") or "").strip().casefold()
+                try:
+                    rec_year = int(_entry_value(rec, "year") or 0)
+                except (TypeError, ValueError):
+                    continue
+                bucket = prior_by_key.get((rec_month, rec_year))
+                if bucket is not None:
+                    bucket.append(rec)
+
+        period_buckets: list[tuple[str, int, list[Any]]] = [
+            (m, y, prior_by_key[(m.casefold(), y)]) for m, y in prior_periods
+        ]
+        period_buckets.append((month_name, year_value, list(current_records)))
+
+        period_scores: list[tuple[str, int, float | None]] = []
+        measured_periods = 0
+        for m, y, recs in period_buckets:
+            if not recs:
+                continue
+            measured_periods += 1
+            scores = [s for rec in recs if (s := _record_score(rec)) is not None]
+            mean_score = round(sum(scores) / len(scores), 1) if scores else None
+            period_scores.append((m, y, mean_score))
+
+        current_score = period_scores[-1][2] if period_scores else None
+        prior_with_scores = [s for _, _, s in period_scores[:-1] if s is not None]
+        previous_score = prior_with_scores[-1] if prior_with_scores else None
+        score_delta = (
+            round(current_score - previous_score, 1)
+            if current_score is not None and previous_score is not None
+            else None
+        )
+        if score_delta is None:
+            score_direction = "single_period"
+        elif score_delta <= -1.0:
+            score_direction = "declining"
+        elif score_delta >= 1.0:
+            score_direction = "improving"
+        else:
+            score_direction = "stable"
+
+        kpi_trends: dict[str, Any] = {}
+        weak_kpis: list[dict[str, Any]] = []
+
+        if subject == "employee":
+            history_by_kpi: dict[str, list[dict[str, Any]]] = {}
+            for m, y, recs in period_buckets:
+                if not recs:
+                    continue
+                rec = recs[0]
+                for entry in _entry_value(rec, "kpi_values") or []:
+                    key = _entry_value(entry, "kpi_key")
+                    if not key:
+                        continue
+                    key_str = str(key)
+                    actual = _float_or_none(_entry_value(entry, "actual_value"))
+                    target = _float_or_none(_entry_value(entry, "target_value"))
+                    ratio = _float_or_none(_entry_value(entry, "achievement_ratio"))
+                    ach_pct = ratio * 100.0 if ratio is not None else None
+                    direction_val = _entry_value(entry, "direction")
+                    history_by_kpi.setdefault(key_str, []).append(
+                        {
+                            "is_current": m.casefold() == month_name.casefold() and y == year_value,
+                            "actual": actual,
+                            "target": target,
+                            "direction": direction_val,
+                            "achievement_percent": ach_pct,
+                            "status": _kpi_entry_status(actual, target, direction_val, ach_pct),
+                        }
+                    )
+
+            for key_str, points in history_by_kpi.items():
+                measured_pts = [p for p in points if p["actual"] is not None]
+                prior_pts = [p for p in measured_pts if not p["is_current"]]
+                curr_pts = [p for p in measured_pts if p["is_current"]]
+                curr_pt = curr_pts[-1] if curr_pts else None
+                prev_pt = prior_pts[-1] if prior_pts else None
+                months_below = sum(1 for p in measured_pts if p["status"] == "below_target")
+                dir_str = str((curr_pt or {}).get("direction") or (prev_pt or {}).get("direction") or "").strip()
+                if curr_pt is None or prev_pt is None or curr_pt["actual"] is None or prev_pt["actual"] is None:
+                    trend_dir = "single_period"
+                elif dir_str == "lower_better":
+                    if curr_pt["actual"] > prev_pt["actual"] + 1e-6:
+                        trend_dir = "worsening"
+                    elif curr_pt["actual"] < prev_pt["actual"] - 1e-6:
+                        trend_dir = "improving"
+                    else:
+                        trend_dir = "unchanged"
+                else:
+                    if curr_pt["actual"] < prev_pt["actual"] - 1e-6:
+                        trend_dir = "worsening"
+                    elif curr_pt["actual"] > prev_pt["actual"] + 1e-6:
+                        trend_dir = "improving"
+                    else:
+                        trend_dir = "unchanged"
+
+                kpi_trends[key_str] = {
+                    "measured_periods": len(measured_pts),
+                    "months_below_target": months_below,
+                    "previous_actual": prev_pt["actual"] if prev_pt else None,
+                    "direction": trend_dir,
+                }
+
+            for item in current_kpi_items:
+                status = _kpi_entry_status(
+                    item.get("actual"),
+                    item.get("target"),
+                    item.get("direction"),
+                    item.get("achievement_percent"),
+                )
+                if status != "below_target":
+                    continue
+                t_info = kpi_trends.get(item["kpi_key"], {})
+                weak_kpis.append(
+                    {
+                        "kpi_key": item["kpi_key"],
+                        "display_name": item.get("display_name") or item["kpi_key"],
+                        "actual": item.get("actual"),
+                        "target": item.get("target"),
+                        "unit": item.get("unit"),
+                        "direction": item.get("direction"),
+                        "achievement_percent": item.get("achievement_percent"),
+                        "trend_direction": t_info.get("direction", "single_period"),
+                        "previous_actual": t_info.get("previous_actual"),
+                        "months_below_target": t_info.get("months_below_target", 1),
+                        "measured_periods": t_info.get("measured_periods", 1),
+                    }
+                )
+            weak_kpis.sort(
+                key=lambda k: (
+                    k["achievement_percent"] if k["achievement_percent"] is not None else float("inf"),
+                    str(k["kpi_key"]),
+                )
+            )
+        else:
+            team_history_by_kpi: dict[str, list[dict[str, Any]]] = {}
+            for m, y, recs in period_buckets:
+                if not recs:
+                    continue
+                per_kpi_statuses: dict[str, list[str]] = {}
+                for rec in recs:
+                    for entry in _entry_value(rec, "kpi_values") or []:
+                        key = _entry_value(entry, "kpi_key")
+                        if not key:
+                            continue
+                        actual = _float_or_none(_entry_value(entry, "actual_value"))
+                        target = _float_or_none(_entry_value(entry, "target_value"))
+                        ratio = _float_or_none(_entry_value(entry, "achievement_ratio"))
+                        ach_pct = ratio * 100.0 if ratio is not None else None
+                        status = _kpi_entry_status(actual, target, _entry_value(entry, "direction"), ach_pct)
+                        if status != "unknown":
+                            per_kpi_statuses.setdefault(str(key), []).append(status)
+                for key_str, statuses in per_kpi_statuses.items():
+                    below_count = sum(1 for s in statuses if s == "below_target")
+                    team_history_by_kpi.setdefault(key_str, []).append(
+                        {
+                            "is_current": m.casefold() == month_name.casefold() and y == year_value,
+                            "members_below": below_count,
+                            "members_with_data": len(statuses),
+                        }
+                    )
+
+            for key_str, pts in team_history_by_kpi.items():
+                prior_pts = [p for p in pts if not p["is_current"] and p["members_with_data"] > 0]
+                curr_pts = [p for p in pts if p["is_current"] and p["members_with_data"] > 0]
+                curr_pt = curr_pts[-1] if curr_pts else None
+                prev_pt = prior_pts[-1] if prior_pts else None
+                months_with_gap = sum(1 for p in pts if p["members_below"] > 0)
+                if curr_pt and prev_pt:
+                    curr_share = curr_pt["members_below"] / curr_pt["members_with_data"]
+                    prev_share = prev_pt["members_below"] / prev_pt["members_with_data"]
+                    if curr_share - prev_share > 0.02:
+                        trend_dir = "worsening"
+                    elif curr_share - prev_share < -0.02:
+                        trend_dir = "improving"
+                    else:
+                        trend_dir = "unchanged"
+                else:
+                    trend_dir = "single_period"
+                kpi_trends[key_str] = {
+                    "measured_periods": len(pts),
+                    "months_with_gap": months_with_gap,
+                    "previous_members_below": prev_pt["members_below"] if prev_pt else None,
+                    "previous_members_with_data": prev_pt["members_with_data"] if prev_pt else None,
+                    "direction": trend_dir,
+                }
+
+        return {
+            "measured_periods": measured_periods,
+            "current_score": current_score,
+            "previous_score": previous_score,
+            "score_delta": score_delta,
+            "score_direction": score_direction,
+            "kpi_trends": kpi_trends,
+            "weak_kpis": weak_kpis,
         }
 
     def _prior_actions_for_employee(

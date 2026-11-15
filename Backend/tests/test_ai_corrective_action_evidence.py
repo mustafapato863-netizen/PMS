@@ -513,3 +513,349 @@ def test_team_subject_reports_every_member_without_picking_a_winner():
     assert bundle["country"] == "EGY"
     assert {item["employee_id"] for item in bundle["kpi_items"]} == {"EMP-1", "EMP-2"}
     assert "winner" not in json.dumps(bundle)
+
+
+def _add_month_record(
+    db,
+    *,
+    employee: Employee,
+    team: Team,
+    month: str,
+    year: int,
+    score: float,
+    kpis: list[tuple[str, float | None, float | None, float | None]],
+    region: str = "EGY",
+):
+    rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        team_id=team.id,
+        month=month,
+        year=year,
+        performance_level="Employee",
+        position_name="Agent",
+        region=region,
+        score=score,
+        grade="C" if score < 85 else "B",
+        status="Below" if score < 85 else "Meets",
+    )
+    db.add(rec)
+    db.flush()
+    w = 1.0 / max(1, len(kpis))
+    for key, actual, target, ratio in kpis:
+        db.add(
+            KPIValue(
+                record_id=rec.id,
+                record_year=year,
+                kpi_key=key,
+                actual_value=actual,
+                target_value=target,
+                achievement_ratio=ratio,
+                weight_applied=w,
+                contribution=(ratio * w) if ratio is not None else None,
+            )
+        )
+    db.flush()
+    return rec
+
+
+def test_employee_multimonth_trend_summary_directions_and_weak_kpis_ranking():
+    db = _make_db()
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add(team)
+    db.flush()
+    emp_dec = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-DEC",
+        name="Declining Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    emp_imp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-IMP",
+        name="Improving Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    emp_stb = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-STB",
+        name="Stable Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([emp_dec, emp_imp, emp_stb])
+    db.flush()
+
+    # Declining: July 86.0% -> Aug 79.0% -> Sep 62.5%; two weak KPIs (upsell 50% ach worse than bookings 75% ach)
+    for m, bk, up in [
+        ("July", 38.0, 7.7),
+        ("August", 34.0, 7.3),
+        ("September", 30.0, 5.0),
+    ]:
+        sc = round(((bk / 40.0) * 0.5 + (up / 10.0) * 0.5) * 100.0, 2)
+        _add_month_record(
+            db,
+            employee=emp_dec,
+            team=team,
+            month=m,
+            year=2026,
+            score=sc,
+            kpis=[
+                ("bookings_count", bk, 40.0, bk / 40.0),
+                ("upsell", up, 10.0, up / 10.0),
+            ],
+        )
+
+    # Improving: Aug 70.0% -> Sep 85.0%
+    for m, bk in [("August", 28.0), ("September", 34.0)]:
+        _add_month_record(
+            db,
+            employee=emp_imp,
+            team=team,
+            month=m,
+            year=2026,
+            score=round((bk / 40.0) * 100.0, 2),
+            kpis=[("bookings_count", bk, 40.0, bk / 40.0)],
+        )
+
+    # Stable: Aug 80.0% -> Sep 80.2%
+    for m, bk in [("August", 32.0), ("September", 32.08)]:
+        _add_month_record(
+            db,
+            employee=emp_stb,
+            team=team,
+            month=m,
+            year=2026,
+            score=round((bk / 40.0) * 100.0, 2),
+            kpis=[("bookings_count", bk, 40.0, bk / 40.0)],
+        )
+    db.commit()
+
+    dec_bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-DEC", team="Inbound", month="September", year=2026
+    )
+    dec_trend = dec_bundle["trend_summary"]
+    assert dec_trend["measured_periods"] == 3
+    assert dec_trend["current_score"] == 62.5
+    assert dec_trend["previous_score"] == 79.0
+    assert dec_trend["score_delta"] == pytest.approx(-16.5)
+    assert dec_trend["score_direction"] == "declining"
+    assert [k["kpi_key"] for k in dec_trend["weak_kpis"]] == ["upsell", "bookings_count"]
+    assert dec_trend["weak_kpis"][0]["months_below_target"] == 3
+
+    imp_bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-IMP", team="Inbound", month="September", year=2026
+    )
+    assert imp_bundle["trend_summary"]["score_direction"] == "improving"
+
+    stb_bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-STB", team="Inbound", month="September", year=2026
+    )
+    assert stb_bundle["trend_summary"]["score_direction"] == "stable"
+
+    single_bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-DEC", team="Inbound", month="July", year=2026
+    )
+    assert single_bundle["trend_summary"]["measured_periods"] == 1
+    assert single_bundle["trend_summary"]["score_direction"] == "single_period"
+
+
+def test_trend_summary_preserves_none_vs_zero_and_blocks_future_leakage():
+    db = _make_db()
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add(team)
+    db.flush()
+    emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-GAP",
+        name="Gap Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    emp_noprev = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-NOPREV",
+        name="NoPrev Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([emp, emp_noprev])
+    db.flush()
+
+    # August has genuine 0.0 upsell (and no bookings_count); September has bookings_count=0.0; October is future
+    _add_month_record(
+        db,
+        employee=emp,
+        team=team,
+        month="August",
+        year=2026,
+        score=0.0,
+        kpis=[("upsell", 0.0, 10.0, 0.0)],
+    )
+    _add_month_record(
+        db,
+        employee=emp,
+        team=team,
+        month="September",
+        year=2026,
+        score=10.0,
+        kpis=[("upsell", 2.0, 10.0, 0.2), ("bookings_count", 0.0, 40.0, 0.0)],
+    )
+    _add_month_record(
+        db,
+        employee=emp,
+        team=team,
+        month="October",
+        year=2026,
+        score=99.0,
+        kpis=[("upsell", 15.0, 10.0, 1.0)],
+    )
+    # EMP-NOPREV: only September (no prior month record) -> previous_score MUST be None, never 0
+    _add_month_record(
+        db,
+        employee=emp_noprev,
+        team=team,
+        month="September",
+        year=2026,
+        score=70.0,
+        kpis=[("bookings_count", 28.0, 40.0, 0.7)],
+    )
+    db.commit()
+
+    bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-GAP", team="Inbound", month="September", year=2026
+    )
+    trend = bundle["trend_summary"]
+    assert trend["current_score"] == 10.0
+    assert trend["previous_score"] == 0.0
+    assert trend["measured_periods"] == 2  # October 99.0 must NOT leak into September
+    assert trend["kpi_trends"]["upsell"]["previous_actual"] == 0.0  # genuine 0.0 preserved
+    assert trend["kpi_trends"]["bookings_count"]["previous_actual"] is None
+    assert any(k["kpi_key"] == "bookings_count" and k["actual"] == 0.0 for k in trend["weak_kpis"])
+
+    noprev_bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-NOPREV", team="Inbound", month="September", year=2026
+    )
+    assert noprev_bundle["trend_summary"]["current_score"] == 70.0
+    assert noprev_bundle["trend_summary"]["previous_score"] is None
+    assert noprev_bundle["trend_summary"]["score_delta"] is None
+
+
+def test_trend_summary_respects_region_isolation_for_shared_team_name():
+    db = _make_db()
+    egy_team = Team(
+        id=uuid.uuid4(),
+        name="Re-Submission EGY",
+        db_name="Re-Submission EGY",
+        display_name="Re-Submission EGY",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    uae_team = Team(
+        id=uuid.uuid4(),
+        name="Re-Submission",
+        db_name="Re-Submission",
+        display_name="Re-Submission",
+        region="UAE",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add_all([egy_team, uae_team])
+    db.flush()
+    egy_emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EGY-1",
+        name="Egypt Agent",
+        team_id=egy_team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    uae_emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="UAE-1",
+        name="UAE Agent",
+        team_id=uae_team.id,
+        region="UAE",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([egy_emp, uae_emp])
+    db.flush()
+
+    _add_month_record(
+        db,
+        employee=egy_emp,
+        team=egy_team,
+        month="August",
+        year=2026,
+        score=50.0,
+        kpis=[("bookings_count", 20.0, 40.0, 0.5)],
+        region="EGY",
+    )
+    _add_month_record(
+        db,
+        employee=egy_emp,
+        team=egy_team,
+        month="September",
+        year=2026,
+        score=55.0,
+        kpis=[("bookings_count", 22.0, 40.0, 0.55)],
+        region="EGY",
+    )
+    _add_month_record(
+        db,
+        employee=uae_emp,
+        team=uae_team,
+        month="September",
+        year=2026,
+        score=87.5,
+        kpis=[("bookings_count", 35.0, 40.0, 0.875)],
+        region="UAE",
+    )
+    db.commit()
+
+    uae_scope = {"role": "Regional Manager", "accessible_regions": ["UAE"], "accessible_teams": ["Re-Submission"]}
+    uae_bundle = build_corrective_action_evidence(
+        db, user_scope=uae_scope, team="Re-Submission", month="September", year=2026
+    )
+    assert uae_bundle["country"] == "UAE"
+    assert {item["employee_id"] for item in uae_bundle["kpi_items"]} == {"UAE-1"}
+    assert uae_bundle["trend_summary"]["measured_periods"] == 1
+    assert uae_bundle["trend_summary"]["current_score"] == 87.5

@@ -1,4 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ApiError } from '../../../lib/apiClient';
+import {
+  AiRecommendationBanner,
+  AiRecommendIconButton,
+} from './ActionPlanAiAssistant';
+import {
+  parseMonthYearFromLabel,
+  requestActionPlanAiSuggestion,
+  type ActionPlanAiError,
+  type AiCorrectiveActionSuggestionPayload,
+} from './actionPlanAiUtils';
 import {
   AlertCircle,
   AlertTriangle,
@@ -73,11 +84,41 @@ export default function RoleDetailView({
   // 1-on-1 Individual Action Plan inline editing state
   const [editingIndividualId, setEditingIndividualId] = useState<string | null>(null);
   const [draftIndAction, setDraftIndAction] = useState('');
+  const [draftIndMainIssue, setDraftIndMainIssue] = useState('');
   const [draftIndOwner, setDraftIndOwner] = useState('');
   const [draftIndImpact, setDraftIndImpact] = useState('');
   const [individualOverrides, setIndividualOverrides] = useState<
     Record<string, Partial<RoleIndividualActionPlan>>
   >({});
+
+  // Role-level Assigned Action inline editing state
+  const [editingRoleActionId, setEditingRoleActionId] = useState<string | null>(null);
+  const [draftRoleDesc, setDraftRoleDesc] = useState('');
+  const [draftRoleOwner, setDraftRoleOwner] = useState('');
+  const [draftRoleStatus, setDraftRoleStatus] = useState<RoleActionDraft['status']>('Open');
+  const [draftRoleDueDate, setDraftRoleDueDate] = useState('');
+  const [draftRoleImpact, setDraftRoleImpact] = useState('');
+  const [roleActionOverrides, setRoleActionOverrides] = useState<
+    Record<string, Partial<RoleAssignedAction>>
+  >({});
+
+  // AI Draft state keyed by 'ind:<id>', 'role-act:<id>', or 'role-form'
+  type RoleAiState = {
+    loading: boolean;
+    payload: AiCorrectiveActionSuggestionPayload | null;
+    error: ActionPlanAiError | null;
+    needsOverwriteConfirm: boolean;
+    draftApplied: boolean;
+  };
+  const [aiStateByTarget, setAiStateByTarget] = useState<Record<string, RoleAiState>>({});
+  const abortControllersRef = useRef<Record<string, AbortController>>({});
+
+  useEffect(() => {
+    const controllers = abortControllersRef.current;
+    return () => {
+      Object.values(controllers).forEach((ctrl) => ctrl.abort());
+    };
+  }, []);
 
   const selected = useMemo(
     () => data.kpis.find((kpi) => kpi.id === selectedId) ?? data.kpis[0],
@@ -124,36 +165,385 @@ export default function RoleDetailView({
     }));
   }, [data.individualActionPlans, visibleMembers, individualOverrides]);
 
+  const { month: activeMonthName, year: activeYearNum } = useMemo(
+    () => parseMonthYearFromLabel(data.monthLabel, data.periodKey),
+    [data.monthLabel, data.periodKey],
+  );
+
   const startEditIndividual = (card: RoleIndividualActionPlan) => {
     setEditingIndividualId(card.id);
     setDraftIndAction(card.actionText);
+    setDraftIndMainIssue(card.mainIssue);
     setDraftIndOwner(card.owner);
     setDraftIndImpact(card.expectedImpact);
   };
 
   const saveEditIndividual = async (card: RoleIndividualActionPlan) => {
     const nextText = draftIndAction.trim() || card.actionText;
+    const nextMainIssue = draftIndMainIssue.trim() || card.mainIssue;
     const nextOwner = draftIndOwner.trim() || card.owner;
     const nextImpact = draftIndImpact.trim() || card.expectedImpact;
     await onSaveAction({
+      actionId: card.actionId,
       employeeId: card.employeeId,
       personName: card.personName,
       team: data.roleTitle,
-      month: data.monthLabel.split(' ')[0] || data.periodKey,
+      month: activeMonthName,
       description: nextText,
+      mainIssue: nextMainIssue,
       owner: nextOwner,
       dueDate: '',
       status: 'Open',
       expectedImpact: nextImpact,
       linkedKpiKey: card.linkedKpiKey,
     });
-    setIndividualOverrides((prev) => ({ ...prev, [card.id]: { actionText: nextText, owner: nextOwner, expectedImpact: nextImpact, suggested: false } }));
+    setIndividualOverrides((prev) => ({
+      ...prev,
+      [card.id]: {
+        actionText: nextText,
+        mainIssue: nextMainIssue,
+        owner: nextOwner,
+        expectedImpact: nextImpact,
+        suggested: false,
+      },
+    }));
     setEditingIndividualId(null);
+    setAiStateByTarget((prev) => {
+      if (!prev[`ind:${card.id}`]) return prev;
+      const next = { ...prev };
+      delete next[`ind:${card.id}`];
+      return next;
+    });
   };
 
   const localActions = useMemo(
-    () => [...addedActions, ...data.actions],
-    [addedActions, data.actions],
+    () =>
+      [...addedActions, ...data.actions].map((act) => ({
+        ...act,
+        ...(roleActionOverrides[act.id] ?? {}),
+      })),
+    [addedActions, data.actions, roleActionOverrides],
+  );
+
+  const startEditRoleAction = (action: RoleAssignedAction) => {
+    setEditingRoleActionId(action.id);
+    setDraftRoleDesc(action.description);
+    setDraftRoleOwner(action.owner);
+    setDraftRoleStatus(action.status === 'Cancelled' ? 'Open' : action.status);
+    setDraftRoleDueDate(action.dueDate ?? '');
+    setDraftRoleImpact(action.expectedImpact);
+  };
+
+  const saveEditRoleAction = async (action: RoleAssignedAction) => {
+    const nextDesc = draftRoleDesc.trim() || action.description;
+    const nextOwner = draftRoleOwner.trim() || action.owner;
+    const nextImpact = draftRoleImpact.trim() || action.expectedImpact;
+    const nextDue = draftRoleDueDate.trim();
+    await onSaveAction({
+      actionId: action.id,
+      employeeId: action.employeeId || data.employeeId,
+      personName: data.personName,
+      team: data.roleTitle,
+      month: activeMonthName,
+      description: nextDesc,
+      owner: nextOwner,
+      dueDate: nextDue,
+      status: draftRoleStatus,
+      expectedImpact: nextImpact,
+      linkedKpiKey: action.linkedKpiKey ?? selected?.kpiKey ?? null,
+    });
+    setRoleActionOverrides((prev) => ({
+      ...prev,
+      [action.id]: {
+        description: nextDesc,
+        owner: nextOwner,
+        status: draftRoleStatus,
+        dueDate: nextDue || null,
+        expectedImpact: nextImpact,
+        suggested: false,
+      },
+    }));
+    setEditingRoleActionId(null);
+    setAiStateByTarget((prev) => {
+      if (!prev[`role-act:${action.id}`]) return prev;
+      const next = { ...prev };
+      delete next[`role-act:${action.id}`];
+      return next;
+    });
+  };
+
+  const formatRoleDraftText = (
+    payload: AiCorrectiveActionSuggestionPayload,
+  ): string => {
+    const draft = payload.draft;
+    if (!draft) return '';
+    const steps = draft.recommended_steps.map((s) => s.trim()).filter(Boolean);
+    return steps.length > 0 ? `${draft.title}: ${steps.join(' ')}` : draft.title;
+  };
+
+  const applyRoleIndividualAiDraft = useCallback(
+    (card: RoleIndividualActionPlan, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.draft) return;
+      setEditingIndividualId(card.id);
+      setDraftIndAction(formatRoleDraftText(payload));
+      setDraftIndMainIssue(payload.draft.measured_issue || card.mainIssue);
+      if (editingIndividualId !== card.id) {
+        setDraftIndOwner(card.owner);
+        setDraftIndImpact(card.expectedImpact);
+      }
+      setAiStateByTarget((prev) => ({
+        ...prev,
+        [`ind:${card.id}`]: {
+          loading: false,
+          payload,
+          error: null,
+          needsOverwriteConfirm: false,
+          draftApplied: true,
+        },
+      }));
+    },
+    [editingIndividualId],
+  );
+
+  const applyRoleActionAiDraft = useCallback(
+    (action: RoleAssignedAction, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.draft) return;
+      setEditingRoleActionId(action.id);
+      setDraftRoleDesc(formatRoleDraftText(payload));
+      if (editingRoleActionId !== action.id) {
+        setDraftRoleOwner(action.owner);
+        setDraftRoleStatus(action.status === 'Cancelled' ? 'Open' : action.status);
+        setDraftRoleDueDate(action.dueDate ?? '');
+        setDraftRoleImpact(action.expectedImpact);
+      }
+      setAiStateByTarget((prev) => ({
+        ...prev,
+        [`role-act:${action.id}`]: {
+          loading: false,
+          payload,
+          error: null,
+          needsOverwriteConfirm: false,
+          draftApplied: true,
+        },
+      }));
+    },
+    [editingRoleActionId],
+  );
+
+  const applyRoleFormAiDraft = useCallback(
+    (payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.draft) return;
+      setDescription(formatRoleDraftText(payload));
+      const matchedKpi = data.kpis.find(
+        (k) =>
+          k.kpiKey.toLowerCase() === payload.draft!.focus_kpi_key.toLowerCase() ||
+          k.name.toLowerCase() === payload.draft!.focus_kpi_name.toLowerCase(),
+      );
+      if (matchedKpi) {
+        setTargetKpiKey(matchedKpi.kpiKey);
+      }
+      setAiStateByTarget((prev) => ({
+        ...prev,
+        'role-form': {
+          loading: false,
+          payload,
+          error: null,
+          needsOverwriteConfirm: false,
+          draftApplied: true,
+        },
+      }));
+    },
+    [data.kpis],
+  );
+
+  const runRoleAiRequest = useCallback(
+    async (
+      targetKey: string,
+      requestFn: (signal: AbortSignal) => Promise<AiCorrectiveActionSuggestionPayload>,
+      hasUnsavedEdits: boolean,
+      onAutoApply: (payload: AiCorrectiveActionSuggestionPayload) => void,
+    ) => {
+      abortControllersRef.current[targetKey]?.abort();
+      const controller = new AbortController();
+      abortControllersRef.current[targetKey] = controller;
+
+      setAiStateByTarget((prev) => ({
+        ...prev,
+        [targetKey]: {
+          loading: true,
+          payload: null,
+          error: null,
+          needsOverwriteConfirm: false,
+          draftApplied: false,
+        },
+      }));
+
+      try {
+        const payload = await requestFn(controller.signal);
+        if (controller.signal.aborted) return;
+        if (payload.outcome === 'suggested' && payload.draft && !hasUnsavedEdits) {
+          onAutoApply(payload);
+          return;
+        }
+        setAiStateByTarget((prev) => ({
+          ...prev,
+          [targetKey]: {
+            loading: false,
+            payload,
+            error: null,
+            needsOverwriteConfirm: Boolean(
+              payload.outcome === 'suggested' && payload.draft && hasUnsavedEdits,
+            ),
+            draftApplied: false,
+          },
+        }));
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const aiError: ActionPlanAiError =
+          err instanceof ApiError
+            ? { message: err.message, status: err.status }
+            : {
+                message:
+                  err instanceof Error
+                    ? err.message
+                    : 'Could not generate AI recommendation.',
+              };
+        setAiStateByTarget((prev) => ({
+          ...prev,
+          [targetKey]: {
+            loading: false,
+            payload: null,
+            error: aiError,
+            needsOverwriteConfirm: false,
+            draftApplied: false,
+          },
+        }));
+      }
+    },
+    [],
+  );
+
+  const triggerRoleIndividualAi = useCallback(
+    (card: RoleIndividualActionPlan) => {
+      const targetKey = `ind:${card.id}`;
+      const isEditingThis = editingIndividualId === card.id;
+      const hasUnsaved =
+        isEditingThis &&
+        (draftIndAction.trim() !== card.actionText.trim() ||
+          draftIndMainIssue.trim() !== card.mainIssue.trim() ||
+          draftIndOwner.trim() !== card.owner.trim() ||
+          draftIndImpact.trim() !== card.expectedImpact.trim());
+      void runRoleAiRequest(
+        targetKey,
+        (signal) =>
+          requestActionPlanAiSuggestion({
+            team: card.recordTeam || data.roleTitle,
+            month: activeMonthName,
+            year: activeYearNum,
+            performanceLevel: card.performanceLevel,
+            employeeId: card.employeeId,
+            focusKpiKey: card.linkedKpiKey,
+            signal,
+          }),
+        hasUnsaved,
+        (payload) => applyRoleIndividualAiDraft(card, payload),
+      );
+    },
+    [
+      activeMonthName,
+      activeYearNum,
+      applyRoleIndividualAiDraft,
+      data.roleTitle,
+      draftIndAction,
+      draftIndImpact,
+      draftIndMainIssue,
+      draftIndOwner,
+      editingIndividualId,
+      runRoleAiRequest,
+    ],
+  );
+
+  const triggerRoleActionAi = useCallback(
+    (action: RoleAssignedAction) => {
+      const targetKey = `role-act:${action.id}`;
+      const isEditingThis = editingRoleActionId === action.id;
+      const hasUnsaved =
+        isEditingThis &&
+        (draftRoleDesc.trim() !== action.description.trim() ||
+          draftRoleOwner.trim() !== action.owner.trim() ||
+          draftRoleImpact.trim() !== action.expectedImpact.trim() ||
+          draftRoleDueDate.trim() !== (action.dueDate ?? '').trim());
+      void runRoleAiRequest(
+        targetKey,
+        (signal) =>
+          requestActionPlanAiSuggestion({
+            team: data.roleTitle,
+            month: activeMonthName,
+            year: activeYearNum,
+            employeeId: null,
+            focusKpiKey: action.linkedKpiKey || selected?.kpiKey || null,
+            signal,
+          }),
+        hasUnsaved,
+        (payload) => applyRoleActionAiDraft(action, payload),
+      );
+    },
+    [
+      activeMonthName,
+      activeYearNum,
+      applyRoleActionAiDraft,
+      data.roleTitle,
+      draftRoleDesc,
+      draftRoleDueDate,
+      draftRoleImpact,
+      draftRoleOwner,
+      editingRoleActionId,
+      runRoleAiRequest,
+      selected?.kpiKey,
+    ],
+  );
+
+  const triggerRoleFormAi = useCallback(() => {
+    const hasUnsaved = description.trim().length > 0;
+    void runRoleAiRequest(
+      'role-form',
+      (signal) =>
+        requestActionPlanAiSuggestion({
+          team: data.roleTitle,
+          month: activeMonthName,
+          year: activeYearNum,
+          employeeId: null,
+          focusKpiKey: targetKpiKey || selected?.kpiKey || null,
+          signal,
+        }),
+      hasUnsaved,
+      (payload) => applyRoleFormAiDraft(payload),
+    );
+  }, [
+    activeMonthName,
+    activeYearNum,
+    applyRoleFormAiDraft,
+    data.roleTitle,
+    description,
+    runRoleAiRequest,
+    selected?.kpiKey,
+    targetKpiKey,
+  ]);
+
+  const discardAiTarget = useCallback(
+    (targetKey: string, onRevertApplied?: () => void) => {
+      abortControllersRef.current[targetKey]?.abort();
+      const wasApplied = aiStateByTarget[targetKey]?.draftApplied;
+      setAiStateByTarget((prev) => {
+        const next = { ...prev };
+        delete next[targetKey];
+        return next;
+      });
+      if (wasApplied && onRevertApplied) {
+        onRevertApplied();
+      }
+    },
+    [aiStateByTarget],
   );
 
   const gradeStyle = GRADE_STYLES[data.grade];
@@ -896,6 +1286,8 @@ export default function RoleDetailView({
               const isEditing =
                 showPresentationControl(presentationMode) && editingIndividualId === card.id;
               const cardGradeStyle = GRADE_STYLES[card.grade];
+              const indAiTargetKey = `ind:${card.id}`;
+              const indAiState = aiStateByTarget[indAiTargetKey];
 
               return (
                 <article
@@ -904,35 +1296,91 @@ export default function RoleDetailView({
                   className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
                 >
                   <div>
-                    {/* Card Header: Employee Name + Score + Full-Word Grade + Edit Button */}
+                    {/* Card Header: Employee Name + Score + Full-Word Grade + AI & Edit Buttons */}
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">
-                          {card.personName}
-                        </h3>
-                        <span
-                          className={`text-sm font-extrabold tabular-nums ${cardGradeStyle.scoreText}`}
-                        >
-                          {card.score.toFixed(1)}%
-                        </span>
-                        <FullWordGradeBadge
-                          grade={card.grade}
-                          gradeFullLabel={card.gradeFullLabel}
-                          size="sm"
-                        />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold text-slate-900">
+                            {card.personName}
+                          </h3>
+                          <span
+                            className={`text-sm font-extrabold tabular-nums ${cardGradeStyle.scoreText}`}
+                          >
+                            {card.score.toFixed(1)}%
+                          </span>
+                          <FullWordGradeBadge
+                            grade={card.grade}
+                            gradeFullLabel={card.gradeFullLabel}
+                            size="sm"
+                          />
+                        </div>
+                        {(card.scoreTrendLabel || (card.weakKpis && card.weakKpis.length > 0)) && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {card.scoreTrendLabel && (
+                              <span
+                                data-testid={`role-individual-trend-badge-${card.employeeId}`}
+                                className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700"
+                              >
+                                Trend: {card.scoreTrendLabel}
+                              </span>
+                            )}
+                            {(card.weakKpis ?? []).slice(0, 3).map((wk) => (
+                              <span
+                                key={wk.key}
+                                data-testid={`role-individual-weak-kpi-${card.employeeId}-${wk.key}`}
+                                className="inline-flex items-center rounded-md border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-800"
+                              >
+                                {wk.name}: {wk.gapText}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      {!isEditing && showPresentationControl(presentationMode) && (
-                        <button
-                          type="button"
-                          onClick={() => startEditIndividual(card)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
-                        >
-                          <Edit3 className="size-3" aria-hidden />
-                          <span>Edit</span>
-                        </button>
+                      {showPresentationControl(presentationMode) && (
+                        <div className="flex items-center gap-1.5">
+                          <AiRecommendIconButton
+                            loading={indAiState?.loading}
+                            presentationMode={presentationMode}
+                            ariaLabel={`Generate AI recommendation for ${card.personName}`}
+                            onClick={() => triggerRoleIndividualAi(card)}
+                          />
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => startEditIndividual(card)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                            >
+                              <Edit3 className="size-3" aria-hidden />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
+
+                    {showPresentationControl(presentationMode) && (
+                      <AiRecommendationBanner
+                        loading={indAiState?.loading}
+                        payload={indAiState?.payload}
+                        error={indAiState?.error}
+                        needsOverwriteConfirm={indAiState?.needsOverwriteConfirm}
+                        draftApplied={indAiState?.draftApplied}
+                        presentationMode={presentationMode}
+                        onApplyDraft={() => {
+                          if (indAiState?.payload) {
+                            applyRoleIndividualAiDraft(card, indAiState.payload);
+                          }
+                        }}
+                        onDiscard={() =>
+                          discardAiTarget(indAiTargetKey, () => {
+                            setDraftIndAction(card.actionText);
+                            setDraftIndMainIssue(card.mainIssue);
+                          })
+                        }
+                        onRetry={() => triggerRoleIndividualAi(card)}
+                      />
+                    )}
 
                     {/* Main Issue Box */}
                     <div className="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/50 px-3.5 py-2.5 text-xs text-slate-700">
@@ -950,7 +1398,18 @@ export default function RoleDetailView({
                     {isEditing ? (
                       <div className="mt-3 space-y-2.5 rounded-xl border border-blue-200 bg-white p-3">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-600">
+                          <label className="block text-xs font-bold text-slate-600">
+                            Main Issue
+                          </label>
+                          <input
+                            type="text"
+                            value={draftIndMainIssue}
+                            onChange={(e) => setDraftIndMainIssue(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600">
                             Corrective Action
                           </label>
                           <textarea
@@ -1092,6 +1551,11 @@ export default function RoleDetailView({
                   ? below90Members.map((m) => m.personName)
                   : data.members.map((m) => m.personName);
 
+              const isEditingRoleAct =
+                showPresentationControl(presentationMode) && editingRoleActionId === action.id;
+              const roleActAiKey = `role-act:${action.id}`;
+              const roleActAiState = aiStateByTarget[roleActAiKey];
+
               return (
                 <li
                   key={action.id}
@@ -1099,57 +1563,189 @@ export default function RoleDetailView({
                   className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
                 >
                   <div>
-                    {/* Card Top: Whole-Role Action Badge + Status Pill */}
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700">
+                    {/* Card Top: Whole-Role Action Badge + Status Pill + AI & Edit Buttons */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700">
                         <Layers className="size-3" aria-hidden />
                         {action.suggested ? 'Suggested action — not saved' : 'Whole-Role Action'}
                       </span>
 
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                          action.status === 'In Progress'
-                            ? 'bg-amber-100 text-amber-800'
-                            : action.status === 'Completed'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {action.suggested ? 'Suggestion' : action.status}
-                      </span>
-                    </div>
-
-                    {/* Action Title */}
-                    <h3 className="mt-3 text-sm font-bold leading-snug text-slate-900">
-                      {action.title || action.description}
-                    </h3>
-
-                    {/* Inner Target KPI & Scope Box (matches Team-Level Action Plan) */}
-                    <div className="mt-3 space-y-1.5 rounded-xl border border-slate-200/80 bg-white p-3 text-xs">
-                      <div
-                        data-testid={`action-linked-kpi-${action.id}`}
-                        className="font-semibold text-slate-800"
-                      >
-                        <Target
-                          className="mr-1 inline size-3.5 text-blue-600"
-                          aria-hidden
-                        />
-                        <span>Affects KPI: {linkedKpiLabel}</span>
-                      </div>
-                      {peopleList.length > 0 && (
-                        <div
-                          data-testid={`action-affected-people-${action.id}`}
-                          className="text-slate-500"
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                            action.status === 'In Progress'
+                              ? 'bg-amber-100 text-amber-800'
+                              : action.status === 'Completed'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-200 text-slate-700'
+                          }`}
                         >
-                          People: {peopleList.join(', ')}
-                        </div>
-                      )}
-                      {action.title && action.description !== action.title && (
-                        <div className="border-t border-slate-100 pt-1.5 text-[11px] leading-relaxed text-slate-500">
-                          {action.description}
-                        </div>
-                      )}
+                          {action.suggested ? 'Suggestion' : action.status}
+                        </span>
+                        {showPresentationControl(presentationMode) && (
+                          <>
+                            <AiRecommendIconButton
+                              compact
+                              loading={roleActAiState?.loading}
+                              presentationMode={presentationMode}
+                              ariaLabel={`Generate AI recommendation for ${action.title || action.description}`}
+                              onClick={() => triggerRoleActionAi(action)}
+                            />
+                            {!isEditingRoleAct && (
+                              <button
+                                type="button"
+                                data-testid={`edit-role-action-${action.id}`}
+                                onClick={() => startEditRoleAction(action)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                              >
+                                <Edit3 className="size-3" aria-hidden />
+                                <span>Edit</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
+
+                    {showPresentationControl(presentationMode) && (
+                      <AiRecommendationBanner
+                        loading={roleActAiState?.loading}
+                        payload={roleActAiState?.payload}
+                        error={roleActAiState?.error}
+                        needsOverwriteConfirm={roleActAiState?.needsOverwriteConfirm}
+                        draftApplied={roleActAiState?.draftApplied}
+                        presentationMode={presentationMode}
+                        onApplyDraft={() => {
+                          if (roleActAiState?.payload) {
+                            applyRoleActionAiDraft(action, roleActAiState.payload);
+                          }
+                        }}
+                        onDiscard={() =>
+                          discardAiTarget(roleActAiKey, () => {
+                            setDraftRoleDesc(action.description);
+                          })
+                        }
+                        onRetry={() => triggerRoleActionAi(action)}
+                      />
+                    )}
+
+                    {isEditingRoleAct ? (
+                      <div className="mt-3 space-y-2.5 rounded-xl border border-blue-200 bg-white p-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600">
+                            Action Description
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={draftRoleDesc}
+                            onChange={(e) => setDraftRoleDesc(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-600">
+                              Owner
+                            </label>
+                            <input
+                              type="text"
+                              value={draftRoleOwner}
+                              onChange={(e) => setDraftRoleOwner(e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-600">
+                              Status
+                            </label>
+                            <select
+                              value={draftRoleStatus}
+                              onChange={(e) =>
+                                setDraftRoleStatus(e.target.value as RoleActionDraft['status'])
+                              }
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                            >
+                              <option value="Open">Open</option>
+                              <option value="In Progress">In Progress</option>
+                              <option value="Completed">Completed</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-600">
+                              Due Date
+                            </label>
+                            <input
+                              type="date"
+                              value={draftRoleDueDate}
+                              onChange={(e) => setDraftRoleDueDate(e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-600">
+                              Expected Impact
+                            </label>
+                            <input
+                              type="text"
+                              value={draftRoleImpact}
+                              onChange={(e) => setDraftRoleImpact(e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingRoleActionId(null)}
+                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveEditRoleAction(action)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white hover:bg-blue-700"
+                          >
+                            <Check className="size-3.5" aria-hidden />
+                            <span>Save Role Action</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Action Title */}
+                        <h3 className="mt-3 text-sm font-bold leading-snug text-slate-900">
+                          {action.title || action.description}
+                        </h3>
+
+                        {/* Inner Target KPI & Scope Box (matches Team-Level Action Plan) */}
+                        <div className="mt-3 space-y-1.5 rounded-xl border border-slate-200/80 bg-white p-3 text-xs">
+                          <div
+                            data-testid={`action-linked-kpi-${action.id}`}
+                            className="font-semibold text-slate-800"
+                          >
+                            <Target
+                              className="mr-1 inline size-3.5 text-blue-600"
+                              aria-hidden
+                            />
+                            <span>Affects KPI: {linkedKpiLabel}</span>
+                          </div>
+                          {peopleList.length > 0 && (
+                            <div
+                              data-testid={`action-affected-people-${action.id}`}
+                              className="text-slate-500"
+                            >
+                              People: {peopleList.join(', ')}
+                            </div>
+                          )}
+                          {action.title && action.description !== action.title && (
+                            <div className="border-t border-slate-100 pt-1.5 text-xs leading-relaxed text-slate-500">
+                              {action.description}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Metadata Footer: Owner & Expected Impact */}
@@ -1191,10 +1787,37 @@ export default function RoleDetailView({
             <h3 className="text-xs font-bold tracking-wider text-slate-700 uppercase">
               Add Corrective Action
             </h3>
-            <span className="text-xs font-medium text-slate-500">
-              Links directly to KPI &amp; people in {data.roleTitle}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">
+                Links directly to KPI &amp; people in {data.roleTitle}
+              </span>
+              <AiRecommendIconButton
+                loading={aiStateByTarget['role-form']?.loading}
+                presentationMode={presentationMode}
+                ariaLabel={`Generate AI recommendation for ${data.roleTitle}`}
+                onClick={triggerRoleFormAi}
+              />
+            </div>
           </div>
+
+          <AiRecommendationBanner
+            loading={aiStateByTarget['role-form']?.loading}
+            payload={aiStateByTarget['role-form']?.payload}
+            error={aiStateByTarget['role-form']?.error}
+            needsOverwriteConfirm={aiStateByTarget['role-form']?.needsOverwriteConfirm}
+            draftApplied={aiStateByTarget['role-form']?.draftApplied}
+            presentationMode={presentationMode}
+            onApplyDraft={() => {
+              const payload = aiStateByTarget['role-form']?.payload;
+              if (payload) applyRoleFormAiDraft(payload);
+            }}
+            onDiscard={() =>
+              discardAiTarget('role-form', () => {
+                setDescription('');
+              })
+            }
+            onRetry={triggerRoleFormAi}
+          />
 
           <div className="mt-3.5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block text-xs font-semibold text-slate-700 sm:col-span-2 lg:col-span-3">

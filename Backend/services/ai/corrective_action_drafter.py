@@ -773,6 +773,41 @@ class CorrectiveActionDrafter:
             f"{focus.name} counts toward the performance score." if focus.contributes_to_score
             else f"{focus.name} is tracking-only and does not count toward the score."
         )
+        trend = bundle.get("trend_summary") or {}
+        measured_periods = int(trend.get("measured_periods") or 0)
+        if measured_periods >= 2:
+            curr_score = trend.get("current_score")
+            prev_score = trend.get("previous_score")
+            score_dir = trend.get("score_direction")
+            score_delta = trend.get("score_delta")
+            if curr_score is not None and prev_score is not None and score_dir and score_delta is not None:
+                subject_label = "Agent" if bundle.get("subject") == "employee" else "Team"
+                facts.append(
+                    f"{subject_label} score trend across {measured_periods} measured periods: "
+                    f"{score_dir} ({_fmt_number(round(float(prev_score), 1))}% to "
+                    f"{_fmt_number(round(float(curr_score), 1))}%, {float(score_delta):+.1f} pts vs prior measured period)."
+                )
+            kpi_t = (trend.get("kpi_trends") or {}).get(focus.kpi_key)
+            if isinstance(kpi_t, dict) and int(kpi_t.get("measured_periods") or 0) >= 2:
+                kpi_periods = int(kpi_t["measured_periods"])
+                if focus.item is not None and kpi_t.get("previous_actual") is not None:
+                    facts.append(
+                        f"{focus.name} trend: {kpi_t['direction']} ("
+                        f"{_fmt_number(float(kpi_t['previous_actual']))}{suffix} to "
+                        f"{_fmt_number(float(focus.item['actual']))}{suffix}; below target in "
+                        f"{int(kpi_t.get('months_below_target') or 1)} of {kpi_periods} measured periods)."
+                    )
+                elif (
+                    focus.item is None
+                    and kpi_t.get("previous_members_below") is not None
+                    and kpi_t.get("previous_members_with_data")
+                ):
+                    facts.append(
+                        f"{focus.name} cohort trend: {kpi_t['direction']} ("
+                        f"{int(kpi_t['previous_members_below'])}/{int(kpi_t['previous_members_with_data'])} to "
+                        f"{focus.members_below}/{focus.members_with_data} members below target; cohort gap in "
+                        f"{int(kpi_t.get('months_with_gap') or 1)} of {kpi_periods} measured periods)."
+                    )
         others = self._other_gap_names(items, focus)
         if others:
             facts.append("Other KPIs below target in this period: " + ", ".join(others) + ".")
@@ -842,6 +877,16 @@ class CorrectiveActionDrafter:
             if focus.uniform_target is not None:
                 focus_payload["target"] = focus.uniform_target
 
+        trend = bundle.get("trend_summary") or {}
+        measured_periods = int(trend.get("measured_periods") or 0)
+        if measured_periods >= 2:
+            kpi_t = (trend.get("kpi_trends") or {}).get(focus.kpi_key)
+            if isinstance(kpi_t, dict) and kpi_t.get("direction") in {"worsening", "improving", "unchanged"}:
+                focus_payload["trend"] = kpi_t["direction"]
+                focus_payload["periods_below_target"] = int(
+                    kpi_t.get("months_below_target") or kpi_t.get("months_with_gap") or 1
+                )
+
         prior_types = [
             {"type": a["action_type"], "status": a.get("status") if a.get("status") in _KNOWN_PRIOR_STATUSES else None}
             for a in bundle.get("prior_corrective_actions") or []
@@ -860,6 +905,8 @@ class CorrectiveActionDrafter:
             "other_kpis_below_target": self._other_gap_names(items, focus),
             "prior_actions_for_focus_kpi": prior_types,
         }
+        if measured_periods >= 2 and trend.get("score_direction") in {"declining", "improving", "stable"}:
+            evidence["score_trend"] = trend["score_direction"]
 
         vocabulary_source = " ".join(
             str(v) for v in (

@@ -988,6 +988,181 @@ def test_unconfigured_model_returns_model_unavailable_cleanly(db, monkeypatch):
     assert len(payload.measured_facts) > 0
 
 
+def test_multimonth_measured_facts_preserve_base_indices_and_append_trends(db, monkeypatch):
+    """Multi-month evidence preserves measured_facts[0] & [1] and appends score/focus KPI trends."""
+    team, emp = _employee_with_kpis(
+        db,
+        employee_id="EMP-TREND",
+        name="Trend Agent",
+        kpis=[("bookings_count", 36, 40, 0.90, 0.5), ("upsell", 6, 10, 0.60, 0.2)],
+        month="August",
+        year=2026,
+    )
+    # Update August score and add September lower score
+    aug_rec = (
+        db.query(PerformanceRecord)
+        .filter(PerformanceRecord.employee_id == emp.id, PerformanceRecord.month == "August")
+        .one()
+    )
+    aug_rec.score = 81.0
+    sep_rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=emp.id,
+        team_id=team.id,
+        month="September",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        branch_key=None,
+        score=72.0,
+        grade="C",
+        status="Below",
+    )
+    db.add(sep_rec)
+    db.flush()
+    for key, actual, target, ratio, weight in [
+        ("bookings_count", 30, 40, 0.75, 0.5),
+        ("upsell", 4, 10, 0.40, 0.2),
+    ]:
+        db.add(
+            KPIValue(
+                record_id=sep_rec.id,
+                record_year=2026,
+                kpi_key=key,
+                actual_value=actual,
+                target_value=target,
+                achievement_ratio=ratio,
+                weight_applied=weight,
+                contribution=ratio * weight,
+            )
+        )
+    db.commit()
+
+    captured_evidence = []
+
+    def responder(evidence):
+        captured_evidence.append(evidence)
+        return _ok(_supported_answer(evidence))
+
+    model = _FakeModel(responder)
+    _install(monkeypatch, model)
+
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound", month="September", year=2026, employee_id="EMP-TREND"
+        ),
+    )
+    assert payload.outcome == "suggested"
+    assert len(captured_evidence) == 1
+    ev = captured_evidence[0]
+    assert "score_trend" in ev
+    assert "declining" in str(ev["score_trend"]).lower()
+    assert "trend" in ev["focus_kpi"]
+    assert ev["focus_kpi"]["periods_below_target"] == 2
+
+    # measured_facts[0] stays the focus KPI statement and [1] stays the weight/contribution statement
+    assert payload.measured_facts[0].startswith("upsell")
+    assert "counts toward" in payload.measured_facts[1]
+    assert len(payload.measured_facts) >= 4
+    assert any("score trend" in f.lower() for f in payload.measured_facts[2:])
+    assert any("trend:" in f.lower() for f in payload.measured_facts[2:])
+
+
+def test_multimonth_prompt_excludes_pii_and_keeps_single_period_prompt_clean(db, monkeypatch):
+    """Prompt payload never includes employee name, ID, EGY/UAE codes, or free-text notes."""
+    team, emp = _employee_with_kpis(
+        db,
+        employee_id="EMP-SECRET-99",
+        name="Private Agent Name",
+        kpis=[("upsell", 3, 10, 0.30, 0.5)],
+        month="September",
+        year=2026,
+    )
+    db.add(
+        Action(
+            id=uuid.uuid4(),
+            employee_id=emp.id,
+            team_id=team.id,
+            month="September",
+            year=2026,
+            action_type="Coaching",
+            action_text="Confidential coach action note xyz",
+            root_cause_note="Private root cause text abc",
+            linked_kpi_key="upsell",
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    captured_single = []
+    model_single = _FakeModel(lambda ev: (captured_single.append(ev), _ok(_supported_answer(ev)))[1])
+    _install(monkeypatch, model_single)
+
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound", month="September", year=2026, employee_id="EMP-SECRET-99"
+        ),
+    )
+    assert payload.outcome == "suggested"
+    # Single-period prompt keeps token budget stable (no score_trend or focus trend keys added)
+    assert "score_trend" not in captured_single[0]
+    assert "trend" not in captured_single[0]["focus_kpi"]
+
+    # Add prior month so multi-month trend is active too, and still verify zero PII in prompt
+    aug_rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=emp.id,
+        team_id=team.id,
+        month="August",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        branch_key=None,
+        score=78.0,
+        grade="C",
+        status="Below",
+    )
+    db.add(aug_rec)
+    db.flush()
+    db.add(
+        KPIValue(
+            record_id=aug_rec.id,
+            record_year=2026,
+            kpi_key="upsell",
+            actual_value=5,
+            target_value=10,
+            achievement_ratio=0.50,
+            weight_applied=0.5,
+            contribution=0.25,
+        )
+    )
+    db.commit()
+
+    model_multi = _FakeModel(lambda ev: _ok(_supported_answer(ev)))
+    _install(monkeypatch, model_multi)
+    payload_multi = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound", month="September", year=2026, employee_id="EMP-SECRET-99"
+        ),
+    )
+    assert payload_multi.outcome == "suggested"
+    prompt_blob = model_multi.prompt_text
+    for forbidden in (
+        "Private Agent Name",
+        "EMP-SECRET-99",
+        "EGY",
+        "UAE",
+        "Confidential coach action note xyz",
+        "Private root cause text abc",
+    ):
+        assert forbidden not in prompt_blob
+
+
 # ---------------------------------------------------------------------------
 # Live provider (opt-in; requires Cloudflare/Gemini credentials in the environment).
 # ---------------------------------------------------------------------------
