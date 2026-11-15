@@ -3,11 +3,17 @@ import {
   SUMMARY_BRANCHES,
   kpiRows,
   normalizeRegion,
+  periodFromKey,
   trailingPeriods,
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
+import {
+  decodeIndividualActionMeta,
+  deriveAgentTrendContext,
+  type WeakKpiContext,
+} from './teamDeepDiveData';
 import {
   canonicalFunctionNameFromSlug,
   formatKpiValue,
@@ -33,6 +39,7 @@ export interface RoleMemberKpiCell {
 
 export interface RoleIndividualActionPlan {
   id: string;
+  actionId?: string;
   employeeId: string;
   personName: string;
   score: number;
@@ -44,6 +51,10 @@ export interface RoleIndividualActionPlan {
   expectedImpact: string;
   linkedKpiKey: string;
   suggested?: boolean;
+  recordTeam?: string;
+  performanceLevel?: string;
+  scoreTrendLabel?: string | null;
+  weakKpis?: WeakKpiContext[];
 }
 
 export interface RoleMemberItem {
@@ -132,6 +143,8 @@ export interface RoleAssignedAction {
   status: 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
   expectedImpact: string;
   linkedKpiName?: string;
+  linkedKpiKey?: string;
+  employeeId?: string;
   affectedPeople?: string[];
   suggested?: boolean;
 }
@@ -170,11 +183,13 @@ export interface RoleDetailData {
 }
 
 export interface RoleActionDraft {
+  actionId?: string;
   employeeId: string;
   personName: string;
   team: string;
   month: string;
   description: string;
+  mainIssue?: string;
   owner: string;
   dueDate: string;
   status: 'Open' | 'In Progress' | 'Completed';
@@ -1141,8 +1156,18 @@ export function noteFields(note: string | null | undefined): {
   owner?: string;
   status?: RoleAssignedAction['status'];
   expectedImpact?: string;
+  mainIssue?: string;
 } {
   if (!note) return {};
+  const trimmed = note.trim();
+  if (trimmed.startsWith('__pms_meta__:') || trimmed.startsWith('{')) {
+    const decoded = decodeIndividualActionMeta(trimmed, '', '', '');
+    return {
+      owner: decoded.owner || undefined,
+      expectedImpact: decoded.expectedImpact || undefined,
+      mainIssue: decoded.mainIssue || undefined,
+    };
+  }
   const owner = note.match(/Owner:\s*([^.]*)\./)?.[1]?.trim();
   const status = note.match(/Status:\s*([^.]*)\./)?.[1]?.trim();
   const expectedImpact = note.match(/Expected impact:\s*(.*?)(?:\.\s*$|$)/is)?.[1]?.trim();
@@ -1347,6 +1372,8 @@ function actionsForRole(
         status: parsed.status || actionStatus(action.status),
         expectedImpact: parsed.expectedImpact || 'Impact to be confirmed',
         linkedKpiName: matchedKpi?.shortName || defaultLinkedKpi,
+        linkedKpiKey: action.linked_kpi_key ?? matchedKpi?.kpiKey ?? undefined,
+        employeeId: action.employee_id || matchedMember?.employeeId || card.employeeId,
         affectedPeople: matchedMember ? [matchedMember.personName] : defaultAffectedPeople,
       };
     });
@@ -1360,6 +1387,8 @@ function actionsForRole(
     status: 'Open',
     expectedImpact: 'Impact to be confirmed',
     linkedKpiName: kpi?.shortName || defaultLinkedKpi,
+    linkedKpiKey: kpi?.kpiKey ?? undefined,
+    employeeId: card.employeeId,
     affectedPeople: defaultAffectedPeople,
     suggested: true,
   })) : [];
@@ -1558,6 +1587,11 @@ export function buildRoleDetail(
     };
   });
 
+  const rolePeriod = periodFromKey(data.periodKey);
+  const [labelMonth, labelYear] = data.monthLabel.split(' ');
+  const currentMonth = rolePeriod?.month || labelMonth || 'September';
+  const currentYear = rolePeriod?.year || Number(labelYear) || new Date().getFullYear();
+
   const individualActionPlans: RoleIndividualActionPlan[] = enrichedMembers.map((member) => {
     const storedForMember = actions.find(
       (a) =>
@@ -1565,9 +1599,32 @@ export function buildRoleDetail(
         (a.employee_name || '').toLowerCase() === member.personName.toLowerCase() ||
         namesMatch(a.employee_name || '', member.personName),
     );
+    const memberRecord =
+      records.find(
+        (rec) =>
+          rec.period.key === data.periodKey &&
+          (rec.employeeId.toLowerCase() === member.employeeId.toLowerCase() ||
+            rec.name.toLowerCase() === member.personName.toLowerCase() ||
+            namesMatch(rec.name, member.personName)),
+      ) ??
+      records
+        .filter(
+          (rec) =>
+            rec.employeeId.toLowerCase() === member.employeeId.toLowerCase() ||
+            rec.name.toLowerCase() === member.personName.toLowerCase() ||
+            namesMatch(rec.name, member.personName),
+        )
+        .sort((a, b) => b.period.key.localeCompare(a.period.key))[0];
+    const trendCtx = deriveAgentTrendContext(
+      member.employeeId,
+      memberRecord,
+      records,
+      currentMonth,
+      currentYear,
+    );
     const parsed = noteFields(storedForMember?.root_cause_note);
     const missedCells = (member.kpiCells ?? []).filter((c) => c.metTarget === false && c.achievementPct != null && c.actualFormatted !== '—');
-    const mainIssue =
+    const derivedMainIssue =
       member.signal ||
       (missedCells.length > 0
         ? missedCells
@@ -1578,6 +1635,7 @@ export function buildRoleDetail(
             )
             .join(' & ')
         : `${member.keyKpiLabel} at ${member.keyKpiActual} (vs ${member.keyKpiTarget} target)`);
+    const mainIssue = parsed.mainIssue || derivedMainIssue;
 
     const defaultActionText =
       member.score < 90
@@ -1586,6 +1644,7 @@ export function buildRoleDetail(
 
     return {
       id: `ind-role-${resolvedCard.roleSlug}-${slugifyIdentifier(member.employeeId)}`,
+      actionId: storedForMember?.id,
       employeeId: member.employeeId,
       personName: member.personName,
       score: member.score,
@@ -1601,6 +1660,10 @@ export function buildRoleDetail(
         missedCells[0]?.kpiKey ||
         primaryRoleKpi?.kpiKey ||
         'role-kpi',
+      recordTeam: memberRecord?.team || resolvedCard.roleTitle,
+      performanceLevel: memberRecord?.level,
+      scoreTrendLabel: trendCtx.scoreTrendLabel,
+      weakKpis: trendCtx.weakKpis,
     };
   });
 

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 from repositories.base_repository import BaseRepository
 from models.models import Action, Employee, Team
@@ -130,6 +130,40 @@ class ActionRepository(BaseRepository[Action]):
             Action.month == month,
             Action.year == year,
             Action.action_type == "Team Action",
+            Action.is_active.is_(True),
+            or_(Action.evidence_reference.is_(None), ~Action.evidence_reference.startswith("cohort-plan:")),
+        ).order_by(Action.updated_at.desc(), Action.created_at.desc()).first()
+
+    def list_active_cohort_plan_items(self, team_id, month_values: list[str], year: int) -> list[Action]:
+        if not month_values:
+            return []
+        return self.db.query(Action).filter(
+            Action.team_id == team_id,
+            Action.employee_id.is_(None),
+            Action.action_type == "Team Action",
+            Action.evidence_reference.isnot(None),
+            Action.evidence_reference.like("cohort-plan:%"),
+            Action.month.in_(month_values),
+            Action.year == year,
+            Action.is_active.is_(True),
+        ).order_by(Action.updated_at.desc(), Action.created_at.desc()).all()
+
+    def get_active_cohort_plan_item(
+        self,
+        team_id,
+        month_values: list[str],
+        year: int,
+        card_id: str,
+    ) -> Action | None:
+        if not month_values or not card_id:
+            return None
+        return self.db.query(Action).filter(
+            Action.team_id == team_id,
+            Action.employee_id.is_(None),
+            Action.action_type == "Team Action",
+            Action.evidence_reference == f"cohort-plan:{card_id}",
+            Action.month.in_(month_values),
+            Action.year == year,
             Action.is_active.is_(True),
         ).order_by(Action.updated_at.desc(), Action.created_at.desc()).first()
     

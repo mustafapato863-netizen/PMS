@@ -7,6 +7,7 @@ import { directorScope } from '../../lib/directorScope';
 import { isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
+import { apiFetch } from '../../lib/apiClient';
 import {
   businessTeamName,
   distinctCatalogTeams,
@@ -31,8 +32,10 @@ import {
 } from './callCenterDeepDiveData';
 import {
   buildTeamDeepDiveFromRecords,
+  encodeIndividualActionMeta,
   type IndividualActionPlanCard,
   type TeamDeepDiveData,
+  type TeamLevelActionPlanCard,
 } from './teamDeepDiveData';
 import {
   buildRoleDetail,
@@ -65,6 +68,105 @@ import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
 import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
 import type { PageContextV1 } from '../ai/types';
+
+const TEAM_ACTION_PLANS_STORAGE_KEY = 'pms_team_action_plans_v1';
+const ACTION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface TeamPlanItemApiRow {
+  id: string;
+  card_id: string;
+  team: string;
+  region?: string | null;
+  month: string;
+  year: number;
+  title: string;
+  target_kpi: string;
+  scope_description: string;
+  owner: string;
+  status: TeamLevelActionPlanCard['status'];
+  due_date?: string | null;
+  expected_team_impact: string;
+}
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+function resolvePeriodMonthName(periodMonth?: number | string, monthLabel?: string): string {
+  if (typeof periodMonth === 'number' && periodMonth >= 1 && periodMonth <= 12) {
+    return MONTH_NAMES[periodMonth - 1];
+  }
+  if (typeof periodMonth === 'string' && periodMonth.trim()) {
+    const trimmed = periodMonth.trim();
+    const numeric = Number(trimmed);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 12) {
+      return MONTH_NAMES[numeric - 1];
+    }
+    return trimmed;
+  }
+  const labelMonth = String(monthLabel ?? '').trim().split(/\s+/)[0];
+  return labelMonth || 'September';
+}
+
+function teamPlanScopeKey(
+  team: string,
+  month: string,
+  year: number,
+  region: string,
+): string {
+  return `${region.toUpperCase()}::${team.trim().toLowerCase()}::${year}-${month.trim().toLowerCase()}`;
+}
+
+function readStoredTeamPlans(scopeKey: string): TeamLevelActionPlanCard[] {
+  try {
+    const raw = window.localStorage.getItem(TEAM_ACTION_PLANS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Record<string, TeamLevelActionPlanCard[]>;
+    const items = parsed?.[scopeKey];
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredTeamPlans(
+  scopeKey: string,
+  items: TeamLevelActionPlanCard[],
+): void {
+  try {
+    const raw = window.localStorage.getItem(TEAM_ACTION_PLANS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, TeamLevelActionPlanCard[]>) : {};
+    const next = parsed && typeof parsed === 'object' ? { ...parsed, [scopeKey]: items } : { [scopeKey]: items };
+    window.localStorage.setItem(TEAM_ACTION_PLANS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota or SSR issues
+  }
+}
+
+function mergeTeamPlanItems(
+  base: TeamLevelActionPlanCard[],
+  overlay: TeamLevelActionPlanCard[],
+): TeamLevelActionPlanCard[] {
+  const byId = new Map<string, TeamLevelActionPlanCard>();
+  for (const item of base) {
+    byId.set(item.id, item);
+  }
+  for (const item of overlay) {
+    byId.set(item.id, item);
+  }
+  return Array.from(byId.values());
+}
 
 export type MonthlyRegionFilter = 'EGY' | 'UAE';
 
@@ -194,7 +296,7 @@ function MonthlyPresentationScreen({
     }
     return [...regions].sort((a, b) => (a === 'EGY' ? -1 : b === 'EGY' ? 1 : 0));
   }, [explicitPreview, serverTeams]);
-  const { getAllActions, saveAction } = useActionStore();
+  const { getAllActions, saveAction, updateAction } = useActionStore();
   const storedActions = getAllActions();
 
   const rawRegion = searchParams.get('region');
@@ -625,8 +727,144 @@ function MonthlyPresentationScreen({
     })),
   );
 
+  const activeTeamPlanScope = useMemo(() => {
+    if (!resolvedTeamData) return null;
+    const parsedPeriod = periodFromKey(resolvedTeamData.periodKey);
+    const [, labelYear] = resolvedTeamData.monthLabel.split(' ');
+    const month = resolvePeriodMonthName(parsedPeriod?.month, resolvedTeamData.monthLabel);
+    const year = parsedPeriod?.year || Number(labelYear) || new Date().getFullYear();
+    return {
+      team: resolvedTeamData.canonicalTeam,
+      region: activeRegion,
+      month,
+      year,
+      scopeKey: teamPlanScopeKey(resolvedTeamData.canonicalTeam, month, year, activeRegion),
+    };
+  }, [activeRegion, resolvedTeamData]);
+
+  const [teamPlanItemsByScope, setTeamPlanItemsByScope] = useState<
+    Record<string, TeamLevelActionPlanCard[]>
+  >({});
+
+  useEffect(() => {
+    if (!activeTeamPlanScope || explicitPreview) return;
+    const { team, region, month, year, scopeKey } = activeTeamPlanScope;
+    const localItems = readStoredTeamPlans(scopeKey);
+
+    let cancelled = false;
+    const params = new URLSearchParams({
+      team,
+      month,
+      year: String(year),
+      region,
+    });
+    apiFetch<{ success: boolean; data?: TeamPlanItemApiRow[] }>(
+      `/api/team-actions/plan-items?${params.toString()}`,
+    )
+      .then((res) => {
+        if (cancelled || !res?.success || !Array.isArray(res.data)) return;
+        const remoteItems: TeamLevelActionPlanCard[] = res.data.map((row) => ({
+          id: row.card_id || row.id,
+          title: row.title,
+          targetKpi: row.target_kpi,
+          scopeDescription: row.scope_description,
+          owner: row.owner,
+          expectedTeamImpact: row.expected_team_impact,
+          status: row.status,
+          dueDate: row.due_date ?? null,
+        }));
+        const merged = mergeTeamPlanItems(localItems, remoteItems);
+        writeStoredTeamPlans(scopeKey, merged);
+        setTeamPlanItemsByScope((prev) => ({
+          ...prev,
+          [scopeKey]: merged,
+        }));
+      })
+      .catch(() => {
+        // Keep localStorage fallback when backend endpoint is unavailable
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTeamPlanScope, explicitPreview]);
+
+  const savedTeamActionsForActiveScope = useMemo(() => {
+    if (!activeTeamPlanScope) return undefined;
+    return teamPlanItemsByScope[activeTeamPlanScope.scopeKey] ?? readStoredTeamPlans(activeTeamPlanScope.scopeKey);
+  }, [activeTeamPlanScope, teamPlanItemsByScope]);
+
+  const handleSaveTeamAction = useCallback(
+    async (card: TeamLevelActionPlanCard) => {
+      if (!activeTeamPlanScope) return;
+      const { team, region, month, year, scopeKey } = activeTeamPlanScope;
+      const currentList = teamPlanItemsByScope[scopeKey] ?? readStoredTeamPlans(scopeKey);
+      const nextList = mergeTeamPlanItems(currentList, [card]);
+      writeStoredTeamPlans(scopeKey, nextList);
+      setTeamPlanItemsByScope((prev) => ({
+        ...prev,
+        [scopeKey]: nextList,
+      }));
+      if (explicitPreview) return;
+      await apiFetch<{ success: boolean; data?: TeamPlanItemApiRow }>(
+        '/api/team-actions/plan-items',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            card_id: card.id,
+            team,
+            region,
+            month,
+            year,
+            title: card.title,
+            target_kpi: card.targetKpi,
+            scope_description: card.scopeDescription,
+            owner: card.owner,
+            status: card.status,
+            due_date: card.dueDate ?? null,
+            expected_team_impact: card.expectedTeamImpact,
+          }),
+        },
+      );
+    },
+    [activeTeamPlanScope, explicitPreview, teamPlanItemsByScope],
+  );
+
   const handleSaveRoleAction = useCallback(
     async (draft: RoleActionDraft) => {
+      const rootCauseNote =
+        draft.mainIssue !== undefined
+          ? encodeIndividualActionMeta(
+              {
+                mainIssue: draft.mainIssue,
+                owner: draft.owner,
+                expectedImpact: draft.expectedImpact,
+              },
+              draft.mainIssue,
+            )
+          : `Owner: ${draft.owner}. Status: ${draft.status}. Expected impact: ${draft.expectedImpact || 'Not specified'}.`;
+
+      if (draft.actionId && ACTION_UUID_RE.test(draft.actionId) && typeof updateAction === 'function') {
+        await updateAction(
+          draft.actionId,
+          {
+            action_text: draft.description,
+            root_cause_note: rootCauseNote,
+            status: draft.status,
+            due_date: draft.dueDate || null,
+            linked_kpi_key: draft.linkedKpiKey,
+          },
+          {
+            id: draft.employeeId,
+            name: draft.personName,
+            team: draft.team,
+          },
+          draft.month,
+        );
+        return;
+      }
+
       await saveAction({
         employee_id: draft.employeeId,
         employee_name: draft.personName,
@@ -634,18 +872,46 @@ function MonthlyPresentationScreen({
         month: draft.month,
         action_type: 'Coaching',
         action_text: draft.description,
-        root_cause_note: `Owner: ${draft.owner}. Status: ${draft.status}. Expected impact: ${draft.expectedImpact || 'Not specified'}.`,
+        root_cause_note: rootCauseNote,
         due_date: draft.dueDate || null,
         linked_kpi_key: draft.linkedKpiKey,
       });
     },
-    [saveAction],
+    [saveAction, updateAction],
   );
 
   const handleSaveIndividualAction = useCallback(
     async (card: IndividualActionPlanCard) => {
       if (!resolvedTeamData) return;
-      const monthName = resolvedTeamData.monthLabel.split(' ')[0] || 'September';
+      const parsedPeriod = periodFromKey(resolvedTeamData.periodKey);
+      const monthName = resolvePeriodMonthName(parsedPeriod?.month, resolvedTeamData.monthLabel);
+      const rootCauseNote = encodeIndividualActionMeta(
+        {
+          mainIssue: card.mainIssue,
+          owner: card.owner,
+          expectedImpact: card.expectedImpact,
+        },
+        card.mainIssue,
+      );
+
+      if (ACTION_UUID_RE.test(card.id) && typeof updateAction === 'function') {
+        await updateAction(
+          card.id,
+          {
+            action_text: card.actionText,
+            root_cause_note: rootCauseNote,
+            linked_kpi_key: card.linkedKpiKey,
+          },
+          {
+            id: card.employeeId,
+            name: card.agentName,
+            team: resolvedTeamData.canonicalTeam,
+          },
+          monthName,
+        );
+        return;
+      }
+
       await saveAction({
         employee_id: card.employeeId,
         employee_name: card.agentName,
@@ -653,11 +919,11 @@ function MonthlyPresentationScreen({
         month: monthName,
         action_type: 'Coaching',
         action_text: card.actionText,
-        root_cause_note: card.mainIssue,
+        root_cause_note: rootCauseNote,
         linked_kpi_key: card.linkedKpiKey,
       });
     },
-    [resolvedTeamData, saveAction],
+    [resolvedTeamData, saveAction, updateAction],
   );
 
   const [presentationMode, setPresentationMode] = useState(false);
@@ -793,6 +1059,8 @@ function MonthlyPresentationScreen({
           onNavigateToCallCenter={handleBackToFunction}
           onSwitchTeam={handleSelectAgentTeam}
           onSaveIndividualAction={handleSaveIndividualAction}
+          savedTeamActions={savedTeamActionsForActiveScope}
+          onSaveTeamAction={handleSaveTeamAction}
           toolbar={headerToolbar}
           presentationMode={presentationMode}
         />

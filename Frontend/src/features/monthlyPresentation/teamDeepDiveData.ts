@@ -2,6 +2,7 @@ import { isHossamRecord, type AgentRecord, type PMSAction } from '../../types';
 import {
   kpiRows,
   periodFromKey,
+  periodOf,
   trailingPeriods,
   type ExecRecord,
 } from '../executive/compose';
@@ -77,6 +78,108 @@ export interface AgentKpiCellValue {
   metTarget: boolean;
 }
 
+export interface WeakKpiContext {
+  key: string;
+  name: string;
+  actual: number | null;
+  target: number | null;
+  unit: string;
+  gapText: string;
+}
+
+export interface AgentTrendContext {
+  previousScore: number | null;
+  changeVsPrev: number | null;
+  scoreTrendLabel: string | null;
+  weakKpis: WeakKpiContext[];
+}
+
+export interface IndividualActionMeta {
+  mainIssue?: string | null;
+  owner?: string | null;
+  expectedImpact?: string | null;
+}
+
+const ACTION_META_PREFIX = '__pms_meta__:';
+
+/**
+ * Encodes edited individual action plan metadata (`owner`, `expectedImpact`, `mainIssue`)
+ * into `Action.root_cause_note` so reloads restore custom values without corrupting `mainIssue`.
+ */
+export function encodeIndividualActionMeta(
+  meta: IndividualActionMeta,
+  fallbackIssue = '',
+): string {
+  const issue = (meta.mainIssue ?? fallbackIssue ?? '').trim();
+  const owner = (meta.owner ?? '').trim();
+  const expectedImpact = (meta.expectedImpact ?? '').trim();
+  if (!owner && !expectedImpact) {
+    return issue;
+  }
+  return `${ACTION_META_PREFIX}${JSON.stringify({
+    main_issue: issue,
+    ...(owner ? { owner } : {}),
+    ...(expectedImpact ? { expected_impact: expectedImpact } : {}),
+  })}`;
+}
+
+/**
+ * Decodes `Action.root_cause_note` back into `mainIssue`, `owner`, and `expectedImpact`.
+ * Backward-compatible with legacy plain-string `root_cause_note` values.
+ */
+export function decodeIndividualActionMeta(
+  rootCauseNote: string | null | undefined,
+  fallbackOwner: string,
+  fallbackImpact: string,
+  fallbackIssue: string,
+): { mainIssue: string; owner: string; expectedImpact: string } {
+  const raw = (rootCauseNote ?? '').trim();
+  if (!raw) {
+    return {
+      mainIssue: fallbackIssue,
+      owner: fallbackOwner,
+      expectedImpact: fallbackImpact,
+    };
+  }
+  const jsonCandidate = raw.startsWith(ACTION_META_PREFIX)
+    ? raw.slice(ACTION_META_PREFIX.length)
+    : raw.startsWith('{')
+      ? raw
+      : null;
+  if (jsonCandidate) {
+    try {
+      const parsed = JSON.parse(jsonCandidate) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object') {
+        const parsedIssue =
+          typeof parsed.main_issue === 'string'
+            ? parsed.main_issue
+            : typeof parsed.mainIssue === 'string'
+              ? parsed.mainIssue
+              : '';
+        const parsedOwner = typeof parsed.owner === 'string' ? parsed.owner : '';
+        const parsedImpact =
+          typeof parsed.expected_impact === 'string'
+            ? parsed.expected_impact
+            : typeof parsed.expectedImpact === 'string'
+              ? parsed.expectedImpact
+              : '';
+        return {
+          mainIssue: parsedIssue.trim() || fallbackIssue,
+          owner: parsedOwner.trim() || fallbackOwner,
+          expectedImpact: parsedImpact.trim() || fallbackImpact,
+        };
+      }
+    } catch {
+      // Fall through to legacy plain-string handling
+    }
+  }
+  return {
+    mainIssue: raw,
+    owner: fallbackOwner,
+    expectedImpact: fallbackImpact,
+  };
+}
+
 export interface AgentAverageOrBelowRow {
   employeeId: string;
   agentName: string;
@@ -90,6 +193,10 @@ export interface AgentAverageOrBelowRow {
   mainIssue: string;
   weakestKpiKey: string;
   weakestKpiLabel: string;
+  scoreTrendLabel?: string | null;
+  weakKpis?: WeakKpiContext[];
+  recordTeam?: string;
+  performanceLevel?: string;
 }
 
 export interface IndividualActionPlanCard {
@@ -97,6 +204,12 @@ export interface IndividualActionPlanCard {
   employeeId: string;
   agentName: string;
   score: number;
+  previousScore?: number | null;
+  changeVsPrev?: number | null;
+  scoreTrendLabel?: string | null;
+  weakKpis?: WeakKpiContext[];
+  recordTeam?: string;
+  performanceLevel?: string;
   grade: GradeLetter;
   /** Full words only: Average, Below Average, Unsatisfactory */
   gradeFullLabel: FullGradeLabel;
@@ -118,6 +231,7 @@ export interface TeamLevelActionPlanCard {
   status: 'Open' | 'In Progress' | 'Planned' | 'Completed';
   /** Stored due date when the action has one. Absent values stay unset. */
   dueDate?: string | null;
+  linkedKpiKey?: string;
 }
 
 export function teamActionDueLabel(dueDate: string | null | undefined): string {
@@ -386,6 +500,129 @@ function normalizeKpiLabel(value: string | null | undefined): string {
     .replace(/[^a-z0-9%]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+const LOWER_IS_BETTER_KEY_RE =
+  /aht|handle_time|hold|abandon|reject|error|delay|latency|turnaround|breach|missed|return/i;
+
+function isLowerBetterKpi(kpiKey: string, direction?: string | null): boolean {
+  const dir = String(direction ?? '').trim().toLowerCase();
+  if (dir.startsWith('lower')) return true;
+  if (dir.startsWith('higher')) return false;
+  return LOWER_IS_BETTER_KEY_RE.test(kpiKey);
+}
+
+/**
+ * Derives trailing 6-month employee score trend, immediate prior-month delta,
+ * and target-failing KPIs (respecting LOWER_IS_BETTER vs HIGHER_IS_BETTER)
+ * without crossing future period boundaries or coercing missing values to 0.
+ */
+export function deriveAgentTrendContext(
+  empId: string,
+  currentRecord: ExecRecord | null | undefined,
+  allData: ExecRecord[],
+  currentMonth: string,
+  currentYear: number,
+): AgentTrendContext {
+  const normalizedId = empId.trim().toLowerCase();
+  const effectivePeriod = periodOf(currentYear, currentMonth);
+  const trail = trailingPeriods(effectivePeriod, 6);
+  const trailKeys = new Set(trail.map((p) => p.key));
+  const targetRegion = currentRecord?.region ?? null;
+  const targetLevel = currentRecord?.level ?? null;
+
+  const matchingRecords = allData.filter((rec) => {
+    if (rec.employeeId.trim().toLowerCase() !== normalizedId) return false;
+    if (!trailKeys.has(rec.period.key)) return false;
+    if (targetRegion && rec.region && rec.region !== targetRegion) return false;
+    return true;
+  });
+
+  const byPeriodKey = new Map<string, ExecRecord>();
+  for (const rec of matchingRecords) {
+    const existing = byPeriodKey.get(rec.period.key);
+    if (!existing) {
+      byPeriodKey.set(rec.period.key, rec);
+    } else if (targetLevel && rec.level === targetLevel && existing.level !== targetLevel) {
+      byPeriodKey.set(rec.period.key, rec);
+    }
+  }
+  if (currentRecord && currentRecord.period.key === effectivePeriod.key) {
+    byPeriodKey.set(effectivePeriod.key, currentRecord);
+  }
+
+  const resolvedCurrent = byPeriodKey.get(effectivePeriod.key) ?? currentRecord ?? null;
+  const prevPeriod = trail.length >= 2 ? trail[trail.length - 2] : null;
+  const prevRecord = prevPeriod ? byPeriodKey.get(prevPeriod.key) ?? null : null;
+
+  const currentScore =
+    resolvedCurrent && typeof resolvedCurrent.score === 'number' && Number.isFinite(resolvedCurrent.score)
+      ? round1(resolvedCurrent.score)
+      : null;
+  const previousScore =
+    prevRecord && typeof prevRecord.score === 'number' && Number.isFinite(prevRecord.score)
+      ? round1(prevRecord.score)
+      : null;
+  const changeVsPrev =
+    currentScore !== null && previousScore !== null
+      ? round1(currentScore - previousScore)
+      : null;
+
+  const measuredScores: number[] = [];
+  for (const p of trail) {
+    const rec = byPeriodKey.get(p.key);
+    if (rec && typeof rec.score === 'number' && Number.isFinite(rec.score)) {
+      measuredScores.push(round1(rec.score));
+    }
+  }
+
+  let scoreTrendLabel: string | null = null;
+  if (measuredScores.length >= 2) {
+    const netDelta = round1(measuredScores[measuredScores.length - 1] - measuredScores[0]);
+    const direction =
+      netDelta <= -0.5 ? 'declining' : netDelta >= 0.5 ? 'improving' : 'stable';
+    const deltaText = `${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(1)} pts`;
+    scoreTrendLabel = `${measuredScores.map((s) => `${s.toFixed(1)}%`).join(' → ')} (${deltaText}, ${direction})`;
+  } else if (measuredScores.length === 1) {
+    scoreTrendLabel = 'Single-month record';
+  }
+
+  const weakKpis: WeakKpiContext[] = [];
+  if (resolvedCurrent) {
+    const rows = kpiRows([resolvedCurrent], []);
+    for (const row of rows) {
+      if (
+        typeof row.actual !== 'number' ||
+        !Number.isFinite(row.actual) ||
+        typeof row.target !== 'number' ||
+        !Number.isFinite(row.target)
+      ) {
+        continue;
+      }
+      const lowerBetter = isLowerBetterKpi(row.kpi_key, row.kpi_direction);
+      const failing = lowerBetter ? row.actual > row.target : row.actual < row.target;
+      if (!failing) continue;
+      const unit = row.unit ?? '';
+      const diff = round1(Math.abs(row.actual - row.target));
+      const diffFormatted = formatKpiValue(diff, row.unit);
+      const gapText = `${formatKpiValue(row.actual, row.unit)} vs ${formatKpiValue(row.target, row.unit)} (${lowerBetter ? `+${diffFormatted} over` : `-${diffFormatted} gap`})`;
+      weakKpis.push({
+        key: row.kpi_key,
+        name: row.kpi_label,
+        actual: round1(row.actual),
+        target: round1(row.target),
+        unit,
+        gapText,
+      });
+    }
+  }
+
+  return {
+    previousScore,
+    changeVsPrev,
+    scoreTrendLabel,
+    weakKpis,
+  };
 }
 
 function sameMeasuredKpi(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -1501,12 +1738,19 @@ function buildGenericTeamDeepDive(
     const g = gradeForScore(agent.score);
     const agentKpiRows = kpiRows([agent], []);
     const weakest = agentKpiRows[0];
+    const trendCtx = deriveAgentTrendContext(
+      agent.employeeId,
+      agent,
+      allRecords,
+      effective.month,
+      effective.year,
+    );
     return {
       employeeId: agent.employeeId,
       agentName: agent.name,
       score: round1(agent.score),
-      previousScore: null,
-      changeVsPrev: null,
+      previousScore: trendCtx.previousScore,
+      changeVsPrev: trendCtx.changeVsPrev,
       grade: g,
       gradeFullLabel: fullGradeLabel(g),
       kpiCells: kpis.map((kpi) => {
@@ -1525,6 +1769,10 @@ function buildGenericTeamDeepDive(
         : 'Score below 90%',
       weakestKpiKey: weakest?.kpi_key ?? kpis[0]?.kpiKey ?? 'general',
       weakestKpiLabel: weakest?.kpi_label ?? 'KPI',
+      scoreTrendLabel: trendCtx.scoreTrendLabel,
+      weakKpis: trendCtx.weakKpis,
+      recordTeam: agent.team,
+      performanceLevel: agent.level,
     };
   });
   const savedFor = (row: AgentAverageOrBelowRow) =>
@@ -1569,14 +1817,26 @@ function buildGenericTeamDeepDive(
     agentsAverageOrBelow,
     individualActionPlans: agentsAverageOrBelow.map((row, index) => {
       const saved = savedFor(row);
+      const decoded = decodeIndividualActionMeta(
+        saved?.root_cause_note,
+        saved?.owner?.name || `${canonicalTeam} lead`,
+        `+${Math.max(1, round1(90 - row.score)).toFixed(1)}% score lift`,
+        row.mainIssue,
+      );
       return {
         id: saved?.id ?? `ind-${teamSlug}-${index}`,
         employeeId: row.employeeId,
         agentName: row.agentName,
         score: row.score,
+        previousScore: row.previousScore ?? null,
+        changeVsPrev: row.changeVsPrev ?? null,
+        scoreTrendLabel: row.scoreTrendLabel ?? null,
+        weakKpis: row.weakKpis,
+        recordTeam: row.recordTeam,
+        performanceLevel: row.performanceLevel,
         grade: row.grade,
         gradeFullLabel: row.gradeFullLabel,
-        mainIssue: saved?.root_cause_note || row.mainIssue,
+        mainIssue: decoded.mainIssue,
         actionText:
           saved?.action_text ||
           recommendedActionForKpi(
@@ -1587,8 +1847,8 @@ function buildGenericTeamDeepDive(
             row.kpiCells.find((cell) => cell.kpiKey === row.weakestKpiKey)?.targetFormatted ?? '',
             row.mainIssue,
           ).actionText,
-        owner: saved?.owner?.name || `${canonicalTeam} lead`,
-        expectedImpact: `+${Math.max(1, round1(90 - row.score)).toFixed(1)}% score lift`,
+        owner: decoded.owner,
+        expectedImpact: decoded.expectedImpact,
         linkedKpiKey: row.weakestKpiKey,
         isSavedToStore: Boolean(saved),
       };
@@ -1798,8 +2058,16 @@ export function buildTeamDeepDiveFromRecords(
       ? lowAgentRecords.map((agent) => {
           const prevRec = before.find((b) => b.employeeId === agent.employeeId);
           const prevAgentScore = prevRec ? round1(prevRec.score) : null;
+          const trendCtx = deriveAgentTrendContext(
+            agent.employeeId,
+            agent,
+            scopedRecords,
+            effective.month,
+            effective.year,
+          );
+          const resolvedPrevScore = prevAgentScore ?? trendCtx.previousScore;
           const delta =
-            prevAgentScore !== null ? round1(round1(agent.score) - prevAgentScore) : null;
+            resolvedPrevScore !== null ? round1(round1(agent.score) - resolvedPrevScore) : null;
           const agentKpiRows = kpiRows([agent], []);
           const weakest = agentKpiRows[0];
           const secondWeakest = agentKpiRows[1];
@@ -1831,7 +2099,7 @@ export function buildTeamDeepDiveFromRecords(
             employeeId: agent.employeeId,
             agentName: agent.name,
             score: round1(agent.score),
-            previousScore: prevAgentScore,
+            previousScore: resolvedPrevScore,
             changeVsPrev: delta,
             grade: g,
             gradeFullLabel: fullGradeLabel(g),
@@ -1839,6 +2107,10 @@ export function buildTeamDeepDiveFromRecords(
             mainIssue,
             weakestKpiKey: weakest?.kpi_key ?? kpiColumns[0]?.kpiKey ?? 'Booking',
             weakestKpiLabel: weakest?.kpi_label ?? kpiColumns[0]?.label ?? 'Booking Rate',
+            scoreTrendLabel: trendCtx.scoreTrendLabel,
+            weakKpis: trendCtx.weakKpis,
+            recordTeam: agent.team,
+            performanceLevel: agent.level,
           };
         })
       : fallback.agentsAverageOrBelow;
@@ -1865,20 +2137,33 @@ export function buildTeamDeepDiveFromRecords(
 
       const lift = Math.max(2.0, round1(91.5 - row.score));
       const teamLift = round1(lift / Math.max(1, headcount));
+      const fallbackOwner =
+        savedAction?.owner?.name ||
+        (savedAction ? mapWeakestKpiToOwner(row.weakestKpiKey, row.weakestKpiLabel) : recommended.owner);
+      const decoded = decodeIndividualActionMeta(
+        savedAction?.root_cause_note,
+        fallbackOwner,
+        `+${lift.toFixed(1)}% agent score (+${teamLift.toFixed(1)}% team lift)`,
+        row.mainIssue,
+      );
 
       return {
         id: savedAction?.id ?? `ind-${teamSlug}-${idx}`,
         employeeId: row.employeeId,
         agentName: row.agentName,
         score: row.score,
+        previousScore: row.previousScore ?? null,
+        changeVsPrev: row.changeVsPrev ?? null,
+        scoreTrendLabel: row.scoreTrendLabel ?? null,
+        weakKpis: row.weakKpis,
+        recordTeam: row.recordTeam,
+        performanceLevel: row.performanceLevel,
         grade: row.grade,
         gradeFullLabel: row.gradeFullLabel,
-        mainIssue: savedAction?.root_cause_note || row.mainIssue,
+        mainIssue: decoded.mainIssue,
         actionText: savedAction?.action_text || recommended.actionText,
-        owner:
-          savedAction?.owner?.name ||
-          (savedAction ? mapWeakestKpiToOwner(row.weakestKpiKey, row.weakestKpiLabel) : recommended.owner),
-        expectedImpact: `+${lift.toFixed(1)}% agent score (+${teamLift.toFixed(1)}% team lift)`,
+        owner: decoded.owner,
+        expectedImpact: decoded.expectedImpact,
         linkedKpiKey: row.weakestKpiKey,
         isSavedToStore: Boolean(savedAction),
       };

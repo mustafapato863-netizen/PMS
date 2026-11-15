@@ -133,3 +133,288 @@ def test_a_reference_matching_two_teams_raises_instead_of_picking_one(db):
     db.commit()
     with pytest.raises(ValueError, match="more than one team"):
         TeamActionService(db)._team("Foo")
+
+
+@pytest.fixture()
+def full_db():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def _make_user(
+    *,
+    role: str = "Admin",
+    accessible_teams: list[str] | None = None,
+    accessible_regions: list[str] | None = None,
+    has_unrestricted: bool = False,
+):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        role=role,
+        accessible_teams=accessible_teams or [],
+        accessible_regions=accessible_regions or [],
+        accessible_functions=[],
+        has_unrestricted_team_access=has_unrestricted,
+        is_general_manager=False,
+    )
+
+
+def test_cohort_plan_item_save_list_upsert_and_planned_enum_mapping(full_db):
+    import json
+    from models.models import Action
+
+    egy_team = Team(
+        id=uuid.uuid4(),
+        name="Re-Submission EGY",
+        db_name="Re-Submission EGY",
+        display_name="Re-Submission EGY",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    uae_team = Team(
+        id=uuid.uuid4(),
+        name="Re-Submission",
+        db_name="Re-Submission",
+        display_name="Re-Submission",
+        region="UAE",
+        team_level="employee",
+        is_active=True,
+    )
+    full_db.add_all([egy_team, uae_team])
+    full_db.commit()
+
+    admin = _make_user(role="Admin")
+    svc = TeamActionService(full_db)
+
+    # Save with UI status 'Planned' -> DB status MUST be valid ENUM 'Open' + ui_status='Planned' in JSON
+    saved = svc.save_plan_item(
+        {
+            "card_id": "team-act-resub-1",
+            "team": "Re-Submission",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Run live coaching huddles on quality",
+            "target_kpi": "Quality · 92% -> 95%",
+            "scope_description": "All Resubmission Agents",
+            "owner": "Resubmission Team Leader",
+            "status": "Planned",
+            "due_date": "2026-10-05",
+            "expected_team_impact": "+1.2% team score lift",
+        },
+        current_user=admin,
+    )
+    assert saved["card_id"] == "team-act-resub-1"
+    assert saved["status"] == "Planned"
+    assert saved["region"] == "EGY"
+    assert saved["due_date"] == "2026-10-05"
+
+    row = (
+        full_db.query(Action)
+        .filter(Action.evidence_reference == "cohort-plan:team-act-resub-1")
+        .one()
+    )
+    assert row.action_type == "Team Action"
+    assert row.employee_id is None
+    assert row.status == "Open"  # PostgreSQL ENUM safe
+    meta = json.loads(row.root_cause_note)
+    assert meta["ui_status"] == "Planned"
+
+    # Upsert same card_id -> updates existing active row cleanly without duplicating
+    updated = svc.save_plan_item(
+        {
+            "card_id": "team-act-resub-1",
+            "team": "Re-Submission",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Updated coaching cadence",
+            "target_kpi": "Quality · 92% -> 96%",
+            "scope_description": "All Resubmission Agents",
+            "owner": "QA Lead",
+            "status": "In Progress",
+            "due_date": None,
+            "expected_team_impact": "+1.5% team score lift",
+        },
+        current_user=admin,
+    )
+    assert updated["id"] == saved["id"]
+    assert updated["status"] == "In Progress"
+    assert updated["owner"] == "QA Lead"
+
+    items_egy = svc.list_plan_items("Re-Submission", "September", 2026, current_user=admin, region="EGY")
+    assert len(items_egy) == 1
+    assert items_egy[0]["title"] == "Updated coaching cadence"
+    assert svc.list_plan_items("Re-Submission", "September", 2026, current_user=admin, region="UAE") == []
+
+
+def test_cohort_plan_items_never_collide_with_team_dashboard_summary(full_db):
+    egy_team = Team(
+        id=uuid.uuid4(),
+        name="Inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    full_db.add(egy_team)
+    full_db.commit()
+
+    admin = _make_user(role="Admin")
+    admin_scope = {
+        "role": "Admin",
+        "accessible_teams": [],
+        "accessible_regions": [],
+        "accessible_functions": [],
+        "has_unrestricted_team_access": True,
+    }
+    svc = TeamActionService(full_db)
+
+    svc.save_plan_item(
+        {
+            "card_id": "team-act-cohort-9",
+            "team": "Inbound",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Cohort Plan Card",
+            "target_kpi": "Booking Rate",
+            "scope_description": "All Inbound",
+            "owner": "Lead",
+            "status": "Planned",
+            "due_date": None,
+            "expected_team_impact": "+1.0%",
+        },
+        current_user=admin,
+    )
+    # Team summary has evidence_reference IS NULL, so get() sees empty summary and saving summary does not touch cohort card
+    assert svc.get(team_reference="Inbound", month="September", year=2026, scope=admin_scope) is None
+
+    svc.save(
+        team_reference="Inbound",
+        month="September",
+        year=2026,
+        overall_action="Overall team summary",
+        scope=admin_scope,
+        user_id=str(admin.id),
+    )
+    summary = svc.get(team_reference="Inbound", month="September", year=2026, scope=admin_scope)
+    assert summary["overall_action"] == "Overall team summary"
+    cohort_items = svc.list_plan_items("Inbound", "September", 2026, current_user=admin, region="EGY")
+    assert len(cohort_items) == 1
+    assert cohort_items[0]["title"] == "Cohort Plan Card"
+
+
+def test_cohort_plan_items_router_enforces_team_and_region_scope(full_db, monkeypatch):
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from api.routers import team as team_router_module
+    from config.database import get_db
+
+    inbound = Team(
+        id=uuid.uuid4(),
+        name="Inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    outbound = Team(
+        id=uuid.uuid4(),
+        name="Outbound",
+        db_name="Outbound",
+        display_name="Outbound",
+        region="UAE",
+        team_level="employee",
+        is_active=True,
+    )
+    full_db.add_all([inbound, outbound])
+    full_db.commit()
+
+    active_user = {
+        "user": {
+            "user_id": str(uuid.uuid4()),
+            "role": "Manager",
+            "accessible_teams": ["Inbound"],
+            "accessible_regions": [],
+            "accessible_functions": [],
+            "has_unrestricted_team_access": False,
+        }
+    }
+
+    monkeypatch.setattr(team_router_module, "get_current_user_scope", lambda _db, _req: active_user["user"])
+
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def inject_user(request: Request, call_next):
+        request.state.user = active_user["user"]
+        return await call_next(request)
+
+    app.include_router(team_router_module.router, prefix="/api/team-actions")
+
+    def override_db():
+        yield full_db
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    # In-scope team succeeds
+    res_ok = client.post(
+        "/api/team-actions/plan-items",
+        json={
+            "card_id": "card-1",
+            "team": "Inbound",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Inbound plan",
+            "status": "Planned",
+        },
+    )
+    assert res_ok.status_code == 200
+    assert res_ok.json()["data"]["status"] == "Planned"
+
+    # Out-of-scope team returns 403
+    res_team_403 = client.post(
+        "/api/team-actions/plan-items",
+        json={
+            "card_id": "card-2",
+            "team": "Outbound",
+            "region": "UAE",
+            "month": "September",
+            "year": 2026,
+            "title": "Outbound plan",
+            "status": "Open",
+        },
+    )
+    assert res_team_403.status_code == 403
+
+    # Cross-region Regional Manager returns 403
+    active_user["user"] = {
+        "user_id": str(uuid.uuid4()),
+        "role": "Regional Manager",
+        "accessible_teams": ["Inbound", "Outbound"],
+        "accessible_regions": ["UAE"],
+        "accessible_functions": [],
+        "has_unrestricted_team_access": False,
+    }
+    res_region_403 = client.get(
+        "/api/team-actions/plan-items",
+        params={"team": "Inbound", "month": "September", "year": 2026, "region": "EGY"},
+    )
+    assert res_region_403.status_code == 403

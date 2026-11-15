@@ -9,7 +9,15 @@ import {
   buildFunctionDeepDiveFromRecords,
 } from './callCenterDeepDiveData';
 import { buildRoleDetail, noteFields } from './roleDetailData';
-import { applyTeamTrendConfig, buildTeamDeepDiveFromRecords, selectedTeamConfigSource, unavailableTeamTrend } from './teamDeepDiveData';
+import {
+  applyTeamTrendConfig,
+  buildTeamDeepDiveFromRecords,
+  decodeIndividualActionMeta,
+  deriveAgentTrendContext,
+  encodeIndividualActionMeta,
+  selectedTeamConfigSource,
+  unavailableTeamTrend,
+} from './teamDeepDiveData';
 import {
   EGYPT_RESUBMISSION_TEAM_CONFIG,
   INBOUND_TEAM_CONFIG,
@@ -779,5 +787,94 @@ describe('team score trend', () => {
     expect(dive.scoreTrend?.changeVsPrevious).toBe(10);
     expect(dive.scoreTrend?.basisNote).toMatch(/evaluation settings/i);
     expect(dive.scoreTrend?.points.find((point) => point.selected)?.score).toBe(dive.summary.score);
+  });
+});
+
+describe('multi-month agent trend context and individual action metadata codec', () => {
+  it('computes real previousScore, changeVsPrev, scoreTrendLabel, and weakKpis in generic team deep dive', () => {
+    const july = { year: 2026, month: 'July', key: '2026-07' };
+    const august = { year: 2026, month: 'August', key: '2026-08' };
+    const aliJul: ExecRecord = {
+      ...person('ali', 'Ali Mohamed', 84.0, [
+        kpi('error', 'Error %', 2.0, 5, 'lower_better', 1),
+        kpi('approval', 'Approval within 48 hrs', 84.0, 90, 'higher_better', 0.93),
+      ]),
+      period: july,
+    };
+    const aliAug: ExecRecord = {
+      ...person('ali', 'Ali Mohamed', 79.0, [
+        kpi('error', 'Error %', 3.0, 5, 'lower_better', 1),
+        kpi('approval', 'Approval within 48 hrs', 79.0, 90, 'higher_better', 0.88),
+      ]),
+      period: august,
+    };
+    const aliSep: ExecRecord = person('ali', 'Ali Mohamed', 74.8, [
+      kpi('error', 'Error %', 6.2, 5, 'lower_better', 0.7),
+      kpi('approval', 'Approval within 48 hrs', 70.4, 90, 'higher_better', 0.78),
+    ]);
+    const soloSep: ExecRecord = person('solo', 'Solo Specialist', 82.0, [
+      kpi('approval', 'Approval within 48 hrs', 80.0, 90, 'higher_better', 0.89),
+    ]);
+    const aliOctFuture: ExecRecord = {
+      ...person('ali', 'Ali Mohamed', 98.0, [
+        kpi('approval', 'Approval within 48 hrs', 98.0, 90, 'higher_better', 1),
+      ]),
+      period: { year: 2026, month: 'October', key: '2026-10' },
+    };
+
+    const dive = buildTeamDeepDiveFromRecords(
+      'pre-approvals-ip',
+      [aliJul, aliAug, aliSep, soloSep, aliOctFuture],
+      [],
+      'EGY',
+      '2026-09',
+    );
+
+    const aliRow = dive.agentsAverageOrBelow.find((r) => r.employeeId === 'ali');
+    expect(aliRow?.previousScore).toBe(79.0);
+    expect(aliRow?.changeVsPrev).toBe(-4.2);
+
+    const aliCard = dive.individualActionPlans.find((c) => c.employeeId === 'ali');
+    expect(aliCard?.previousScore).toBe(79.0);
+    expect(aliCard?.changeVsPrev).toBe(-4.2);
+    expect(aliCard?.scoreTrendLabel).toContain('84.0% → 79.0% → 74.8%');
+    expect(aliCard?.scoreTrendLabel).toContain('declining');
+    // Both higher_is_better ('approval': 70.4 < 90) and lower_is_better ('error': 6.2 > 5) flagged
+    expect(aliCard?.weakKpis?.map((w) => w.key)).toEqual(
+      expect.arrayContaining(['error', 'approval']),
+    );
+    expect(aliCard?.recordTeam).toBe('Pre-Approvals IP');
+    expect(aliCard?.performanceLevel).toBe('Employee');
+
+    // Missing prior month stays null (never 0) and single-month label is explicit
+    const soloRow = dive.agentsAverageOrBelow.find((r) => r.employeeId === 'solo');
+    expect(soloRow?.previousScore).toBeNull();
+    expect(soloRow?.changeVsPrev).toBeNull();
+    const soloCard = dive.individualActionPlans.find((c) => c.employeeId === 'solo');
+    expect(soloCard?.scoreTrendLabel).toBe('Single-month record');
+
+    // Direct helper check: future period excluded
+    const ctx = deriveAgentTrendContext('ali', aliSep, [aliJul, aliAug, aliSep, aliOctFuture], 'September', 2026);
+    expect(ctx.scoreTrendLabel).not.toContain('98.0%');
+  });
+
+  it('encodes and decodes individual action owner and expectedImpact without corrupting mainIssue', () => {
+    const encoded = encodeIndividualActionMeta({
+      mainIssue: 'AHT at 3.20 min',
+      owner: 'QA Coach Nadia',
+      expectedImpact: '+4.5% team score lift',
+    });
+    expect(decodeIndividualActionMeta(encoded, 'Default Lead', '+1%', 'Fallback Issue')).toEqual({
+      mainIssue: 'AHT at 3.20 min',
+      owner: 'QA Coach Nadia',
+      expectedImpact: '+4.5% team score lift',
+    });
+
+    // Backward compatible with legacy plain-string root_cause_note
+    expect(decodeIndividualActionMeta('Legacy note text', 'Fallback Lead', '+2%', 'Fallback Issue')).toEqual({
+      mainIssue: 'Legacy note text',
+      owner: 'Fallback Lead',
+      expectedImpact: '+2%',
+    });
   });
 });

@@ -1019,7 +1019,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.queryByText('Add Corrective Action')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(savedRoleAction);
+    expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
+      savedRoleAction.replace(/(?:AI\s*Draft|AI)Edit/g, ''),
+    );
 
     const expectPresenting = () => {
       expect(modeSwitch()).toHaveAttribute('aria-checked', 'true');
@@ -1061,8 +1064,11 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expectPresenting();
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No corrective actions recorded for this role yet.')).not.toBeInTheDocument();
-    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(savedRoleAction);
+    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
+      savedRoleAction.replace(/(?:AI\s*Draft|AI)Edit/g, ''),
+    );
 
     fireEvent.click(modeSwitch());
     expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
