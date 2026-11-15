@@ -250,6 +250,21 @@ export interface AiChatMessage {
   content: string;
 }
 
+export interface AiChatRequestPayload {
+  prompt: string;
+  session_state?: SessionFilterContext;
+  page_context?: PageContextV1 | null;
+  capability_hint?: 'auto' | 'page_help' | 'navigation' | 'performance_query' | 'proposal';
+  history?: AiChatMessage[];
+  provider_override?: 'auto' | 'gemini' | 'deterministic';
+  answer_detail?: 'auto' | 'brief' | 'details';
+  conversation_id?: string | null;
+  client_request_id?: string | null;
+  context_version?: number | null;
+  clarification_choice_id?: string | null;
+  variation_seed?: number;
+}
+
 export interface AiBarItem {
   label: string;
   // Null means "no recorded value" (e.g. an unrecorded branch) — never a

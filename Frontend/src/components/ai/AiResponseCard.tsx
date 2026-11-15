@@ -8,7 +8,9 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   Lightbulb,
+  RefreshCw,
   ShieldAlert,
   Sparkles,
   Target,
@@ -27,6 +29,9 @@ import { apiFetch } from '../../lib/apiClient';
 interface AiResponseCardProps {
   response: AiChatResponsePayload;
   onSelectPrompt?: (prompt: string, choiceId?: string) => void;
+  onRegenerateAngle?: (nextSeed: number) => void;
+  variationSeed?: number;
+  isSending?: boolean;
 }
 
 const MONTH_NAME_TO_NUMBER: Record<string, string> = {
@@ -83,7 +88,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
           <span>{card.title}</span>
         </div>
         {card.notice_text && (
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-700">{card.notice_text}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-700">{card.notice_text}</p>
         )}
       </div>
     );
@@ -120,11 +125,11 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="inline-block rounded bg-sky-100/90 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-sky-800">
+              <span className="inline-block rounded bg-sky-100/90 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-sky-800">
                 {sp.kicker}
               </span>
               {sp.rank_label && (
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700">
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-extrabold text-emerald-700">
                   {sp.rank_label}
                 </span>
               )}
@@ -147,13 +152,13 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
             </span>
             <div className="flex flex-col items-end gap-1">
               <span
-                className={`inline-flex items-center justify-center rounded-lg border px-2 py-0.5 text-[10px] font-extrabold ${gradeStyle.badgeBg} ${gradeStyle.badgeText} ${gradeStyle.badgeBorder}`}
+                className={`inline-flex items-center justify-center rounded-lg border px-2 py-0.5 text-xs font-extrabold ${gradeStyle.badgeBg} ${gradeStyle.badgeText} ${gradeStyle.badgeBorder}`}
               >
                 Grade {grade}
               </span>
               {formattedChange && (
                 <span
-                  className={`inline-flex items-center gap-0.5 rounded-lg border px-2 py-0.5 text-[10px] font-extrabold ${
+                  className={`inline-flex items-center gap-0.5 rounded-lg border px-2 py-0.5 text-xs font-extrabold ${
                     isPositiveChange
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : 'border-rose-200 bg-rose-50 text-rose-700'
@@ -188,10 +193,10 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                   key={`${tile.label}-${idx}`}
                   className={`rounded-xl border px-2.5 py-1.5 ${tileToneClass}`}
                 >
-                  <div className="text-[10px] font-bold text-slate-500">{tile.label}</div>
+                  <div className="text-xs font-bold text-slate-500">{tile.label}</div>
                   <div className="text-sm font-extrabold tabular-nums">{tile.value}</div>
                   {tile.sublabel && (
-                    <div className="truncate text-[10px] font-medium text-slate-500">
+                    <div className="truncate text-xs font-medium text-slate-500">
                       {tile.sublabel}
                     </div>
                   )}
@@ -209,14 +214,14 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                 {chartHistory.length}-Month Score Trend
               </span>
 
-              <div className="flex items-center gap-2.5 text-[11px] font-semibold text-slate-500">
+              <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-500">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-0.5 w-3 border-t-2 border-dashed border-emerald-600" />
                   Target {(sp.target || 100).toFixed(0)}%
                 </span>
                 {firstPoint && chartHistory.length >= 2 && (
                   <span
-                    className={`rounded-md px-2 py-0.5 text-[10px] font-extrabold ${
+                    className={`rounded-md px-2 py-0.5 text-xs font-extrabold ${
                       sixMoDelta >= 0
                         ? 'bg-emerald-50 text-emerald-700'
                         : 'bg-rose-50 text-rose-700'
@@ -253,16 +258,16 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                   className="rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 shadow-2xs"
                 >
                   <div
-                    className="truncate text-[10px] font-bold text-slate-600"
+                    className="truncate text-xs font-bold text-slate-600"
                     title={chip.kpi_label}
                   >
                     {chip.kpi_label.replace(' (Patient Attended / Bookings)', '')}
                   </div>
                   <div className="mt-0.5 flex items-baseline justify-between gap-1">
-                    <span className="text-[11px] font-extrabold tabular-nums text-slate-900">
+                    <span className="text-xs font-extrabold tabular-nums text-slate-900">
                       {chip.actual_display}
                     </span>
-                    <span className={`text-[10px] font-extrabold tabular-nums ${chipStyle.scoreText}`}>
+                    <span className={`text-xs font-extrabold tabular-nums ${chipStyle.scoreText}`}>
                       {ach.toFixed(0)}%
                     </span>
                   </div>
@@ -283,19 +288,19 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                 <div className="min-w-0">
                   <span className="font-bold text-slate-900">{item.title}</span>
                   {item.subtitle && (
-                    <span className="ml-1.5 text-[10px] text-slate-500">{item.subtitle}</span>
+                    <span className="ml-1.5 text-xs text-slate-500">{item.subtitle}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   {item.badge_text && (
-                    <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                    <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-bold text-slate-700">
                       {item.badge_text}
                     </span>
                   )}
                   {item.route_link && (
                     <Link
                       to={item.route_link}
-                      className="text-[10px] font-bold text-blue-600 hover:underline"
+                      className="text-xs font-bold text-blue-600 hover:underline"
                     >
                       Inspect →
                     </Link>
@@ -321,7 +326,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
         <div className="mb-2">
           <p className="text-xs font-extrabold text-slate-900">{card.title}</p>
           {card.subtitle && (
-            <p className="text-[10px] font-medium text-slate-500">{card.subtitle}</p>
+            <p className="text-xs font-medium text-slate-500">{card.subtitle}</p>
           )}
         </div>
         <div className="space-y-2">
@@ -339,12 +344,12 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                   <span className="font-extrabold text-slate-900">{bar.label}</span>
                   <div className="flex items-center gap-2">
                     {bar.secondary_label && (
-                      <span className="text-[10px] font-medium text-slate-500">
+                      <span className="text-xs font-medium text-slate-500">
                         {bar.secondary_label}
                       </span>
                     )}
                     <span
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-extrabold tabular-nums ${badgeStyle}`}
+                      className={`rounded-md px-2 py-0.5 text-xs font-extrabold tabular-nums ${badgeStyle}`}
                     >
                       {bar.display_value}
                     </span>
@@ -373,7 +378,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
         <div className="mb-2">
           <p className="text-xs font-extrabold text-slate-900">{card.title}</p>
           {card.subtitle && (
-            <p className="text-[10px] font-medium text-slate-500">{card.subtitle}</p>
+            <p className="text-xs font-medium text-slate-500">{card.subtitle}</p>
           )}
         </div>
         <div className="space-y-1.5">
@@ -390,7 +395,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                   />
                   <div className="min-w-0">
                     <p className="truncate text-xs font-extrabold text-slate-900">{item.title}</p>
-                    <p className="truncate text-[11px] font-medium text-slate-500">
+                    <p className="truncate text-xs font-medium text-slate-500">
                       {item.subtitle}
                     </p>
                   </div>
@@ -398,7 +403,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                 <div className="flex shrink-0 items-center gap-1.5">
                   {item.badge_text && (
                     <span
-                      className={`rounded-md px-2 py-0.5 text-[11px] font-extrabold tabular-nums ${badgeClass}`}
+                      className={`rounded-md px-2 py-0.5 text-xs font-extrabold tabular-nums ${badgeClass}`}
                     >
                       {item.badge_text}
                     </span>
@@ -429,12 +434,12 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
         <div className="border-b border-slate-200/80 bg-slate-50/80 px-3.5 py-2.5">
           <p className="text-xs font-extrabold text-slate-900">{card.title}</p>
           {card.subtitle && (
-            <p className="text-[10px] font-medium text-slate-500">{card.subtitle}</p>
+            <p className="text-xs font-medium text-slate-500">{card.subtitle}</p>
           )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-200/80 bg-slate-50/50 text-[11px] text-slate-600">
+            <thead className="border-b border-slate-200/80 bg-slate-50/50 text-xs text-slate-600">
               <tr>
                 <th className="px-3 py-2 font-extrabold">KPI</th>
                 <th className="px-2.5 py-2 font-extrabold">Weight</th>
@@ -461,7 +466,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                         />
                         <span>{row.kpi_label}</span>
                         {row.tracking_only_badge && (
-                          <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                          <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-slate-600">
                             {row.tracking_only_badge}
                           </span>
                         )}
@@ -476,7 +481,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                     </td>
                     <td className="px-2.5 py-2 tabular-nums">
                       <span
-                        className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-extrabold ${badgeClass}`}
+                        className={`inline-block rounded-md px-2 py-0.5 text-xs font-extrabold ${badgeClass}`}
                       >
                         {row.achievement_percent !== null && row.achievement_percent !== undefined
                           ? `${row.achievement_percent.toFixed(1)}%`
@@ -509,7 +514,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
           <div>
             <p className="text-xs font-extrabold text-slate-900">{card.title}</p>
             {card.subtitle && (
-              <p className="text-[10px] font-medium text-slate-500">{card.subtitle}</p>
+              <p className="text-xs font-medium text-slate-500">{card.subtitle}</p>
             )}
           </div>
         </div>
@@ -524,19 +529,19 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-extrabold text-white">
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-extrabold text-white">
                       {idx + 1}
                     </span>
                     <h4 className="text-xs font-extrabold text-slate-900">{dec.title}</h4>
                   </div>
-                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-extrabold ${pBadge}`}>
+                  <span className={`rounded-md px-2 py-0.5 text-xs font-extrabold ${pBadge}`}>
                     {dec.priority_label}
                   </span>
                 </div>
 
-                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">{dec.rationale}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{dec.rationale}</p>
 
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-1.5 text-[11px]">
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-1.5 text-xs">
                   <div className="flex items-center gap-1.5 font-bold text-emerald-900">
                     <TrendingUp size={13} className="shrink-0 text-emerald-600" />
                     <span>{dec.expected_impact}</span>
@@ -544,14 +549,14 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                   {dec.route_link && (
                     <Link
                       to={dec.route_link}
-                      className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-[10px] font-extrabold text-white shadow-2xs transition-colors hover:bg-blue-700"
+                      className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-extrabold text-white shadow-2xs transition-colors hover:bg-blue-700"
                     >
                       <span>{dec.cta_label || 'Take Action →'}</span>
                     </Link>
                   )}
                 </div>
 
-                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-slate-500">
+                <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-slate-500">
                   <Target size={11} className="shrink-0 text-blue-600" />
                   <span>Target: {dec.target_label}</span>
                 </div>
@@ -566,10 +571,17 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
   return null;
 }
 
-export default function AiResponseCard({ response, onSelectPrompt }: AiResponseCardProps) {
+export default function AiResponseCard({
+  response,
+  onSelectPrompt,
+  onRegenerateAngle,
+  variationSeed = 0,
+  isSending = false,
+}: AiResponseCardProps) {
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const primaryCards = response.visual_cards.filter((c) => c.card_type !== 'decision_playbook');
   const playbookCards = response.visual_cards.filter((c) => c.card_type === 'decision_playbook');
@@ -623,6 +635,23 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
     }
   };
 
+  const handleCopySummary = async () => {
+    const lines = [response.headline, ...response.narrative_bullets.map((b) => `- ${b}`)].filter(Boolean);
+    const text = lines.join('\n');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard may be restricted in headless contexts; still provide clean UI no-op fallback.
+    }
+  };
+
+  const isLiveSynthesis =
+    response.provider_used === 'cloudflare' || response.provider_used === 'gemini';
+
   return (
     <div className="flex items-start gap-2.5">
       {/* Compact Assistant Avatar Badge */}
@@ -636,17 +665,29 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
       {/* Main Compact Response Card */}
       <div className="min-w-0 flex-1 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_6px_24px_rgb(15,23,42,0.05)]">
         {/* Executive Headline (1-2 sentences) */}
-        <p dir="auto" className="text-xs font-extrabold leading-relaxed text-slate-900 sm:text-[13px]">
+        <p dir="auto" className="text-sm font-extrabold leading-relaxed text-slate-900">
           {response.headline}
         </p>
 
-        {/* Compact Executive Scope Banner + Primary Source Link + Show Details Toggle */}
+        {/* Compact Executive Scope Banner + Provenance + Primary Source Link + Actions */}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
+            {response.outcome === 'answer' && (
+              <span
+                data-testid="ai-provenance-badge"
+                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold ${
+                  isLiveSynthesis
+                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {isLiveSynthesis ? 'Verified PMS · Live Synthesis' : 'Verified PMS · Deterministic'}
+              </span>
+            )}
             {response.scope_banner && (
               <span
                 data-testid="ai-scope-banner"
-                className="inline-flex items-center rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                className="inline-flex items-center rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
               >
                 {response.scope_banner}
               </span>
@@ -655,7 +696,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
               <Link
                 to={primarySourceLink.route}
                 data-testid="ai-primary-source-link"
-                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/90 px-2.5 py-0.5 text-[11px] font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/90 px-2.5 py-0.5 text-xs font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
               >
                 <span>{primarySourceLink.label}</span>
               </Link>
@@ -665,31 +706,58 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                 type="button"
                 data-testid="ai-primary-drilldown"
                 onClick={() => onSelectPrompt?.(response.suggested_followups[0])}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
               >
                 <span>Drill down: {response.suggested_followups[0]}</span>
-                <ArrowRight size={11} />
+                <ArrowRight size={12} />
               </button>
             )}
           </div>
 
-          {hasExpandableDetails && (
-            <button
-              type="button"
-              aria-expanded={detailsExpanded}
-              onClick={() =>
-                setDetailsOverride({
-                  traceId: response.trace_id ?? '',
-                  answerDetail: response.answer_detail,
-                  expanded: !detailsExpanded,
-                })
-              }
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-            >
-              <span>{detailsExpanded ? 'Hide details' : 'Show details'}</span>
-              {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {response.outcome === 'answer' && onRegenerateAngle && (
+              <button
+                type="button"
+                data-testid="ai-regenerate-angle-btn"
+                aria-label="Get a different reply angle"
+                disabled={isSending}
+                onClick={() => onRegenerateAngle((variationSeed ?? 0) + 1)}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
+              >
+                <RefreshCw size={12} />
+                <span>Different angle</span>
+              </button>
+            )}
+            {response.outcome === 'answer' && (
+              <button
+                type="button"
+                data-testid="ai-copy-summary-btn"
+                aria-label="Copy summary"
+                onClick={() => void handleCopySummary()}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+              >
+                {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            )}
+            {hasExpandableDetails && (
+              <button
+                type="button"
+                aria-expanded={detailsExpanded}
+                onClick={() =>
+                  setDetailsOverride({
+                    traceId: response.trace_id ?? '',
+                    answerDetail: response.answer_detail,
+                    expanded: !detailsExpanded,
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+              >
+                <span>{detailsExpanded ? 'Hide details' : 'Show details'}</span>
+                {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
@@ -697,7 +765,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
           <div className="mt-2 rounded-xl border border-sky-200/80 bg-sky-50/60 px-3 py-2">
             <ul
               dir="auto"
-              className="space-y-1 text-[11px] font-medium leading-relaxed text-slate-700"
+              className="space-y-1 text-xs font-medium leading-relaxed text-slate-700"
             >
               {visibleBullets.map((bullet, idx) => (
                 <li key={idx} className="flex items-start gap-1.5">
@@ -723,7 +791,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                     type="button"
                     data-testid={`ai-clarification-choice-${choice.id}`}
                     onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label, choice.id)}
-                    className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-white px-3 py-1 text-[11px] font-extrabold text-blue-700 shadow-2xs transition-all hover:bg-blue-600 hover:text-white"
+                    className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-white px-3 py-1 text-xs font-extrabold text-blue-700 shadow-2xs transition-all hover:bg-blue-600 hover:text-white"
                   >
                     <span>{choice.label}</span>
                     <ArrowRight size={11} />
@@ -736,7 +804,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
 
         {/* Basis Shift Warning if present */}
         {response.basis_warning && (
-          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-900">
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900">
             <AlertTriangle size={13} className="shrink-0 text-amber-600" />
             <span>{response.basis_warning}</span>
           </div>
@@ -757,7 +825,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                   <button
                     type="button"
                     onClick={() => setShowPlaybook((prev) => !prev)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-600 hover:text-white"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-xs font-extrabold text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-600 hover:text-white"
                   >
                     <Lightbulb size={12} />
                     <span>
@@ -782,7 +850,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                   <Link
                     key={cta.route}
                     to={cta.route}
-                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-xs font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
                   >
                     <span>{cta.label}</span>
                   </Link>
@@ -798,7 +866,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
             {response.citations.map((pill) => (
               <span
                 key={pill.label}
-                className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
                   pill.warning
                     ? 'border border-amber-200 bg-amber-50 text-amber-800'
                     : 'border border-sky-100 bg-sky-50/70 text-sky-800'
@@ -811,9 +879,9 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
 
           {response.trace_id && <div className="flex items-center gap-1">
             {feedback === 'up' && (
-              <span className="mr-1 text-[11px] font-bold text-emerald-600">Feedback saved</span>
+              <span className="mr-1 text-xs font-bold text-emerald-600">Feedback saved</span>
             )}
-            {feedbackError && <span role="alert" className="mr-1 text-[11px] text-rose-600">Could not save feedback. Try again.</span>}
+            {feedbackError && <span role="alert" className="mr-1 text-xs text-rose-600">Could not save feedback. Try again.</span>}
             <button
               type="button"
               onClick={() => void handleFeedback('up')}

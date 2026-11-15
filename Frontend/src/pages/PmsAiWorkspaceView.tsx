@@ -28,7 +28,7 @@ import type { User } from '../types';
 import AiResponseCard from '../components/ai/AiResponseCard';
 import AiScopeDropdown from '../components/ai/AiScopeDropdown';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
-import { buildFallbackStarterPrompts } from '../features/ai/starterPrompts';
+import { buildFallbackStarterPrompts, mergeStarterScenarios } from '../features/ai/starterPrompts';
 import type {
   AiChatMessage,
   AiChatResponsePayload,
@@ -55,6 +55,7 @@ interface ConversationTurn {
   userPrompt: string;
   clientRequestId: string;
   clarificationChoiceId?: string;
+  variationSeed?: number;
   response?: AiChatResponsePayload;
   error?: string;
   conflictCode?: 404 | 409;
@@ -130,6 +131,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
+  const [showMidChatScenarios, setShowMidChatScenarios] = useState<boolean>(false);
   const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(false);
   const activeRequestSeqRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -158,6 +160,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
   const functionParam = searchParams.get('function') || null;
   const positionParam = searchParams.get('position') || null;
+  const regionParam = searchParams.get('region') || null;
 
   const prevScopeParamsRef = useRef({
     functionParam,
@@ -220,12 +223,13 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       team: selectedTeam !== 'All' ? selectedTeam : null,
       position: positionParam,
       branch: selectedBranch !== 'all' ? selectedBranch : null,
+      region: regionParam,
       performance_level: selectedLevel !== 'All' ? selectedLevel : null,
       month: monthParam,
       year: yearParam,
       last_confirmed_query: lastConfirmedQuery,
     }),
-    [functionParam, selectedTeam, positionParam, selectedBranch, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
+    [functionParam, selectedTeam, positionParam, selectedBranch, regionParam, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
   const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function', value: string) => {
@@ -386,6 +390,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         retryTurnId?: string;
         reuseClientRequestId?: string;
         conflictCode?: 404 | 409;
+        variationSeed?: number;
       },
     ) => {
       const cleanPrompt = rawPrompt.trim();
@@ -460,6 +465,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               ? {
                   ...item,
                   clientRequestId,
+                  variationSeed: options?.variationSeed ?? item.variationSeed,
                   error: undefined,
                   conflictCode: undefined,
                   isPending: true,
@@ -475,6 +481,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
             userPrompt: cleanPrompt,
             clientRequestId,
             clarificationChoiceId,
+            variationSeed: options?.variationSeed,
             isPending: true,
           },
         ]);
@@ -497,6 +504,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               history: historyPayload,
               provider_override: 'auto',
               answer_detail: answerDetail,
+              ...(typeof options?.variationSeed === 'number' && options.variationSeed > 0
+                ? { variation_seed: options.variationSeed }
+                : {}),
             }),
           },
         );
@@ -571,16 +581,28 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   }, [currentUser]);
 
   const serverStarterPrompts = watchingData?.starter_prompts;
+  const fallbackStarterPrompts = useMemo(
+    () =>
+      buildFallbackStarterPrompts({
+        functionName: sessionState.function,
+        team: sessionState.team,
+        branch: sessionState.branch,
+        region: sessionState.region || watchingData?.resolved_session_state?.region || null,
+      }),
+    [
+      sessionState.function,
+      sessionState.team,
+      sessionState.branch,
+      sessionState.region,
+      watchingData?.resolved_session_state?.region,
+    ],
+  );
   const starterPrompts: AiStarterPrompt[] = useMemo(() => {
     if (serverStarterPrompts && serverStarterPrompts.length > 0) {
-      return serverStarterPrompts;
+      return mergeStarterScenarios(serverStarterPrompts, fallbackStarterPrompts);
     }
-    return buildFallbackStarterPrompts({
-      functionName: sessionState.function,
-      team: sessionState.team,
-      branch: sessionState.branch,
-    });
-  }, [serverStarterPrompts, sessionState.function, sessionState.team, sessionState.branch]);
+    return fallbackStarterPrompts;
+  }, [serverStarterPrompts, fallbackStarterPrompts]);
 
   const filteredStarterPrompts = useMemo(() => {
     if (selectedCategory === 'all') return starterPrompts;
@@ -596,9 +618,11 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   }, [turns, starterPrompts]);
 
   const resolvedMonthLabel =
-    watchingData?.resolved_session_state?.month || sessionState.month || 'September';
+    watchingData?.resolved_session_state?.month || sessionState.month || 'Latest';
   const resolvedYearLabel =
-    watchingData?.resolved_session_state?.year || sessionState.year || 2026;
+    watchingData?.resolved_session_state?.month || sessionState.month
+      ? watchingData?.resolved_session_state?.year || sessionState.year || ''
+      : 'Period';
 
   return (
     <div className="min-h-full bg-gradient-to-br from-[#EDF4FC] via-[#F5F9FD] to-[#EBF3FA] px-3 py-3 sm:px-5">
@@ -630,12 +654,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     <h1 className="text-sm font-extrabold tracking-tight text-slate-900">
                       PMS AI
                     </h1>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700">
                       <Calendar size={11} className="text-sky-600" />
-                      {resolvedMonthLabel} {resolvedYearLabel}
+                      {resolvedYearLabel ? `${resolvedMonthLabel} ${resolvedYearLabel}` : resolvedMonthLabel}
                     </span>
                   </div>
-                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                     Reads your workspace · Proposes quantified decisions · Never acts without you
                   </p>
@@ -740,7 +764,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 <div
                   role="group"
                   aria-label="Response detail mode"
-                  className="inline-flex items-center rounded-full border border-slate-200/90 bg-slate-50/90 p-0.5 text-[11px] font-bold"
+                  className="inline-flex items-center rounded-full border border-slate-200/90 bg-slate-50/90 p-0.5 text-xs font-bold"
                 >
                   <button
                     type="button"
@@ -773,7 +797,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   aria-expanded={showWatchingPanel}
                   aria-label={showWatchingPanel ? 'Hide AI is watching panel' : 'Show AI is watching panel'}
                   onClick={() => setShowWatchingPanel((prev) => !prev)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] font-bold shadow-2xs transition-colors ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
                     showWatchingPanel
                       ? 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300'
                       : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
@@ -800,7 +824,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         setLastConfirmedQuery(null);
                       // lastConfirmedQuery cleared above
                     }}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
                   >
                     <RotateCcw size={12} />
                     <span>New chat</span>
@@ -855,6 +879,10 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       { key: 'governance', label: 'SIP & Actions', icon: <Target size={12} /> },
                     ].map((tab) => {
                       const active = selectedCategory === tab.key;
+                      const count =
+                        tab.key === 'all'
+                          ? starterPrompts.length
+                          : starterPrompts.filter((p) => p.category === tab.key).length;
                       return (
                         <button
                           key={tab.key}
@@ -862,7 +890,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                           role="tab"
                           aria-selected={active}
                           onClick={() => setSelectedCategory(tab.key)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold transition-all ${
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all ${
                             active
                               ? 'bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-sm shadow-blue-500/25'
                               : 'border border-slate-200/90 bg-white/90 text-slate-600 hover:border-blue-300 hover:text-blue-600'
@@ -872,12 +900,36 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                             {tab.icon}
                           </span>
                           <span>{tab.label}</span>
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-xs font-extrabold tabular-nums ${
+                              active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {count}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* Sleek, Compact 3-Column Scenario Cards (2 rows x 3 columns) */}
+                  {/* Sleek, Compact 3-Column Scenario Cards */}
+                  {filteredStarterPrompts.length === 0 ? (
+                    <div
+                      data-testid="ai-scenarios-empty"
+                      className="mt-4 flex w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center"
+                    >
+                      <p className="text-sm font-bold text-slate-700">
+                        No scenarios match this category for the current scope.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCategory('all')}
+                        className="mt-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-blue-600 hover:border-blue-400"
+                      >
+                        View all scenarios
+                      </button>
+                    </div>
+                  ) : (
                   <div className="mt-4 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                     {filteredStarterPrompts.map((item) => {
                       const style = CATEGORY_STYLES[item.category] || CATEGORY_STYLES.team;
@@ -897,12 +949,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                                   {STARTER_ICON_MAP[item.icon_key] || STARTER_ICON_MAP.chart}
                                 </div>
                                 <span
-                                  className={`inline-block rounded-md px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${style.badge}`}
+                                  className={`inline-block rounded-md px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider ${style.badge}`}
                                 >
                                   {item.badge || item.category.toUpperCase()}
                                 </span>
                               </div>
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
                                 <span>Run</span>
                                 <ArrowRight size={10} />
                               </span>
@@ -914,7 +966,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                             {item.subtitle && (
                               <p
                                 dir="auto"
-                                className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500"
+                                className="mt-0.5 line-clamp-2 text-xs leading-snug text-slate-500"
                               >
                                 {item.subtitle}
                               </p>
@@ -924,6 +976,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -938,22 +991,29 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                           {turn.userPrompt}
                         </div>
                         <div
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-extrabold text-white shadow-2xs"
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-extrabold text-white shadow-2xs"
                           aria-hidden="true"
                         >
                           {userInitials}
                         </div>
                       </div>
 
-                      {/* Left-aligned Assistant Skeleton */}
+                      {/* Left-aligned Assistant Structured Skeleton */}
                       {turn.isPending && (
                         <div className="flex items-start gap-2.5" aria-label="Analyzing workspace data">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-2xs">
-                            <Sparkles size={15} className="animate-spin" />
+                            <Sparkles size={15} className="animate-pulse" />
                           </div>
-                          <div className="flex-1 space-y-2.5 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
-                            <div className="h-3.5 w-2/3 animate-pulse rounded bg-slate-100" />
-                            <div className="h-20 w-full animate-pulse rounded-xl bg-slate-50" />
+                          <div className="flex-1 space-y-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                            <div className="flex items-center gap-2">
+                              <div className="h-5 w-32 animate-pulse rounded-md bg-slate-100" />
+                              <div className="h-5 w-40 animate-pulse rounded-md bg-slate-100" />
+                            </div>
+                            <div className="h-4 w-3/4 animate-pulse rounded bg-slate-100" />
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div className="h-14 animate-pulse rounded-xl bg-slate-50" />
+                              <div className="h-14 animate-pulse rounded-xl bg-slate-50" />
+                            </div>
                           </div>
                         </div>
                       )}
@@ -973,7 +1033,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                                 conflictCode: turn.conflictCode,
                               })
                             }
-                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
                           >
                             <RotateCcw size={12} />
                             <span>Retry</span>
@@ -984,7 +1044,14 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       {turn.response && (
                         <AiResponseCard
                           response={turn.response}
+                          variationSeed={turn.variationSeed ?? 0}
+                          isSending={isSending}
                           onSelectPrompt={(p, choiceId) => void sendPrompt(p, choiceId)}
+                          onRegenerateAngle={(nextSeed) =>
+                            void sendPrompt(turn.userPrompt, turn.clarificationChoiceId, {
+                              variationSeed: nextSeed,
+                            })
+                          }
                         />
                       )}
                     </div>
@@ -998,20 +1065,59 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
             <div className="relative z-20 border-t border-slate-100 bg-white/95 px-4 pb-3 pt-2.5 sm:px-6">
               {turns.length > 0 && (
                 <div className="mb-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-2.5 py-1.5">
-                  <div className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setShowScenarioTray((v) => !v)}
-                      className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-slate-700 hover:text-blue-600"
-                    >
-                      <Compass size={13} className="text-blue-600" />
-                      <span>Quick Follow-Ups</span>
-                      {showScenarioTray ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-                    </button>
-                    <span className="text-[10px] font-semibold text-slate-400">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowScenarioTray((v) => !v)}
+                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-slate-700 hover:text-blue-600"
+                      >
+                        <Compass size={13} className="text-blue-600" />
+                        <span>Quick Follow-Ups</span>
+                        {showScenarioTray ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="ai-midchat-scenarios-toggle"
+                        aria-expanded={showMidChatScenarios}
+                        onClick={() => setShowMidChatScenarios((v) => !v)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold transition-colors ${
+                          showMidChatScenarios
+                            ? 'border-blue-300 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-600'
+                        }`}
+                      >
+                        <LayoutGrid size={12} />
+                        <span>Scenarios</span>
+                      </button>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-400">
                       Click to run
                     </span>
                   </div>
+
+                  {showMidChatScenarios && (
+                    <div
+                      data-testid="ai-midchat-scenarios-panel"
+                      className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200/70 pt-2"
+                    >
+                      {starterPrompts.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          disabled={isSending}
+                          onClick={() => {
+                            setShowMidChatScenarios(false);
+                            void sendPrompt(item.prompt);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-50"
+                        >
+                          <span>{item.label}</span>
+                          <ArrowRight size={11} className="shrink-0 text-blue-600" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {showScenarioTray && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -1022,7 +1128,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                           disabled={isSending}
                           onClick={() => void sendPrompt(chipPrompt)}
                           dir="auto"
-                          className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2.5 py-1 text-left text-[11px] font-bold text-slate-700 shadow-2xs transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-50"
+                          className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2.5 py-1 text-left text-xs font-bold text-slate-700 shadow-2xs transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-50"
                         >
                           <span className="max-w-[260px] truncate">{chipPrompt}</span>
                           <ArrowRight
@@ -1063,7 +1169,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 </button>
               </form>
 
-              <p className="mt-1.5 flex items-center justify-center gap-1 text-center text-[10px] font-medium text-slate-400">
+              <p className="mt-1.5 flex items-center justify-center gap-1 text-center text-xs font-medium text-slate-400">
                 <Info size={11} className="shrink-0" />
                 <span>
                   Performance figures come from PMS data within your authorized scope.

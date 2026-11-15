@@ -502,10 +502,10 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
             ),
             AiStarterPrompt(
                 id="branch-compare",
-                label="Compare UAE Branches",
-                subtitle="Compare performance and operational metrics across Dubai, Sharjah, Ajman, and Clinics.",
+                label="Compare branches",
+                subtitle="Branch score comparison in your scope",
                 badge="BRANCH",
-                prompt=f"Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) performance for {team_label} and recommend branch decisions.",
+                prompt=f"Compare branch performance for {team_label}{scope_suffix} and recommend branch decisions.",
                 category="branch",
                 icon_key="chart",
             ),
@@ -527,7 +527,138 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
                 category="people",
                 icon_key="users",
             ),
+            AiStarterPrompt(
+                id="kpi-gaps",
+                label=f"Largest KPI gaps ({team_label})",
+                subtitle="Diagnose the lowest-achieving KPIs against target and focus areas.",
+                badge="KPI & DECISIONS",
+                prompt=f"What are the largest KPI gaps vs target in {team_label}{scope_suffix} and what decisions do you recommend?",
+                category="kpi",
+                icon_key="chart",
+            ),
         ]
+
+    team_cf = (session_state.team or "").strip().casefold()
+    if team_cf == "inbound":
+        cc_kpi_prompt = AiStarterPrompt(
+            id="inbound-kpi-decisions",
+            label="Inbound KPI Gaps & Queue Decisions",
+            subtitle="Diagnose Abandon Rate, Booking Rate, and Attendance gaps with an executive decision playbook.",
+            badge="KPI & DECISIONS",
+            prompt=f"Diagnose Inbound KPIs (Abandon Rate, Booking Rate, Attendance Rate){scope_suffix} and propose an executive decision playbook.",
+            category="kpi",
+            icon_key="chart",
+        )
+    elif team_cf == "support positions":
+        cc_kpi_prompt = AiStarterPrompt(
+            id="support-kpi-decisions",
+            label="Support Positions KPI Diagnosis",
+            subtitle="Evaluate Support Positions KPI achievement vs target and role-level score drivers.",
+            badge="KPI & DECISIONS",
+            prompt=f"Diagnose Support Positions KPIs vs target{scope_suffix} and recommend targeted operational decisions.",
+            category="kpi",
+            icon_key="chart",
+        )
+    else:
+        cc_kpi_prompt = AiStarterPrompt(
+            id="outbound-paradox",
+            label="Outbound Booking vs Attendance Gap",
+            subtitle="Diagnose the gap between Outbound Booking Rate and Patient Attendance with an executive decision playbook.",
+            badge="KPI & DECISIONS",
+            prompt="Diagnose Outbound KPIs (Attendance Rate, Reachability, Booking Rate) and propose an executive decision playbook to reduce patient no-shows.",
+            category="kpi",
+            icon_key="chart",
+        )
+
+    region_cf = (session_state.region or "").strip().casefold()
+    is_support_positions = team_cf == "support positions"
+    is_egy_scope = region_cf in ("egy", "egypt") or "egy" in team_cf or "offshore" in team_cf
+    is_uae_branch_cc = not is_support_positions and not is_egy_scope
+
+    if is_support_positions:
+        people_root_cause_prompt = AiStarterPrompt(
+            id="people-root-cause",
+            label="Top negative contributors in Support Positions",
+            subtitle="Find the employees driving Support Positions KPI gaps and What-If coaching ROI.",
+            badge="PEOPLE",
+            prompt=f"Who are the top negative contributors to weighted KPI gaps in Support Positions{scope_suffix} and what happens if we coach the bottom 3?",
+            category="people",
+            icon_key="users",
+        )
+        branch_compare_prompt = AiStarterPrompt(
+            id="branch-compare",
+            label="Support Positions KPI drivers & trend",
+            subtitle="Review role-level KPI achievement and month-over-month score drivers across Support Positions.",
+            badge="BRANCH",
+            prompt=f"Show verified KPI score drivers and 6-month trend for Support Positions{scope_suffix} and recommend operational decisions.",
+            category="branch",
+            icon_key="chart",
+        )
+        spotlight_prompt = AiStarterPrompt(
+            id="agent-spotlight-trend",
+            label="Top Performer & 6-Month Score Trend",
+            subtitle="Instant spotlight of the #1 Support Positions performer with grade, KPIs, and 6-month trend chart.",
+            badge="PEOPLE · TREND",
+            prompt=f"Who is the best agent in Support Positions{scope_suffix} and his trend?",
+            category="people",
+            icon_key="users",
+        )
+    elif not is_uae_branch_cc:
+        people_root_cause_prompt = AiStarterPrompt(
+            id="people-root-cause",
+            label=f"Top negative contributors in {team_label}",
+            subtitle="Find the employees driving KPI gaps, Pareto concentration, and What-If coaching ROI.",
+            badge="PEOPLE",
+            prompt=f"Who are the top negative contributors in {team_label}{scope_suffix} and what happens if we coach the bottom 3?",
+            category="people",
+            icon_key="users",
+        )
+        branch_compare_prompt = AiStarterPrompt(
+            id="branch-compare",
+            label="Compare teams & scope KPIs",
+            subtitle="Compare performance, SLA attainment, and score drivers across authorized teams in your scope.",
+            badge="BRANCH",
+            prompt=f"Compare team performance and KPI score drivers for {team_label}{scope_suffix} and recommend operational decisions.",
+            category="branch",
+            icon_key="chart",
+        )
+        spotlight_prompt = AiStarterPrompt(
+            id="agent-spotlight-trend",
+            label="Best Agent & 6-Month Score Trend",
+            subtitle=f"Instant spotlight of the #1 performer in {team_label} with grade, KPIs, and 6-month trend chart.",
+            badge="PEOPLE · TREND",
+            prompt=f"Who is the best agent in {team_label}{scope_suffix} and his trend?",
+            category="people",
+            icon_key="users",
+        )
+    else:
+        people_root_cause_prompt = AiStarterPrompt(
+            id="people-root-cause",
+            label="Who caused the Attendance gap?",
+            subtitle="Find the employees driving the attendance gap, Pareto 80/20 concentration, and What-If coaching ROI.",
+            badge="PEOPLE",
+            prompt=f"Who are the top negative contributors to the Attendance Rate gap in {team_label}{scope_suffix} and what happens if we coach the bottom 3?",
+            category="people",
+            icon_key="users",
+        )
+        branch_compare_prompt = AiStarterPrompt(
+            id="branch-compare",
+            label="Compare Dubai vs Sharjah & UAE Branches",
+            subtitle="Compare performance, attendance, bookings, and no-shows across Dubai, Sharjah, Ajman, and Clinics.",
+            badge="BRANCH",
+            prompt=f"Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) Attendance and Booking conversion for {team_label} and recommend branch decisions.",
+            category="branch",
+            icon_key="chart",
+        )
+        spotlight_prompt = AiStarterPrompt(
+            id="agent-spotlight-trend",
+            label="Best Agent & 6-Month Score Trend",
+            subtitle="Instant spotlight of the #1 agent in Inbound or Outbound with grade, KPIs, and 6-month trend chart.",
+            badge="PEOPLE · TREND",
+            prompt=f"Who is the best agent in {team_label if team_label != 'Call Center' else 'Inbound'} and his trend?",
+            category="people",
+            icon_key="users",
+        )
 
     return [
         AiStarterPrompt(
@@ -539,24 +670,8 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
             category="team",
             icon_key="users",
         ),
-        AiStarterPrompt(
-            id="people-root-cause",
-            label="Who caused the Attendance gap?",
-            subtitle="Find the employees driving the attendance gap, Pareto 80/20 concentration, and What-If coaching ROI.",
-            badge="PEOPLE",
-            prompt=f"Who are the top negative contributors to the Attendance Rate gap in {team_label}{scope_suffix} and what happens if we coach the bottom 3?",
-            category="people",
-            icon_key="users",
-        ),
-        AiStarterPrompt(
-            id="branch-compare",
-            label="Compare Dubai vs Sharjah & UAE Branches",
-            subtitle="Compare performance, attendance, bookings, and no-shows across Dubai, Sharjah, Ajman, and Clinics.",
-            badge="BRANCH",
-            prompt=f"Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) Attendance and Booking conversion for {team_label} and recommend branch decisions.",
-            category="branch",
-            icon_key="chart",
-        ),
+        people_root_cause_prompt,
+        branch_compare_prompt,
         AiStarterPrompt(
             id="governance-actions",
             label="Pending corrective actions & SIP",
@@ -566,22 +681,6 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
             category="governance",
             icon_key="shield",
         ),
-        AiStarterPrompt(
-            id="agent-spotlight-trend",
-            label="Best Agent & 6-Month Score Trend",
-            subtitle="Instant spotlight of the #1 agent in Inbound or Outbound with grade, KPIs, and 6-month trend chart.",
-            badge="PEOPLE · TREND",
-            prompt=f"Who is the best agent in {team_label if team_label != 'Call Center' else 'Inbound'} and his trend?",
-            category="people",
-            icon_key="users",
-        ),
-        AiStarterPrompt(
-            id="outbound-paradox",
-            label="Diagnose Outbound Booking vs. No-Show",
-            subtitle="Evaluate why Booking Rate is 100% while Patient Attendance is 56.6% and propose an executive decision playbook.",
-            badge="KPI & DECISIONS",
-            prompt="Diagnose Outbound KPIs (Attendance Rate, Reachability, Booking Rate) and propose an executive decision playbook to reduce patient no-shows.",
-            category="kpi",
-            icon_key="chart",
-        ),
+        spotlight_prompt,
+        cc_kpi_prompt,
     ]

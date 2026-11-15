@@ -44,6 +44,7 @@ from models.models import Employee, Team
 from services.ai.catalog import evaluation_cache_identity, function_for_team, get_ai_catalog
 from services.ai.conversation_service import AiConversationService
 from services.ai.local_model_router import local_intent_enabled, suggest_intent
+from services.ai.providers import resolve_variation_index
 from services.cache_invalidation_service import CacheInvalidationService
 from services.corrective_action_service import (
     ACTION_PRIORITIES,
@@ -208,6 +209,16 @@ def normalize_page_id(page_context: PageContextV1 | None) -> str:
     route = (page_context.route_id or "").strip().casefold()
     if raw_id in {"monthly_presentation", "presentation"} or "monthly-presentation" in route or "/presentation" in route:
         return "monthly_presentation"
+    if raw_id in {"executive_summary", "executive", "executive_overview"} or route.startswith("/executive"):
+        return "executive_summary"
+    if raw_id in {"function_summary", "function", "function_dashboard"} or route.startswith("/function"):
+        return "function_summary"
+    if raw_id in {"employee_profile", "employee_scorecard", "scorecard", "employee"} or route.startswith("/employee"):
+        return "employee_profile"
+    if raw_id in {"insights", "performance_insights"} or route.startswith("/insights"):
+        return "insights"
+    if raw_id in {"corrective_actions", "corrective_action", "actions"} or "corrective-actions" in route or route.startswith("/actions"):
+        return "corrective_actions"
     if raw_id in {"team_dashboard", "departmental_summary", "team"} or route.startswith("/team") or "department" in route:
         return "team_dashboard"
     return raw_id or "ai_workspace"
@@ -223,11 +234,16 @@ def build_effective_context_label(
     page_label = {
         "monthly_presentation": "Monthly Presentation",
         "team_dashboard": "Team Dashboard",
+        "executive_summary": "Executive Summary",
+        "function_summary": "Function Summary",
+        "employee_profile": "Employee Scorecard",
+        "insights": "Performance Insights",
+        "corrective_actions": "Corrective Actions",
         "ai_workspace": "AI Workspace",
     }.get(page_id, "PMS Assistant")
 
     parts: list[str] = [page_label]
-    scope_name = session_state.team or session_state.function or "Call Center"
+    scope_name = session_state.team or session_state.function or "All Authorized Scopes"
     if session_state.position and session_state.position.casefold() not in {"all", ""}:
         scope_name = f"{scope_name} ({session_state.position})"
     parts.append(scope_name)
@@ -656,12 +672,27 @@ def get_authorized_navigation_targets(
         )
         return targets
 
+    nav_fn_cf = (session_state.function or "").strip().casefold()
+    nav_team_cf = (session_state.team or "").strip().casefold()
+    nav_region_cf = (session_state.region or "").strip().casefold()
+    is_uae_cc_nav = (
+        (nav_fn_cf == "call center" or nav_team_cf in ("inbound", "outbound"))
+        and nav_team_cf != "support positions"
+        and "egy" not in nav_team_cf
+        and "offshore" not in nav_team_cf
+        and nav_region_cf in ("", "uae")
+    )
+
     targets.append(
         AiNavigationTarget(
             id="nav-monthly-presentation",
             label=f"Open Monthly Presentation ({session_state.function or 'Call Center'}) →",
             route=f"/monthly-presentation{period_qs}",
-            description="Executive deck showing monthly KPI achievement, UAE 4-branch conversion, and top/bottom contributors.",
+            description=(
+                "Executive deck showing monthly KPI achievement, UAE 4-branch conversion, and top/bottom contributors."
+                if is_uae_cc_nav
+                else "Executive deck showing monthly KPI achievement, authorized branch breakdown, and top/bottom contributors."
+            ),
             icon_key="presentation",
         )
     )
@@ -745,12 +776,13 @@ def build_page_help_payload(
         else None
     )
 
-    scope_label = session_state.team or session_state.function or "Call Center"
+    scope_label = session_state.team or session_state.function or "your authorized scope"
     period_label = (
         f"{session_state.month} {session_state.year}"
         if session_state.month and session_state.year
         else (session_state.month or "the active period")
     )
+    variant_idx = resolve_variation_index(req.prompt, req.history, req.variation_seed)
 
     metric_explanation: str | None = None
     raw_metric = req.page_context.selected_metric_id if req.page_context else None
@@ -776,17 +808,42 @@ def build_page_help_payload(
             )
             metric_explanation = f"{m_def.display_name} ({dir_text}) {score_text}."
 
+    pc_fn = (req.page_context.function_id if req.page_context else None) or ""
+    pc_team = (req.page_context.team_id if req.page_context else None) or ""
+    pc_region = (req.page_context.region if req.page_context else None) or ""
+    help_fn_cf = (session_state.function or pc_fn or "").strip().casefold()
+    help_team_cf = (session_state.team or pc_team or "").strip().casefold()
+    help_region_cf = (session_state.region or pc_region or "").strip().casefold()
+    is_uae_cc_help = (
+        (help_fn_cf == "call center" or help_team_cf in ("inbound", "outbound"))
+        and help_team_cf != "support positions"
+        and "egy" not in help_team_cf
+        and "offshore" not in help_team_cf
+        and help_region_cf in ("", "uae")
+    )
+
     if page_id == "monthly_presentation":
         page_title = "Monthly Presentation"
-        summary = (
-            f"Monthly Presentation summarizes {scope_label} KPI achievement against target, UAE 4-branch conversion, "
-            f"and top/bottom score contributors for {period_label}."
-        )
-        key_elements = [
-            "Executive KPI Summary Cards: Shows weighted achievement, actual vs. target values, and month-over-month movement.",
-            "UAE 4-Branch Conversion Matrix: Compares Dubai, Sharjah, Ajman, and Clinics patient attendance and booking volumes.",
-            "Contributor & Root-Cause Breakdown: Highlights which KPIs and records drove the monthly team score.",
-        ]
+        if is_uae_cc_help:
+            summary = (
+                f"Monthly Presentation summarizes {scope_label} KPI achievement against target, UAE 4-branch conversion, "
+                f"and top/bottom score contributors for {period_label}."
+            )
+            key_elements = [
+                "Executive KPI Summary Cards: Shows weighted achievement, actual vs. target values, and month-over-month movement.",
+                "UAE 4-Branch Conversion Matrix: Compares Dubai, Sharjah, Ajman, and Clinics patient attendance and booking volumes.",
+                "Contributor & Root-Cause Breakdown: Highlights which KPIs and records drove the monthly team score.",
+            ]
+        else:
+            summary = (
+                f"Monthly Presentation summarizes {scope_label} KPI achievement against target, authorized branch/team breakdown, "
+                f"and top/bottom score contributors for {period_label}."
+            )
+            key_elements = [
+                "Executive KPI Summary Cards: Shows weighted achievement, actual vs. target values, and month-over-month movement.",
+                "Authorized Scope Breakdown: Compares KPI attainment and volume performance across authorized branches or sub-teams.",
+                "Contributor & Root-Cause Breakdown: Highlights which KPIs and records drove the monthly team score.",
+            ]
         if can_write_actions:
             available_actions = [
                 "Switch function, team, performance level, branch, or month filters to inspect authorized performance.",
@@ -795,14 +852,29 @@ def build_page_help_payload(
             ]
         else:
             available_actions = [
-                f"Switch authorized filters to inspect {scope_label} KPI achievement and branch conversion (your role '{role}' has read-only access to corrective actions).",
+                f"Switch authorized filters to inspect {scope_label} KPI achievement and score drivers (your role '{role}' has read-only access to corrective actions).",
                 "Select any KPI card and ask 'Why is this metric below target?' for a deterministic KPI diagnosis.",
             ]
         followups = [
             f"Why is {selected_metric_display or (scope_label + ' score')} below target in {period_label}?",
-            f"Compare Dubai and Sharjah performance for {scope_label}",
+            f"Compare Dubai and Sharjah performance for {scope_label}"
+            if is_uae_cc_help
+            else f"Compare branches or sub-teams for {scope_label} in {period_label}",
             "What should we do to improve this metric?",
         ]
+        if variant_idx == 1:
+            summary = (
+                f"Use Monthly Presentation to spot KPI target gaps in {scope_label}, pinpoint "
+                + ("branch conversion slippage" if is_uae_cc_help else "score-driver slippage")
+                + f", and move directly into corrective action planning for {period_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+        elif variant_idx == 2:
+            summary = (
+                f"Monthly Presentation pairs weighted scorecard achievement with root-cause contributor breakdowns across "
+                f"{scope_label} in {period_label} so managers can validate where recovery effort has the highest impact."
+            )
+            followups = [followups[1], followups[2], followups[0]]
     elif page_id == "team_dashboard":
         page_title = f"{scope_label} Team Dashboard"
         summary = (
@@ -828,6 +900,181 @@ def build_page_help_payload(
             f"Show {scope_label} KPI gaps against target in {period_label}",
             "Propose a corrective action for the biggest KPI gap",
         ]
+        if variant_idx == 1:
+            summary = (
+                f"From the {scope_label} Team Dashboard, you can isolate bottom-quartile KPI drivers, inspect individual "
+                f"scorecards, and track open corrective actions for {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
+        elif variant_idx == 2:
+            summary = (
+                f"The {scope_label} Team Dashboard tracks monthly score trajectory, grade spread (A–E), and action follow-through "
+                f"across {period_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+    elif page_id == "executive_summary":
+        page_title = "Executive Summary & Balanced Scorecard"
+        summary = (
+            f"Executive Summary consolidates organization-wide performance scores, branch benchmarks, and Managerial/Corporate "
+            f"Balanced Scorecard achievement for {scope_label} in {period_label}."
+        )
+        key_elements = [
+            "Executive KPI Overview: Overall weighted score, month-over-month delta, and department/team leaderboard.",
+            "Balanced Scorecard Matrix: Managerial and Corporate KPI weights, targets, and threshold bands.",
+            "Risk & Governance Signals: Highlights underperforming teams, branch gaps, and open corrective actions.",
+        ]
+        available_actions = [
+            "Switch between Managerial and Corporate performance levels or filter by branch and period.",
+            "Drill down into any team dashboard or ask which KPIs dropped most versus target.",
+        ]
+        followups = [
+            f"Which team in {scope_label} dropped most in {period_label}?",
+            f"Compare branches in {scope_label} for {period_label}",
+            f"Show KPI achievement vs target for {scope_label}",
+        ]
+        if variant_idx == 1:
+            summary = (
+                f"Use Executive Summary to pinpoint which teams and KPIs dragged down {scope_label} achievement "
+                f"and where branch performance diverged in {period_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+        elif variant_idx == 2:
+            summary = (
+                f"Executive Summary aligns Managerial and Corporate KPI weights with branch conversion benchmarks for "
+                f"{scope_label} during {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
+    elif page_id == "function_summary":
+        page_title = f"{scope_label} Function Summary"
+        summary = (
+            f"Function Summary compares sub-teams, KPI weights, and multi-month score trends within {scope_label} for {period_label}."
+        )
+        key_elements = [
+            "Sub-Team Comparison: Ranks teams inside the function by weighted score and month-over-month change.",
+            "KPI Contribution Matrix: Shows which weighted KPIs explain the function's current achievement.",
+            "Historical Trajectory: Plots consecutive monthly movement across the active review window.",
+        ]
+        available_actions = [
+            "Select a sub-team to inspect employee scorecards and team-level KPI diagnostics.",
+            "Compare period-over-period drops to prioritize coaching or corrective actions.",
+        ]
+        followups = [
+            f"Which team in {scope_label} dropped most in {period_label}?",
+            f"Show 6-month performance trend for {scope_label}",
+            f"What are the largest KPI gaps in {scope_label}?",
+        ]
+        if variant_idx == 1:
+            summary = (
+                f"Function Summary helps isolate which sub-team and weighted KPI caused {scope_label} movement in {period_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+        elif variant_idx == 2:
+            summary = (
+                f"Review cross-team consistency and 6-month trend stability across {scope_label} in {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
+    elif page_id == "employee_profile":
+        page_title = "Employee Scorecard"
+        summary = (
+            f"Employee Scorecard presents individual KPI actuals against targets, weighted score contributions, "
+            f"grade history, and assigned corrective actions for {period_label}."
+        )
+        key_elements = [
+            "Individual KPI Table: Displays each weighted KPI's actual, target, weight percentage, and achievement score.",
+            "Score Trend & Grade History: Tracks month-over-month movement and grade transitions (A–E).",
+            "Coaching & Corrective Actions: Lists active follow-ups and target completion dates.",
+        ]
+        available_actions = (
+            [
+                "Review below-target KPI drivers and inspect historical trend shifts.",
+                "Draft or update an Open corrective action tied to a specific below-target KPI.",
+            ]
+            if can_write_actions
+            else [
+                "Inspect personal KPI weights, target gaps, and monthly score progression.",
+                "Review assigned corrective actions and due dates.",
+            ]
+        )
+        followups = [
+            f"Why did performance change in {period_label}?",
+            f"Which KPI has the largest gap in {period_label}?",
+            "Show active corrective actions",
+        ]
+        if variant_idx == 1:
+            summary = (
+                f"Use Employee Scorecard to trace which weighted KPI drove score changes in {period_label} and verify coaching progress."
+            )
+            followups = [followups[1], followups[0], followups[2]]
+        elif variant_idx == 2:
+            summary = (
+                f"Employee Scorecard connects monthly KPI achievement and multi-month consistency to active follow-up plans in {period_label}."
+            )
+            followups = [followups[2], followups[1], followups[0]]
+    elif page_id == "insights":
+        page_title = "Performance Insights"
+        summary = (
+            f"Performance Insights surfaces significant score drops, below-target KPI anomalies, branch variances, "
+            f"and action priorities for {scope_label} in {period_label}."
+        )
+        key_elements = [
+            "Automated Risk Signals: Flags material month-over-month declines and threshold breaches.",
+            "KPI & Branch Outliers: Highlights where specific branches or metrics deviate from benchmark.",
+            "Actionable Drill-Downs: Links each insight directly to the relevant team dashboard or corrective action flow.",
+        ]
+        available_actions = [
+            "Filter insights by team, severity, or period within your authorized scope.",
+            "Ask the assistant to explain a flagged drop or propose a corrective action.",
+        ]
+        followups = [
+            f"Which team in {scope_label} dropped most in {period_label}?",
+            f"What are the largest KPI gaps in {scope_label}?",
+            "Show overdue corrective actions",
+        ]
+        if variant_idx == 1:
+            summary = (
+                f"Performance Insights prioritizes immediate operational risks and KPI outliers in {scope_label} for {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
+        elif variant_idx == 2:
+            summary = (
+                f"Review cross-branch anomalies and unresolved follow-up risks surfaced across {scope_label} in {period_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+    elif page_id == "corrective_actions":
+        page_title = "Corrective Actions Follow-Up"
+        summary = (
+            f"Corrective Actions Follow-Up tracks open, due-soon, overdue, and completed action plans across {scope_label} for {period_label}."
+        )
+        key_elements = [
+            "Status & SLA Queue: Separates Open, In-Progress, Overdue, and Closed corrective actions.",
+            "Evidence-Linked Targets: Ties each action to the underperforming KPI, owner, and deadline.",
+            "Audit & Ownership Tracking: Shows reviewer notes, due dates, and completion status.",
+        ]
+        available_actions = (
+            [
+                "Filter by overdue or open status and drill into owner scorecards.",
+                "Create or update an Open corrective action anchored to verified KPI gaps.",
+            ]
+            if can_write_actions
+            else [
+                f"Monitor open and overdue follow-up status across {scope_label} (your role '{role}' is read-only).",
+            ]
+        )
+        followups = [
+            "Show overdue corrective actions",
+            f"Which team in {scope_label} dropped most in {period_label}?",
+            "Propose a corrective action for the biggest KPI gap",
+        ]
+        if variant_idx == 1:
+            summary = (
+                f"Use Corrective Actions Follow-Up to clear overdue items first and verify that open actions target the largest KPI gaps in {scope_label}."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+        elif variant_idx == 2:
+            summary = (
+                f"Corrective Actions Follow-Up maintains accountability from KPI diagnosis through closure across {scope_label} in {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
     else:
         page_title = "PMS AI Workspace"
         summary = (
@@ -845,6 +1092,19 @@ def build_page_help_payload(
             f"Show verified KPI score drivers for {scope_label}",
             "Where can I see corrective actions?",
         ]
+        if variant_idx == 1:
+            summary = (
+                f"Ask PMS AI Workspace to diagnose KPI misses, compare authorized branches, or draft evidence-backed corrective actions for {scope_label} in {period_label}."
+            )
+            followups = [followups[1], followups[2], followups[0]]
+        elif variant_idx == 2:
+            summary = (
+                f"Every answer in PMS AI Workspace is grounded in scoped PMS calculation records for {scope_label} ({period_label}) with full source citations."
+            )
+            followups = [followups[2], followups[0], followups[1]]
+
+    if variant_idx == 2 and len(key_elements) > 1:
+        key_elements = [key_elements[-1], *key_elements[:-1]]
 
     headline = summary
     if metric_explanation:
@@ -878,9 +1138,10 @@ def build_navigation_payload(
     role = str(scope.get("role") or "Manager").strip()
     self_scoped = is_self_only(scope)
     emp_id = str(scope.get("employee_id") or session_state.employee_id or "").strip()
-    team_name = session_state.team or "Inbound"
+    team_name = session_state.team or session_state.function or "your authorized scope"
     team_slug = team_name.casefold().replace(" ", "-")
     targets = get_authorized_navigation_targets(scope, session_state)
+    variant_idx = resolve_variation_index(req.prompt, req.history, req.variation_seed)
 
     if any(k in lower for k in ("upload", "import", "excel", "workbook")):
         if role in UPLOAD_WRITE_ROLES:
@@ -984,6 +1245,20 @@ def build_navigation_payload(
             [f"Who is the lowest performer in {team_name}?", "What does this page show?"],
         )
 
+    if variant_idx == 1:
+        return (
+            f"Use these authorized views to inspect {team_name} KPI drivers, team trends, and follow-up tasks for your {role} role.",
+            ["Each destination preserves your active period and scope filters."],
+            targets[:4],
+            [f"What is {team_name} score in the latest period?", "What does this page show?"],
+        )
+    if variant_idx == 2:
+        return (
+            f"Available PMS dashboards for {team_name} ({role} scope) are listed below for direct drill-down.",
+            ["Jump straight to scorecards, executive summaries, or corrective actions with your permissions enforced."],
+            targets[:4],
+            ["Show overdue corrective actions", "What does this page show?"],
+        )
     return (
         f"Here are the authorized PMS views available for your {role} account in {team_name}.",
         ["Select a destination below to navigate directly with your current filters."],

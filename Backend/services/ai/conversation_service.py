@@ -700,6 +700,7 @@ class AiConversationService:
         session_state: SessionFilterContext | None = None,
         known_employee_names: list[str] | None = None,
         eval_id: str | None = None,
+        variation_seed: int | None = None,
     ) -> tuple[AiTurn, dict[str, Any] | None]:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, owner_role = self._resolve_owner(eff_scope)
@@ -715,6 +716,7 @@ class AiConversationService:
             clarification_choice_id=clarification_choice_id,
             answer_detail=answer_detail,
             session_filters=session_filters,
+            variation_seed=variation_seed,
         )
         scope_fp = compute_scope_fingerprint(eff_scope)
         resolved_eval_id = (

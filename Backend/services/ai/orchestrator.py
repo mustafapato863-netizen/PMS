@@ -55,10 +55,11 @@ from services.ai.local_evidence_synthesis import (
     local_synthesis_enabled,
     synthesize_branch_bookings,
     synthesize_overall_score,
+    synthesize_validated_executive_variation,
 )
 from services.ai.llm_client import active_provider_name, configured_model_name
 from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
-from services.ai.providers import DeterministicLocalProviderAdapter
+from services.ai.providers import DeterministicLocalProviderAdapter, resolve_variation_index
 from services.ai.router import HybridQueryRouter, RouterValidationResult
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
@@ -66,7 +67,10 @@ from services.ai.tool_registry import (
     ToolExecutionResult,
     build_verified_deep_link,
 )
-from services.ai.trace_logger import TrainingTraceLogger
+from services.ai.trace_logger import (
+    TrainingTraceLogger,
+    sanitize_prompt_for_router_training,
+)
 from services.corrective_action_service import CorrectiveActionService
 from services.database_record_source import DatabaseRecordSource
 from utils.report_scope import filter_records_by_scope
@@ -515,6 +519,7 @@ class PmsAiOrchestrator:
                 clarification_choice_id=req.clarification_choice_id,
                 answer_detail=req.answer_detail,
                 session_state=req.session_state,
+                variation_seed=req.variation_seed,
             )
             if replayed_payload is not None:
                 return AiChatResponsePayload.model_validate(replayed_payload)
@@ -534,11 +539,19 @@ class PmsAiOrchestrator:
             )
         )
         if is_greeting or is_social_thanks:
-            social_headline = (
-                "Hi! What would you like to know about performance?"
-                if is_greeting
-                else "You're welcome! Let me know if you need anything else."
-            )
+            social_variant = resolve_variation_index(req.prompt, req.history, req.variation_seed)
+            if is_greeting:
+                social_headline = (
+                    "Hi! What would you like to know about performance?",
+                    "Hello! Which team, KPI, or branch metric would you like to review?",
+                    "Hi there! Ask about team trends, KPI targets, branch comparisons, or corrective actions.",
+                )[social_variant]
+            else:
+                social_headline = (
+                    "You're welcome! Let me know if you need anything else.",
+                    "You're very welcome! Feel free to ask if you'd like to drill into another KPI or team.",
+                    "You're welcome! Happy to help whenever you want to review another metric or branch.",
+                )[social_variant]
             social_plan_v2 = ValidatedQueryPlanV2(
                 turn_kind="social",
                 scope=QueryScopeV2(
@@ -1552,6 +1565,9 @@ class PmsAiOrchestrator:
             signals=signals,
             tool_digests=tool_digests,
             guardrail_notes=guardrail_notes,
+            history=req.history,
+            variation_seed=req.variation_seed,
+            session_state=req.session_state,
         )
         if len(routed.plan.requested_parts) >= 2 and len(tool_digests) >= 2:
             part_headlines: list[str] = []
@@ -1582,6 +1598,9 @@ class PmsAiOrchestrator:
                     signals=p_sig,
                     tool_digests=[td],
                     guardrail_notes=[],
+                    history=req.history,
+                    variation_seed=req.variation_seed,
+                    session_state=req.session_state,
                 )
                 if p_syn.headline and p_syn.headline not in part_headlines:
                     part_headlines.append(p_syn.headline)
@@ -1589,6 +1608,7 @@ class PmsAiOrchestrator:
                 synthesis.headline = f"{part_headlines[0]} {part_headlines[1]}"
         # Local model access is optional and receives only authorized scoped
         # evidence. Recheck current permissions before passing data to it.
+        accepted_local = False
         if routed.plan.intent in ("compare_branches", "current_value") and local_synthesis_enabled():
             self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
             if (
@@ -1692,6 +1712,102 @@ class PmsAiOrchestrator:
                                 SourceCitationPill(label=f"Branch · {score_facts_cand.branch}", category="branch"),
                             ]
                             basis_warning = None
+        if (
+            not accepted_local
+            and (req.provider_override or "auto") == "auto"
+            and capability_mode != "proposal"
+            and local_synthesis_enabled()
+            and ((req.variation_seed or 0) >= 1 or len(req.history) >= 2)
+            and get_ai_runtime_config().is_scope_allowed_for_cloud(
+                routed.plan.team or routed.plan.function or req.session_state.team or req.session_state.function
+            )
+        ):
+            has_employee_pii = bool(
+                routed.plan.single_person
+                or routed.plan.employee_id
+                or routed.plan.employee_name
+                or routed.plan.employee_placeholder
+                or req.session_state.employee_id
+                or signals.detected_employee_query
+                or signals.asks_single_person
+                or signals.asks_best_agent
+                or signals.asks_worst_agent
+                or routed.plan.intent in ("ranking", "corrective_actions")
+                or routed.plan.operation_kind_v2
+                in (
+                    "ranking",
+                    "person_summary",
+                    "person_best_period",
+                    "person_worst_period",
+                    "person_tenure_check",
+                    "corrective_actions",
+                )
+                or any(
+                    isinstance(td, dict)
+                    and any(
+                        td.get(k)
+                        for k in (
+                            "employee_id",
+                            "employee_name",
+                            "top_performers",
+                            "bottom_performers",
+                            "top_contributors",
+                            "actions",
+                            "employees",
+                            "individual_actions",
+                            "spotlight",
+                            "agent_spotlight",
+                            "ranking",
+                        )
+                    )
+                    for td in tool_digests
+                )
+                or any(
+                    getattr(ev, "subject_type", None) in ("person", "employee", "agent")
+                    or getattr(ev, "employee_id", None)
+                    or getattr(ev, "employee_name", None)
+                    for ev in typed_evidence
+                )
+                or sanitize_prompt_for_router_training(req.prompt, db=self.db) != req.prompt
+            )
+            if not has_employee_pii:
+                self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
+                if (
+                    live_auth_service.is_plan_and_context_authorized(
+                        scope=self.scope,
+                        team=routed.plan.team,
+                        function=routed.plan.function,
+                        branch=routed.plan.branch,
+                        branches=list(routed.plan.branches or []),
+                        performance_level=routed.plan.performance_level,
+                    )
+                    and live_auth_service.is_returned_evidence_authorized(
+                        scope=self.scope,
+                        typed_evidence=typed_evidence,
+                        tool_digests=tool_digests,
+                        fallback_branch=routed.plan.branch,
+                        fallback_level=routed.plan.performance_level,
+                    )
+                ):
+                    release_read_transaction(self.db)
+                    var_syn = synthesize_validated_executive_variation(
+                        question=req.prompt,
+                        digests=tool_digests,
+                        typed_evidence=typed_evidence,
+                        variant_idx=resolve_variation_index(
+                            req.prompt,
+                            req.history,
+                            req.variation_seed,
+                        ),
+                    )
+                    self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
+                    if var_syn is not None:
+                        synthesis.headline = var_syn.headline
+                        if var_syn.narrative_bullets:
+                            synthesis.narrative_bullets = var_syn.narrative_bullets
+                        synthesis.provider_used = var_syn.provider_used
+                        synthesis.model_used = var_syn.model_used
+                        synthesis.metrics = var_syn.metrics
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(

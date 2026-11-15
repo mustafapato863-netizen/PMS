@@ -543,6 +543,7 @@ class AiChatRequest(BaseModel):
     client_request_id: str | None = Field(default=None, max_length=100)
     context_version: int | None = Field(default=None, ge=0)
     clarification_choice_id: str | None = Field(default=None, max_length=120)
+    variation_seed: int | None = Field(default=None, ge=0, le=50)
 
 
 class AiBarItem(BaseModel):

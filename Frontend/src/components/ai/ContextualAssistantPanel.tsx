@@ -7,8 +7,9 @@ import {
   ClipboardCheck,
   Compass,
   HelpCircle,
-  Loader2,
   MessageSquare,
+  RefreshCw,
+  RotateCcw,
   Send,
   Sparkles,
   ThumbsDown,
@@ -21,6 +22,7 @@ import { isAdminRole } from '../../lib/access';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import type {
+  AiChatMessage,
   AiChatResponsePayload,
   AiCorrectiveActionConfirmRequest,
   AiCorrectiveActionConfirmResponse,
@@ -38,6 +40,7 @@ export interface ContextualAssistantPanelProps {
 interface AssistantTurn {
   id: string;
   prompt: string;
+  variationSeed?: number;
   response: AiChatResponsePayload | null;
   error: string | null;
   loading: boolean;
@@ -73,7 +76,11 @@ function buildEffectiveContextLabel(ctx: PageContextV1): string {
             ? 'Function Summary'
             : ctx.page_id === 'employee_profile'
               ? 'Employee Profile'
-              : 'PMS View';
+              : ctx.page_id === 'insights'
+                ? 'Performance Insights'
+                : ctx.page_id === 'corrective_actions'
+                  ? 'Corrective Actions'
+                  : 'PMS View';
   const scopePart = ctx.team_id || ctx.function_id || ctx.region || 'All Authorized Scope';
   const periodPart =
     ctx.month && ctx.year
@@ -92,6 +99,8 @@ function buildEffectiveContextLabel(ctx: PageContextV1): string {
 function buildStarterPrompts(ctx: PageContextV1, canCreateAction: boolean): string[] {
   const metric = ctx.selected_metric_id || 'Booking Rate';
   const scope = ctx.team_id || ctx.function_id || 'this view';
+  const periodLabel = ctx.month || 'the latest period';
+
   if (ctx.page_id === 'monthly_presentation') {
     const prompts = [
       'Explain this page',
@@ -103,6 +112,58 @@ function buildStarterPrompts(ctx: PageContextV1, canCreateAction: boolean): stri
     }
     return prompts;
   }
+
+  if (ctx.page_id === 'team_dashboard') {
+    const prompts = [
+      'Explain this page',
+      `Why is ${scope} below target?`,
+      `Who is the top performer in ${ctx.team_id || 'this team'}?`,
+    ];
+    if (canCreateAction && !ctx.is_fallback_data) {
+      prompts.push(`Propose a corrective action for ${metric}`);
+    }
+    return prompts;
+  }
+
+  if (ctx.page_id === 'executive_summary') {
+    return [
+      'Explain this page',
+      `Which team in ${scope} dropped most?`,
+      'Compare branch performance in this scope',
+      'Show KPI achievement vs target',
+    ];
+  }
+
+  if (ctx.page_id === 'function_summary') {
+    return [
+      'Explain this page',
+      `Which team in ${scope} dropped most?`,
+      `Show 6-month performance trend for ${scope}`,
+      `What are the largest KPI gaps in ${scope}?`,
+    ];
+  }
+
+  if (ctx.page_id === 'employee_profile') {
+    const prompts = [
+      'Explain this page',
+      `Why did performance change in ${periodLabel}?`,
+      'Which KPI has the largest gap?',
+    ];
+    if (canCreateAction && !ctx.is_fallback_data) {
+      prompts.push(`Propose a corrective action for ${metric}`);
+    }
+    return prompts;
+  }
+
+  if (ctx.page_id === 'insights') {
+    return [
+      'Explain this page',
+      `Which team in ${scope} dropped most?`,
+      `What are the largest KPI gaps in ${scope}?`,
+      'Show overdue corrective actions',
+    ];
+  }
+
   const prompts = [
     'Explain this page',
     `Why is ${scope} below target?`,
@@ -189,8 +250,22 @@ export function ContextualAssistantPanel({
     [pageContext, canCreateAction],
   );
 
+  const handleNewChat = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    requestSeqRef.current += 1;
+    setTurns([]);
+    setConversationId(null);
+    setActiveProposalTurnId(null);
+    setReviewDraft(null);
+    setSaveError(null);
+    setInput('');
+  }, []);
+
   const sendPrompt = useCallback(
-    async (promptText: string) => {
+    async (promptText: string, opts?: { variationSeed?: number }) => {
       const trimmed = promptText.trim();
       if (!trimmed || !isAdminRole(role) || !aiEnabled) return;
 
@@ -201,6 +276,14 @@ export function ContextualAssistantPanel({
       abortControllerRef.current = controller;
       const currentSeq = requestSeqRef.current + 1;
       requestSeqRef.current = currentSeq;
+
+      const historyPayload: AiChatMessage[] = [];
+      for (const t of turns.filter((item) => !item.loading && item.response?.headline).slice(-4)) {
+        historyPayload.push({ role: 'user', content: t.prompt });
+        if (t.response?.headline) {
+          historyPayload.push({ role: 'assistant', content: t.response.headline });
+        }
+      }
 
       const turnId = `turn-${Date.now()}-${currentSeq}`;
       setInput('');
@@ -213,6 +296,7 @@ export function ContextualAssistantPanel({
         {
           id: turnId,
           prompt: trimmed,
+          variationSeed: opts?.variationSeed ?? 0,
           response: null,
           error: null,
           loading: true,
@@ -231,6 +315,10 @@ export function ContextualAssistantPanel({
               client_request_id: turnId,
               answer_detail: 'brief',
               page_context: pageContext,
+              history: historyPayload,
+              ...(typeof opts?.variationSeed === 'number' && opts.variationSeed > 0
+                ? { variation_seed: opts.variationSeed }
+                : {}),
               session_state: {
                 function: pageContext.function_id ?? null,
                 team: pageContext.team_id ?? null,
@@ -289,7 +377,7 @@ export function ContextualAssistantPanel({
         );
       }
     },
-    [aiEnabled, conversationId, pageContext, role],
+    [aiEnabled, conversationId, pageContext, role, turns],
   );
 
   const openProposalReview = useCallback((turnId: string, proposal: AiCorrectiveActionProposal) => {
@@ -433,7 +521,7 @@ export function ContextualAssistantPanel({
           <Sparkles className="size-4 text-blue-400" aria-hidden="true" />
           <span>Ask PMS AI</span>
           {pageContext.team_id && (
-            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[11px] font-semibold text-blue-200">
+            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-xs font-semibold text-blue-200">
               {pageContext.team_id}
             </span>
           )}
@@ -453,9 +541,21 @@ export function ContextualAssistantPanel({
                 <h2 className="text-sm font-bold tracking-tight">PMS Contextual Assistant</h2>
               </div>
               <div className="flex items-center gap-1.5">
+                {turns.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleNewChat}
+                    data-testid="contextual-assistant-new-chat"
+                    aria-label="Start new chat"
+                    className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
+                  >
+                    <RotateCcw className="size-3" />
+                    <span>New chat</span>
+                  </button>
+                )}
                 <Link
                   to="/ai"
-                  className="rounded-md bg-white/10 px-2 py-1 text-[11px] font-semibold text-slate-200 transition hover:bg-white/20"
+                  className="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
                 >
                   Full AI Workspace
                 </Link>
@@ -472,7 +572,7 @@ export function ContextualAssistantPanel({
             </div>
             <p
               data-testid="contextual-assistant-scope-banner"
-              className="mt-1.5 truncate rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-medium text-blue-100"
+              className="mt-1.5 truncate rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-blue-100"
               title={effectiveContextLabel}
             >
               {effectiveContextLabel}
@@ -516,7 +616,7 @@ export function ContextualAssistantPanel({
               </div>
             )}
 
-            {turns.map((turn) => {
+            {turns.map((turn, idx) => {
               const res = turn.response;
               const proposal = res?.action_proposal ?? null;
               const isReviewingThisProposal =
@@ -539,15 +639,17 @@ export function ContextualAssistantPanel({
                     </span>
                   </div>
 
-                  {/* Loading skeleton */}
+                  {/* Structured 3-bar skeleton loader */}
                   {turn.loading && (
                     <div
                       role="status"
                       aria-label="Loading assistant answer"
-                      className="flex items-center gap-2 py-2 text-xs font-medium text-slate-500"
+                      className="space-y-2 py-1.5"
                     >
-                      <Loader2 className="size-3.5 animate-spin text-blue-600" />
-                      <span>Verifying authorized PMS evidence…</span>
+                      <div className="h-3 w-3/4 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                      <div className="h-3 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                      <div className="h-3 w-5/6 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                      <span className="sr-only">Verifying authorized PMS evidence…</span>
                     </div>
                   )}
 
@@ -566,7 +668,7 @@ export function ContextualAssistantPanel({
                     <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
                       {/* Effective context chip per response */}
                       {(res.effective_context_label || res.scope_banner) && (
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
                           <span className="rounded bg-slate-200/70 px-1.5 py-0.5 dark:bg-slate-800">
                             {res.effective_context_label || res.scope_banner}
                           </span>
@@ -581,9 +683,24 @@ export function ContextualAssistantPanel({
                         {res.headline}
                       </p>
 
+                      {/* Supporting Narrative Bullets (up to 3) */}
+                      {res.narrative_bullets && res.narrative_bullets.length > 0 && (
+                        <ul
+                          data-testid="contextual-assistant-bullets"
+                          className="space-y-1 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
+                        >
+                          {res.narrative_bullets.slice(0, 3).map((bullet, bIdx) => (
+                            <li key={bIdx} className="flex items-start gap-1.5">
+                              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                              <span>{bullet}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
                       {/* Material basis warning */}
                       {res.basis_warning && (
-                        <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 text-[11px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                        <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
                           <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-600" />
                           <span>{res.basis_warning}</span>
                         </div>
@@ -596,11 +713,11 @@ export function ContextualAssistantPanel({
                             <HelpCircle className="size-3 text-blue-600" />
                             <span>{res.page_help.page_title}</span>
                           </div>
-                          <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                          <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                             {res.page_help.summary}
                           </p>
                           {res.page_help.metric_explanation && (
-                            <p className="text-[11px] font-medium text-blue-700 dark:text-blue-300">
+                            <p className="text-xs font-medium text-blue-700 dark:text-blue-300">
                               {res.page_help.metric_explanation}
                             </p>
                           )}
@@ -631,7 +748,7 @@ export function ContextualAssistantPanel({
                         <div>
                           <Link
                             to={res.primary_source_link.route}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:underline dark:text-blue-400"
+                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400"
                           >
                             <span>{res.primary_source_link.label}</span>
                             <ArrowRight className="size-3" />
@@ -646,12 +763,12 @@ export function ContextualAssistantPanel({
                           className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/30"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                            <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
                               <ClipboardCheck className="size-3.5" />
                               <span>Evidence-Based Proposal ({proposal.team})</span>
                             </span>
                             {proposal.metric_display_name && (
-                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
                                 {proposal.metric_display_name}
                               </span>
                             )}
@@ -660,10 +777,10 @@ export function ContextualAssistantPanel({
                           {/* Observed Facts vs Hypotheses */}
                           {proposal.observed_facts.length > 0 && (
                             <div className="space-y-0.5">
-                              <span className="text-[10px] font-bold uppercase text-slate-500">
+                              <span className="text-xs font-bold uppercase text-slate-500">
                                 Observed PMS Facts
                               </span>
-                              <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-slate-700 dark:text-slate-200">
+                              <ul className="list-disc space-y-0.5 pl-4 text-xs text-slate-700 dark:text-slate-200">
                                 {proposal.observed_facts.map((fact, idx) => (
                                   <li key={idx}>{fact}</li>
                                 ))}
@@ -673,10 +790,10 @@ export function ContextualAssistantPanel({
 
                           {proposal.hypothesis && (
                             <div className="space-y-0.5">
-                              <span className="text-[10px] font-bold uppercase text-slate-500">
+                              <span className="text-xs font-bold uppercase text-slate-500">
                                 Hypothesis to Verify
                               </span>
-                              <p className="text-[11px] italic text-slate-600 dark:text-slate-300">
+                              <p className="text-xs italic text-slate-600 dark:text-slate-300">
                                 {proposal.hypothesis}
                               </p>
                             </div>
@@ -711,7 +828,7 @@ export function ContextualAssistantPanel({
                               >
                                 <div className="grid grid-cols-2 gap-2">
                                   <label className="block space-y-0.5">
-                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                                       Action Type
                                     </span>
                                     <select
@@ -738,7 +855,7 @@ export function ContextualAssistantPanel({
                                   </label>
 
                                   <label className="block space-y-0.5">
-                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                                       Priority
                                     </span>
                                     <select
@@ -765,7 +882,7 @@ export function ContextualAssistantPanel({
                                 </div>
 
                                 <label className="block space-y-0.5">
-                                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                                     Action Plan (Saved as Open Action)
                                   </span>
                                   <textarea
@@ -782,7 +899,7 @@ export function ContextualAssistantPanel({
                                 </label>
 
                                 <label className="block space-y-0.5">
-                                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                                     Root Cause Note (To Verify)
                                   </span>
                                   <textarea
@@ -801,7 +918,7 @@ export function ContextualAssistantPanel({
                                 {saveError && (
                                   <p
                                     role="alert"
-                                    className="text-[11px] font-semibold text-rose-600 dark:text-rose-400"
+                                    className="text-xs font-semibold text-rose-600 dark:text-rose-400"
                                   >
                                     {saveError}
                                   </p>
@@ -832,7 +949,7 @@ export function ContextualAssistantPanel({
                               </div>
                             )
                           ) : (
-                            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                               Read-only role: share this proposal with an authorized manager to log an
                               Open action.
                             </p>
@@ -840,29 +957,51 @@ export function ContextualAssistantPanel({
                         </div>
                       )}
 
-                      {/* Single Suggested Follow-Up */}
+                      {/* Up to 3 Suggested Follow-Ups */}
                       {res.suggested_followups && res.suggested_followups.length > 0 && (
-                        <div className="pt-0.5">
-                          <button
-                            type="button"
-                            onClick={() => sendPrompt(res.suggested_followups[0])}
-                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                          >
-                            <MessageSquare className="size-3 text-blue-500" />
-                            <span>{res.suggested_followups[0]}</span>
-                          </button>
+                        <div
+                          data-testid="contextual-assistant-followups"
+                          className="flex flex-wrap gap-1.5 pt-0.5"
+                        >
+                          {res.suggested_followups.slice(0, 3).map((followup) => (
+                            <button
+                              key={followup}
+                              type="button"
+                              onClick={() => sendPrompt(followup)}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                            >
+                              <MessageSquare className="size-3 text-blue-500" />
+                              <span>{followup}</span>
+                            </button>
+                          ))}
                         </div>
                       )}
 
-                      {/* Useful / Not Useful Feedback */}
+                      {/* Different Angle + Useful / Not Useful Feedback */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2 dark:border-slate-800">
-                        <span className="text-[10px] font-medium text-slate-400">
-                          Verified PMS Service · {evaluatedRecordsCount} records
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-slate-400">
+                            Verified PMS Service · {evaluatedRecordsCount} records
+                          </span>
+                          <button
+                            type="button"
+                            data-testid={`rephrase-turn-${idx}`}
+                            aria-label="Get a different reply angle"
+                            onClick={() =>
+                              sendPrompt(turn.prompt, {
+                                variationSeed: (turn.variationSeed ?? 0) + 1,
+                              })
+                            }
+                            className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                          >
+                            <RefreshCw className="size-3" />
+                            <span>Different angle</span>
+                          </button>
+                        </div>
                         {turn.feedbackSubmitted ? (
                           <span
                             data-testid="contextual-assistant-feedback-recorded"
-                            className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+                            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400"
                           >
                             Feedback recorded
                           </span>
@@ -875,7 +1014,7 @@ export function ContextualAssistantPanel({
                               onClick={() =>
                                 submitFeedback(turn.id, res.trace_id, 'up', 'helpful')
                               }
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                             >
                               <ThumbsUp className="size-2.5" />
                               <span>Useful</span>
@@ -896,7 +1035,7 @@ export function ContextualAssistantPanel({
                                   ),
                                 )
                               }
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                             >
                               <ThumbsDown className="size-2.5" />
                               <span>Not useful</span>
@@ -919,7 +1058,7 @@ export function ContextualAssistantPanel({
                               onClick={() =>
                                 submitFeedback(turn.id, res.trace_id, 'down', cat.key)
                               }
-                              className="cursor-pointer rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200"
+                              className="cursor-pointer rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200"
                             >
                               {cat.label}
                             </button>
