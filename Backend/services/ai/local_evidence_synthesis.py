@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from services.ai.claim_validator import ClaimFact, validate_claims
+from services.ai.claim_validator import ClaimFact, build_claim_ledger, validate_claims
 from services.ai.llm_client import (
     configured_model_name,
     local_synthesis_enabled,
@@ -328,4 +328,137 @@ def synthesize_branch_bookings(question: str, digests: list[dict[str, Any]]) -> 
         validator=lambda answer: _validated_answer(answer, facts) and validate_claims(headline=str(answer), ledger=claim_ledger).valid,
         fallback=_safe_fallback(facts),
         fallback_model="pms-branch-booking-fallback",
+    )
+
+
+_VARIATION_ANGLE_CUES: dict[int, str] = {
+    0: "Direct executive summary: state the primary performance finding cleanly up front.",
+    1: "Operational risk & driver framing: emphasize where performance deviates, gaps, or risk drivers lie without inventing numbers or causes.",
+    2: "Benchmark & coaching posture: frame the verified figures against targets, peers, or review priorities without inventing new metrics.",
+}
+
+
+def synthesize_validated_executive_variation(
+    *,
+    question: str,
+    digests: list[dict[str, Any]],
+    typed_evidence: list[Any],
+    variant_idx: int = 0,
+) -> NarrativeSynthesisResult | None:
+    """Synthesize a grounded, multi-angle executive summary via UnifiedProviderEngine.
+
+    Strictly restricted to non-PII aggregate turns (caller must enforce scope & non-person checks).
+    Returns None cleanly if synthesis is disabled, ledger is empty, provider fails, or claim
+    validation rejects the generated phrasing, allowing deterministic fallback.
+    """
+    if not local_synthesis_enabled():
+        return None
+    if not digests:
+        return None
+
+    claim_ledger = build_claim_ledger(typed_evidence=typed_evidence or [])[:40]
+    if not claim_ledger:
+        return None
+
+    fact_rows = [
+        {
+            "fact_id": f.fact_id,
+            "part": f.part,
+            "subject": f.subject,
+            **({"team": f.team} if f.team else {}),
+            **({"branch": f.branch} if f.branch else {}),
+            **({"period": f.period} if f.period else {}),
+            "display": f.display,
+            **({"unit": f.unit} if f.unit else {}),
+        }
+        for f in claim_ledger
+    ]
+    angle_cue = _VARIATION_ANGLE_CUES.get(int(variant_idx) % 3, _VARIATION_ANGLE_CUES[0])
+    schema = {
+        "type": "object",
+        "properties": {
+            "headline": {"type": "string"},
+            "narrative_bullets": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["headline", "narrative_bullets"],
+        "additionalProperties": False,
+    }
+    instruction = (
+        "You are an executive performance analyst. Write a concise grounded response using ONLY "
+        "the exact numbers, subjects, branches, and periods in `verified_facts`. "
+        f"Framing angle: {angle_cue} "
+        "Rules: `headline` MUST be 1 or 2 sentences separated by '. ' (never 3+ sentences). "
+        "`narrative_bullets` MUST contain 1 to 3 concise factual bullets using exact verified values. "
+        "NEVER invent numbers, dates, names, percentages, or causal explanations like 'because' or 'due to'. "
+        "Return JSON matching the schema with keys `headline` and `narrative_bullets` only."
+    )
+    user_payload = json.dumps(
+        {
+            "question": str(question or "")[:300],
+            "verified_facts": fact_rows,
+        },
+        ensure_ascii=False,
+    )
+    try:
+        req = ProviderRequest(
+            messages=[ProviderMessage(role="user", content=user_payload)],
+            system_instruction=instruction,
+            response_format="json",
+            json_schema=schema,
+            temperature=0.35,
+            max_tokens=260,
+            timeout_seconds=synthesis_timeout_seconds(),
+            purpose="synthesis",
+        )
+        resp = get_unified_provider_engine().generate(req)
+    except Exception:
+        record_fallback_reason("provider_exception")
+        return None
+
+    if not resp.is_success or resp.provider not in ("cloudflare", "gemini"):
+        return None
+
+    try:
+        parsed = json.loads(resp.content or "")
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    headline = str(parsed.get("headline") or "").strip()
+    raw_bullets = parsed.get("narrative_bullets")
+    if not headline or not isinstance(raw_bullets, list):
+        return None
+    bullets = [str(b).strip() for b in raw_bullets if str(b or "").strip()][:4]
+
+    sentences = [s for s in headline.split(". ") if s.strip()]
+    if not (1 <= len(sentences) <= 2):
+        return None
+
+    check = validate_claims(headline=headline, bullets=bullets, ledger=claim_ledger)
+    if not check.valid:
+        record_fallback_reason("invalid_or_unverified_response")
+        return None
+
+    provider_used = resp.provider
+    model_used = resp.model or configured_model_name()
+    usage = getattr(resp, "usage", None)
+    in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
+    out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
+    metrics = ProviderCallMetrics(
+        provider_used=provider_used,
+        model_used=model_used,
+        provider_calls=1,
+        provider_ms=float(resp.latency_ms or 0.0),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        fallback_outcome="none",
+    )
+    return NarrativeSynthesisResult(
+        headline=headline,
+        narrative_bullets=bullets,
+        suggested_followups=[],
+        provider_used=provider_used,
+        model_used=model_used,
+        metrics=metrics,
     )

@@ -299,6 +299,212 @@ class GeminiStructuredRouterAdapter:
         return last_result or StructuredRoutingProviderResult(plan=None)
 
 
+_VARIATION_STOPWORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "is", "are", "was", "were",
+    "what", "which", "who", "how", "why", "where", "when", "show", "me", "give", "tell", "about",
+    "this", "that", "month", "latest", "period", "score", "performance", "kpi", "kpis", "vs", "with",
+})
+
+
+def _meaningful_tokens(text: str) -> set[str]:
+    return {
+        tok
+        for tok in re.findall(r"[a-z0-9\u0600-\u06ff]+", (text or "").casefold())
+        if len(tok) >= 2 and tok not in _VARIATION_STOPWORDS
+    }
+
+
+def resolve_variation_index(
+    prompt: str,
+    history: list[Any] | None = None,
+    variation_seed: int | None = None,
+) -> int:
+    """Resolve deterministic phrasing variant index in {0, 1, 2}.
+
+    - variation_seed >= 1 -> int(variation_seed) % 3 (so seed=1 -> 1, seed=2 -> 2, seed=3 -> 0)
+    - variation_seed in (None, 0) -> 0 on fresh/non-overlapping turns; shifts to
+      (overlap_count % 2) + 1 when prior assistant turns in history cover an overlapping subject/scope.
+    """
+    if variation_seed is not None and int(variation_seed) >= 1:
+        return int(variation_seed) % 3
+
+    if not history:
+        return 0
+
+    curr_tokens = _meaningful_tokens(prompt)
+    if not curr_tokens:
+        return 0
+
+    overlap_count = 0
+    for msg in history:
+        role = getattr(msg, "role", None) if not isinstance(msg, dict) else msg.get("role")
+        content = getattr(msg, "content", None) if not isinstance(msg, dict) else msg.get("content")
+        if role != "assistant" or not content:
+            continue
+        hist_tokens = _meaningful_tokens(str(content))
+        if curr_tokens & hist_tokens:
+            overlap_count += 1
+
+    if overlap_count >= 1:
+        return (overlap_count % 2) + 1
+    return 0
+
+
+def _build_dynamic_followups(
+    *,
+    prompt: str,
+    history: list[Any] | None,
+    scope: str,
+    branch: str,
+    period: str,
+    merged: dict[str, Any],
+    variant_idx: int,
+    session_state: Any | None = None,
+) -> list[str]:
+    """Generate context-aware follow-up chips excluding already-asked prompts and inapplicable scopes."""
+    scope_cf = (scope or "").strip().casefold()
+    branch_cf = (branch or "").strip().casefold()
+    prompt_cf = (prompt or "").casefold()
+    sess_region = (getattr(session_state, "region", None) or "").strip().casefold()
+    sess_fn = (getattr(session_state, "function", None) or "").strip().casefold()
+    sess_team = (getattr(session_state, "team", None) or "").strip().casefold()
+    history_cf = " ".join(
+        str(getattr(m, "content", None) if not isinstance(m, dict) else m.get("content") or "")
+        for m in (history or [])
+    ).casefold()
+    non_uae_branch_teams = {
+        "support positions",
+        "coding egy",
+        "submission egy",
+        "resubmission egy",
+        "re-submission",
+        "pre-approvals ip offshore",
+    }
+    has_egy_context = (
+        sess_region in ("egy", "egypt")
+        or any(
+            marker in text
+            for marker in ("egy", "egypt", "offshore")
+            for text in (prompt_cf, history_cf, scope_cf, sess_team)
+        )
+    )
+    is_uae_cc = (
+        scope_cf in ("call center", "inbound", "outbound")
+        and (not sess_fn or sess_fn == "call center")
+        and sess_team not in non_uae_branch_teams
+        and branch_cf in ("all branches", "all", "")
+        and sess_region in ("", "uae")
+        and not has_egy_context
+    )
+
+    candidates: list[str] = []
+    if merged.get("branch_comparison"):
+        candidates.extend([
+            f"Show verified KPI score drivers for {scope} in {period}",
+            f"Which team had the lowest score in {period}?",
+            f"What is {scope} 6-month trend?",
+            f"Summarize open corrective actions in {scope}",
+        ])
+    elif merged.get("lowest_kpi") or merged.get("requested_kpi"):
+        kpi_obj = merged.get("requested_kpi") or merged.get("lowest_kpi") or {}
+        kpi_lbl = str(kpi_obj.get("kpi_label") or "KPI gaps")
+        candidates.extend([
+            f"Who are the top negative contributors on {kpi_lbl} in {scope}?",
+            f"What is {scope} 6-month trend?",
+            f"Summarize open corrective actions in {scope}",
+        ])
+        if is_uae_cc:
+            candidates.append(f"Compare Dubai vs Sharjah branch performance for {scope}")
+    elif merged.get("worst_team"):
+        w_team = str(merged["worst_team"].get("team") or scope)
+        candidates.extend([
+            f"What is driving {w_team}'s score in {period}?",
+            f"Who are the lowest-scoring performers in {w_team}?",
+            f"Summarize open corrective actions in {w_team}",
+            f"What is {w_team} 6-month trend?",
+        ])
+    elif merged.get("spotlight") or merged.get("agent_spotlight"):
+        sp = merged.get("spotlight") or merged.get("agent_spotlight") or {}
+        e_team = str(sp.get("team") or scope)
+        r_dir = sp.get("ranking_direction")
+        candidates.extend([
+            f"Show verified KPI score drivers for {e_team} in {period}",
+            (
+                f"Who is the #1 top performer in {e_team}?"
+                if r_dir == "worst"
+                else f"Who is the lowest-scoring performer in {e_team}?"
+            ),
+            f"What is {e_team} 6-month trend?",
+            f"Summarize open corrective actions in {e_team}",
+        ])
+    elif merged.get("top_contributors"):
+        candidates.extend([
+            f"Show verified KPI score drivers for {scope} in {period}",
+            f"What is {scope} 6-month trend?",
+            f"Summarize open corrective actions in {scope}",
+            f"Who is the top performer in {scope}?",
+        ])
+    elif "total_actions" in merged:
+        candidates.extend([
+            f"What are the largest KPI gaps in {scope} for {period}?",
+            f"Who are the top negative contributors in {scope}?",
+            f"What is {scope} 6-month trend?",
+        ])
+    elif merged.get("bsc_kpis"):
+        t_name = str(merged.get("team") or scope)
+        candidates.extend([
+            f"What are the largest KPI gaps in {t_name} for {period}?",
+            f"What is {t_name} 6-month trend?",
+            f"Summarize open corrective actions in {t_name}",
+        ])
+    else:
+        if is_uae_cc:
+            candidates.append(f"Compare Dubai vs Sharjah branch performance for {scope}")
+        candidates.extend([
+            f"Show verified KPI score drivers for {scope} in {period}",
+            f"Who is the top performer in {scope}?",
+            f"Who is the lowest-scoring performer in {scope}?",
+            f"What is {scope} 6-month trend?",
+        ])
+
+    asked_texts = [prompt or ""]
+    for msg in history or []:
+        role = getattr(msg, "role", None) if not isinstance(msg, dict) else msg.get("role")
+        content = getattr(msg, "content", None) if not isinstance(msg, dict) else msg.get("content")
+        if role == "user" and content:
+            asked_texts.append(str(content))
+
+    def _norm_q(q: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9\u0600-\u06ff]+", q.casefold()))
+
+    asked_norms = [_norm_q(a) for a in asked_texts if a]
+    asked_token_sets = [_meaningful_tokens(a) for a in asked_texts if a]
+
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for cand in candidates:
+        c_norm = _norm_q(cand)
+        if not c_norm or c_norm in seen:
+            continue
+        if any(c_norm == an or (len(c_norm) >= 12 and (c_norm in an or an in c_norm)) for an in asked_norms):
+            continue
+        c_tokens = _meaningful_tokens(cand)
+        if c_tokens and any(
+            len(c_tokens & ats) >= max(3, int(round(0.8 * len(c_tokens))))
+            for ats in asked_token_sets
+            if ats
+        ):
+            continue
+        seen.add(c_norm)
+        filtered.append(cand)
+
+    if not filtered:
+        return []
+    offset = variant_idx % len(filtered)
+    rotated = filtered[offset:] + filtered[:offset]
+    return rotated[:4]
+
+
 class DeterministicLocalProviderAdapter:
     """Zero-dependency English analytical synthesizer & local composer over verified PMS evidence."""
 
@@ -312,9 +518,17 @@ class DeterministicLocalProviderAdapter:
         signals: ParsedPromptSignals,
         tool_digests: list[dict[str, Any]],
         guardrail_notes: list[str],
+        history: list[Any] | None = None,
+        variation_seed: int | None = None,
+        session_state: Any | None = None,
     ) -> NarrativeSynthesisResult:
         bullets: list[str] = []
         headline = ""
+        variant_idx = resolve_variation_index(
+            prompt=prompt,
+            history=history,
+            variation_seed=variation_seed,
+        )
 
         # Combine digests across executed tools
         merged: dict[str, Any] = {}
@@ -348,10 +562,21 @@ class DeterministicLocalProviderAdapter:
             src_route = ap.get("source_route") or f"/employee/{e_id}"
             role_lbl = "lowest-scoring performer" if r_dir == "worst" else "#1 top performer"
 
-            headline = (
-                f"{t_scope} {t_metric} moved from {t_first_lbl} ({t_first_sc:.1f}%) to {period} ({t_sc:.1f}%{t_delta_txt}), "
-                f"and {e_name} ({e_id}) is the {role_lbl} in {e_team} ({branch}) for {period} by {rank_metric_lbl} at {rank_metric_disp} (Rank #{rank_num} of {tot_team})."
-            )
+            if variant_idx == 1:
+                headline = (
+                    f"Across {t_first_lbl} to {period}, {t_scope} {t_metric} shifted from {t_first_sc:.1f}% to {t_sc:.1f}%{t_delta_txt}, "
+                    f"while {e_name} ({e_id}) holds Rank #{rank_num} of {tot_team} ({role_lbl}) on {rank_metric_lbl} at {rank_metric_disp}."
+                )
+            elif variant_idx == 2:
+                headline = (
+                    f"Benchmark spotlight for {e_team} ({branch}) in {period}: {t_scope} {t_metric} reached {t_sc:.1f}%{t_delta_txt} from {t_first_lbl} ({t_first_sc:.1f}%), "
+                    f"with {e_name} ({e_id}) ranked #{rank_num}/{tot_team} as {role_lbl} ({rank_metric_disp} on {rank_metric_lbl})."
+                )
+            else:
+                headline = (
+                    f"{t_scope} {t_metric} moved from {t_first_lbl} ({t_first_sc:.1f}%) to {period} ({t_sc:.1f}%{t_delta_txt}), "
+                    f"and {e_name} ({e_id}) is the {role_lbl} in {e_team} ({branch}) for {period} by {rank_metric_lbl} at {rank_metric_disp} (Rank #{rank_num} of {tot_team})."
+                )
             bullets.append(
                 f"Verified performer evidence: {e_name} ({e_id}) · Ranking metric: {rank_metric_lbl} ({rank_metric_disp}) · Period: {period} · Scope: {e_team} ({branch}) · Source: {src_route}."
             )
@@ -391,6 +616,11 @@ class DeterministicLocalProviderAdapter:
                 if missing_months
                 else ""
             )
+            missing_headline_note_inline = (
+                f" (Note: {', '.join(missing_months)} had no evaluated score and was excluded)"
+                if missing_months
+                else ""
+            )
             if (signals.asks_best_month_history or signals.asks_worst_month_history) and sp.get("all_history"):
                 is_worst_q = bool(signals.asks_worst_month_history)
                 target_label = "worst" if is_worst_q else "best"
@@ -414,28 +644,64 @@ class DeterministicLocalProviderAdapter:
                 )
                 if signals.asks_specific_month_in_prompt:
                     if not has_period_score:
-                        headline = (
-                            f"No. {e_name} ({e_id}{pos_txt}) had no published evaluation score in {period}, while their {target_label} month across "
-                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
-                        )
+                        if variant_idx == 1:
+                            headline = (
+                                f"No—{e_name} ({e_id}{pos_txt}) had no published score in {period}, and across {searched_win} their {target_label} month by {rank_metric_lbl} was {win_months_str} ({extremum_disp}){missing_headline_note_inline}."
+                            )
+                        elif variant_idx == 2:
+                            headline = (
+                                f"No; {period} has no published evaluation for {e_name} ({e_id}{pos_txt}), whereas their {target_label} {searched_win} benchmark by {rank_metric_lbl} stood at {extremum_disp} in {win_months_str}{missing_headline_note_inline}."
+                            )
+                        else:
+                            headline = (
+                                f"No. {e_name} ({e_id}{pos_txt}) had no published evaluation score in {period}, while their {target_label} month across "
+                                f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
+                            )
                     elif is_match:
                         others = [m for m in extremum_months if m.casefold() != str(period).casefold()]
                         tie_str = f" (tied with {', '.join(others)})" if others else ""
+                        if variant_idx == 1:
+                            headline = (
+                                f"Yes—{period} marked {e_name}'s ({e_id}{pos_txt}) {target_label} result across {searched_win} in {e_team} at {sc_disp} on {rank_metric_lbl}{tie_str}{missing_headline_note_inline}."
+                            )
+                        elif variant_idx == 2:
+                            headline = (
+                                f"Yes; across {searched_win} in {e_team}, {e_name} ({e_id}{pos_txt}) posted their {target_label} {rank_metric_lbl} result in {period} at {sc_disp}{tie_str}{missing_headline_note_inline}."
+                            )
+                        else:
+                            headline = (
+                                f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} "
+                                f"in {e_team} by {rank_metric_lbl} at {sc_disp}{tie_str}.{missing_headline_note}"
+                            )
+                    else:
+                        if variant_idx == 1:
+                            headline = (
+                                f"No—{e_name} ({e_id}{pos_txt}) recorded {sc_disp} in {period}, whereas {win_months_str} was their {target_label} month across {searched_win} on {rank_metric_lbl} at {extremum_disp}{missing_headline_note_inline}."
+                            )
+                        elif variant_idx == 2:
+                            headline = (
+                                f"No; {e_name} ({e_id}{pos_txt}) stood at {sc_disp} in {period}, while their {searched_win} {target_label} benchmark by {rank_metric_lbl} occurred in {win_months_str} ({extremum_disp}){missing_headline_note_inline}."
+                            )
+                        else:
+                            headline = (
+                                f"No. {e_name} ({e_id}{pos_txt}) scored {sc_disp} in {period}, while their {target_label} month across "
+                                f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
+                            )
+                else:
+                    tie_note = " (tied)" if len(extremum_months) > 1 else ""
+                    if variant_idx == 1:
                         headline = (
-                            f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} "
-                            f"in {e_team} by {rank_metric_lbl} at {sc_disp}{tie_str}.{missing_headline_note}"
+                            f"Across {searched_win} in {e_team}, {e_name}'s ({e_id}{pos_txt}) {target_label} {rank_metric_lbl} period was {win_months_str}{tie_note} at {extremum_disp}{missing_headline_note_inline}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Historical {rank_metric_lbl} benchmark for {e_name} ({e_id}{pos_txt}) in {e_team}: {win_months_str}{tie_note} stands as the {target_label} month across {searched_win} at {extremum_disp}{missing_headline_note_inline}."
                         )
                     else:
                         headline = (
-                            f"No. {e_name} ({e_id}{pos_txt}) scored {sc_disp} in {period}, while their {target_label} month across "
-                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
+                            f"{e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} in {e_team} "
+                            f"by {rank_metric_lbl} was {win_months_str}{tie_note} at {extremum_disp}.{missing_headline_note}"
                         )
-                else:
-                    tie_note = " (tied)" if len(extremum_months) > 1 else ""
-                    headline = (
-                        f"{e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} in {e_team} "
-                        f"by {rank_metric_lbl} was {win_months_str}{tie_note} at {extremum_disp}.{missing_headline_note}"
-                    )
                 if missing_months:
                     bullets.append(
                         f"Note: {', '.join(missing_months)} had no evaluated score and was excluded rather than treated as 0%."
@@ -450,9 +716,19 @@ class DeterministicLocalProviderAdapter:
                     )
             elif r_dir == "team_trend":
                 if metric_lbl and metric_lbl != "Overall Score":
-                    headline = f"{e_team} {metric_lbl} reached {sc_disp} in {period}{chg_txt}{six_txt}."
+                    if variant_idx == 1:
+                        headline = f"{e_team} {metric_lbl} landed at {sc_disp} in {period}{chg_txt}{six_txt}."
+                    elif variant_idx == 2:
+                        headline = f"Trajectory view for {e_team} {metric_lbl}: {sc_disp} in {period}{chg_txt}{six_txt}."
+                    else:
+                        headline = f"{e_team} {metric_lbl} reached {sc_disp} in {period}{chg_txt}{six_txt}."
                 else:
-                    headline = f"{e_team} scored {sc_disp} (Grade {gr}) in {period}{chg_txt}{six_txt}."
+                    if variant_idx == 1:
+                        headline = f"{e_team} stood at {sc_disp} (Grade {gr}) in {period}{chg_txt}{six_txt}."
+                    elif variant_idx == 2:
+                        headline = f"Team benchmark for {e_team} in {period}: {sc_disp} (Grade {gr}){chg_txt}{six_txt}."
+                    else:
+                        headline = f"{e_team} scored {sc_disp} (Grade {gr}) in {period}{chg_txt}{six_txt}."
             elif not has_period_score:
                 searched_win = str(sp.get("searched_window") or "")
                 avail_pts = list(sp.get("all_history") or [])
@@ -461,26 +737,67 @@ class DeterministicLocalProviderAdapter:
                     if searched_win and avail_pts
                     else ""
                 )
-                headline = (
-                    f"No published evaluation score is available for {e_name} ({e_id}{pos_txt}) in {period} ({e_team}).{avail_note}"
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"No published evaluation score exists for {e_name} ({e_id}{pos_txt}) in {period} ({e_team}); prior-period substitution is disabled.{avail_note}"
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Evaluation data for {e_name} ({e_id}{pos_txt}) is unpublished for {period} in {e_team}.{avail_note}"
+                    )
+                else:
+                    headline = (
+                        f"No published evaluation score is available for {e_name} ({e_id}{pos_txt}) in {period} ({e_team}).{avail_note}"
+                    )
                 bullets.append(
                     f"Note: {period} has no published evaluation score for {e_name} ({e_id}); PMS AI does not substitute another month's score."
                 )
             elif r_dir == "worst" and not signals.detected_employee_query:
-                headline = (
-                    f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"Coaching priority in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) recorded the lowest {rank_metric_lbl} at {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Bottom-ranked benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) sits at Rank #{rank_num} of {tot_team} by {rank_metric_lbl} with {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                    )
+                else:
+                    headline = (
+                        f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
+                        f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                    )
             elif not signals.detected_employee_query:
-                headline = (
-                    f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"Leading {e_team} ({branch}) in {period}, {e_name} ({e_id}{pos_txt}) ranks #1 of {tot_team} by {rank_metric_lbl} at {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Top benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) holds #1 of {tot_team} on {rank_metric_lbl} with {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                    )
+                else:
+                    headline = (
+                        f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
+                        f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                    )
             else:
-                headline = (
-                    f"{e_name} ({e_id}{pos_txt}) scored {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
-                    f"in {period}{chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
+                if variant_idx == 1:
+                    headline = (
+                        f"In {period}, {e_name} ({e_id}{pos_txt}) posted {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}){chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Performance posture for {e_name} ({e_id}{pos_txt}) in {e_team} ({period}): {sc_disp} (Grade {gr}, #{rank_num} of {tot_team}){chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
+                    )
+                else:
+                    headline = (
+                        f"{e_name} ({e_id}{pos_txt}) scored {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
+                        f"in {period}{chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
+                    )
+
+            if variant_idx in (1, 2) and has_period_score:
+                bullets.append(
+                    f"Peer position: {e_name} ({e_id}) sits at Rank #{rank_num} of {tot_team} in {e_team} ({period}) with {sc_disp} (Grade {gr})."
                 )
 
         # 1. Revenue guardrail note
@@ -491,10 +808,19 @@ class DeterministicLocalProviderAdapter:
             c_cnt = vols.get("total_calls_handled")
             b_text = f"{int(b_cnt):,}" if b_cnt is not None and not vols.get("has_partial_evidence") else "unavailable"
             a_text = f"{int(a_cnt):,}" if a_cnt is not None else "unavailable"
-            headline = (
-                f"{scope} tracks operational patient volume rather than financial revenue: "
-                f"{b_text} Bookings and {a_text} Attended visits in {period} ({branch})."
-            )
+            if variant_idx == 1:
+                headline = (
+                    f"Revenue is outside {scope} KPIs; verified operational volume in {period} ({branch}) stands at {b_text} Bookings and {a_text} Attended visits."
+                )
+            elif variant_idx == 2:
+                headline = (
+                    f"Governance guardrail: {scope} measures patient throughput ({b_text} Bookings, {a_text} Attended in {period} · {branch}) rather than financial revenue."
+                )
+            else:
+                headline = (
+                    f"{scope} tracks operational patient volume rather than financial revenue: "
+                    f"{b_text} Bookings and {a_text} Attended visits in {period} ({branch})."
+                )
             bullets.append(f"Total calls handled in scope: {int(c_cnt):,} calls." if c_cnt is not None else "Calls handled data is unavailable.")
             bullets.append("Financial revenue metrics are tracked under Marketing and RCM.")
 
@@ -648,10 +974,19 @@ class DeterministicLocalProviderAdapter:
                                 )
                             else:
                                 others_txt = _format_others_txt(others)
-                                headline = (
-                                    f"{winner['branch']} led {period} {scope} bookings with "
-                                    f"{int(winner.get('bookings') or 0):,}, followed by {others_txt}."
-                                )
+                                if variant_idx == 1:
+                                    headline = (
+                                        f"Booking volume concentration in {period} ({scope}): {winner['branch']} recorded the highest volume at {int(winner.get('bookings') or 0):,}, ahead of {others_txt}."
+                                    )
+                                elif variant_idx == 2:
+                                    headline = (
+                                        f"Branch volume ranking for {scope} in {period}: {winner['branch']} tops the comparison with {int(winner.get('bookings') or 0):,} bookings, followed by {others_txt}."
+                                    )
+                                else:
+                                    headline = (
+                                        f"{winner['branch']} led {period} {scope} bookings with "
+                                        f"{int(winner.get('bookings') or 0):,}, followed by {others_txt}."
+                                    )
 
                     # Subcase 3.3: Fewest / Lowest comparison (asks_least is True)
                     else:
@@ -675,10 +1010,19 @@ class DeterministicLocalProviderAdapter:
                                 )
                             else:
                                 others_txt = _format_others_txt(others)
-                                headline = (
-                                    f"{least_branch['branch']} had the fewest {period} {scope} bookings with "
-                                    f"{int(least_branch.get('bookings') or 0):,}, followed by {others_txt}."
-                                )
+                                if variant_idx == 1:
+                                    headline = (
+                                        f"Lowest {scope} booking intake in {period} occurred in {least_branch['branch']} ({int(least_branch.get('bookings') or 0):,}), trailing {others_txt}."
+                                    )
+                                elif variant_idx == 2:
+                                    headline = (
+                                        f"Across {period} {scope} branches, {least_branch['branch']} posted the smallest booking count at {int(least_branch.get('bookings') or 0):,}, compared with {others_txt}."
+                                    )
+                                else:
+                                    headline = (
+                                        f"{least_branch['branch']} had the fewest {period} {scope} bookings with "
+                                        f"{int(least_branch.get('bookings') or 0):,}, followed by {others_txt}."
+                                    )
 
                     bullets.append(
                         "Branch booking breakdown: "
@@ -713,10 +1057,19 @@ class DeterministicLocalProviderAdapter:
                     )
                     winner = ranked_b[0]
                     others_txt = ", ".join(f"{o['branch']} at {float(o['score']):.1f}%" for o in ranked_b[1:])
-                    headline = (
-                        f"In {period}, {winner['branch']} leads {scope} at {float(winner['score']):.1f}%, "
-                        f"followed by {others_txt}."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"Branch gap alert for {scope} in {period}: {winner['branch']} stands at {float(winner['score']):.1f}%, while {others_txt}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Multi-branch benchmark in {period} ({scope}): {winner['branch']} ranks first at {float(winner['score']):.1f}% ahead of {others_txt}."
+                        )
+                    else:
+                        headline = (
+                            f"In {period}, {winner['branch']} leads {scope} at {float(winner['score']):.1f}%, "
+                            f"followed by {others_txt}."
+                        )
             elif len(target_bc) < 2:
                 headline = f"A branch comparison requires at least two accessible branches for {scope} in {period}."
             else:
@@ -734,10 +1087,19 @@ class DeterministicLocalProviderAdapter:
                     lagger = b2 if diff >= 0 else b1
                     with_vol = [b for b in target_bc if int(b.get("bookings") or 0) > 0 and b.get("no_shows") is not None and b.get("attendance_rate_pct") is not None and not b.get("has_partial_evidence")]
                     most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
-                    headline = (
-                        f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
-                        f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"Operational gap across branches in {period}: {lagger['branch']} trails {leader['branch']} by {abs(diff):.1f} pts ({lagger['score']:.1f}% vs {leader['score']:.1f}%)."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Branch benchmark ({period}): {leader['branch']} holds {leader['score']:.1f}% against {lagger['branch']} at {lagger['score']:.1f}%—a {abs(diff):.1f}-pt spread."
+                        )
+                    else:
+                        headline = (
+                            f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
+                            f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
+                        )
                     if most_noshows:
                         bullets.append(
                             f"{most_noshows['branch']} holds the largest No-Show volume ({most_noshows['no_shows']:,} missed visits out of "
@@ -761,10 +1123,19 @@ class DeterministicLocalProviderAdapter:
             p_share = float(pareto.get("top3_pareto_share_pct") or 0.0)
             p_top3_pts = float(pareto.get("top3_negative_impact_pts") or 0.0)
             p_tot_pts = float(pareto.get("total_negative_impact_pts") or 0.0)
-            headline = (
-                f"{neg_cnt} of {tot_cnt} employees are below target on {kpi_name} in {period} ({branch}). "
-                f"{first['employee_name']} drives the largest negative impact ({first.get('weighted_impact') or 0:+.2f} pts)."
-            )
+            if variant_idx == 1:
+                headline = (
+                    f"Risk concentration on {kpi_name} ({period} · {branch}): {neg_cnt} of {tot_cnt} employees missed target, led by {first['employee_name']} ({first.get('weighted_impact') or 0:+.2f} pts)."
+                )
+            elif variant_idx == 2:
+                headline = (
+                    f"Coaching focus for {kpi_name} in {period} ({branch}): lifting {first['employee_name']} ({first.get('weighted_impact') or 0:+.2f} pts) addresses the steepest gap across {neg_cnt} of {tot_cnt} below-target records."
+                )
+            else:
+                headline = (
+                    f"{neg_cnt} of {tot_cnt} employees are below target on {kpi_name} in {period} ({branch}). "
+                    f"{first['employee_name']} drives the largest negative impact ({first.get('weighted_impact') or 0:+.2f} pts)."
+                )
             if p_tot_pts > 0 and signals.asks_decisions_or_what_if:
                 bullets.append(
                     f"Pareto Concentration: The top 3 below-target agents account for {p_share:.0f}% of the total weighted loss "
@@ -779,10 +1150,19 @@ class DeterministicLocalProviderAdapter:
                 latest = hist[-1]
                 earliest = hist[0]
                 delta = round(float(latest["score"]) - float(earliest["score"]), 1)
-                headline = (
-                    f"{emp_name} scored {latest['score']:.1f}% in {latest['period']} across {len(hist)} tracked months "
-                    f"({delta:+.1f}% vs. {earliest['period']})."
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"Over {len(hist)} evaluated months, {emp_name} moved {delta:+.1f}% from {earliest['period']} to finish at {latest['score']:.1f}% in {latest['period']}."
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Longitudinal posture for {emp_name}: {latest['score']:.1f}% in {latest['period']} ({delta:+.1f}% since {earliest['period']} across {len(hist)} months)."
+                    )
+                else:
+                    headline = (
+                        f"{emp_name} scored {latest['score']:.1f}% in {latest['period']} across {len(hist)} tracked months "
+                        f"({delta:+.1f}% vs. {earliest['period']})."
+                    )
             else:
                 headline = f"No evaluation records matched '{emp_name}' within your authorized scope."
 
@@ -790,7 +1170,12 @@ class DeterministicLocalProviderAdapter:
         elif "total_actions" in merged:
             tot_act = merged.get("total_actions", 0)
             acts = merged.get("actions") or []
-            headline = f"{tot_act} corrective actions are currently tracked for {scope}."
+            if variant_idx == 1:
+                headline = f"Governance queue for {scope}: {tot_act} corrective actions require tracking across active follow-up states."
+            elif variant_idx == 2:
+                headline = f"Action posture in {scope}: {tot_act} tracked corrective actions are currently logged for manager follow-up."
+            else:
+                headline = f"{tot_act} corrective actions are currently tracked for {scope}."
             for a in acts[:3]:
                 bullets.append(
                     f"{a.get('employee_name')} ({a.get('team')}): {a.get('action_type')} — {a.get('status')} ({a.get('follow_up_state')})."
@@ -805,7 +1190,12 @@ class DeterministicLocalProviderAdapter:
                 t_name = merged.get("team", "Inbound")
                 avg_bsc = merged.get("average_score")
                 if isinstance(avg_bsc, (int, float)):
-                    headline = f"{t_name} {lvl} Balanced Scorecard scored {float(avg_bsc):.1f}% in {period} across 4 strategic perspectives."
+                    if variant_idx == 1:
+                        headline = f"{t_name} {lvl} Balanced Scorecard stands at {float(avg_bsc):.1f}% in {period} across 4 weighted perspectives."
+                    elif variant_idx == 2:
+                        headline = f"Strategic benchmark for {t_name} ({lvl} BSC) in {period}: {float(avg_bsc):.1f}% across 4 perspectives."
+                    else:
+                        headline = f"{t_name} {lvl} Balanced Scorecard scored {float(avg_bsc):.1f}% in {period} across 4 strategic perspectives."
                 else:
                     headline = f"{t_name} {lvl} Balanced Scorecard is structured across 4 strategic perspectives."
                 bsc_rows = merged.get("bsc_kpis") or []
@@ -837,9 +1227,18 @@ class DeterministicLocalProviderAdapter:
                 delta = period_comp.get("delta", score_change)
                 delta_txt = f" ({delta:+.1f}% change)" if delta is not None else ""
                 if s_from is not None and s_to is not None:
-                    headline = (
-                        f"{scope} ({branch}) moved from {s_from:.1f}% in {p_from} to {s_to:.1f}% in {p_to}{delta_txt}."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"Period-over-period shift for {scope} ({branch}): {s_to:.1f}% in {p_to} vs {s_from:.1f}% in {p_from}{delta_txt}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Comparing {p_from} to {p_to}, {scope} ({branch}) transitioned from {s_from:.1f}% to {s_to:.1f}%{delta_txt}."
+                        )
+                    else:
+                        headline = (
+                            f"{scope} ({branch}) moved from {s_from:.1f}% in {p_from} to {s_to:.1f}% in {p_to}{delta_txt}."
+                        )
                 else:
                     headline = (
                         f"Comparing {scope} ({branch}) across {p_from} and {p_to}: latest score is {(s_to or 0.0):.1f}%{delta_txt}."
@@ -855,17 +1254,35 @@ class DeterministicLocalProviderAdapter:
                     "abandoned_calls_count",
                     "AbandonedCalls",
                 ):
-                    headline = (
-                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} reached "
-                        f"{requested_kpi['actual_display']}."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"Operational count for {scope} ({period} · {branch}): {requested_kpi['kpi_label']} totaled {requested_kpi['actual_display']}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Volume benchmark in {scope} ({period} · {branch}): {requested_kpi['actual_display']} recorded for {requested_kpi['kpi_label']}."
+                        )
+                    else:
+                        headline = (
+                            f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} reached "
+                            f"{requested_kpi['actual_display']}."
+                        )
                     if requested_kpi.get("tracking_only_note"):
                         bullets.append(str(requested_kpi["tracking_only_note"]))
                 elif requested_kpi.get("contributes_to_score") is False:
-                    headline = (
-                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is a tracking-only indicator "
-                        f"(0% score weight) and does not affect the weighted PMS score."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"{requested_kpi['kpi_label']} in {scope} ({period} · {branch}) carries 0% score weight and serves as a diagnostic volume indicator."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Diagnostic indicator check for {scope} ({period} · {branch}): {requested_kpi['kpi_label']} is tracking-only (0% weight) and excluded from the weighted PMS score."
+                        )
+                    else:
+                        headline = (
+                            f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is a tracking-only indicator "
+                            f"(0% score weight) and does not affect the weighted PMS score."
+                        )
                     if requested_kpi.get("tracking_only_note"):
                         bullets.append(str(requested_kpi["tracking_only_note"]))
                 else:
@@ -877,13 +1294,21 @@ class DeterministicLocalProviderAdapter:
                         if below_kpi_cnt > 0
                         else ""
                     )
-                    headline = (
-                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is at {requested_kpi['actual_display']} "
-                        f"vs target {requested_kpi['target_display']} ({ach_txt}, {requested_kpi.get('weight_percent') or 0:.0f}% weight){below_kpi_note}."
-                    )
+                    if variant_idx == 1:
+                        headline = (
+                            f"Driver check for {requested_kpi['kpi_label']} in {scope} ({period} · {branch}): actual {requested_kpi['actual_display']} vs target {requested_kpi['target_display']} delivers {ach_txt} ({requested_kpi.get('weight_percent') or 0:.0f}% weight){below_kpi_note}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Target posture on {requested_kpi['kpi_label']} ({scope} · {period} · {branch}): {ach_txt} at {requested_kpi['actual_display']} against {requested_kpi['target_display']} ({requested_kpi.get('weight_percent') or 0:.0f}% weight){below_kpi_note}."
+                        )
+                    else:
+                        headline = (
+                            f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is at {requested_kpi['actual_display']} "
+                            f"vs target {requested_kpi['target_display']} ({ach_txt}, {requested_kpi.get('weight_percent') or 0:.0f}% weight){below_kpi_note}."
+                        )
                     if merged.get("top_contributors"):
                         top_c = merged["top_contributors"]
-                        first_c = top_c[0]
                         neg_c = merged.get("negative_contributors", len(top_c))
                         tot_c = merged.get("total_employees", len(top_c))
                         top_names = ", ".join(
@@ -897,19 +1322,37 @@ class DeterministicLocalProviderAdapter:
                 w_score = worst.get("current_score") or 0.0
                 w_change = worst.get("score_change")
                 change_txt_en = f" ({w_change:+.1f}% vs prior month)" if w_change is not None else ""
-                headline = (
-                    f"In {period} ({branch}), {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}, "
-                    f"with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"Primary risk area in {period} ({branch}): {worst['team']} trails at {w_score:.1f}%{change_txt_en}, with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Coaching attention in {period} ({branch}) centers on {worst['team']} at {w_score:.1f}%{change_txt_en} across {worst.get('impacted_employees', below_cnt)}/{worst.get('total_employees', tot_rec)} below-target agents."
+                    )
+                else:
+                    headline = (
+                        f"In {period} ({branch}), {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}, "
+                        f"with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
+                    )
                 if worst.get("main_cause"):
                     bullets.append(f"Primary driver: {worst['main_cause']}.")
             elif lowest_kpi:
                 below_low_cnt = int(lowest_kpi.get("people_below_target") or 0)
                 below_low_note = f", {below_low_cnt} agents below target" if below_low_cnt > 0 else ""
-                headline = (
-                    f"The primary KPI bottleneck in {scope} ({period} · {branch}) is {lowest_kpi['kpi_label']} "
-                    f"at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['actual_display']} vs target {lowest_kpi['target_display']}{below_low_note})."
-                )
+                if variant_idx == 1:
+                    headline = (
+                        f"Biggest score drag in {scope} ({period} · {branch}): {lowest_kpi['kpi_label']} achieved {lowest_kpi.get('achievement_percent') or 0:.1f}% ({lowest_kpi['actual_display']} vs target {lowest_kpi['target_display']}{below_low_note})."
+                    )
+                elif variant_idx == 2:
+                    headline = (
+                        f"Priority KPI recovery target for {scope} ({period} · {branch}): closing {lowest_kpi['kpi_label']} from {lowest_kpi['actual_display']} toward {lowest_kpi['target_display']} ({lowest_kpi.get('achievement_percent') or 0:.1f}% achievement{below_low_note})."
+                    )
+                else:
+                    headline = (
+                        f"The primary KPI bottleneck in {scope} ({period} · {branch}) is {lowest_kpi['kpi_label']} "
+                        f"at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['actual_display']} vs target {lowest_kpi['target_display']}{below_low_note})."
+                    )
                 if merged.get("top_contributors"):
                     top_c = merged["top_contributors"]
                     neg_c = merged.get("negative_contributors", len(top_c))
@@ -923,7 +1366,12 @@ class DeterministicLocalProviderAdapter:
                     )
             elif avg_score is not None:
                 delta_str = f" ({score_change:+.1f}%)" if score_change is not None else ""
-                headline = f"{scope} average performance in {period} ({branch}) is {avg_score:.1f}%{delta_str} across {tot_rec} evaluated records."
+                if variant_idx == 1:
+                    headline = f"Across {tot_rec} evaluated records in {period} ({branch}), {scope} stands at {avg_score:.1f}%{delta_str}."
+                elif variant_idx == 2:
+                    headline = f"Overall benchmark for {scope} in {period} ({branch}): {avg_score:.1f}%{delta_str} over {tot_rec} evaluated records."
+                else:
+                    headline = f"{scope} average performance in {period} ({branch}) is {avg_score:.1f}%{delta_str} across {tot_rec} evaluated records."
             else:
                 headline = f"No performance records matched the selected filters ({scope} · {period})."
 
@@ -939,19 +1387,16 @@ class DeterministicLocalProviderAdapter:
                     f"Lowest KPI: {lowest_kpi['kpi_label']} (Weight {lowest_kpi['weight_percent']:.0f}%) at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['people_below_target']} agents below target)."
                 )
 
-        if str(branch).casefold() in ("all branches", "all", "") and not merged.get("branch_comparison"):
-            primary_drilldown = f"Compare Dubai vs Sharjah branch performance for {scope}"
-        elif not merged.get("top_contributors"):
-            primary_drilldown = f"Show verified KPI score drivers for {scope} in {period}"
-        else:
-            primary_drilldown = f"What is {scope} 6-month trend?"
-
-        followups = [
-            primary_drilldown,
-            f"Who is the best agent in {scope} and his trend?",
-            f"Who is the lowest agent in {scope} and his trend?",
-            f"What is {scope} 6-month trend?",
-        ]
+        followups = _build_dynamic_followups(
+            prompt=prompt,
+            history=history,
+            scope=str(scope),
+            branch=str(branch),
+            period=str(period),
+            merged=merged,
+            variant_idx=variant_idx,
+            session_state=session_state,
+        )
 
         return NarrativeSynthesisResult(
             headline=headline,

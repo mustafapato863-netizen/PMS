@@ -97,15 +97,18 @@ def compute_request_fingerprint(
     answer_detail: str | None = None,
     session_filters: dict[str, Any] | Any | None = None,
     session_state: Any | None = None,
+    variation_seed: int | None = None,
 ) -> str:
     """Compute a canonical SHA-256 request fingerprint binding prompt, clarification choice, answer detail, and session filters."""
     eff_filters = session_filters if session_filters is not None else session_state
-    canonical = {
+    canonical: dict[str, Any] = {
         "prompt": _norm_str(prompt),
         "clarification_choice_id": _norm_str(clarification_choice_id),
         "answer_detail": _norm_str(answer_detail or "auto", default="auto"),
         "filters": _normalize_session_filters(eff_filters),
     }
+    if variation_seed is not None and int(variation_seed) > 0:
+        canonical["variation_seed"] = int(variation_seed)
     raw = json.dumps(canonical, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

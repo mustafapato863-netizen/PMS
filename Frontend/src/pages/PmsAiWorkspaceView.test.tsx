@@ -19,9 +19,11 @@ vi.mock('../context/auth', () => ({
   useAuth: () => mockAuthState,
 }));
 
+let mockActiveMonth = 'March';
+
 vi.mock('../store/appStore', () => ({
   useAppStore: (selector: (s: { activeMonth: string }) => unknown) =>
-    selector({ activeMonth: 'March' }),
+    selector({ activeMonth: mockActiveMonth }),
 }));
 
 vi.mock('../lib/apiClient', () => ({
@@ -845,5 +847,67 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.getByText('Which team in Pharmacy dropped most?')).toBeInTheDocument();
     expect(screen.queryByText(/Call Center/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filter UAE Branch')).not.toBeInTheDocument();
+  });
+
+  it('displays Latest Period instead of hardcoded September 2026 when watchingData is null and month is unset', () => {
+    const prevMonth = mockActiveMonth;
+    mockActiveMonth = '';
+    try {
+      renderWorkspace('/ai');
+      expect(screen.getByText('Latest Period')).toBeInTheDocument();
+      expect(screen.queryByText('September 2026')).not.toBeInTheDocument();
+    } finally {
+      mockActiveMonth = prevMonth;
+    }
+  });
+
+  it('supports mid-chat Scenarios toggle and Different angle variation_seed submission', { timeout: 15000 }, async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/chat') {
+        return {
+          ...CHAT_RESPONSE,
+          data: {
+            ...CHAT_RESPONSE.data,
+            outcome: 'answer' as const,
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai?function=Call%20Center&team=Inbound');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'Show Inbound score' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-regenerate-angle-btn')).toBeInTheDocument();
+    });
+
+    // Mid-chat Scenarios drawer opens and shows scoped scenarios
+    const scenariosBtn = screen.getByTestId('ai-midchat-scenarios-toggle');
+    fireEvent.click(scenariosBtn);
+    expect(screen.getByTestId('ai-midchat-scenarios-panel')).toBeInTheDocument();
+
+    // Clicking Different angle re-submits the userPrompt with incremented variation_seed: 1
+    fireEvent.click(screen.getByTestId('ai-regenerate-angle-btn'));
+    await waitFor(() => {
+      const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+      expect(chatCalls.length).toBeGreaterThanOrEqual(2);
+      const secondBody = JSON.parse(String(chatCalls[1][1]?.body || '{}'));
+      expect(secondBody.prompt).toBe('Show Inbound score');
+      expect(secondBody.variation_seed).toBe(1);
+    });
+  });
+
+  it('does not leak UAE/Dubai/Sharjah cards when region=EGY is active on Call Center', () => {
+    renderWorkspace('/ai?function=Call%20Center&region=EGY');
+
+    expect(screen.getByText('Compare EGY teams & KPIs')).toBeInTheDocument();
+    expect(screen.queryByText(/Dubai|Sharjah|UAE|Ajman|Clinics/i)).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AiResponseCard from './AiResponseCard';
 import type { AiChatResponsePayload, StructuredVisualCard } from '../../features/ai/types';
@@ -64,5 +64,42 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     );
     expect(fills).toContain('0%');
     expect(fills.some((w) => w !== '0%')).toBe(true);
+  });
+
+  it('renders provenance badge, Copy summary button, and Different angle trigger for answer turns', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const onRegenerateAngle = vi.fn();
+    const answerResp: AiChatResponsePayload = {
+      ...responseWithBarCard(),
+      outcome: 'answer',
+      provider_used: 'cloudflare',
+    };
+
+    render(
+      <MemoryRouter>
+        <AiResponseCard
+          response={answerResp}
+          variationSeed={1}
+          onRegenerateAngle={onRegenerateAngle}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('ai-provenance-badge')).toHaveTextContent('Verified PMS · Live Synthesis');
+
+    fireEvent.click(screen.getByTestId('ai-regenerate-angle-btn'));
+    expect(onRegenerateAngle).toHaveBeenCalledWith(2);
+
+    fireEvent.click(screen.getByTestId('ai-copy-summary-btn'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        'Dubai recorded 200 bookings; Ajman booking data is missing or unpublished.\n- Dubai recorded 200 bookings.',
+      );
+      expect(screen.getByTestId('ai-copy-summary-btn')).toHaveTextContent('Copied');
+    });
   });
 });

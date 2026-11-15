@@ -351,4 +351,81 @@ describe('ContextualAssistantPanel', () => {
       });
     });
   });
+
+  it('renders narrative bullets, up to 3 follow-ups, Different angle rephrase with variation_seed, and New chat reset', async () => {
+    const user = userEvent.setup();
+    mockApiFetch.mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/api/ai/chat') {
+        return {
+          success: true,
+          data: {
+            trace_id: 'trace-ctx-var-1',
+            conversation_id: 'conv-ctx-var',
+            turn_id: 'turn-ctx-1',
+            outcome: 'answer',
+            capability_mode: 'page_help',
+            headline: 'Executive Summary consolidates organization-wide performance scores.',
+            narrative_bullets: [
+              'Bullet 1',
+              'Bullet 2',
+              'Bullet 3',
+              'Bullet 4 should be truncated',
+            ],
+            visual_cards: [],
+            citations: [],
+            deep_links: [],
+            suggested_followups: ['Followup 1', 'Followup 2', 'Followup 3', 'Followup 4 truncated'],
+            resolved_session_state: {},
+            domain_guardrail_notes: [],
+            tool_calls: [],
+            provider_used: 'deterministic',
+            model_used: 'pms-deterministic-v1',
+            latency_ms: 4,
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    const execCtx = {
+      ...basePageContext,
+      page_id: 'executive_summary',
+      route_id: '/executive',
+    };
+
+    render(
+      <MemoryRouter>
+        <ContextualAssistantPanel pageContext={execCtx} />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByTestId('contextual-assistant-launcher'));
+    expect(screen.getByText('Compare branch performance in this scope')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Explain this page'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('contextual-assistant-bullets')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Bullet 3')).toBeInTheDocument();
+    expect(screen.queryByText('Bullet 4 should be truncated')).not.toBeInTheDocument();
+
+    expect(screen.getByText('Followup 3')).toBeInTheDocument();
+    expect(screen.queryByText('Followup 4 truncated')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('rephrase-turn-0'));
+    await waitFor(() => {
+      const chatCalls = mockApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+      expect(chatCalls.length).toBe(2);
+      const secondReq = JSON.parse(String(chatCalls[1]?.[1]?.body || '{}'));
+      expect(secondReq.prompt).toBe('Explain this page');
+      expect(secondReq.variation_seed).toBe(1);
+      expect(Array.isArray(secondReq.history)).toBe(true);
+      expect(secondReq.history.length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByTestId('contextual-assistant-new-chat'));
+    expect(screen.queryByTestId('contextual-assistant-turn')).not.toBeInTheDocument();
+    expect(screen.getByTestId('contextual-assistant-starters')).toBeInTheDocument();
+  }, 15000);
 });
