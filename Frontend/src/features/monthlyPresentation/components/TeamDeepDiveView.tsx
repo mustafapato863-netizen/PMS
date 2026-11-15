@@ -4,8 +4,12 @@ import { ApiError } from '../../../lib/apiClient';
 import {
   AiRecommendationBanner,
   AiRecommendIconButton,
+  formatScoreChangeLabel,
+  IndividualEvidenceDrawer,
+  ViewEvidenceToggleButton,
 } from './ActionPlanAiAssistant';
 import {
+  buildAiScopeKey,
   parseMonthYearFromLabel,
   requestActionPlanAiSuggestion,
   resolveTeamCardFocusKpiKey,
@@ -220,6 +224,9 @@ function TeamDeepDiveViewContent({
   const [draftMainIssue, setDraftMainIssue] = useState<string>('');
   const [draftOwner, setDraftOwner] = useState<string>('');
   const [draftImpact, setDraftImpact] = useState<string>('');
+  const [draftFollowUpLabel, setDraftFollowUpLabel] = useState<string>('');
+  const [draftObservationStatus, setDraftObservationStatus] =
+    useState<IndividualActionPlanCard['observationStatus']>(undefined);
   const [indSaveFeedback, setIndSaveFeedback] = useState<
     Record<string, { type: 'success' | 'error'; message: string }>
   >({});
@@ -304,20 +311,36 @@ function TeamDeepDiveViewContent({
   // AI Draft state keyed by 'ind:<id>', 'team:<id>', or 'new-team'
   type CardAiState = {
     loading: boolean;
+    scopeKey?: string;
     payload: AiCorrectiveActionSuggestionPayload | null;
     error: ActionPlanAiError | null;
     needsOverwriteConfirm: boolean;
     draftApplied: boolean;
   };
+  const viewScopeKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
+  const [prevViewScopeKey, setPrevViewScopeKey] = useState(viewScopeKey);
   const [aiStateByTarget, setAiStateByTarget] = useState<Record<string, CardAiState>>({});
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
   const abortControllersRef = useRef<Record<string, AbortController>>({});
+  const inFlightScopesRef = useRef<Record<string, string>>({});
+
+  if (prevViewScopeKey !== viewScopeKey) {
+    setPrevViewScopeKey(viewScopeKey);
+    setAiStateByTarget({});
+    setExpandedEvidenceIds({});
+    setIndividualOverrides({});
+    setEditingIndividualId(null);
+  }
 
   useEffect(() => {
     const controllers = abortControllersRef.current;
+    const scopes = inFlightScopesRef.current;
     return () => {
       Object.values(controllers).forEach((ctrl) => ctrl.abort());
+      Object.keys(controllers).forEach((k) => delete controllers[k]);
+      Object.keys(scopes).forEach((k) => delete scopes[k]);
     };
-  }, []);
+  }, [viewScopeKey]);
 
   const maxCarouselStart = Math.max(0, enrichedKpis.length - TEAM_KPI_CARDS_PER_ROW);
   const safeCarouselStart = Math.min(carouselStart, maxCarouselStart);
@@ -384,6 +407,18 @@ function TeamDeepDiveViewContent({
     setDraftMainIssue(card.mainIssue);
     setDraftOwner(card.owner);
     setDraftImpact(card.expectedImpact);
+    setDraftFollowUpLabel(card.followUpLabel ?? '');
+    setDraftObservationStatus(card.observationStatus);
+  };
+
+  const cancelEditIndividual = (card: IndividualActionPlanCard) => {
+    setEditingIndividualId(null);
+    setDraftActionText(card.actionText);
+    setDraftMainIssue(card.mainIssue);
+    setDraftOwner(card.owner);
+    setDraftImpact(card.expectedImpact);
+    setDraftFollowUpLabel(card.followUpLabel ?? '');
+    setDraftObservationStatus(card.observationStatus);
   };
 
   const saveEditIndividual = async (card: IndividualActionPlanCard) => {
@@ -393,6 +428,8 @@ function TeamDeepDiveViewContent({
       actionText: draftActionText.trim() || card.actionText,
       owner: draftOwner.trim() || card.owner,
       expectedImpact: draftImpact.trim() || card.expectedImpact,
+      followUpLabel: draftFollowUpLabel.trim() || card.followUpLabel,
+      observationStatus: draftObservationStatus ?? card.observationStatus,
       isSavedToStore: true,
     };
     setIndividualOverrides((prev) => ({ ...prev, [card.id]: updated }));
@@ -528,8 +565,14 @@ function TeamDeepDiveViewContent({
       setEditingIndividualId(card.id);
       setDraftActionText(formatDraftActionText(payload));
       setDraftMainIssue(payload.draft.measured_issue || card.mainIssue);
-      setDraftOwner((prev) => (editingIndividualId === card.id ? prev : card.owner));
+      setDraftOwner((prev) =>
+        editingIndividualId === card.id && prev.trim() !== card.owner.trim()
+          ? prev
+          : payload.draft?.responsible_role || card.owner,
+      );
       setDraftImpact((prev) => (editingIndividualId === card.id ? prev : card.expectedImpact));
+      setDraftFollowUpLabel(payload.draft.recommended_follow_up || card.followUpLabel || '');
+      setDraftObservationStatus(payload.draft.observation_status || card.observationStatus);
       setAiStateByTarget((prev) => ({
         ...prev,
         [`ind:${card.id}`]: {
@@ -597,18 +640,24 @@ function TeamDeepDiveViewContent({
   const runAiRequest = useCallback(
     async (
       targetKey: string,
+      scopeKey: string,
       requestFn: (signal: AbortSignal) => Promise<AiCorrectiveActionSuggestionPayload>,
       hasUnsavedEdits: boolean,
       onAutoApply: (payload: AiCorrectiveActionSuggestionPayload) => void,
     ) => {
+      if (inFlightScopesRef.current[targetKey] === scopeKey) {
+        return;
+      }
       abortControllersRef.current[targetKey]?.abort();
       const controller = new AbortController();
       abortControllersRef.current[targetKey] = controller;
+      inFlightScopesRef.current[targetKey] = scopeKey;
 
       setAiStateByTarget((prev) => ({
         ...prev,
         [targetKey]: {
           loading: true,
+          scopeKey,
           payload: null,
           error: null,
           needsOverwriteConfirm: false,
@@ -618,7 +667,9 @@ function TeamDeepDiveViewContent({
 
       try {
         const payload = await requestFn(controller.signal);
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || abortControllersRef.current[targetKey] !== controller) {
+          return;
+        }
         if (payload.outcome === 'suggested' && payload.draft && !hasUnsavedEdits) {
           onAutoApply(payload);
           return;
@@ -627,6 +678,7 @@ function TeamDeepDiveViewContent({
           ...prev,
           [targetKey]: {
             loading: false,
+            scopeKey,
             payload,
             error: null,
             needsOverwriteConfirm: Boolean(
@@ -636,7 +688,9 @@ function TeamDeepDiveViewContent({
           },
         }));
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || abortControllersRef.current[targetKey] !== controller) {
+          return;
+        }
         const aiError: ActionPlanAiError =
           err instanceof ApiError
             ? { message: err.message, status: err.status }
@@ -650,12 +704,18 @@ function TeamDeepDiveViewContent({
           ...prev,
           [targetKey]: {
             loading: false,
+            scopeKey,
             payload: null,
             error: aiError,
             needsOverwriteConfirm: false,
             draftApplied: false,
           },
         }));
+      } finally {
+        if (abortControllersRef.current[targetKey] === controller) {
+          delete abortControllersRef.current[targetKey];
+          delete inFlightScopesRef.current[targetKey];
+        }
       }
     },
     [],
@@ -664,6 +724,14 @@ function TeamDeepDiveViewContent({
   const triggerIndividualAi = useCallback(
     (card: IndividualActionPlanCard) => {
       const targetKey = `ind:${card.id}`;
+      const scopeTeam = card.recordTeam || data.canonicalTeam;
+      const scopeKey = buildAiScopeKey({
+        team: scopeTeam,
+        month: activeMonthName,
+        year: activeYearNum,
+        employeeId: card.employeeId,
+        focusKpiKey: card.linkedKpiKey,
+      });
       const isEditingThis = editingIndividualId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -673,9 +741,10 @@ function TeamDeepDiveViewContent({
           draftImpact.trim() !== card.expectedImpact.trim());
       void runAiRequest(
         targetKey,
+        scopeKey,
         (signal) =>
           requestActionPlanAiSuggestion({
-            team: card.recordTeam || data.canonicalTeam,
+            team: scopeTeam,
             month: activeMonthName,
             year: activeYearNum,
             performanceLevel: card.performanceLevel,
@@ -704,6 +773,14 @@ function TeamDeepDiveViewContent({
   const triggerTeamAi = useCallback(
     (card: TeamLevelActionPlanCard) => {
       const targetKey = `team:${card.id}`;
+      const focusKpiKey = resolveTeamCardFocusKpiKey(card, data.kpis, activeExplorerKpi?.kpiKey);
+      const scopeKey = buildAiScopeKey({
+        team: data.canonicalTeam,
+        month: activeMonthName,
+        year: activeYearNum,
+        employeeId: null,
+        focusKpiKey,
+      });
       const isEditingThis = editingTeamId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -716,13 +793,14 @@ function TeamDeepDiveViewContent({
           draftTeamDueDate.trim() !== (card.dueDate ?? '').trim());
       void runAiRequest(
         targetKey,
+        scopeKey,
         (signal) =>
           requestActionPlanAiSuggestion({
             team: data.canonicalTeam,
             month: activeMonthName,
             year: activeYearNum,
             employeeId: null,
-            focusKpiKey: resolveTeamCardFocusKpiKey(card, data.kpis, activeExplorerKpi?.kpiKey),
+            focusKpiKey,
             signal,
           }),
         hasUnsaved,
@@ -749,20 +827,29 @@ function TeamDeepDiveViewContent({
   );
 
   const triggerNewTeamAi = useCallback(() => {
+    const focusKpiKey =
+      activeExplorerKpi && activeExplorerKpi.verdictBadge !== 'Target Met'
+        ? activeExplorerKpi.kpiKey
+        : null;
+    const scopeKey = buildAiScopeKey({
+      team: data.canonicalTeam,
+      month: activeMonthName,
+      year: activeYearNum,
+      employeeId: null,
+      focusKpiKey,
+    });
     const hasUnsaved =
       newTeamTitle.trim().length > 0 || newTeamTargetKpi.trim().length > 0;
     void runAiRequest(
       'new-team',
+      scopeKey,
       (signal) =>
         requestActionPlanAiSuggestion({
           team: data.canonicalTeam,
           month: activeMonthName,
           year: activeYearNum,
           employeeId: null,
-          focusKpiKey:
-            activeExplorerKpi && activeExplorerKpi.verdictBadge !== 'Target Met'
-              ? activeExplorerKpi.kpiKey
-              : null,
+          focusKpiKey,
           signal,
         }),
       hasUnsaved,
@@ -782,6 +869,8 @@ function TeamDeepDiveViewContent({
   const discardAiTarget = useCallback(
     (targetKey: string, onRevertApplied?: () => void) => {
       abortControllersRef.current[targetKey]?.abort();
+      delete abortControllersRef.current[targetKey];
+      delete inFlightScopesRef.current[targetKey];
       const wasApplied = aiStateByTarget[targetKey]?.draftApplied;
       setAiStateByTarget((prev) => {
         const next = { ...prev };
@@ -1394,6 +1483,15 @@ function TeamDeepDiveViewContent({
             const indAiTargetKey = `ind:${card.id}`;
             const indAiState = aiStateByTarget[indAiTargetKey];
             const indFeedback = indSaveFeedback[card.id];
+            const isEvidenceOpen = Boolean(expandedEvidenceIds[card.id]);
+            const evidencePanelId = `ind-evidence-panel-${card.id}`;
+            const linkedEvidence = card.allKpiEvidence?.find(
+              (item) => item.kpiKey === card.linkedKpiKey,
+            );
+            const changeLabel = formatScoreChangeLabel(
+              card.changeVsPrev,
+              card.previousPeriodLabel,
+            );
 
             return (
               <article
@@ -1402,96 +1500,43 @@ function TeamDeepDiveViewContent({
                 className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
               >
                 <div>
-                  {/* Card Header: Agent Name + Score + Full-Word Grade + AI & Edit Buttons */}
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">
-                          {card.agentName}
-                        </h3>
-                        <span className={`text-sm font-extrabold ${gradeStyle.scoreText}`}>
-                          {card.score.toFixed(1)}%
-                        </span>
-                        <FullWordGradeBadge
-                          grade={card.grade}
-                          gradeFullLabel={card.gradeFullLabel}
-                          size="sm"
-                        />
-                      </div>
-                      {(card.scoreTrendLabel || (card.weakKpis && card.weakKpis.length > 0)) && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          {card.scoreTrendLabel && (
-                            <span
-                              data-testid={`individual-trend-badge-${card.employeeId}`}
-                              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700"
-                            >
-                              Trend: {card.scoreTrendLabel}
-                            </span>
-                          )}
-                          {(card.weakKpis ?? []).slice(0, 3).map((wk) => (
-                            <span
-                              key={wk.key}
-                              data-testid={`individual-weak-kpi-${card.employeeId}-${wk.key}`}
-                              className="inline-flex items-center rounded-md border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-800"
-                            >
-                              {wk.name}: {wk.gapText}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                  {/* 1. Score and change */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-bold text-slate-900">
+                        {card.agentName}
+                      </h3>
+                      <span className={`text-sm font-extrabold tabular-nums ${gradeStyle.scoreText}`}>
+                        {card.score.toFixed(1)}%
+                      </span>
+                      <FullWordGradeBadge
+                        grade={card.grade}
+                        gradeFullLabel={card.gradeFullLabel}
+                        size="sm"
+                      />
                     </div>
-
-                    {showPresentationControl(presentationMode) && (
-                      <div className="flex items-center gap-1.5">
-                        <AiRecommendIconButton
-                          loading={indAiState?.loading}
-                          presentationMode={presentationMode}
-                          ariaLabel={`Generate AI recommendation for ${card.agentName}`}
-                          onClick={() => triggerIndividualAi(card)}
-                        />
-                        {!isEditing && (
-                          <button
-                            type="button"
-                            onClick={() => startEditIndividual(card)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                          >
-                            <Edit3 className="size-3" />
-                            <span>Edit</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <span
+                      data-testid={`individual-score-change-${card.employeeId}`}
+                      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                        card.changeVsPrev == null
+                          ? 'border-slate-200 bg-white text-slate-600'
+                          : card.changeVsPrev >= 0
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-rose-200 bg-rose-50 text-rose-700'
+                      }`}
+                    >
+                      {changeLabel}
+                    </span>
                   </div>
 
-                  {/* AI Draft Banner (Hidden in Presentation Mode) */}
-                  {showPresentationControl(presentationMode) && (
-                    <AiRecommendationBanner
-                      loading={indAiState?.loading}
-                      payload={indAiState?.payload}
-                      error={indAiState?.error}
-                      needsOverwriteConfirm={indAiState?.needsOverwriteConfirm}
-                      draftApplied={indAiState?.draftApplied}
-                      presentationMode={presentationMode}
-                      onApplyDraft={() => {
-                        if (indAiState?.payload) {
-                          applyIndividualAiDraft(card, indAiState.payload);
-                        }
-                      }}
-                      onDiscard={() =>
-                        discardAiTarget(indAiTargetKey, () => {
-                          setDraftActionText(card.actionText);
-                          setDraftMainIssue(card.mainIssue);
-                        })
-                      }
-                      onRetry={() => triggerIndividualAi(card)}
-                    />
-                  )}
-
-                  {/* Main Issue */}
-                  <div className="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/50 px-3.5 py-2.5 text-xs text-slate-700">
+                  {/* 2. Main issue */}
+                  <div
+                    data-testid={`individual-main-issue-${card.employeeId}`}
+                    className="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/50 px-3.5 py-2.5 text-xs text-slate-700"
+                  >
                     <span className="font-bold text-rose-800">
-                      <AlertTriangle className="mr-1 inline size-3.5 text-rose-600" />
-                      Main Issue:{' '}
+                      <AlertTriangle className="mr-1 inline size-3.5 text-rose-600" aria-hidden="true" />
+                      Main issue:{' '}
                     </span>
                     {card.mainIssue}
                   </div>
@@ -1507,7 +1552,7 @@ function TeamDeepDiveViewContent({
                     </p>
                   )}
 
-                  {/* Action Text (View or Edit Mode) */}
+                  {/* 3. Next step (remains visible & editable during loading and after AI errors) */}
                   {isEditing ? (
                     <div className="mt-3 space-y-2.5 rounded-xl border border-blue-200 bg-white p-3">
                       <div>
@@ -1559,7 +1604,7 @@ function TeamDeepDiveViewContent({
                       <div className="flex justify-end gap-2 pt-1">
                         <button
                           type="button"
-                          onClick={() => setEditingIndividualId(null)}
+                          onClick={() => cancelEditIndividual(card)}
                           className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                         >
                           Cancel
@@ -1575,31 +1620,115 @@ function TeamDeepDiveViewContent({
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-3">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                        Action Plan
+                    <div className="mt-3 space-y-2">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Next step
                       </div>
                       <p
                         data-testid={`individual-action-text-${card.employeeId}`}
-                        className="mt-1 text-xs font-medium leading-relaxed text-slate-800 sm:text-sm"
+                        className="text-xs font-medium leading-relaxed text-slate-800 sm:text-sm"
                       >
                         {card.actionText}
                       </p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700">
+                          <UserCheck className="size-3.5 text-blue-600" aria-hidden="true" />
+                          <span>Role: {card.owner}</span>
+                        </span>
+                        {card.followUpLabel && (
+                          <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 py-1 font-medium text-indigo-800">
+                            Follow-up: {card.followUpLabel}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  )}
+
+                  {/* AI Draft Banner (Hidden in Presentation Mode; stays separate so Next step stays visible) */}
+                  {showPresentationControl(presentationMode) && (
+                    <AiRecommendationBanner
+                      loading={indAiState?.loading}
+                      payload={indAiState?.payload}
+                      error={indAiState?.error}
+                      needsOverwriteConfirm={indAiState?.needsOverwriteConfirm}
+                      draftApplied={indAiState?.draftApplied}
+                      presentationMode={presentationMode}
+                      onApplyDraft={() => {
+                        if (indAiState?.payload) {
+                          applyIndividualAiDraft(card, indAiState.payload);
+                        }
+                      }}
+                      onDiscard={() =>
+                        discardAiTarget(indAiTargetKey, () => {
+                          setDraftActionText(card.actionText);
+                          setDraftMainIssue(card.mainIssue);
+                          setDraftOwner(card.owner);
+                          setDraftImpact(card.expectedImpact);
+                          setDraftFollowUpLabel(card.followUpLabel ?? '');
+                          setDraftObservationStatus(card.observationStatus);
+                          setEditingIndividualId((prev) => (prev === card.id ? null : prev));
+                        })
+                      }
+                      onRetry={() => triggerIndividualAi(card)}
+                    />
                   )}
                 </div>
 
-                {/* Footer: Owner + Expected Impact */}
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-3 text-xs">
-                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700">
-                    <UserCheck className="size-3.5 text-blue-600" />
-                    <span>Owner: {card.owner}</span>
-                  </span>
+                {/* 4. Action bar + Collapsed-by-default View evidence drawer */}
+                <div className="mt-4 border-t border-slate-200/70 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {showPresentationControl(presentationMode) && (
+                        <>
+                          <AiRecommendIconButton
+                            loading={indAiState?.loading}
+                            presentationMode={presentationMode}
+                            ariaLabel={`Generate AI recommendation for ${card.agentName}`}
+                            onClick={() => triggerIndividualAi(card)}
+                          />
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => startEditIndividual(card)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
+                            >
+                              <Edit3 className="size-3" aria-hidden="true" />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <ViewEvidenceToggleButton
+                      isOpen={isEvidenceOpen}
+                      panelId={evidencePanelId}
+                      onToggle={() =>
+                        setExpandedEvidenceIds((prev) => ({
+                          ...prev,
+                          [card.id]: !prev[card.id],
+                        }))
+                      }
+                    />
+                  </div>
 
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-bold text-emerald-700">
-                    <TrendingUp className="size-3.5" />
-                    <span>{card.expectedImpact}</span>
-                  </span>
+                  <IndividualEvidenceDrawer
+                    panelId={evidencePanelId}
+                    isOpen={isEvidenceOpen}
+                    employeeId={card.employeeId}
+                    testIdPrefix="individual"
+                    changeVsPrev={card.changeVsPrev}
+                    previousPeriodLabel={card.previousPeriodLabel}
+                    previousIsAdjacent={card.previousIsAdjacent}
+                    missingIntermediatePeriods={card.missingIntermediatePeriods}
+                    fullWindowComparisonLabel={card.fullWindowComparisonLabel}
+                    scoreTrendLabel={card.scoreTrendLabel}
+                    weakKpis={card.weakKpis}
+                    allKpiEvidence={card.allKpiEvidence}
+                    priorActions={card.priorActions}
+                    expectedImpact={card.expectedImpact}
+                    linkedKpiLabel={linkedEvidence?.label}
+                    linkedKpiTarget={linkedEvidence?.targetFormatted}
+                  />
                 </div>
               </article>
             );

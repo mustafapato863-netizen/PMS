@@ -500,6 +500,8 @@ export interface AiCorrectiveActionSuggestionPeriod {
   year: number;
 }
 
+export type ObservationStatus = 'verified' | 'recorded_zero' | 'unverified_zero' | 'missing';
+
 export interface AiCorrectiveActionSuggestionContext {
   subject: 'employee' | 'team';
   employee_id?: string | null;
@@ -512,6 +514,7 @@ export interface AiCorrectiveActionSuggestionContext {
   performance_level: string;
   scoring_basis?: string | null;
   linked_kpi_key?: string | null;
+  team_headcount?: number | null;
 }
 
 export interface AiCorrectiveActionSuggestionKpiEvidence {
@@ -523,9 +526,30 @@ export interface AiCorrectiveActionSuggestionKpiEvidence {
   unit?: string | null;
   direction?: string | null;
   weight?: number | null;
+  achievement_ratio?: number | null;
   achievement_percent?: number | null;
   contributes_to_score?: boolean;
   status?: 'below_target' | 'at_or_above_target' | 'unknown';
+  observation_status?: ObservationStatus;
+  previous_actual?: number | null;
+  previous_period?: string | null;
+  projected_agent_score_lift?: number | null;
+}
+
+export interface AiCorrectiveActionSuggestionTrendSummary {
+  measured_periods: number;
+  current_score?: number | null;
+  previous_score?: number | null;
+  previous_period?: string | null;
+  previous_is_adjacent?: boolean;
+  missing_intermediate_periods?: string[];
+  window_start_period?: string | null;
+  window_start_score?: number | null;
+  window_delta?: number | null;
+  score_delta?: number | null;
+  score_direction?: string;
+  kpi_trends?: Record<string, Record<string, unknown>>;
+  weak_kpis?: Array<Record<string, unknown>>;
 }
 
 export interface AiCorrectiveActionSuggestionPriorAction {
@@ -548,6 +572,10 @@ export interface AiCorrectiveActionSuggestionDraft {
   uncertainty: string;
   uncertainty_source: 'pms_evidence';
   approval_status: 'unapproved_draft';
+  responsible_role?: string | null;
+  recommended_follow_up?: string | null;
+  observation_status?: ObservationStatus | null;
+  formatted_next_step?: string | null;
 }
 
 export interface AiCorrectiveActionSuggestionPayload {
@@ -564,6 +592,7 @@ export interface AiCorrectiveActionSuggestionPayload {
   supporting_kpis?: AiCorrectiveActionSuggestionKpiEvidence[];
   supporting_kpis_truncated?: boolean;
   prior_actions?: AiCorrectiveActionSuggestionPriorAction[];
+  trend_summary?: AiCorrectiveActionSuggestionTrendSummary | null;
   insufficient_evidence_reasons?: string[];
   draft?: AiCorrectiveActionSuggestionDraft | null;
   model_latency_ms?: number | null;

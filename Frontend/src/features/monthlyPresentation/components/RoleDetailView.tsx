@@ -3,8 +3,12 @@ import { ApiError } from '../../../lib/apiClient';
 import {
   AiRecommendationBanner,
   AiRecommendIconButton,
+  formatScoreChangeLabel,
+  IndividualEvidenceDrawer,
+  ViewEvidenceToggleButton,
 } from './ActionPlanAiAssistant';
 import {
+  buildAiScopeKey,
   parseMonthYearFromLabel,
   requestActionPlanAiSuggestion,
   type ActionPlanAiError,
@@ -87,6 +91,9 @@ export default function RoleDetailView({
   const [draftIndMainIssue, setDraftIndMainIssue] = useState('');
   const [draftIndOwner, setDraftIndOwner] = useState('');
   const [draftIndImpact, setDraftIndImpact] = useState('');
+  const [draftIndFollowUpLabel, setDraftIndFollowUpLabel] = useState('');
+  const [draftIndObservationStatus, setDraftIndObservationStatus] =
+    useState<RoleIndividualActionPlan['observationStatus']>(undefined);
   const [individualOverrides, setIndividualOverrides] = useState<
     Record<string, Partial<RoleIndividualActionPlan>>
   >({});
@@ -105,20 +112,36 @@ export default function RoleDetailView({
   // AI Draft state keyed by 'ind:<id>', 'role-act:<id>', or 'role-form'
   type RoleAiState = {
     loading: boolean;
+    scopeKey?: string;
     payload: AiCorrectiveActionSuggestionPayload | null;
     error: ActionPlanAiError | null;
     needsOverwriteConfirm: boolean;
     draftApplied: boolean;
   };
+  const viewScopeKey = `${data.roleSlug}|${data.periodKey}`;
+  const [prevViewScopeKey, setPrevViewScopeKey] = useState(viewScopeKey);
   const [aiStateByTarget, setAiStateByTarget] = useState<Record<string, RoleAiState>>({});
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
   const abortControllersRef = useRef<Record<string, AbortController>>({});
+  const inFlightScopesRef = useRef<Record<string, string>>({});
+
+  if (prevViewScopeKey !== viewScopeKey) {
+    setPrevViewScopeKey(viewScopeKey);
+    setAiStateByTarget({});
+    setExpandedEvidenceIds({});
+    setIndividualOverrides({});
+    setEditingIndividualId(null);
+  }
 
   useEffect(() => {
     const controllers = abortControllersRef.current;
+    const scopes = inFlightScopesRef.current;
     return () => {
       Object.values(controllers).forEach((ctrl) => ctrl.abort());
+      Object.keys(controllers).forEach((k) => delete controllers[k]);
+      Object.keys(scopes).forEach((k) => delete scopes[k]);
     };
-  }, []);
+  }, [viewScopeKey]);
 
   const selected = useMemo(
     () => data.kpis.find((kpi) => kpi.id === selectedId) ?? data.kpis[0],
@@ -176,6 +199,18 @@ export default function RoleDetailView({
     setDraftIndMainIssue(card.mainIssue);
     setDraftIndOwner(card.owner);
     setDraftIndImpact(card.expectedImpact);
+    setDraftIndFollowUpLabel(card.followUpLabel ?? '');
+    setDraftIndObservationStatus(card.observationStatus);
+  };
+
+  const cancelEditIndividual = (card: RoleIndividualActionPlan) => {
+    setEditingIndividualId(null);
+    setDraftIndAction(card.actionText);
+    setDraftIndMainIssue(card.mainIssue);
+    setDraftIndOwner(card.owner);
+    setDraftIndImpact(card.expectedImpact);
+    setDraftIndFollowUpLabel(card.followUpLabel ?? '');
+    setDraftIndObservationStatus(card.observationStatus);
   };
 
   const saveEditIndividual = async (card: RoleIndividualActionPlan) => {
@@ -183,6 +218,8 @@ export default function RoleDetailView({
     const nextMainIssue = draftIndMainIssue.trim() || card.mainIssue;
     const nextOwner = draftIndOwner.trim() || card.owner;
     const nextImpact = draftIndImpact.trim() || card.expectedImpact;
+    const nextFollowUpLabel = draftIndFollowUpLabel.trim() || card.followUpLabel;
+    const nextObservationStatus = draftIndObservationStatus ?? card.observationStatus;
     await onSaveAction({
       actionId: card.actionId,
       employeeId: card.employeeId,
@@ -200,10 +237,13 @@ export default function RoleDetailView({
     setIndividualOverrides((prev) => ({
       ...prev,
       [card.id]: {
+        ...(prev[card.id] ?? {}),
         actionText: nextText,
         mainIssue: nextMainIssue,
         owner: nextOwner,
         expectedImpact: nextImpact,
+        followUpLabel: nextFollowUpLabel,
+        observationStatus: nextObservationStatus,
         suggested: false,
       },
     }));
@@ -287,10 +327,16 @@ export default function RoleDetailView({
       setEditingIndividualId(card.id);
       setDraftIndAction(formatRoleDraftText(payload));
       setDraftIndMainIssue(payload.draft.measured_issue || card.mainIssue);
-      if (editingIndividualId !== card.id) {
-        setDraftIndOwner(card.owner);
-        setDraftIndImpact(card.expectedImpact);
-      }
+      setDraftIndOwner((prev) =>
+        editingIndividualId === card.id && prev.trim() !== card.owner.trim()
+          ? prev
+          : payload.draft?.responsible_role || card.owner,
+      );
+      setDraftIndImpact((prev) =>
+        editingIndividualId === card.id ? prev : card.expectedImpact,
+      );
+      setDraftIndFollowUpLabel(payload.draft.recommended_follow_up || card.followUpLabel || '');
+      setDraftIndObservationStatus(payload.draft.observation_status || card.observationStatus);
       setAiStateByTarget((prev) => ({
         ...prev,
         [`ind:${card.id}`]: {
@@ -359,18 +405,24 @@ export default function RoleDetailView({
   const runRoleAiRequest = useCallback(
     async (
       targetKey: string,
+      scopeKey: string,
       requestFn: (signal: AbortSignal) => Promise<AiCorrectiveActionSuggestionPayload>,
       hasUnsavedEdits: boolean,
       onAutoApply: (payload: AiCorrectiveActionSuggestionPayload) => void,
     ) => {
+      if (inFlightScopesRef.current[targetKey] === scopeKey) {
+        return;
+      }
       abortControllersRef.current[targetKey]?.abort();
       const controller = new AbortController();
       abortControllersRef.current[targetKey] = controller;
+      inFlightScopesRef.current[targetKey] = scopeKey;
 
       setAiStateByTarget((prev) => ({
         ...prev,
         [targetKey]: {
           loading: true,
+          scopeKey,
           payload: null,
           error: null,
           needsOverwriteConfirm: false,
@@ -380,7 +432,9 @@ export default function RoleDetailView({
 
       try {
         const payload = await requestFn(controller.signal);
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || abortControllersRef.current[targetKey] !== controller) {
+          return;
+        }
         if (payload.outcome === 'suggested' && payload.draft && !hasUnsavedEdits) {
           onAutoApply(payload);
           return;
@@ -389,6 +443,7 @@ export default function RoleDetailView({
           ...prev,
           [targetKey]: {
             loading: false,
+            scopeKey,
             payload,
             error: null,
             needsOverwriteConfirm: Boolean(
@@ -398,7 +453,9 @@ export default function RoleDetailView({
           },
         }));
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || abortControllersRef.current[targetKey] !== controller) {
+          return;
+        }
         const aiError: ActionPlanAiError =
           err instanceof ApiError
             ? { message: err.message, status: err.status }
@@ -412,12 +469,18 @@ export default function RoleDetailView({
           ...prev,
           [targetKey]: {
             loading: false,
+            scopeKey,
             payload: null,
             error: aiError,
             needsOverwriteConfirm: false,
             draftApplied: false,
           },
         }));
+      } finally {
+        if (abortControllersRef.current[targetKey] === controller) {
+          delete abortControllersRef.current[targetKey];
+          delete inFlightScopesRef.current[targetKey];
+        }
       }
     },
     [],
@@ -429,6 +492,14 @@ export default function RoleDetailView({
   const triggerRoleIndividualAi = useCallback(
     (card: RoleIndividualActionPlan) => {
       const targetKey = `ind:${card.id}`;
+      const scopeTeam = card.recordTeam || resolvedRoleTeam;
+      const scopeKey = buildAiScopeKey({
+        team: scopeTeam,
+        month: activeMonthName,
+        year: activeYearNum,
+        employeeId: card.employeeId,
+        focusKpiKey: card.linkedKpiKey,
+      });
       const isEditingThis = editingIndividualId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -438,9 +509,10 @@ export default function RoleDetailView({
           draftIndImpact.trim() !== card.expectedImpact.trim());
       void runRoleAiRequest(
         targetKey,
+        scopeKey,
         (signal) =>
           requestActionPlanAiSuggestion({
-            team: card.recordTeam || resolvedRoleTeam,
+            team: scopeTeam,
             month: activeMonthName,
             year: activeYearNum,
             performanceLevel: card.performanceLevel,
@@ -469,6 +541,16 @@ export default function RoleDetailView({
   const triggerRoleActionAi = useCallback(
     (action: RoleAssignedAction) => {
       const targetKey = `role-act:${action.id}`;
+      const empId =
+        action.employeeId || (data.headcount === 1 && data.employeeId ? data.employeeId : null);
+      const focusKpiKey = action.linkedKpiKey || selected?.kpiKey || null;
+      const scopeKey = buildAiScopeKey({
+        team: resolvedRoleTeam,
+        month: activeMonthName,
+        year: activeYearNum,
+        employeeId: empId,
+        focusKpiKey,
+      });
       const isEditingThis = editingRoleActionId === action.id;
       const hasUnsaved =
         isEditingThis &&
@@ -478,14 +560,15 @@ export default function RoleDetailView({
           draftRoleDueDate.trim() !== (action.dueDate ?? '').trim());
       void runRoleAiRequest(
         targetKey,
+        scopeKey,
         (signal) =>
           requestActionPlanAiSuggestion({
             team: resolvedRoleTeam,
             month: activeMonthName,
             year: activeYearNum,
             performanceLevel: resolvedRoleLevel,
-            employeeId: action.employeeId || (data.headcount === 1 && data.employeeId ? data.employeeId : null),
-            focusKpiKey: action.linkedKpiKey || selected?.kpiKey || null,
+            employeeId: empId,
+            focusKpiKey,
             signal,
           }),
         hasUnsaved,
@@ -520,8 +603,16 @@ export default function RoleDetailView({
       candidateKpiKey && (!candidateKpi || candidateKpi.statusBadge !== 'On Target')
         ? candidateKpiKey
         : null;
+    const scopeKey = buildAiScopeKey({
+      team: resolvedRoleTeam,
+      month: activeMonthName,
+      year: activeYearNum,
+      employeeId: null,
+      focusKpiKey,
+    });
     void runRoleAiRequest(
       'role-form',
+      scopeKey,
       (signal) =>
         requestActionPlanAiSuggestion({
           team: resolvedRoleTeam,
@@ -551,6 +642,8 @@ export default function RoleDetailView({
   const discardAiTarget = useCallback(
     (targetKey: string, onRevertApplied?: () => void) => {
       abortControllersRef.current[targetKey]?.abort();
+      delete abortControllersRef.current[targetKey];
+      delete inFlightScopesRef.current[targetKey];
       const wasApplied = aiStateByTarget[targetKey]?.draftApplied;
       setAiStateByTarget((prev) => {
         const next = { ...prev };
@@ -1307,6 +1400,16 @@ export default function RoleDetailView({
               const indAiTargetKey = `ind:${card.id}`;
               const indAiState = aiStateByTarget[indAiTargetKey];
 
+              const isEvidenceOpen = Boolean(expandedEvidenceIds[card.id]);
+              const evidencePanelId = `role-ind-evidence-panel-${card.id}`;
+              const linkedEvidence = card.allKpiEvidence?.find(
+                (item) => item.kpiKey === card.linkedKpiKey,
+              );
+              const changeLabel = formatScoreChangeLabel(
+                card.changeVsPrev,
+                card.previousPeriodLabel,
+              );
+
               return (
                 <article
                   key={card.id}
@@ -1314,105 +1417,53 @@ export default function RoleDetailView({
                   className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
                 >
                   <div>
-                    {/* Card Header: Employee Name + Score + Full-Word Grade + AI & Edit Buttons */}
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-bold text-slate-900">
-                            {card.personName}
-                          </h3>
-                          <span
-                            className={`text-sm font-extrabold tabular-nums ${cardGradeStyle.scoreText}`}
-                          >
-                            {card.score.toFixed(1)}%
-                          </span>
-                          <FullWordGradeBadge
-                            grade={card.grade}
-                            gradeFullLabel={card.gradeFullLabel}
-                            size="sm"
-                          />
-                        </div>
-                        {(card.scoreTrendLabel || (card.weakKpis && card.weakKpis.length > 0)) && (
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            {card.scoreTrendLabel && (
-                              <span
-                                data-testid={`role-individual-trend-badge-${card.employeeId}`}
-                                className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700"
-                              >
-                                Trend: {card.scoreTrendLabel}
-                              </span>
-                            )}
-                            {(card.weakKpis ?? []).slice(0, 3).map((wk) => (
-                              <span
-                                key={wk.key}
-                                data-testid={`role-individual-weak-kpi-${card.employeeId}-${wk.key}`}
-                                className="inline-flex items-center rounded-md border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-800"
-                              >
-                                {wk.name}: {wk.gapText}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                    {/* 1. Score and change */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-bold text-slate-900">
+                          {card.personName}
+                        </h3>
+                        <span
+                          className={`text-sm font-extrabold tabular-nums ${cardGradeStyle.scoreText}`}
+                        >
+                          {card.score.toFixed(1)}%
+                        </span>
+                        <FullWordGradeBadge
+                          grade={card.grade}
+                          gradeFullLabel={card.gradeFullLabel}
+                          size="sm"
+                        />
                       </div>
-
-                      {showPresentationControl(presentationMode) && (
-                        <div className="flex items-center gap-1.5">
-                          <AiRecommendIconButton
-                            loading={indAiState?.loading}
-                            presentationMode={presentationMode}
-                            ariaLabel={`Generate AI recommendation for ${card.personName}`}
-                            onClick={() => triggerRoleIndividualAi(card)}
-                          />
-                          {!isEditing && (
-                            <button
-                              type="button"
-                              onClick={() => startEditIndividual(card)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
-                            >
-                              <Edit3 className="size-3" aria-hidden />
-                              <span>Edit</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
+                      <span
+                        data-testid={`role-individual-score-change-${card.employeeId}`}
+                        className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                          card.changeVsPrev == null
+                            ? 'border-slate-200 bg-white text-slate-600'
+                            : card.changeVsPrev >= 0
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-rose-200 bg-rose-50 text-rose-700'
+                        }`}
+                      >
+                        {changeLabel}
+                      </span>
                     </div>
 
-                    {showPresentationControl(presentationMode) && (
-                      <AiRecommendationBanner
-                        loading={indAiState?.loading}
-                        payload={indAiState?.payload}
-                        error={indAiState?.error}
-                        needsOverwriteConfirm={indAiState?.needsOverwriteConfirm}
-                        draftApplied={indAiState?.draftApplied}
-                        presentationMode={presentationMode}
-                        onApplyDraft={() => {
-                          if (indAiState?.payload) {
-                            applyRoleIndividualAiDraft(card, indAiState.payload);
-                          }
-                        }}
-                        onDiscard={() =>
-                          discardAiTarget(indAiTargetKey, () => {
-                            setDraftIndAction(card.actionText);
-                            setDraftIndMainIssue(card.mainIssue);
-                          })
-                        }
-                        onRetry={() => triggerRoleIndividualAi(card)}
-                      />
-                    )}
-
-                    {/* Main Issue Box */}
-                    <div className="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/50 px-3.5 py-2.5 text-xs text-slate-700">
+                    {/* 2. Main issue */}
+                    <div
+                      data-testid={`role-individual-main-issue-${card.employeeId}`}
+                      className="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/50 px-3.5 py-2.5 text-xs text-slate-700"
+                    >
                       <span className="font-bold text-rose-800">
                         <AlertTriangle
                           className="mr-1 inline size-3.5 text-rose-600"
                           aria-hidden
                         />
-                        Main Issue:{' '}
+                        Main issue:{' '}
                       </span>
                       {card.mainIssue}
                     </div>
 
-                    {/* Action Plan (View or Inline Edit Mode) */}
+                    {/* 3. Next step (remains visible & editable during AI loading and errors) */}
                     {isEditing ? (
                       <div className="mt-3 space-y-2.5 rounded-xl border border-blue-200 bg-white p-3">
                         <div>
@@ -1439,7 +1490,7 @@ export default function RoleDetailView({
                         </div>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-600">
+                            <label className="block text-xs font-bold text-slate-600">
                               Owner
                             </label>
                             <input
@@ -1450,7 +1501,7 @@ export default function RoleDetailView({
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-600">
+                            <label className="block text-xs font-bold text-slate-600">
                               Expected Impact
                             </label>
                             <input
@@ -1464,7 +1515,7 @@ export default function RoleDetailView({
                         <div className="flex justify-end gap-2 pt-1">
                           <button
                             type="button"
-                            onClick={() => setEditingIndividualId(null)}
+                            onClick={() => cancelEditIndividual(card)}
                             className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                           >
                             Cancel
@@ -1480,28 +1531,118 @@ export default function RoleDetailView({
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-3">
-                        <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
-                          {card.suggested ? 'Suggested action — not saved' : 'Action Plan'}
+                      <div className="mt-3 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                            Next step
+                          </span>
+                          {card.suggested && (
+                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                              Suggested — not saved
+                            </span>
+                          )}
                         </div>
-                        <p className="mt-1 text-xs font-medium leading-relaxed text-slate-800 sm:text-sm">
+                        <p className="text-xs font-medium leading-relaxed text-slate-800 sm:text-sm">
                           {card.actionText}
                         </p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700">
+                            <UserCheck className="size-3.5 text-blue-600" aria-hidden />
+                            <span>Role: {card.owner}</span>
+                          </span>
+                          {card.followUpLabel && (
+                            <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 py-1 font-medium text-indigo-800">
+                              Follow-up: {card.followUpLabel}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    )}
+
+                    {showPresentationControl(presentationMode) && (
+                      <AiRecommendationBanner
+                        loading={indAiState?.loading}
+                        payload={indAiState?.payload}
+                        error={indAiState?.error}
+                        needsOverwriteConfirm={indAiState?.needsOverwriteConfirm}
+                        draftApplied={indAiState?.draftApplied}
+                        presentationMode={presentationMode}
+                        onApplyDraft={() => {
+                          if (indAiState?.payload) {
+                            applyRoleIndividualAiDraft(card, indAiState.payload);
+                          }
+                        }}
+                        onDiscard={() =>
+                          discardAiTarget(indAiTargetKey, () => {
+                            setDraftIndAction(card.actionText);
+                            setDraftIndMainIssue(card.mainIssue);
+                            setDraftIndOwner(card.owner);
+                            setDraftIndImpact(card.expectedImpact);
+                            setDraftIndFollowUpLabel(card.followUpLabel ?? '');
+                            setDraftIndObservationStatus(card.observationStatus);
+                            setEditingIndividualId((prev) => (prev === card.id ? null : prev));
+                          })
+                        }
+                        onRetry={() => triggerRoleIndividualAi(card)}
+                      />
                     )}
                   </div>
 
-                  {/* Footer: Owner + Expected Impact */}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-3 text-xs">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700">
-                      <UserCheck className="size-3.5 text-blue-600" aria-hidden />
-                      <span>Owner: {card.owner}</span>
-                    </span>
+                  {/* 4. Action bar + Collapsed-by-default View evidence drawer */}
+                  <div className="mt-4 border-t border-slate-200/70 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {showPresentationControl(presentationMode) && (
+                          <>
+                            <AiRecommendIconButton
+                              loading={indAiState?.loading}
+                              presentationMode={presentationMode}
+                              ariaLabel={`Generate AI recommendation for ${card.personName}`}
+                              onClick={() => triggerRoleIndividualAi(card)}
+                            />
+                            {!isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => startEditIndividual(card)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                              >
+                                <Edit3 className="size-3" aria-hidden />
+                                <span>Edit</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <ViewEvidenceToggleButton
+                        isOpen={isEvidenceOpen}
+                        panelId={evidencePanelId}
+                        onToggle={() =>
+                          setExpandedEvidenceIds((prev) => ({
+                            ...prev,
+                            [card.id]: !prev[card.id],
+                          }))
+                        }
+                      />
+                    </div>
 
-                    <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-bold text-emerald-700">
-                      <TrendingUp className="size-3.5" aria-hidden />
-                      <span>{card.expectedImpact}</span>
-                    </span>
+                    <IndividualEvidenceDrawer
+                      panelId={evidencePanelId}
+                      isOpen={isEvidenceOpen}
+                      employeeId={card.employeeId}
+                      testIdPrefix="role-individual"
+                      changeVsPrev={card.changeVsPrev}
+                      previousPeriodLabel={card.previousPeriodLabel}
+                      previousIsAdjacent={card.previousIsAdjacent}
+                      missingIntermediatePeriods={card.missingIntermediatePeriods}
+                      fullWindowComparisonLabel={card.fullWindowComparisonLabel}
+                      scoreTrendLabel={card.scoreTrendLabel}
+                      weakKpis={card.weakKpis}
+                      allKpiEvidence={card.allKpiEvidence}
+                      priorActions={card.priorActions}
+                      expectedImpact={card.expectedImpact}
+                      linkedKpiLabel={linkedEvidence?.label}
+                      linkedKpiTarget={linkedEvidence?.targetFormatted}
+                    />
                   </div>
                 </article>
               );

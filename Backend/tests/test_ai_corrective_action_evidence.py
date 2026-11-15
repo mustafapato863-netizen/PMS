@@ -1084,3 +1084,219 @@ def test_duplicate_employee_codes_prefer_active_row_without_multiple_results_fou
     assert bundle["subject"] == "employee"
     assert bundle["employee_name"] == "Active Duplicate"
     assert len(bundle["kpi_items"]) == 1
+
+
+def test_normalize_kpi_values_for_unit_scales_percent_ratios_and_leaves_non_percent_untouched():
+    from services.ai.corrective_action_evidence import normalize_kpi_values_for_unit
+
+    items = [
+        {"kpi_key": "Quality", "display_name": "Quality Score", "actual": 0.92, "target": 0.95, "unit": "%"},
+        {"kpi_key": "CSAT", "display_name": "CSAT", "actual": 0.96, "target": 0.98, "unit": "percent"},
+        {"kpi_key": "AbandonRate", "display_name": "Abandon Rate", "actual": 0.0098, "target": 0.01, "unit": "%"},
+        {"kpi_key": "NoTargetPct", "display_name": "No Target Pct", "actual": 0.88, "target": None, "unit": "percentage"},
+        {"kpi_key": "Bookings", "display_name": "Bookings", "actual": 1.0, "target": 1.0, "unit": "count"},
+        {"kpi_key": "Spend", "display_name": "Spend", "actual": 0.85, "target": 1.0, "unit": "AED"},
+        {"kpi_key": "AHT", "display_name": "AHT", "actual": 0.95, "target": 1.0, "unit": "min"},
+        {"kpi_key": "Assessment", "display_name": "Assessment", "actual": 0.8, "target": 1.0, "unit": "score"},
+    ]
+    normalized = normalize_kpi_values_for_unit(
+        items,
+        historical_targets={"NoTargetPct": [0.95]},
+    )
+    by_key = {row["kpi_key"]: row for row in normalized}
+    assert (by_key["Quality"]["actual"], by_key["Quality"]["target"]) == (92.0, 95.0)
+    assert (by_key["CSAT"]["actual"], by_key["CSAT"]["target"]) == (96.0, 98.0)
+    assert (by_key["AbandonRate"]["actual"], by_key["AbandonRate"]["target"]) == (0.98, 1.0)
+    assert by_key["NoTargetPct"]["actual"] == 88.0
+    # Non-percentage units are never scaled by magnitude
+    assert (by_key["Bookings"]["actual"], by_key["Bookings"]["target"]) == (1.0, 1.0)
+    assert (by_key["Spend"]["actual"], by_key["Spend"]["target"]) == (0.85, 1.0)
+    assert (by_key["AHT"]["actual"], by_key["AHT"]["target"]) == (0.95, 1.0)
+    assert (by_key["Assessment"]["actual"], by_key["Assessment"]["target"]) == (0.8, 1.0)
+
+
+def test_observation_status_classifies_missing_unverified_zero_and_recorded_zero(db=None):
+    from services.ai.corrective_action_evidence import classify_kpi_observation
+
+    # 1. Missing when raw_data has A.QualityScore=None even if legacy coerced actual=0.0
+    status, actual, reason, note = classify_kpi_observation(
+        kpi_key="Quality",
+        display_name="Quality Score",
+        actual=0.0,
+        direction="higher_better",
+        weight=0.3,
+        contributes_to_score=True,
+        raw_data={"A.QualityScore": None, "A.Attend%": 0.95},
+    )
+    assert status == "missing"
+    assert actual is None
+    assert reason == "missing_source_value_for_kpi:Quality"
+    assert note and "source record" in note.lower()
+
+    # 2. Unverified zero: audit/survey KPI with 0 and no positive sample/audit denominator
+    status2, actual2, reason2, note2 = classify_kpi_observation(
+        kpi_key="Quality",
+        display_name="Quality Score",
+        actual=0.0,
+        direction="higher_better",
+        weight=0.3,
+        contributes_to_score=True,
+        raw_data={"A.QualityScore": 0},
+    )
+    assert status2 == "unverified_zero"
+    assert actual2 == 0.0
+    assert reason2 == "unverified_zero_for_kpi:Quality"
+    assert note2 and "verify" in note2.lower()
+
+    # 3. Recorded zero: audit KPI backed by positive sample/audit denominator
+    status3, actual3, reason3, _ = classify_kpi_observation(
+        kpi_key="Quality",
+        display_name="Quality Score",
+        actual=0.0,
+        direction="higher_better",
+        weight=0.3,
+        contributes_to_score=True,
+        raw_data={"A.QualityScore": 0, "AuditCount": 5},
+    )
+    assert status3 == "recorded_zero"
+    assert actual3 == 0.0
+    assert reason3 is None
+
+    # 4. Recorded zero: Phase 4 CA-03 operational Attendance 0% with weight > 0 and no missing marker
+    status4, actual4, reason4, _ = classify_kpi_observation(
+        kpi_key="Attendance",
+        display_name="Attendance Rate",
+        actual=0.0,
+        direction="higher_better",
+        weight=0.7,
+        contributes_to_score=True,
+        raw_data={},
+    )
+    assert status4 == "recorded_zero"
+    assert actual4 == 0.0
+    assert reason4 is None
+
+    # 5. Unverified zero: higher_better with weight == 0
+    status5, actual5, reason5, _ = classify_kpi_observation(
+        kpi_key="Booking",
+        display_name="Booking Rate",
+        actual=0.0,
+        direction="higher_better",
+        weight=0.0,
+        contributes_to_score=False,
+        raw_data={},
+    )
+    assert status5 == "unverified_zero"
+    assert actual5 == 0.0
+    assert reason5 == "unverified_zero_for_kpi:Booking"
+
+
+def test_non_adjacent_trend_metadata_historical_scaling_and_projected_lift():
+    db = _make_db()
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-TREND-GAP",
+        name="Trend Gap Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([team, emp])
+    db.flush()
+
+    # May 2026 (0.92/0.95 ratio scale -> 89.8), Aug 2026 (88/95 -> 89.6), Sep 2026 MISSING, Oct 2026 (70/95 -> 76.7)
+    periods_data = [
+        ("May", 2026, 89.8, 0.92, 0.95, 0.968, 86.8, 0.868),
+        ("August", 2026, 89.6, 88.0, 95.0, 0.926, 88.314, 0.88314),
+        ("October", 2026, 76.7, 70.0, 95.0, 0.737, 77.986, 0.77986),
+    ]
+    for m, y, score, qual_actual, qual_target, qual_ratio, att_actual, att_ratio in periods_data:
+        rec = PerformanceRecord(
+            id=uuid.uuid4(),
+            employee_id=emp.id,
+            team_id=team.id,
+            month=m,
+            year=y,
+            performance_level="Employee",
+            position_name="Agent",
+            region="EGY",
+            score=score,
+            grade="B" if score >= 80 else "C",
+            status="Meets" if score >= 80 else "Below",
+            record_payload={"raw_data": {"AuditCount": 10}},
+        )
+        db.add(rec)
+        db.flush()
+        db.add_all(
+            [
+                KPIValue(
+                    record_id=rec.id,
+                    record_year=y,
+                    kpi_key="Quality",
+                    actual_value=qual_actual,
+                    target_value=qual_target,
+                    achievement_ratio=qual_ratio,
+                    weight_applied=0.30,
+                    contribution=qual_ratio * 0.30,
+                ),
+                KPIValue(
+                    record_id=rec.id,
+                    record_year=y,
+                    kpi_key="Attendance",
+                    actual_value=att_actual,
+                    target_value=100.0,
+                    achievement_ratio=att_ratio,
+                    weight_applied=0.70,
+                    contribution=att_ratio * 0.70,
+                ),
+                KPIValue(
+                    record_id=rec.id,
+                    record_year=y,
+                    kpi_key="DiagnosticNote",
+                    actual_value=1.0,
+                    target_value=4.0,
+                    achievement_ratio=0.25,
+                    weight_applied=0.0,
+                    contribution=0.0,
+                ),
+            ]
+        )
+    db.commit()
+
+    bundle = build_corrective_action_evidence(
+        db, user_scope=ADMIN_SCOPE, employee_id="EMP-TREND-GAP", team="Inbound", month="October", year=2026
+    )
+    trend = bundle["trend_summary"]
+    assert trend["previous_period"] == "August 2026"
+    assert trend["previous_is_adjacent"] is False
+    assert trend["missing_intermediate_periods"] == ["September 2026"]
+    assert trend["window_start_period"] == "May 2026"
+    assert trend["window_start_score"] == 89.8
+    assert trend["score_delta"] == -12.9
+    assert trend["window_delta"] == -13.1
+
+    by_key = {item["kpi_key"]: item for item in bundle["kpi_items"]}
+    qual = by_key["Quality"]
+    assert qual["actual"] == 70.0
+    assert qual["target"] == 95.0
+    assert qual["previous_actual"] == 88.0
+    assert qual["previous_period"] == "August 2026"
+    assert qual["contributes_to_score"] is True
+    assert qual["projected_agent_score_lift"] == round((1.0 - 0.737) * 30.0, 2)
+
+    diag = by_key["DiagnosticNote"]
+    assert diag["contributes_to_score"] is False
+    assert diag["projected_agent_score_lift"] is None
+    assert bundle["team_headcount"] == 1
+

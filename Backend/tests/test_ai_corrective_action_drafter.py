@@ -349,7 +349,7 @@ def test_supported_draft_preserves_context_and_real_zero(db, client, fake_model)
         "subject": "employee", "employee_id": "EMP-1", "employee_name": "Sara Inbound",
         "country": "EGY", "function": "Call Center", "team": "Inbound", "position": "Agent",
         "period": {"month": "September", "year": 2026}, "performance_level": "Employee",
-        "scoring_basis": None, "linked_kpi_key": None,
+        "scoring_basis": None, "linked_kpi_key": None, "team_headcount": 1,
     }
 
     # Upsell (0% of target) is further below target than bookings (75%).
@@ -1304,3 +1304,464 @@ def test_route_releases_prior_read_transaction_before_read_only_guard(db, client
     assert response.status_code == 200, response.text
     assert response.json()["data"]["outcome"] == "suggested"
     assert release_calls and release_calls[0] is True
+
+
+def test_resolve_workflow_role_matches_team_function_and_kpi():
+    from services.ai.corrective_action_drafter import resolve_workflow_role
+
+    assert resolve_workflow_role("Inbound", "Call Center", "Quality", "Quality Score") == "Quality Specialist"
+    assert resolve_workflow_role("Inbound", "Call Center", "Booking", "Booking Rate") == "Trainer"
+    assert resolve_workflow_role("Inbound", "Call Center", "AHT", "AHT") == "Workforce Analyst"
+    assert resolve_workflow_role("Pre-Approvals IP Offshore", "RCM", "Rejection", "Rejection Rate") == "Pre-Authorization Supervisor"
+    assert resolve_workflow_role("Pre-Approvals IP Offshore", "RCM", "Submission", "TAT Submission") == "RCM Workflow & TAT Coordinator"
+    assert resolve_workflow_role("Marketing", "Marketing", "cpl", "Cost Per Lead") == "Media Buyer & SEO Manager"
+    assert resolve_workflow_role("IT Helpdesk", "IT", "csat", "CSAT") == "Service Desk QA Coordinator"
+    assert resolve_workflow_role("HR Operations", "Human Resources", "assessment", "Assessment") == "Assessment Center Lead"
+    assert resolve_workflow_role("Pharmacy Dubai", "Pharmacy", "dispensing_error", "Dispensing Error") == "Pharmacy Quality & Dispensing Lead"
+    assert resolve_workflow_role("CSR Dubai", "CSR", "waiting_time", "Waiting Time") == "Branch Operations Supervisor"
+
+
+def test_follow_up_validation_accepts_cadence_and_rejects_deadlines_owners_causes_and_uplift():
+    from services.ai.corrective_action_drafter import DraftFacts, validate_model_draft
+
+    facts = DraftFacts(
+        focus_kpi_key="quality",
+        focus_kpi_name="Quality Score",
+        evidence_vocabulary={"quality", "score", "inbound"},
+        focus_name_variants=("quality score", "quality"),
+    )
+
+    clean, errs = validate_model_draft(
+        {
+            "focus_kpi_key": "quality",
+            "action_type": "Monitor",
+            "steps": [
+                "Verify Quality Score source records before coaching.",
+                "Audit sample calls and confirm recorded quality data.",
+            ],
+            "follow_up": "recheck after one week",
+        },
+        facts,
+    )
+    assert errs == []
+    assert clean is not None
+    assert clean["follow_up"] == "Recheck after one week"
+
+    clean2, errs2 = validate_model_draft(
+        {
+            "focus_kpi_key": "quality",
+            "action_type": "Coaching",
+            "steps": ["Evaluate prior Quality Score coaching outcomes before repeating."],
+            "follow_up": "in the next weekly review",
+        },
+        facts,
+    )
+    assert errs2 == []
+    assert clean2 is not None
+    assert clean2["follow_up"] == "In the next weekly review"
+
+    for bad_follow_up in (
+        "recheck by October 15",
+        "confirm by Friday",
+        "assign to Sara next week",
+        "guaranteed score uplift after one week",
+        "because agent lacks knowledge",
+    ):
+        rejected, rej_errs = validate_model_draft(
+            {
+                "focus_kpi_key": "quality",
+                "action_type": "Monitor",
+                "steps": ["Verify Quality Score source records before coaching."],
+                "follow_up": bad_follow_up,
+            },
+            facts,
+        )
+        assert rejected is None, f"expected rejection for follow_up={bad_follow_up!r}"
+        assert rej_errs
+
+
+def test_drafter_unverified_zero_and_missing_linked_kpi_evidence(db, client, monkeypatch):
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-UNV-1",
+        name="Nour Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([team, emp])
+    db.flush()
+
+    rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=emp.id,
+        team_id=team.id,
+        month="September",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        score=60.0,
+        grade="C",
+        status="Below",
+        record_payload={
+            "raw_data": {
+                "A.QualityScore": 0,
+                "A.Attend%": 0.90,
+                "A.Booking%": None,
+                "T.Quality%": 0.95,
+                "T.Attend%": 0.75,
+                "T.Booking%": 0.45,
+            },
+        },
+    )
+    db.add(rec)
+    db.flush()
+    db.add_all(
+        [
+            KPIValue(
+                record_id=rec.id,
+                record_year=2026,
+                kpi_key="Quality",
+                actual_value=0.0,
+                target_value=0.95,
+                achievement_ratio=0.0,
+                weight_applied=0.3,
+                contribution=0.0,
+            ),
+            KPIValue(
+                record_id=rec.id,
+                record_year=2026,
+                kpi_key="Booking",
+                actual_value=0.0,
+                target_value=0.45,
+                achievement_ratio=0.0,
+                weight_applied=0.2,
+                contribution=0.0,
+            ),
+        ]
+    )
+    db.commit()
+    _enable_pilot(db)
+
+    captured_prompts = []
+
+    def _respond(ev):
+        captured_prompts.append(ev)
+        return _ok(
+            {
+                "focus_kpi_key": "Quality",
+                "action_type": "Monitor",
+                "steps": [
+                    "Verify Quality Score source records before coaching.",
+                    "Review sample audit entries and coach if confirmed.",
+                ],
+                "follow_up": "recheck after one week",
+            }
+        )
+
+    _install(monkeypatch, _FakeModel(_respond))
+
+    # 1. Unverified zero on Quality (normalized 95% target, zero PII)
+    res_unv = client.post(
+        URL,
+        json=_body(employee_id="EMP-UNV-1", linked_kpi_key="Quality"),
+        headers=ADMIN_HEADERS,
+    )
+    assert res_unv.status_code == 200, res_unv.text
+    data_unv = res_unv.json()["data"]
+    assert data_unv["outcome"] == "suggested"
+    assert data_unv["draft"]["responsible_role"] == "Quality Specialist"
+    assert data_unv["draft"]["observation_status"] == "unverified_zero"
+    assert data_unv["draft"]["recommended_follow_up"] == "Recheck after one week"
+    assert "Quality Specialist" in data_unv["draft"]["formatted_next_step"]
+    assert "if confirmed" in data_unv["draft"]["formatted_next_step"]
+    assert "target of 95%" in data_unv["measured_facts"][0]
+    assert captured_prompts[0]["workflow_role"] == "Quality Specialist"
+    assert captured_prompts[0]["focus_kpi"]["observation_status"] == "unverified_zero"
+    assert captured_prompts[0]["focus_kpi"]["target"] == 95.0
+    dumped_prompt = json.dumps(captured_prompts[0])
+    assert "Nour Agent" not in dumped_prompt
+    assert "EMP-UNV-1" not in dumped_prompt
+    assert "EGY" not in dumped_prompt
+
+    # 2. Missing linked KPI (Booking raw blank coerced to 0.0 by legacy) returns insufficient_evidence with rich context
+    res_missing = client.post(
+        URL,
+        json=_body(employee_id="EMP-UNV-1", linked_kpi_key="Booking"),
+        headers=ADMIN_HEADERS,
+    )
+    assert res_missing.status_code == 200, res_missing.text
+    data_missing = res_missing.json()["data"]
+    assert data_missing["outcome"] == "insufficient_evidence"
+    assert data_missing["supporting_kpis"]
+    booking_row = next(k for k in data_missing["supporting_kpis"] if k["kpi_key"] == "Booking")
+    assert booking_row["observation_status"] == "missing"
+    assert booking_row["actual"] is None
+    assert booking_row["target"] == 45.0
+    assert data_missing["measured_facts"]
+    assert any("unavailable/missing" in f.lower() for f in data_missing["measured_facts"])
+    assert any("verify" in note.lower() for note in data_missing["evidence_limitations"])
+
+
+def test_request_schema_pins_focus_kpi_key_enum_without_mutating_template(db, monkeypatch):
+    _seed(db)
+    _enable_pilot(db)
+
+    seen_schemas: list[dict] = []
+
+    class _SchemaCapturingEngine:
+        def generate(self, req):
+            seen_schemas.append(copy.deepcopy(req.json_schema))
+            return ProviderResponse(
+                outcome="success",
+                provider="cloudflare",
+                model="@cf/ibm-granite/granite-4.0-h-micro",
+                content=json.dumps(
+                    {
+                        "focus_kpi_key": "upsell",
+                        "action_type": "Coaching",
+                        "steps": [
+                            "Review upsell call rubric and criteria with clarity.",
+                            "Audit speed, efficiency, resolution, usage, and adherence rubrics on upsell calls.",
+                        ],
+                        "follow_up": "Recheck after one week",
+                    }
+                ),
+                latency_ms=12.0,
+                attempts=[ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="success")],
+            )
+
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: _SchemaCapturingEngine())
+
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound",
+            month="September",
+            year=2026,
+            employee_id="EMP-1",
+            linked_kpi_key="upsell",
+        ),
+    )
+
+    assert payload.outcome == "suggested", payload.validation_errors
+    assert len(seen_schemas) == 1
+    assert seen_schemas[0]["properties"]["focus_kpi_key"] == {"type": "string", "enum": ["upsell"]}
+    # Global template stays unpinned across requests.
+    assert drafter_module._RESPONSE_SCHEMA["schema"]["properties"]["focus_kpi_key"] == {"type": "string"}
+
+
+def test_unverified_zero_single_step_adds_conditional_clause_in_formatted_next_step(db, monkeypatch):
+    team = Team(
+        id=uuid.uuid4(),
+        name="inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    emp = Employee(
+        id=uuid.uuid4(),
+        employee_id="EMP-UNV-2",
+        name="Lina Agent",
+        team_id=team.id,
+        region="EGY",
+        performance_level="Employee",
+        position_name="Agent",
+        is_active=True,
+    )
+    db.add_all([team, emp])
+    db.flush()
+    rec = PerformanceRecord(
+        id=uuid.uuid4(),
+        employee_id=emp.id,
+        team_id=team.id,
+        month="October",
+        year=2026,
+        performance_level="Employee",
+        position_name="Agent",
+        region="EGY",
+        score=65.0,
+        grade="C",
+        status="Below",
+        record_payload={"raw_data": {"A.QualityScore": 0, "T.Quality%": 0.95}},
+    )
+    db.add(rec)
+    db.flush()
+    db.add(
+        KPIValue(
+            record_id=rec.id,
+            record_year=2026,
+            kpi_key="Quality",
+            actual_value=0.0,
+            target_value=0.95,
+            achievement_ratio=0.0,
+            weight_applied=0.3,
+            contribution=0.0,
+        )
+    )
+    db.commit()
+    _enable_pilot(db)
+
+    _install(
+        monkeypatch,
+        _FakeModel(
+            lambda _ev: _ok(
+                {
+                    "focus_kpi_key": "Quality",
+                    "action_type": "Monitor",
+                    "steps": ["Verify Quality Score source records."],
+                    "follow_up": "Recheck after one week",
+                }
+            )
+        ),
+    )
+
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound",
+            month="October",
+            year=2026,
+            employee_id="EMP-UNV-2",
+            linked_kpi_key="Quality",
+        ),
+    )
+
+    assert payload.outcome == "suggested", payload.validation_errors
+    assert payload.draft is not None
+    assert payload.draft.observation_status == "unverified_zero"
+    assert payload.draft.formatted_next_step == (
+        "Verify Quality Score source records; if confirmed, review a sample and coach. "
+        "(Owner role: Quality Specialist; Follow-up: Recheck after one week)"
+    )
+
+
+def test_bookings_count_accepts_singular_booking_stem_and_still_rejects_safety_violations(db, monkeypatch):
+    _seed(db)
+    _enable_pilot(db)
+
+    _install(
+        monkeypatch,
+        _FakeModel(
+            lambda _ev: _ok(
+                {
+                    "focus_kpi_key": "bookings_count",
+                    "action_type": "Monitor",
+                    "steps": [
+                        "Check booking records accuracy.",
+                        "Audit system protocol and protocols outcomes.",
+                    ],
+                }
+            )
+        ),
+    )
+
+    accepted = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound",
+            month="September",
+            year=2026,
+            employee_id="EMP-1",
+            linked_kpi_key="bookings_count",
+        ),
+    )
+    assert accepted.outcome == "suggested", accepted.validation_errors
+    assert accepted.draft is not None
+    assert accepted.draft.focus_kpi_key == "bookings_count"
+
+    # Safety rejections remain enforced on bookings_count
+    for bad_step, expected_code in [
+        ("Review booking records with the team lead.", "owner_assignment"),
+        ("Recheck booking records after one week.", "number_word_in_step"),
+        ("Check booking records tomorrow.", "date_or_deadline"),
+    ]:
+        _install(
+            monkeypatch,
+            _FakeModel(
+                lambda _ev, step=bad_step: _ok(
+                    {
+                        "focus_kpi_key": "bookings_count",
+                        "action_type": "Monitor",
+                        "steps": [step],
+                    }
+                )
+            ),
+        )
+        rejected = CorrectiveActionDrafter(db).suggest(
+            user_scope=ADMIN_SCOPE,
+            request=AiCorrectiveActionSuggestionRequest(
+                team="Inbound",
+                month="September",
+                year=2026,
+                employee_id="EMP-1",
+                linked_kpi_key="bookings_count",
+            ),
+        )
+        assert rejected.outcome == "draft_rejected"
+        assert expected_code in rejected.validation_errors, (bad_step, rejected.validation_errors)
+
+
+def test_insufficient_evidence_humanizes_reason_codes_and_omits_raw_kpi_keys(db, fake_model):
+    # Case 1: linked missing KPI with snake_case kpi_key must not emit "(quality_score)" or raw reason codes
+    bundle_linked = _bundle(
+        [
+            {
+                "kpi_key": "quality_score",
+                "kpi_label": "Quality Score",
+                "actual": None,
+                "target": 95.0,
+                "unit": "%",
+                "direction": "higher_better",
+                "weight": 0.4,
+                "contributes_to_score": True,
+                "achievement_percent": None,
+                "observation_status": "missing",
+            }
+        ],
+        reasons=["missing_source_value_for_kpi:quality_score", "linked_kpi_missing_actual_or_target:quality_score"],
+    )
+    bundle_linked["linked_kpi_key"] = "quality_score"
+    payload_linked = CorrectiveActionDrafter(db, evidence_service=_StubEvidence(bundle_linked)).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(**_body(linked_kpi_key="quality_score")),
+    )
+    assert payload_linked.outcome == "insufficient_evidence"
+    joined_linked = " ".join(payload_linked.measured_facts + payload_linked.evidence_limitations)
+    assert "quality_score" not in joined_linked
+    assert "missing_source_value_for_kpi" not in joined_linked
+    assert "quality score" in joined_linked.lower()
+
+    # Case 2: fallback insufficient facts with no measured items must humanize reasons cleanly
+    bundle_empty = _bundle(
+        [],
+        reasons=["no_complete_kpi_below_target", "missing_actual_for_kpi:booking_rate"],
+    )
+    payload_empty = CorrectiveActionDrafter(db, evidence_service=_StubEvidence(bundle_empty)).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(**_body()),
+    )
+    assert payload_empty.outcome == "insufficient_evidence"
+    joined_empty = " ".join(payload_empty.measured_facts + payload_empty.evidence_limitations)
+    assert "no_complete_kpi_below_target" not in joined_empty
+    assert "missing_actual_for_kpi" not in joined_empty
+    assert "booking_rate" not in joined_empty
+    assert "booking rate" in joined_empty.lower()
+
+
+
+

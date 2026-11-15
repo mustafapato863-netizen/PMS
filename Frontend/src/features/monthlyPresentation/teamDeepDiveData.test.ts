@@ -15,6 +15,7 @@ import {
   decodeIndividualActionMeta,
   deriveAgentTrendContext,
   encodeIndividualActionMeta,
+  recommendedActionForKpi,
   selectedTeamConfigSource,
   unavailableTeamTrend,
 } from './teamDeepDiveData';
@@ -876,5 +877,228 @@ describe('multi-month agent trend context and individual action metadata codec',
       owner: 'Fallback Lead',
       expectedImpact: '+2%',
     });
+  });
+
+  it('normalizes ratio % KPIs, classifies missing/unverified/recorded zeros, tracks non-adjacent trends, and separates scored vs diagnostic lift', () => {
+    const recMay = {
+      employeeId: 'EMP-900',
+      name: 'Nadia Agent',
+      team: 'Inbound',
+      region: 'EGY',
+      position: 'Agent',
+      level: 'Employee',
+      period: { year: 2026, month: 'May', key: '2026-05' },
+      score: 89.8,
+      kpis: [],
+    };
+    const recAug = {
+      ...recMay,
+      period: { year: 2026, month: 'August', key: '2026-08' },
+      score: 89.6,
+    };
+    const recOct = {
+      ...recMay,
+      period: { year: 2026, month: 'October', key: '2026-10' },
+      score: 76.7,
+      kpis: [
+        {
+          kpi_key: 'Booking',
+          label: 'Booking Rate',
+          actual_value: 0.4,
+          target_value: 0.5,
+          achievement_ratio: 0.8,
+          weight_applied: 0.3,
+          unit: '%',
+          direction: 'higher_better',
+          contribution: 24,
+        },
+      ],
+      rawAgent: {
+        identity: { employee_id: 'EMP-900', name: 'Nadia Agent', team: 'Inbound', month: 'October' },
+        evaluation: { score: 76.7 },
+        raw_data: { 'A.QualityScore': '', Bookings: 12 },
+        kpi_values: [
+          {
+            kpi_key: 'Booking',
+            label: 'Booking Rate',
+            actual_value: 0.4,
+            target_value: 0.5,
+            achievement_ratio: 0.8,
+            weight_applied: 0.3,
+            unit: '%',
+            direction: 'higher_better',
+            contribution: 24,
+          },
+          {
+            kpi_key: 'Conversion',
+            label: 'Conversion Rate',
+            actual_value: 0.98,
+            target_value: 0.95,
+            achievement_ratio: 1.0,
+            weight_applied: 0.2,
+            unit: '%',
+            direction: 'higher_better',
+            contribution: 20,
+          },
+          {
+            kpi_key: 'Quality',
+            label: 'Quality Score',
+            actual_value: 0,
+            target_value: 95,
+            achievement_ratio: 0,
+            weight_applied: 0.2,
+            unit: '%',
+            direction: 'higher_better',
+            contribution: 0,
+          },
+          {
+            kpi_key: 'CSAT',
+            label: 'CSAT Survey',
+            actual_value: 0,
+            target_value: 90,
+            achievement_ratio: 0,
+            weight_applied: 0,
+            unit: '%',
+            direction: 'higher_better',
+            contribution: 0,
+          },
+          {
+            kpi_key: 'AHT',
+            label: 'AHT',
+            actual_value: 3.2,
+            target_value: 2.5,
+            achievement_ratio: 0.78,
+            weight_applied: 0.3,
+            unit: 'min',
+            direction: 'lower_better',
+            contribution: 23.4,
+          },
+        ],
+      },
+    } as Parameters<typeof deriveAgentTrendContext>[1];
+
+    const ctx = deriveAgentTrendContext(
+      'EMP-900',
+      recOct,
+      [recMay, recAug, recOct!],
+      'October',
+      2026,
+    );
+
+    expect(ctx.previousScore).toBe(89.6);
+    expect(ctx.changeVsPrev).toBe(-12.9);
+    expect(ctx.previousPeriodLabel).toBe('Aug 2026');
+    expect(ctx.previousIsAdjacent).toBe(false);
+    expect(ctx.missingIntermediatePeriods).toEqual(['Sep 2026']);
+    expect(ctx.fullWindowComparisonLabel).toBe('Full window (May–Oct 2026): 89.8% → 76.7% (-13.1 pts)');
+
+    const conversion = ctx.allKpiEvidence.find((e) => e.kpiKey === 'Conversion');
+    expect(conversion?.actualFormatted).toBe('98.0%');
+    expect(conversion?.targetFormatted).toBe('95.0%');
+    expect(conversion?.contributesToScore).toBe(true);
+
+    const quality = ctx.allKpiEvidence.find((e) => e.kpiKey === 'Quality');
+    expect(quality?.observationStatus).toBe('missing');
+    expect(quality?.actualFormatted).toBe('Unavailable');
+    expect(quality?.projectedAgentScoreLift).toBeNull();
+
+    const csat = ctx.allKpiEvidence.find((e) => e.kpiKey === 'CSAT');
+    expect(csat?.observationStatus).toBe('unverified_zero');
+    expect(csat?.actualFormatted).toBe('0.0% (unverified)');
+    expect(csat?.contributesToScore).toBe(false);
+    expect(csat?.projectedAgentScoreLift).toBeNull();
+
+    const booking = ctx.allKpiEvidence.find((e) => e.kpiKey === 'Booking');
+    expect(booking?.observationStatus).toBe('verified');
+    expect(booking?.actualFormatted).toBe('40.0%');
+    expect(booking?.targetFormatted).toBe('50.0%');
+    expect(booking?.projectedAgentScoreLift).toBe(6.0);
+
+    const aht = ctx.allKpiEvidence.find((e) => e.kpiKey === 'AHT');
+    expect(aht?.actualFormatted).toBe('3.20 min');
+
+    const unverifiedRec = recommendedActionForKpi(
+      'CSAT',
+      'CSAT Survey',
+      'Inbound',
+      '0.0% (unverified)',
+      '90.0%',
+      undefined,
+      'unverified_zero',
+    );
+    expect(unverifiedRec.actionText).toContain('Verify CSAT Survey source records');
+    expect(unverifiedRec.actionText).not.toContain('Specific issue:');
+  });
+
+  it('keeps CSAT=0 unverified when only non-audit InboundCalls counter is positive and never renders missing secondWeakest as 0.0%', () => {
+    const teamData = buildTeamDeepDiveFromRecords(
+      'inbound',
+      toExecRecords([
+        {
+          identity: { employee_id: 'EMP-CSAT-1', name: 'Nour Adel', team: 'Inbound', month: 'October' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Inbound Agent',
+          performance_level: 'Employee',
+          raw_data: {
+            InboundCalls: 120,
+            'A.Booking%': 30,
+            'A.QualityScore': '',
+          },
+          evaluation: { score: 62.0, grade: 'D' },
+          kpi_values: [
+            {
+              kpi_key: 'Booking',
+              label: 'Booking Rate',
+              actual_value: 30,
+              target_value: 80,
+              achievement_ratio: 0.375,
+              achievement_percent: 37.5,
+              weight_applied: 0.5,
+              unit: '%',
+              direction: 'higher_better',
+              contribution: 18.75,
+            },
+            {
+              kpi_key: 'Quality',
+              label: 'Quality Score',
+              actual_value: 0,
+              target_value: 95,
+              achievement_ratio: 0,
+              achievement_percent: 0,
+              weight_applied: 0.3,
+              unit: '%',
+              direction: 'higher_better',
+              contribution: 0,
+            },
+            {
+              kpi_key: 'CSAT',
+              label: 'CSAT Survey',
+              actual_value: 0,
+              target_value: 90,
+              achievement_ratio: 0,
+              achievement_percent: 0,
+              weight_applied: 0.2,
+              unit: '%',
+              direction: 'higher_better',
+              contribution: 0,
+            },
+          ],
+        },
+      ]),
+      [],
+      'EGY',
+      '2026-10',
+    );
+
+    const card = teamData.individualActionPlans.find((c) => c.employeeId === 'EMP-CSAT-1');
+    expect(card).toBeDefined();
+    const csat = card?.allKpiEvidence?.find((e) => e.kpiKey === 'CSAT');
+    expect(csat?.observationStatus).toBe('unverified_zero');
+    expect(csat?.actualFormatted).toBe('0.0% (unverified)');
+
+    const quality = card?.allKpiEvidence?.find((e) => e.kpiKey === 'Quality');
+    expect(quality?.observationStatus).toBe('missing');
+    expect(card?.mainIssue).not.toContain('Quality Score at 0.0%');
   });
 });
