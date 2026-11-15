@@ -7379,7 +7379,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "62a43d291ba9f60160e907d677dcd2e6b116b2191d1a83a3ab03a530d23ba66b",
+  "inputs_fingerprint": "1955790d780c79b248da4dff3b55e7e1f6f55b03b68dc72b665fb407db3c1c6e",
   "kpis": [
     {
       "actual_col": "Actual Value",
