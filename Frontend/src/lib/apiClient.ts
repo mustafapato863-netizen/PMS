@@ -74,6 +74,16 @@ export function apiErrorMessage(payload: unknown, status: number): string {
       && typeof (payload as ApiErrorPayload).request_id === 'string'
       ? ` Reference: ${(payload as ApiErrorPayload).request_id}`
       : '';
+    if (
+      status === 503
+      && payload
+      && typeof payload === 'object'
+      && (payload as { code?: unknown }).code === 'SERVICE_UNAVAILABLE'
+      && typeof (payload as ApiErrorPayload).message === 'string'
+      && ((payload as ApiErrorPayload).message as string).trim()
+    ) {
+      return `${((payload as ApiErrorPayload).message as string).trim()}${requestId}`;
+    }
     return `The server could not complete the request. Please try again.${requestId}`;
   }
   if (!payload || typeof payload !== 'object') return `Request failed (HTTP ${status})`;

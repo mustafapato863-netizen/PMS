@@ -1713,5 +1713,110 @@ def test_glm_selection_recorded_everywhere_consistently(mock_cloudflare, mock_ge
     assert resp.estimated_cost_usd == pytest.approx(1.4 * 0.000011, rel=1e-4)
 
 
+def test_gemini_null_content_and_thinking_multipart_responses():
+    """Gemini adapter handles content=null cleanly and selects non-thought text part."""
+    adapter = GeminiProviderAdapter()
+    cfg = UnifiedProviderConfig(gemini_api_key="mock-gemini-key", gemini_model="gemini-2.5-flash")
+    req = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="Suggest action")],
+        response_format="json",
+    )
+
+    def _make_resp(payload_dict):
+        body = json.dumps(payload_dict).encode("utf-8")
+        resp = MagicMock()
+        resp.read.side_effect = [body, b""]
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    # 1. content: null -> ProviderTransientError (never AttributeError)
+    adapter._http_client = lambda _req, timeout=None: _make_resp({
+        "candidates": [{"content": None, "finishReason": "STOP"}],
+    })
+    with pytest.raises(ProviderTransientError, match="empty candidate text"):
+        adapter.execute(req, cfg, timeout=5.0)
+
+    # 2. Multi-part thinking response -> uses non-thought part
+    adapter._http_client = lambda _req, timeout=None: _make_resp({
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"thought": True, "text": "Reasoning..."},
+                        {"text": '{"focus_kpi_key": "Attendance"}'},
+                    ]
+                },
+                "finishReason": "STOP",
+            }
+        ],
+        "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 8, "totalTokenCount": 20},
+    })
+    text, usage = adapter.execute(req, cfg, timeout=5.0)
+    assert json.loads(text) == {"focus_kpi_key": "Attendance"}
+    assert usage.total_tokens == 20
+
+
+def test_cloudflare_dict_message_content_and_string_errors():
+    """Cloudflare adapter serializes dict content as JSON and formats plain-string errors."""
+    adapter = CloudflareAIProviderAdapter()
+    cfg = UnifiedProviderConfig(
+        cloudflare_account_id="acc-123",
+        cloudflare_api_token="tok-456",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+    )
+    req = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="Return JSON")],
+        response_format="json",
+        json_schema={"type": "object", "required": ["focus_kpi_key"], "properties": {"focus_kpi_key": {"type": "string"}}},
+    )
+
+    def _make_resp(payload_dict):
+        body = json.dumps(payload_dict).encode("utf-8")
+        resp = MagicMock()
+        resp.read.side_effect = [body, b""]
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    # 1. message.content as dict -> json.dumps passes schema validation
+    adapter._http_client = lambda _req, timeout=None: _make_resp({
+        "choices": [{"message": {"role": "assistant", "content": {"focus_kpi_key": "Attendance"}}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20, "neurons": 0.4},
+        "success": True,
+    })
+    text, usage = adapter.execute(req, cfg, timeout=5.0)
+    assert json.loads(text) == {"focus_kpi_key": "Attendance"}
+    assert usage.neurons == 0.4
+
+    # 2. errors containing plain strings -> ProviderTransientError without AttributeError
+    adapter._http_client = lambda _req, timeout=None: _make_resp({
+        "success": False,
+        "errors": ["Upstream worker overloaded", {"message": "Retry later"}],
+    })
+    with pytest.raises(ProviderTransientError, match="Upstream worker overloaded; Retry later"):
+        adapter.execute(req, cfg, timeout=5.0)
+
+
+def test_engine_catches_unexpected_adapter_exception_without_500(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Unexpected non-ProviderError exceptions from adapters degrade cleanly without raising."""
+    mock_cloudflare.execute.side_effect = RuntimeError("unexpected JSON shape")
+    mock_gemini.execute.side_effect = KeyError("missing_field")
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is False
+    assert resp.outcome == "provider_unavailable"
+    assert resp.provider == "none"
+    assert len(resp.attempts) == 3  # primary initial + 1 retry + fallback
+    assert any("Unexpected adapter error: RuntimeError" in (a.error_detail or "") for a in resp.attempts)
+    assert any("Unexpected adapter error: KeyError" in (a.error_detail or "") for a in resp.attempts)
+
+
 
 

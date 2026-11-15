@@ -978,9 +978,19 @@ class CloudflareAIProviderAdapter:
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ProviderTransientError("Cloudflare returned invalid non-JSON HTTP response body") from exc
 
-        if isinstance(data, dict) and data.get("success") is False:
+        if not isinstance(data, dict):
+            raise ProviderTransientError("Cloudflare returned unexpected non-object JSON payload")
+
+        if data.get("success") is False:
             errors = data.get("errors") or []
-            msg = "; ".join(str(e.get("message", e)) for e in errors) if errors else "Cloudflare Workers AI returned success: false"
+            msg = (
+                "; ".join(
+                    str(e.get("message", e) if isinstance(e, dict) else e)
+                    for e in errors
+                )
+                if errors
+                else "Cloudflare Workers AI returned success: false"
+            )
             code = (errors[0].get("code") if errors and isinstance(errors[0], dict) else None)
             if code in (10000, 10001, 10002):
                 raise ProviderClientError(f"Cloudflare authentication failed: {msg}", http_code=401)
@@ -989,17 +999,25 @@ class CloudflareAIProviderAdapter:
         text_result = ""
         choices = data.get("choices") or []
         if choices and isinstance(choices, list):
-            first_choice = choices[0] or {}
+            first_choice = choices[0] if isinstance(choices[0], dict) else {}
             finish_reason = str(first_choice.get("finish_reason") or "").casefold()
             if finish_reason in ("length", "max_tokens"):
                 raise ProviderTruncatedError("Cloudflare output truncated: model reached maxOutputTokens limit")
             if finish_reason in ("content_filter",):
                 raise ProviderSafetyRefusalError("Cloudflare blocked response due to content safety policy")
-            msg_obj = first_choice.get("message") or {}
-            text_result = str(msg_obj.get("content") or "")
+            msg_obj = first_choice.get("message") if isinstance(first_choice.get("message"), dict) else {}
+            raw_val = msg_obj.get("content")
+            if isinstance(raw_val, (dict, list)):
+                text_result = json.dumps(raw_val, ensure_ascii=False)
+            else:
+                text_result = str(raw_val or "")
         elif "result" in data and isinstance(data.get("result"), dict):
             res_obj = data["result"]
-            text_result = str(res_obj.get("response") or "")
+            raw_val = res_obj.get("response")
+            if isinstance(raw_val, (dict, list)):
+                text_result = json.dumps(raw_val, ensure_ascii=False)
+            else:
+                text_result = str(raw_val or "")
 
         if not text_result.strip():
             raise ProviderEmptyResponseError("Cloudflare returned empty text response")
@@ -1009,7 +1027,7 @@ class CloudflareAIProviderAdapter:
             if not valid:
                 raise ProviderSchemaValidationError(f"Cloudflare structured output failed schema validation: {err}")
 
-        usage_raw = data.get("usage") or {}
+        usage_raw = data.get("usage") if isinstance(data.get("usage"), dict) else {}
         raw_neurons = usage_raw.get("neurons")
         neurons = float(raw_neurons) if raw_neurons is not None else None
         usage = TokenUsage(
@@ -1116,17 +1134,20 @@ class GeminiProviderAdapter:
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ProviderTransientError("Gemini returned invalid non-JSON HTTP response body") from exc
 
+        if not isinstance(data, dict):
+            raise ProviderTransientError("Gemini returned unexpected non-object JSON payload")
+
         # Check prompt-level safety block
-        prompt_feedback = data.get("promptFeedback") or {}
+        prompt_feedback = data.get("promptFeedback") if isinstance(data.get("promptFeedback"), dict) else {}
         block_reason = str(prompt_feedback.get("blockReason") or "").upper()
         if block_reason and block_reason not in ("", "NONE"):
             raise ProviderSafetyRefusalError(f"Gemini blocked prompt due to policy: {block_reason}")
 
         candidates = data.get("candidates") or []
-        if not candidates:
+        if not candidates or not isinstance(candidates, list):
             raise ProviderSafetyRefusalError("Gemini returned zero candidates (possible safety filter)")
 
-        candidate = candidates[0]
+        candidate = candidates[0] if isinstance(candidates[0], dict) else {}
         finish_reason = str(candidate.get("finishReason") or "").upper()
 
         if (
@@ -1141,8 +1162,23 @@ class GeminiProviderAdapter:
         if finish_reason == "MAX_TOKENS":
             raise ProviderTruncatedError("Gemini candidate truncated due to max output tokens")
 
-        parts = candidate.get("content", {}).get("parts", [])
-        text_result = parts[0].get("text", "") if parts else ""
+        content_obj = candidate.get("content") if isinstance(candidate.get("content"), dict) else {}
+        raw_parts = content_obj.get("parts")
+        parts = [p for p in raw_parts if isinstance(p, dict)] if isinstance(raw_parts, list) else []
+        non_thought_parts = [
+            p for p in parts
+            if not p.get("thought") and isinstance(p.get("text"), str) and p["text"].strip()
+        ]
+        fallback_texts = [
+            p["text"] for p in parts
+            if isinstance(p.get("text"), str) and p["text"].strip()
+        ]
+        if non_thought_parts:
+            text_result = non_thought_parts[-1]["text"]
+        elif fallback_texts:
+            text_result = fallback_texts[-1]
+        else:
+            text_result = ""
 
         if not text_result.strip():
             raise ProviderTransientError("Gemini returned empty candidate text")
@@ -1153,7 +1189,7 @@ class GeminiProviderAdapter:
             if not valid:
                 raise ProviderSchemaValidationError(f"Gemini JSON output validation failed: {err}")
 
-        usage_raw = data.get("usageMetadata") or {}
+        usage_raw = data.get("usageMetadata") if isinstance(data.get("usageMetadata"), dict) else {}
         usage = TokenUsage(
             prompt_tokens=int(usage_raw.get("promptTokenCount") or 0),
             completion_tokens=int(usage_raw.get("candidatesTokenCount") or 0),
@@ -1455,6 +1491,26 @@ class UnifiedProviderEngine:
                         time.sleep(0.05)
                         continue
                     break
+                except Exception as exc:
+                    call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                    logger.warning(
+                        "Unexpected error in %s adapter (%s); treating as provider failure",
+                        primary_name,
+                        type(exc).__name__,
+                    )
+                    attempts.append(ProviderAttempt(
+                        provider=primary_name,
+                        model=primary_model,
+                        status="transient_error",
+                        latency_ms=call_ms,
+                        error_detail=f"Unexpected adapter error: {type(exc).__name__}",
+                        retry_count=retries,
+                    ))
+                    if retries < self.config.max_retries and (deadline - time.perf_counter()) > 1.0:
+                        retries += 1
+                        time.sleep(0.05)
+                        continue
+                    break
 
         if primary_success:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
@@ -1632,6 +1688,20 @@ class UnifiedProviderEngine:
                     latency_ms=call_ms,
                     http_code=exc.http_code,
                     error_detail=str(exc),
+                ))
+            except Exception as exc:
+                call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                logger.warning(
+                    "Unexpected error in %s adapter (%s); treating as provider failure",
+                    fallback_name,
+                    type(exc).__name__,
+                )
+                attempts.append(ProviderAttempt(
+                    provider=fallback_name,
+                    model=fallback_model,
+                    status="transient_error",
+                    latency_ms=call_ms,
+                    error_detail=f"Unexpected adapter error: {type(exc).__name__}",
                 ))
 
         # 5. All Eligible Providers Exhausted

@@ -8,6 +8,7 @@ import {
 import {
   parseMonthYearFromLabel,
   requestActionPlanAiSuggestion,
+  resolveTeamCardFocusKpiKey,
   type ActionPlanAiError,
   type AiCorrectiveActionSuggestionPayload,
 } from './actionPlanAiUtils';
@@ -721,7 +722,7 @@ function TeamDeepDiveViewContent({
             month: activeMonthName,
             year: activeYearNum,
             employeeId: null,
-            focusKpiKey: card.linkedKpiKey || activeExplorerKpi?.kpiKey || null,
+            focusKpiKey: resolveTeamCardFocusKpiKey(card, data.kpis, activeExplorerKpi?.kpiKey),
             signal,
           }),
         hasUnsaved,
@@ -734,6 +735,7 @@ function TeamDeepDiveViewContent({
       activeYearNum,
       applyTeamAiDraft,
       data.canonicalTeam,
+      data.kpis,
       draftTeamDueDate,
       draftTeamImpact,
       draftTeamOwner,
@@ -757,14 +759,17 @@ function TeamDeepDiveViewContent({
           month: activeMonthName,
           year: activeYearNum,
           employeeId: null,
-          focusKpiKey: activeExplorerKpi?.kpiKey || null,
+          focusKpiKey:
+            activeExplorerKpi && activeExplorerKpi.verdictBadge !== 'Target Met'
+              ? activeExplorerKpi.kpiKey
+              : null,
           signal,
         }),
       hasUnsaved,
       (payload) => applyNewTeamAiDraft(payload),
     );
   }, [
-    activeExplorerKpi?.kpiKey,
+    activeExplorerKpi,
     activeMonthName,
     activeYearNum,
     applyNewTeamAiDraft,

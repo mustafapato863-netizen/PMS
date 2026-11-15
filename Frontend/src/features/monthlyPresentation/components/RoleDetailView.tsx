@@ -423,6 +423,9 @@ export default function RoleDetailView({
     [],
   );
 
+  const resolvedRoleTeam = data.individualActionPlans[0]?.recordTeam || data.functionName;
+  const resolvedRoleLevel = data.individualActionPlans[0]?.performanceLevel || undefined;
+
   const triggerRoleIndividualAi = useCallback(
     (card: RoleIndividualActionPlan) => {
       const targetKey = `ind:${card.id}`;
@@ -437,7 +440,7 @@ export default function RoleDetailView({
         targetKey,
         (signal) =>
           requestActionPlanAiSuggestion({
-            team: card.recordTeam || data.roleTitle,
+            team: card.recordTeam || resolvedRoleTeam,
             month: activeMonthName,
             year: activeYearNum,
             performanceLevel: card.performanceLevel,
@@ -453,12 +456,12 @@ export default function RoleDetailView({
       activeMonthName,
       activeYearNum,
       applyRoleIndividualAiDraft,
-      data.roleTitle,
       draftIndAction,
       draftIndImpact,
       draftIndMainIssue,
       draftIndOwner,
       editingIndividualId,
+      resolvedRoleTeam,
       runRoleAiRequest,
     ],
   );
@@ -477,10 +480,11 @@ export default function RoleDetailView({
         targetKey,
         (signal) =>
           requestActionPlanAiSuggestion({
-            team: data.roleTitle,
+            team: resolvedRoleTeam,
             month: activeMonthName,
             year: activeYearNum,
-            employeeId: null,
+            performanceLevel: resolvedRoleLevel,
+            employeeId: action.employeeId || (data.headcount === 1 && data.employeeId ? data.employeeId : null),
             focusKpiKey: action.linkedKpiKey || selected?.kpiKey || null,
             signal,
           }),
@@ -492,12 +496,15 @@ export default function RoleDetailView({
       activeMonthName,
       activeYearNum,
       applyRoleActionAiDraft,
-      data.roleTitle,
+      data.employeeId,
+      data.headcount,
       draftRoleDesc,
       draftRoleDueDate,
       draftRoleImpact,
       draftRoleOwner,
       editingRoleActionId,
+      resolvedRoleLevel,
+      resolvedRoleTeam,
       runRoleAiRequest,
       selected?.kpiKey,
     ],
@@ -505,15 +512,24 @@ export default function RoleDetailView({
 
   const triggerRoleFormAi = useCallback(() => {
     const hasUnsaved = description.trim().length > 0;
+    const candidateKpiKey = targetKpiKey || selected?.kpiKey || null;
+    const candidateKpi = candidateKpiKey
+      ? data.kpis.find((k) => k.kpiKey === candidateKpiKey)
+      : selected;
+    const focusKpiKey =
+      candidateKpiKey && (!candidateKpi || candidateKpi.statusBadge !== 'On Target')
+        ? candidateKpiKey
+        : null;
     void runRoleAiRequest(
       'role-form',
       (signal) =>
         requestActionPlanAiSuggestion({
-          team: data.roleTitle,
+          team: resolvedRoleTeam,
           month: activeMonthName,
           year: activeYearNum,
+          performanceLevel: resolvedRoleLevel,
           employeeId: null,
-          focusKpiKey: targetKpiKey || selected?.kpiKey || null,
+          focusKpiKey,
           signal,
         }),
       hasUnsaved,
@@ -523,10 +539,12 @@ export default function RoleDetailView({
     activeMonthName,
     activeYearNum,
     applyRoleFormAiDraft,
-    data.roleTitle,
+    data.kpis,
     description,
+    resolvedRoleLevel,
+    resolvedRoleTeam,
     runRoleAiRequest,
-    selected?.kpiKey,
+    selected,
     targetKpiKey,
   ]);
 

@@ -72,6 +72,7 @@ def post_corrective_action_suggestion(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PMS AI is limited to administrators during the pilot.",
         )
+    release_read_transaction(db)
     try:
         payload = CorrectiveActionDrafter(db).suggest(user_scope=scope, request=body)
     except PermissionError as exc:

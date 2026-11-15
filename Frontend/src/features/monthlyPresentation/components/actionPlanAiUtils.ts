@@ -166,3 +166,78 @@ export function isPilotDisabled403(error: ActionPlanAiError | null | undefined):
   if (!error || error.status !== 403) return false;
   return /pilot|disabled|enable|settings/i.test(error.message);
 }
+
+export interface TeamCardKpiRef {
+  linkedKpiKey?: string | null;
+  targetKpi?: string | null;
+  title?: string | null;
+}
+
+export interface TeamKpiFocusCandidate {
+  kpiKey: string;
+  label?: string | null;
+  shortLabel?: string | null;
+  verdictBadge?: string | null;
+}
+
+/**
+ * Resolves the focus KPI key for a whole-team action card without falling back
+ * to an unrelated or already on-target KPI.
+ */
+export function resolveTeamCardFocusKpiKey(
+  card: TeamCardKpiRef,
+  kpis: readonly TeamKpiFocusCandidate[],
+  explorerKpiKey?: string | null,
+): string | null {
+  const explicitKey = card.linkedKpiKey?.trim();
+  if (explicitKey) {
+    if (kpis.length === 0) {
+      return explicitKey;
+    }
+    const explicitMatch = kpis.find(
+      (k) => k.kpiKey.trim().toLowerCase() === explicitKey.toLowerCase(),
+    );
+    if (explicitMatch) {
+      return explicitMatch.kpiKey;
+    }
+  }
+
+  const targetText = (card.targetKpi ?? '').trim().toLowerCase();
+  const titleText = (card.title ?? '').trim().toLowerCase();
+  if (kpis.length > 0 && (targetText || titleText)) {
+    const candidates: Array<{ token: string; kpi: TeamKpiFocusCandidate }> = [];
+    for (const kpi of kpis) {
+      for (const rawToken of [kpi.label, kpi.shortLabel, kpi.kpiKey]) {
+        const token = (rawToken ?? '').trim().toLowerCase();
+        if (token) {
+          candidates.push({ token, kpi });
+        }
+      }
+    }
+    candidates.sort((a, b) => b.token.length - a.token.length);
+
+    const matched =
+      (targetText
+        ? candidates.find((c) => targetText.includes(c.token))?.kpi
+        : undefined) ??
+      (titleText
+        ? candidates.find((c) => titleText.includes(c.token))?.kpi
+        : undefined);
+
+    if (matched) {
+      return matched.verdictBadge !== 'Target Met' ? matched.kpiKey : null;
+    }
+  }
+
+  const explorerKey = explorerKpiKey?.trim();
+  if (explorerKey) {
+    const explorerKpi = kpis.find(
+      (k) => k.kpiKey.trim().toLowerCase() === explorerKey.toLowerCase(),
+    );
+    if (explorerKpi && explorerKpi.verdictBadge !== 'Target Met') {
+      return explorerKpi.kpiKey;
+    }
+  }
+
+  return null;
+}
