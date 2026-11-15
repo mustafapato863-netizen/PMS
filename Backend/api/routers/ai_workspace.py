@@ -18,9 +18,13 @@ from models.ai_schemas import (
     AiConversationResponse,
     AiCorrectiveActionConfirmRequest,
     AiCorrectiveActionConfirmResponse,
+    AiDeidentifiedExportBundleResponse,
     AiDiagnosticsPayload,
     AiDiagnosticsResponse,
     AiDistillationExportResponse,
+    AiFeedbackClustersResponse,
+    AiFeedbackPurgeRequest,
+    AiFeedbackPurgeResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
     AiTraceReviewRequest,
@@ -30,6 +34,7 @@ from models.ai_schemas import (
 )
 from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
+from services.ai.feedback_service import FeedbackGovernanceService
 from services.ai.llm_client import (
     get_recent_fallback_reason,
     local_exploration_enabled,
@@ -452,29 +457,146 @@ def post_ai_trace_review(
     scope = require_authenticated_scope(db, request)
     reviewer_id = str(scope.get("user_id") or "admin")
     caller_role = str(scope.get("role") or "")
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
     try:
-        found, eligible, reviewed_at = TrainingTraceLogger(db).review_trace(
+        result = FeedbackGovernanceService(db).review_feedback(
             trace_id=trace_id,
             reviewer_verified=body.reviewer_verified,
+            decision=body.decision,
             reviewer_id=reviewer_id,
             caller_role=caller_role,
             notes=body.notes,
+            proposed_action=body.proposed_action,
+            ip_address=client_host,
+            request_id=req_id,
         )
     except PermissionError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    if not found:
+    if result is None:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
-    return AiTraceReviewResponse(
-        success=True,
-        message="Trace review updated",
-        trace_id=trace_id,
-        reviewer_verified=body.reviewer_verified,
-        reviewer_id=reviewer_id,
-        reviewed_at=reviewed_at,
-        is_distillation_eligible=eligible,
-    )
+    return result
+
+
+@router.get("/feedback/clusters", response_model=AiFeedbackClustersResponse)
+def get_ai_feedback_clusters(
+    request: Request,
+    db: Session = Depends(get_db),
+    surface: str | None = Query(default=None),
+    rating: str | None = Query(default=None),
+    review_status: str | None = Query(default=None),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiFeedbackClustersResponse:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    try:
+        payload = FeedbackGovernanceService(db).cluster_failures(
+            caller_role=caller_role,
+            surface=surface,
+            rating=rating,
+            review_status=review_status,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    release_read_transaction(db)
+    return payload
+
+
+@router.post("/traces/purge", response_model=AiFeedbackPurgeResponse)
+def post_purge_ai_traces(
+    request: Request,
+    body: AiFeedbackPurgeRequest | None = None,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiFeedbackPurgeResponse:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    caller_user_id = str(scope.get("user_id") or "") or None
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    req_body = body or AiFeedbackPurgeRequest()
+    try:
+        return FeedbackGovernanceService(db).purge_expired_feedback(
+            caller_role=caller_role,
+            caller_user_id=caller_user_id,
+            retention_days=req_body.retention_days,
+            dry_run=req_body.dry_run,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.delete("/traces/{trace_id}")
+def delete_ai_trace(
+    trace_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> dict[str, object]:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    caller_user_id = str(scope.get("user_id") or "") or None
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    try:
+        deleted = FeedbackGovernanceService(db).delete_feedback_trace(
+            trace_id=trace_id,
+            caller_role=caller_role,
+            caller_user_id=caller_user_id,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if not deleted:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
+    return {
+        "success": True,
+        "message": "Interaction trace deleted",
+        "trace_id": trace_id,
+    }
+
+
+@router.get("/feedback/export-bundle", response_model=AiDeidentifiedExportBundleResponse)
+def export_ai_feedback_bundle(
+    request: Request,
+    db: Session = Depends(get_db),
+    approved_only: bool = Query(default=True),
+    min_cohort_size: int = Query(default=5),
+    limit: int = Query(default=500, ge=1, le=2000),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiDeidentifiedExportBundleResponse:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    caller_user_id = str(scope.get("user_id") or "") or None
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    try:
+        bundle = FeedbackGovernanceService(db).build_deidentified_export_bundle(
+            caller_role=caller_role,
+            caller_user_id=caller_user_id,
+            approved_only=approved_only,
+            min_cohort_size=min_cohort_size,
+            limit=limit,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    release_read_transaction(db)
+    return bundle
 
 
 @router.get("/traces/export", response_model=AiDistillationExportResponse)

@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 43. Test functions or `it` blocks: 535.
+Test files: 44. Test functions or `it` blocks: 554.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
 | `synthetic` | 16 | not applicable |
-| `mocked` | 25 | partial |
+| `mocked` | 26 | partial |
 | `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -43,6 +43,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_phase1_runtime.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_phase2_reconciliation.py` | test | `synthetic` | 20 | not applicable |
 | `Backend/tests/test_ai_phase4_security_matrix.py` | test | `mocked` | 11 | partial |
+| `Backend/tests/test_ai_phase6_feedback_governance.py` | test | `mocked` | 19 | partial |
 | `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 62 | partial |
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |

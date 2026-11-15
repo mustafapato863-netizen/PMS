@@ -26,8 +26,12 @@ from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiCorrectiveActionSuggestionRequest,
     AiCorrectiveActionSuggestionResponse,
+    AiPilotFeedbackRequest,
+    AiPilotFeedbackResponse,
 )
 from services.ai.corrective_action_drafter import CorrectiveActionDrafter
+from services.ai.feedback_service import FeedbackGovernanceService
+from services.ai.trace_logger import TraceOwnershipError
 from services.ai.feature_gate import (
     AI_PILOT_ROLE,
     require_ai_admin,
@@ -82,3 +86,39 @@ def post_corrective_action_suggestion(
         message=_OUTCOME_MESSAGES[payload.outcome],
         data=payload,
     )
+
+
+@router.post("/corrective-action-suggestions/feedback", response_model=AiPilotFeedbackResponse)
+def post_corrective_action_suggestion_feedback(
+    body: AiPilotFeedbackRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AiPilotFeedbackResponse:
+    scope = require_authenticated_scope(db, request)
+    if str(scope.get("role") or "") != AI_PILOT_ROLE:
+        release_read_transaction(db)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PMS AI is limited to administrators during the pilot.",
+        )
+    if body.surface != "corrective_action_pilot":
+        release_read_transaction(db)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This endpoint only accepts corrective_action_pilot feedback.",
+        )
+    try:
+        return FeedbackGovernanceService(db).record_workspace_or_pilot_feedback(
+            payload=body,
+            caller_user_id=str(scope.get("user_id") or "") or None,
+            caller_role=str(scope.get("role") or ""),
+        )
+    except (TraceOwnershipError, PermissionError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except LookupError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

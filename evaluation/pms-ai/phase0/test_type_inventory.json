@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 43,
-  "case_count": 535,
+  "file_count": 44,
+  "case_count": 554,
   "files_by_label": {
     "synthetic": 16,
-    "mocked": 25,
+    "mocked": 26,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -218,6 +218,16 @@
         "mocked"
       ],
       "cases": 11,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase6_feedback_governance.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 19,
       "evidence_status": "partial",
       "note": ""
     },

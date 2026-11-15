@@ -245,7 +245,19 @@ FeedbackCategoryType = Literal[
     "incomplete_response",
     "poor_suggestion",
     "other",
+    "incorrect_kpi_interpretation",
+    "unsupported_recommendation",
+    "irrelevant_action",
+    "missing_context",
+    "inadequate_explanation",
+    "unclear_uncertainty_statement",
+    "provider_or_technical_failure",
+    "good_quality_recommendation",
 ]
+
+FeedbackSurfaceType = Literal["workspace_chat", "corrective_action_pilot"]
+FeedbackReviewDecisionType = Literal["approved", "rejected"]
+FeedbackReviewStatusType = Literal["pending", "approved", "rejected"]
 
 
 class AiPageHelpSection(BaseModel):
@@ -882,7 +894,20 @@ class AiCatalogResponse(BaseModel):
 
 class AiTraceReviewRequest(BaseModel):
     reviewer_verified: bool = True
+    decision: FeedbackReviewDecisionType | None = None
     notes: str | None = Field(default=None, max_length=240)
+    proposed_action: str | None = Field(default=None, max_length=240)
+
+    @model_validator(mode="after")
+    def _sync_decision_and_verified(self) -> "AiTraceReviewRequest":
+        if "decision" in self.model_fields_set and self.decision is not None:
+            expected_verified = self.decision == "approved"
+            if "reviewer_verified" in self.model_fields_set and self.reviewer_verified != expected_verified:
+                raise ValueError("decision and reviewer_verified conflict")
+            self.reviewer_verified = expected_verified
+        else:
+            self.decision = "approved" if self.reviewer_verified else "rejected"
+        return self
 
 
 class AiTraceReviewResponse(BaseModel):
@@ -893,6 +918,103 @@ class AiTraceReviewResponse(BaseModel):
     reviewer_id: str
     reviewed_at: str
     is_distillation_eligible: bool
+    decision: FeedbackReviewDecisionType | None = None
+    review_status: FeedbackReviewStatusType | None = None
+    proposed_action: str | None = None
+
+
+class AiPilotFeedbackRequest(BaseModel):
+    trace_id: str | None = Field(default=None, max_length=100)
+    surface: FeedbackSurfaceType = "corrective_action_pilot"
+    rating: Literal["up", "down"]
+    reason_tag: FeedbackCategoryType | None = None
+    comment: str | None = Field(default=None, max_length=500)
+    candidate_sha: str | None = Field(default=None, max_length=64)
+    model_version: str | None = Field(default=None, max_length=120)
+    provider_name: str | None = Field(default=None, max_length=60)
+    fallback_reason: str | None = Field(default=None, max_length=120)
+    operation_family: str | None = Field(default=None, max_length=80)
+    scope_team: str | None = Field(default=None, max_length=120)
+    scope_country: str | None = Field(default=None, max_length=80)
+    performance_level: str | None = Field(default=None, max_length=40)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+class AiPilotFeedbackResponse(BaseModel):
+    success: bool = True
+    message: str = "Feedback recorded for administrator review"
+    trace_id: str
+    surface: FeedbackSurfaceType
+    rating: Literal["up", "down"]
+    reason_tag: FeedbackCategoryType | None = None
+    review_status: FeedbackReviewStatusType = "pending"
+    reviewer_verified: bool = False
+    pii_quarantined: bool = False
+
+
+class AiFeedbackClusterItem(BaseModel):
+    surface: str
+    fallback_reason: str
+    operation_family: str
+    scope_team: str
+    reason_tag: str
+    total_count: int
+    up_count: int = 0
+    down_count: int = 0
+    pending_count: int = 0
+    approved_count: int = 0
+    rejected_count: int = 0
+
+
+class AiFeedbackClustersResponse(BaseModel):
+    success: bool = True
+    total_traces: int
+    clusters: list[AiFeedbackClusterItem] = Field(default_factory=list)
+
+
+class AiFeedbackPurgeRequest(BaseModel):
+    retention_days: int | None = Field(default=None, ge=1, le=365)
+    dry_run: bool = False
+
+
+class AiFeedbackPurgeResponse(BaseModel):
+    success: bool = True
+    retention_days: int
+    dry_run: bool
+    matched_count: int
+    purged_count: int
+    cutoff_iso: str
+
+
+class AiDeidentifiedExportItem(BaseModel):
+    trace_id: str
+    created_at: str
+    surface: str
+    rating: str | None = None
+    reason_tag: str | None = None
+    comment: str | None = None
+    candidate_sha: str | None = None
+    model_version: str | None = None
+    provider_name: str
+    fallback_reason: str | None = None
+    operation_family: str | None = None
+    scope_team: str | None = None
+    scope_country: str | None = None
+    performance_level: str | None = None
+    cohort_size: int
+    evidence_ids: list[str] = Field(default_factory=list)
+    review_status: str
+    proposed_action: str | None = None
+
+
+class AiDeidentifiedExportBundleResponse(BaseModel):
+    success: bool = True
+    approved_only: bool = True
+    min_cohort_size: int = 5
+    exported_count: int
+    blocked_small_cohort_count: int = 0
+    blocked_pii_count: int = 0
+    items: list[AiDeidentifiedExportItem] = Field(default_factory=list)
 
 
 class AiDiagnosticsPayload(BaseModel):
