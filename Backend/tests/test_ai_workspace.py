@@ -3314,3 +3314,654 @@ def test_ai_diagnostics_db_failure_and_provider_status(monkeypatch):
     assert diag_none.inference_verified is False
     assert diag_none.routing_provider == "deterministic"
     assert diag_none.model_availability_reason == "no_credentials_configured"
+
+
+def test_ai_conversations_list_detail_ownership_and_failed_turn_retry(monkeypatch):
+    """Verify Phase 1 conversation list/detail endpoints, 404 ownership isolation, failed-turn persistence, and retry."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from api.middleware.auth_middleware import AuthMiddleware
+    from api.routers.ai_workspace import router as ai_router
+    from config.database import Base, get_db
+    from models.models import AiConversation, AiTurn, ProductSetting
+    from services.ai import orchestrator as orch_mod
+    from services.ai.router import AiProviderUnavailableError
+    from services.auth_service import AuthenticationService
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    with Session() as db:
+        AuthenticationService.create_user(db, "conv_admin_a", "conv_a@example.invalid", "AdminSecret123!", "Admin")
+        AuthenticationService.create_user(db, "conv_admin_b", "conv_b@example.invalid", "AdminSecret123!", "Admin")
+        AuthenticationService.create_user(db, "conv_mgr_c", "conv_c@example.invalid", "UserSecret123!", "Manager")
+        db.add(ProductSetting(key="ai_enabled", enabled=True))
+        db.commit()
+        tok_a = AuthenticationService.authenticate_user(db, "conv_admin_a", "AdminSecret123!")
+        tok_b = AuthenticationService.authenticate_user(db, "conv_admin_b", "AdminSecret123!")
+        tok_mgr = AuthenticationService.authenticate_user(db, "conv_mgr_c", "UserSecret123!")
+
+    _patch_records(
+        monkeypatch,
+        [
+            _make_call_center_record("EMP201", "Mariam Adel", "Inbound", 92.5, 45, 70, 50, 80, month="August"),
+            _make_call_center_record("EMP202", "Nour Samir", "Inbound", 84.0, 35, 60, 40, 70, month="August"),
+        ],
+    )
+
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+    app.include_router(ai_router, prefix="/api")
+
+    def override_db():
+        db = Session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    # Non-Admin blocked on GET /api/ai/conversations
+    assert client.get("/api/ai/conversations", headers={"Authorization": f"Bearer {tok_mgr}"}).status_code == 403
+
+    # Admin A runs Turn 1
+    res_turn1 = client.post(
+        "/api/ai/chat",
+        headers={"Authorization": f"Bearer {tok_a}"},
+        json={
+            "prompt": "What is Inbound score in August?",
+            "client_request_id": "req-phase1-t1",
+            "session_state": {"function": "Call Center", "month": "August", "year": 2026},
+        },
+    )
+    assert res_turn1.status_code == 200
+    t1_data = res_turn1.json()["data"]
+    conv_id = t1_data["conversation_id"]
+    ctx_ver = t1_data["context_version"]
+    assert conv_id
+
+    # Admin A sees the conversation in list; Admin B sees [] and receives 404 on detail
+    res_list_a = client.get("/api/ai/conversations", headers={"Authorization": f"Bearer {tok_a}"})
+    assert res_list_a.status_code == 200
+    convs_a = res_list_a.json()["conversations"]
+    assert len(convs_a) == 1
+    assert convs_a[0]["conversation_id"] == conv_id
+    assert "What is Inbound score in August?" in (convs_a[0]["title"] or "")
+    assert convs_a[0]["turn_count"] == 1
+    assert convs_a[0]["has_restricted_turns"] is False
+
+    res_list_b = client.get("/api/ai/conversations", headers={"Authorization": f"Bearer {tok_b}"})
+    assert res_list_b.status_code == 200
+    assert res_list_b.json()["conversations"] == []
+
+    assert client.get(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_b}"}).status_code == 404
+
+    res_detail_a = client.get(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_a}"})
+    assert res_detail_a.status_code == 200
+    detail_a = res_detail_a.json()["data"]
+    assert len(detail_a["turns"]) == 1
+    assert detail_a["turns"][0]["status"] == "completed"
+    assert detail_a["turns"][0]["user_prompt"] == "What is Inbound score in August?"
+
+    # Simulate provider 503 failure AFTER claim_or_replay_turn on Turn 2
+    orig_extract = orch_mod.extract_prompt_signals
+    should_fail = {"flag": True}
+
+    def failing_extract(prompt, session_state):
+        if should_fail["flag"]:
+            raise AiProviderUnavailableError("Cloudflare 503 simulated outage")
+        return orig_extract(prompt, session_state)
+
+    monkeypatch.setattr(orch_mod, "extract_prompt_signals", failing_extract)
+    res_turn2_fail = client.post(
+        "/api/ai/chat",
+        headers={"Authorization": f"Bearer {tok_a}"},
+        json={
+            "prompt": "Who is leading bookings in Dubai?",
+            "conversation_id": conv_id,
+            "context_version": ctx_ver,
+            "client_request_id": "req-phase1-t2-retryable",
+            "session_state": {"function": "Call Center", "month": "August", "year": 2026},
+        },
+    )
+    assert res_turn2_fail.status_code == 503
+
+    # Reload detail: Turn 2 is persisted with status='failed', user_prompt, and error_message
+    res_detail_failed = client.get(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_a}"})
+    assert res_detail_failed.status_code == 200
+    turns_failed = res_detail_failed.json()["data"]["turns"]
+    assert len(turns_failed) == 2
+    assert turns_failed[1]["status"] == "failed"
+    assert turns_failed[1]["user_prompt"] == "Who is leading bookings in Dubai?"
+    assert "Cloudflare 503 simulated outage" in (turns_failed[1]["error_message"] or "")
+
+    # Retry Turn 2 with the SAME client_request_id succeeds and clears error_message
+    should_fail["flag"] = False
+    res_turn2_retry = client.post(
+        "/api/ai/chat",
+        headers={"Authorization": f"Bearer {tok_a}"},
+        json={
+            "prompt": "Who is leading bookings in Dubai?",
+            "conversation_id": conv_id,
+            "context_version": ctx_ver,
+            "client_request_id": "req-phase1-t2-retryable",
+            "session_state": {"function": "Call Center", "month": "August", "year": 2026},
+        },
+    )
+    assert res_turn2_retry.status_code == 200
+    res_detail_recovered = client.get(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_a}"})
+    turns_recovered = res_detail_recovered.json()["data"]["turns"]
+    assert len(turns_recovered) == 2
+    assert turns_recovered[1]["status"] == "completed"
+    assert turns_recovered[1]["error_message"] is None
+
+    # Soft delete hides conversation from list & detail (404)
+    assert client.delete(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_a}"}).status_code == 200
+    assert client.get("/api/ai/conversations", headers={"Authorization": f"Bearer {tok_a}"}).json()["conversations"] == []
+    assert client.get(f"/api/ai/conversations/{conv_id}", headers={"Authorization": f"Bearer {tok_a}"}).status_code == 404
+
+
+def test_ai_conversations_live_rbac_redaction(monkeypatch):
+    """Verify list_conversations and get_conversation_detail redact historical turns when team/branch/region/level/employee access is revoked."""
+    from models.ai_schemas import (
+        AiChatResponsePayload,
+        ConfirmedQueryContext,
+        SessionFilterContext,
+        SourceCitationPill,
+    )
+    from models.models import User
+    from services.ai.conversation_service import AiConversationService
+
+    r1 = _make_call_center_record("EMP101", "Layla Hassan", "Outbound", 79.0, 30, 50, 20, 40, month="August")
+    r1.performance_level = "Managerial"
+    r2 = _make_call_center_record("EMP102", "Nour Samir", "Inbound", 93.0, 50, 75, 60, 85, month="August")
+    r2.performance_level = "Operational"
+    _patch_records(monkeypatch, [r1, r2])
+
+    db = _build_in_memory_db()
+    try:
+        full_scope = {
+            "user_id": "rbac-mgr-1",
+            "username": "rbac_mgr",
+            "role": "Manager",
+            "accessible_functions": ["Call Center"],
+            "accessible_teams": ["Inbound", "Outbound"],
+            "accessible_branches": ["dubai", "sharjah"],
+            "accessible_team_levels": [("Outbound", "Managerial"), ("Inbound", "Operational")],
+            "accessible_regions": ["UAE", "EGY"],
+            "employee_id": None,
+            "has_unrestricted_team_access": False,
+        }
+        svc = AiConversationService(db, full_scope)
+        conv = svc.create_conversation(session_state=SessionFilterContext(function="Call Center"))
+        conv_id = conv.conversation_id
+
+        # Turn 1: Outbound / Sharjah / UAE / Managerial / EMP101
+        turn1, _ = svc.claim_or_replay_turn(
+            conversation_id=conv_id,
+            expected_context_version=1,
+            client_request_id="rbac-t1",
+            prompt="How did Layla Hassan perform in Outbound Sharjah?",
+            scope=full_scope,
+        )
+        cc1 = ConfirmedQueryContext(
+            function="Call Center",
+            team="Outbound",
+            branch="sharjah",
+            performance_level="Managerial",
+            month="August",
+            year=2026,
+            last_subject_employee_id="EMP101",
+            last_subject_employee_name="Layla Hassan",
+        )
+        resp1 = AiChatResponsePayload(
+            trace_id="tr-1",
+            conversation_id=conv_id,
+            turn_id=str(turn1.id),
+            context_version=2,
+            outcome="answer",
+            answer_detail="brief",
+            headline="Layla Hassan scored 79.0% in Outbound Sharjah.",
+            citations=[SourceCitationPill(label="Layla Hassan · Outbound · Sharjah", category="scope")],
+            resolved_session_state=SessionFilterContext(
+                function="Call Center",
+                team="Outbound",
+                branch="sharjah",
+                region="UAE",
+                performance_level="Managerial",
+                month="August",
+                year=2026,
+                last_confirmed_query=cc1,
+            ),
+            scope_banner="Call Center · Outbound · Sharjah · August 2026",
+        )
+        svc.complete_turn(
+            conversation_id=conv_id,
+            turn_id=str(turn1.id),
+            expected_context_version=1,
+            claim_token=str(turn1.claim_token),
+            scope=full_scope,
+            outcome="answer",
+            turn_kind="analytical",
+            route_used="deterministic",
+            validated_plan={
+                "scope": {
+                    "function": "Call Center",
+                    "team": "Outbound",
+                    "branch": "sharjah",
+                    "region": "UAE",
+                    "performance_level": "Managerial",
+                    "employee_id": "EMP101",
+                    "employee_name": "Layla Hassan",
+                }
+            },
+            evidence_envelope=[
+                {
+                    "operation_id": "op_1",
+                    "outcome": "ok",
+                    "scope": {
+                        "function": "Call Center",
+                        "team": "Outbound",
+                        "branch": "sharjah",
+                        "region": "UAE",
+                        "performance_level": "Managerial",
+                        "employee_id": "EMP101",
+                        "employee_name": "Layla Hassan",
+                    },
+                }
+            ],
+            response_payload=resp1.model_dump(),
+            session_state=resp1.resolved_session_state,
+            confirmed_context=cc1,
+            provider_calls=0,
+            total_ms=10.0,
+        )
+
+        # Turn 2: Inbound / Dubai / Operational / EMP102
+        turn2, _ = svc.claim_or_replay_turn(
+            conversation_id=conv_id,
+            expected_context_version=2,
+            client_request_id="rbac-t2",
+            prompt="What is Inbound Dubai score?",
+            scope=full_scope,
+        )
+        cc2 = ConfirmedQueryContext(
+            function="Call Center",
+            team="Inbound",
+            branch="dubai",
+            performance_level="Operational",
+            month="August",
+            year=2026,
+            last_subject_employee_id="EMP102",
+            last_subject_employee_name="Nour Samir",
+        )
+        resp2 = AiChatResponsePayload(
+            trace_id="tr-2",
+            conversation_id=conv_id,
+            turn_id=str(turn2.id),
+            context_version=3,
+            outcome="answer",
+            answer_detail="brief",
+            headline="Nour Samir scored 93.0% in Inbound Dubai.",
+            citations=[SourceCitationPill(label="Nour Samir · Inbound · Dubai", category="scope")],
+            resolved_session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                branch="dubai",
+                region="EGY",
+                performance_level="Operational",
+                month="August",
+                year=2026,
+                last_confirmed_query=cc2,
+            ),
+            scope_banner="Call Center · Inbound · Dubai · August 2026",
+        )
+        svc.complete_turn(
+            conversation_id=conv_id,
+            turn_id=str(turn2.id),
+            expected_context_version=2,
+            claim_token=str(turn2.claim_token),
+            scope=full_scope,
+            outcome="answer",
+            turn_kind="analytical",
+            route_used="deterministic",
+            validated_plan={
+                "scope": {
+                    "function": "Call Center",
+                    "team": "Inbound",
+                    "branch": "dubai",
+                    "region": "EGY",
+                    "performance_level": "Operational",
+                    "employee_id": "EMP102",
+                    "employee_name": "Nour Samir",
+                }
+            },
+            evidence_envelope=[
+                {
+                    "operation_id": "op_2",
+                    "outcome": "ok",
+                    "scope": {
+                        "function": "Call Center",
+                        "team": "Inbound",
+                        "branch": "dubai",
+                        "region": "EGY",
+                        "performance_level": "Operational",
+                        "employee_id": "EMP102",
+                        "employee_name": "Nour Samir",
+                    },
+                }
+            ],
+            response_payload=resp2.model_dump(),
+            session_state=resp2.resolved_session_state,
+            confirmed_context=cc2,
+            provider_calls=0,
+            total_ms=10.0,
+        )
+
+        # Baseline authorized view: both turns completed
+        detail_full = svc.get_conversation_detail(conv_id, scope=full_scope)
+        assert detail_full is not None
+        assert detail_full.has_restricted_turns is False
+        assert [t.status for t in detail_full.turns] == ["completed", "completed"]
+
+        # Test all 5 revocation dimensions: team, branch, region, level, employee
+        revoked_scopes = [
+            {**full_scope, "accessible_teams": ["Inbound"]},  # team Outbound revoked
+            {**full_scope, "accessible_branches": ["dubai"]},  # branch sharjah revoked
+            {**full_scope, "role": "Regional Manager", "accessible_regions": ["EGY"]},  # UAE revoked
+            {**full_scope, "accessible_team_levels": [("Outbound", "Operational"), ("Inbound", "Operational")]},  # Managerial level revoked
+            {**full_scope, "role": "Employee", "employee_id": "EMP102", "is_self_only": True},  # EMP101 revoked
+        ]
+        for rev_scope in revoked_scopes:
+            rev_svc = AiConversationService(db, rev_scope)
+            listed = rev_svc.list_conversations(scope=rev_scope)
+            assert len(listed) == 1
+            assert listed[0].has_restricted_turns is True
+            assert listed[0].title == "Restricted conversation"
+            assert listed[0].last_scope_banner is None
+
+            detail = rev_svc.get_conversation_detail(conv_id, scope=rev_scope)
+            assert detail is not None
+            assert detail.has_restricted_turns is True
+            assert detail.title == "Restricted conversation"
+            t1, t2 = detail.turns
+            assert t1.status == "restricted"
+            assert t1.user_prompt == "Restricted question (scope no longer authorized)"
+            assert t1.scope_used is None
+            assert t1.period_used is None
+            assert t1.response is not None
+            assert t1.response.outcome == "restricted_access"
+            assert "79.0%" not in t1.response.headline
+            assert t1.response.citations == []
+            assert t1.response.visual_cards == []
+            assert t2.status == "completed"
+    finally:
+        db.close()
+
+
+def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
+    """Verify migration e2b4c8d9f0a1 cleanly upgrades and downgrades new conversation columns & ai_approved_patterns."""
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect, text
+
+    mig_dir = Path(__file__).resolve().parent.parent / "migrations" / "versions"
+    mig_file = next(mig_dir.glob("*e2b4c8d9f0a1*.py"))
+    spec = importlib.util.spec_from_file_location("mig_e2b4c8d9f0a1", mig_file)
+    assert spec is not None and spec.loader is not None
+    mig_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig_mod)
+    assert mig_mod.revision == "e2b4c8d9f0a1"
+    assert mig_mod.down_revision == "d1a8e4c6b720"
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE ai_conversations (
+                    id VARCHAR(64) PRIMARY KEY NOT NULL,
+                    owner_user_id VARCHAR(100) NOT NULL,
+                    status VARCHAR(32) NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE ai_turns (
+                    id VARCHAR(64) PRIMARY KEY NOT NULL,
+                    conversation_id VARCHAR(64) NOT NULL,
+                    turn_index INTEGER NOT NULL
+                )
+                """
+            )
+        )
+
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        orig_op = mig_mod.op
+        mig_mod.op = Operations(ctx)
+        try:
+            mig_mod.upgrade()
+        finally:
+            mig_mod.op = orig_op
+
+    insp = inspect(engine)
+    conv_cols = {c["name"] for c in insp.get_columns("ai_conversations")}
+    turn_cols = {c["name"] for c in insp.get_columns("ai_turns")}
+    assert "title" in conv_cols
+    assert {"user_prompt", "error_message"} <= turn_cols
+    assert insp.has_table("ai_approved_patterns")
+    pat_cols = {c["name"] for c in insp.get_columns("ai_approved_patterns")}
+    assert {"id", "normalized_pattern", "example_prompt_redacted", "intent", "verified_against_pms", "is_active"} <= pat_cols
+
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        orig_op = mig_mod.op
+        mig_mod.op = Operations(ctx)
+        try:
+            mig_mod.downgrade()
+        finally:
+            mig_mod.op = orig_op
+
+    insp_after = inspect(engine)
+    assert not insp_after.has_table("ai_approved_patterns")
+    assert "title" not in {c["name"] for c in insp_after.get_columns("ai_conversations")}
+    turn_cols_after = {c["name"] for c in insp_after.get_columns("ai_turns")}
+    assert "user_prompt" not in turn_cols_after
+    assert "error_message" not in turn_cols_after
+
+
+def test_phase2_followup_bookings_leader_month_and_branch_chain(monkeypatch):
+    """Verify Phase 2 multi-turn chain: Bookings leader -> What about September? -> And Dubai?"""
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 89.0, 40, 60, 180, 320, month="August"),
+        _make_call_center_record("EMP102", "Nour Samir", "Inbound", 84.0, 20, 40, 100, 150, month="August"),
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 88.0, 40, 60, 150, 210, month="September"),
+        _make_call_center_record("EMP102", "Nour Samir", "Inbound", 94.0, 30, 50, 260, 480, month="September"),
+    ]
+    _patch_records(monkeypatch, records)
+    scope = {"role": "Admin", "user_id": "admin-p2-1", "has_unrestricted_team_access": True}
+    orch = PmsAiOrchestrator(db, scope)
+    try:
+        r1 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Bookings leader",
+                session_state=SessionFilterContext(function="Call Center", month="August", year=2026),
+                provider_override="deterministic",
+            )
+        )
+        assert r1.outcome == "answer"
+        assert len(r1.suggested_followups) <= 1
+        assert "Sara Mahmoud" in r1.headline
+
+        r2 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What about September?",
+                conversation_id=r1.conversation_id,
+                expected_context_version=r1.context_version,
+                session_state=r1.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert r2.outcome == "answer"
+        assert len(r2.suggested_followups) <= 1
+        assert r2.resolved_session_state.month == "September"
+        assert "Nour Samir" in r2.headline
+
+        r3 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="And Dubai?",
+                conversation_id=r2.conversation_id,
+                expected_context_version=r2.context_version,
+                session_state=r2.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert r3.outcome == "answer"
+        assert r3.resolved_session_state.month == "September"
+        assert r3.resolved_session_state.branch == "dubai"
+        assert "Nour Samir" in r3.headline
+    finally:
+        db.close()
+
+
+def test_phase2_country_switch_and_why_did_it_drop_contributor_framing(monkeypatch):
+    """Verify country switch (Submission EGY -> UAE) and contributor framing for Why did it drop?"""
+    db = _build_in_memory_db()
+    sub_egy = _make_call_center_record("EMP301", "Hana Adel", "Submission EGY", 87.5, 0, 0, 0, 0, month="September")
+    sub_uae = _make_call_center_record("EMP302", "Reem Saeed", "Submission", 92.5, 0, 0, 0, 0, month="September")
+    sub_uae.region = "UAE"
+    records = [
+        sub_egy,
+        sub_uae,
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 92.0, 50, 60, 180, 200, month="July"),
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 74.0, 20, 60, 90, 200, month="August"),
+    ]
+    _patch_records(monkeypatch, records)
+    scope = {"role": "Admin", "user_id": "admin-p2-2", "has_unrestricted_team_access": True}
+    orch = PmsAiOrchestrator(db, scope)
+    try:
+        # 1. Country switch
+        c1 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What is Submission EGY score in September 2026?",
+                session_state=SessionFilterContext(month="September", year=2026),
+                provider_override="deterministic",
+            )
+        )
+        assert c1.outcome == "answer"
+        c2 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What about UAE?",
+                conversation_id=c1.conversation_id,
+                expected_context_version=c1.context_version,
+                session_state=c1.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert c2.outcome == "answer"
+        assert c2.resolved_session_state.team == "Submission"
+        assert c2.resolved_session_state.region == "UAE"
+
+        # 2. Score -> Why did it drop? (contributor framing, never root-cause / primary driver)
+        d1 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What is Inbound score in August?",
+                session_state=SessionFilterContext(function="Call Center", month="August", year=2026),
+                provider_override="deterministic",
+            )
+        )
+        assert d1.outcome == "answer"
+        d2 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Why did it drop?",
+                conversation_id=d1.conversation_id,
+                expected_context_version=d1.context_version,
+                session_state=d1.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert d2.outcome == "answer"
+        full_text = " ".join([d2.headline, *d2.narrative_bullets])
+        assert "Root-cause" not in full_text
+        assert "Primary driver" not in full_text
+        assert "contribut" in full_text.lower()
+    finally:
+        db.close()
+
+
+def test_phase2_ambiguous_vs_unambiguous_his_position_followup(monkeypatch):
+    """Verify single-agent 'What about his position?' resolves while plural top-3 asks clarification."""
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 95.0, 45, 50, 200, 220, month="September"),
+        _make_call_center_record("EMP102", "Nour Samir", "Inbound", 88.0, 35, 50, 150, 200, month="September"),
+        _make_call_center_record("EMP103", "Omar Khaled", "Inbound", 82.0, 30, 50, 120, 180, month="September"),
+    ]
+    _patch_records(monkeypatch, records)
+    scope = {"role": "Admin", "user_id": "admin-p2-3", "has_unrestricted_team_access": True}
+    orch = PmsAiOrchestrator(db, scope)
+    try:
+        # Unambiguous single top agent -> resolves position
+        s1 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Who is the top agent in Inbound in September?",
+                session_state=SessionFilterContext(function="Call Center", month="September", year=2026),
+                provider_override="deterministic",
+            )
+        )
+        assert s1.outcome == "answer"
+        assert "Sara Mahmoud" in s1.headline
+        s2 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What about his position?",
+                conversation_id=s1.conversation_id,
+                expected_context_version=s1.context_version,
+                session_state=s1.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert s2.outcome == "answer"
+        assert "Call Center Agent" in " ".join([s2.headline, *s2.narrative_bullets])
+
+        # Ambiguous plural top 3 agents -> clarifies which person
+        p1 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Show top 3 agents in Inbound in September",
+                session_state=SessionFilterContext(function="Call Center", month="September", year=2026),
+                provider_override="deterministic",
+            )
+        )
+        assert p1.outcome == "answer"
+        p2 = orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What about his position?",
+                conversation_id=p1.conversation_id,
+                expected_context_version=p1.context_version,
+                session_state=p1.resolved_session_state,
+                provider_override="deterministic",
+            )
+        )
+        assert p2.outcome == "clarification"
+        assert p2.clarification is not None
+        assert len(p2.clarification.choices) >= 2
+    finally:
+        db.close()
+

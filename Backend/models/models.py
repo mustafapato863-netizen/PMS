@@ -1510,6 +1510,7 @@ class AiConversation(Base):
     id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_user_id = Column(String(100), nullable=False, index=True)
     owner_role = Column(String(64), nullable=False, default="Manager")
+    title = Column(String(200), nullable=True)
     status = Column(String(24), nullable=False, default="active")
     context_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
     confirmed_context = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
@@ -1547,7 +1548,9 @@ class AiTurn(Base):
     status = Column(String(24), nullable=False, default="pending")
     claim_token = Column(String(64), nullable=True)
     processing_deadline = Column(DateTime(timezone=True), nullable=True)
+    user_prompt = Column(Text, nullable=True)
     user_prompt_redacted = Column(Text, nullable=False, default="")
+    error_message = Column(Text, nullable=True)
     validated_plan = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
     evidence_summary = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
     response_payload = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
@@ -1566,4 +1569,30 @@ class AiTurn(Base):
             name="ck_ai_turns_status",
         ),
         Index("idx_ai_turns_conv_created", "conversation_id", "created_at"),
+    )
+
+
+class AiApprovedPattern(Base):
+    """Admin-approved deterministic routing patterns derived from verified PMS AI feedback traces."""
+
+    __tablename__ = "ai_approved_patterns"
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_trace_id = Column(String(64), nullable=True, index=True)
+    normalized_pattern = Column(Text, nullable=False)
+    example_prompt_redacted = Column(Text, nullable=False)
+    intent = Column(String(64), nullable=False)
+    operation_kind = Column(String(64), nullable=True)
+    requested_parts = Column(JSON_COMPAT_TYPE, nullable=True)
+    tool_choice = Column(String(80), nullable=True)
+    metric_hint = Column(String(120), nullable=True)
+    failure_category = Column(String(64), nullable=True)
+    verified_against_pms = Column(Boolean, nullable=False, default=False, server_default=false())
+    approved_by_user_id = Column(String(100), nullable=True)
+    review_notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=true())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_ai_approved_patterns_active_intent", "is_active", "intent"),
     )

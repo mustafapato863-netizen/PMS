@@ -144,6 +144,7 @@ class ConfirmedQueryContext(BaseModel):
     position: str | None = None
     branch: str | None = None
     branches: list[str] = Field(default_factory=list)
+    region: str | None = None
     performance_level: str | None = None
     metric_id: str | None = None
     metric_display_name: str | None = None
@@ -153,6 +154,7 @@ class ConfirmedQueryContext(BaseModel):
     single_person: bool = False
     last_subject_employee_id: str | None = None
     last_subject_employee_name: str | None = None
+    candidate_employees: list[dict[str, str]] = Field(default_factory=list)
     last_operation_kind: str | None = None
     pending_clarification_code: ClarificationCodeType | None = None
     pending_clarification_choices: list[ClarificationChoice] = Field(default_factory=list)
@@ -240,6 +242,10 @@ ContextualCapabilityMode = Literal[
 
 FeedbackCategoryType = Literal[
     "helpful",
+    "wrong_data",
+    "misunderstood_question",
+    "lost_context",
+    "too_long",
     "incorrect_answer",
     "incorrect_scope",
     "incomplete_response",
@@ -869,6 +875,58 @@ class AiConversationResponse(BaseModel):
     data: AiConversationContextPayload
 
 
+class AiConversationSummaryItem(BaseModel):
+    conversation_id: str
+    title: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    turn_count: int = 0
+    last_outcome: str | None = None
+    last_scope_banner: str | None = None
+    last_period: str | None = None
+    has_restricted_turns: bool = False
+    context_version: int = 0
+
+
+class AiConversationListResponse(BaseModel):
+    success: bool = True
+    message: str = "Conversations loaded"
+    conversations: list[AiConversationSummaryItem] = Field(default_factory=list)
+
+
+class AiConversationTurnDetail(BaseModel):
+    turn_id: str
+    turn_index: int
+    status: Literal["pending", "completed", "failed", "restricted", "superseded"]
+    user_prompt: str
+    error_message: str | None = None
+    scope_used: str | None = None
+    period_used: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None
+    response: AiChatResponsePayload | None = None
+
+
+class AiConversationDetailPayload(BaseModel):
+    conversation_id: str
+    owner_user_id: str
+    title: str | None = None
+    status: Literal["active", "archived", "deleted"] = "active"
+    context_version: int = 0
+    confirmed_context: ConfirmedQueryContext = Field(default_factory=ConfirmedQueryContext)
+    pending_clarification: AiClarificationPrompt | None = None
+    has_restricted_turns: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+    turns: list[AiConversationTurnDetail] = Field(default_factory=list)
+
+
+class AiConversationDetailResponse(BaseModel):
+    success: bool = True
+    message: str = "Conversation loaded"
+    data: AiConversationDetailPayload
+
+
 EvidenceState = Literal["verified", "verified_no_data", "partial", "blocked", "not_applicable"]
 
 
@@ -990,24 +1048,83 @@ class AiPilotFeedbackResponse(BaseModel):
     pii_quarantined: bool = False
 
 
+class AiFeedbackTraceSample(BaseModel):
+    trace_id: str
+    prompt_redacted: str
+    intent: str
+    operation_kind: str | None = None
+    tool_choice: str | None = None
+    rating: str | None = None
+    failure_category: str = "unspecified"
+    feedback_reason: str | None = None
+    review_status: str = "pending"
+    reviewer_verified: bool = False
+    created_at: str | None = None
+
+
 class AiFeedbackClusterItem(BaseModel):
     surface: str
     fallback_reason: str
     operation_family: str
     scope_team: str
     reason_tag: str
+    intent: str = "unspecified"
+    failure_category: str = "unspecified"
     total_count: int
     up_count: int = 0
     down_count: int = 0
     pending_count: int = 0
     approved_count: int = 0
     rejected_count: int = 0
+    traces: list[AiFeedbackTraceSample] = Field(default_factory=list)
 
 
 class AiFeedbackClustersResponse(BaseModel):
     success: bool = True
     total_traces: int
     clusters: list[AiFeedbackClusterItem] = Field(default_factory=list)
+
+
+class AiApprovePatternRequest(BaseModel):
+    corrected_pattern_prompt: str | None = Field(default=None, max_length=300)
+    intent: str = Field(..., min_length=1, max_length=64)
+    operation_kind: str | None = Field(default=None, max_length=64)
+    requested_parts: list[str] | None = Field(default=None, max_length=10)
+    tool_choice: str | None = Field(default=None, max_length=80)
+    metric_hint: str | None = Field(default=None, max_length=120)
+    failure_category: str | None = Field(default=None, max_length=64)
+    verified_against_pms: bool = False
+    review_notes: str | None = Field(default=None, max_length=240)
+
+
+class AiApprovedPatternItem(BaseModel):
+    id: str
+    source_trace_id: str | None = None
+    normalized_pattern: str
+    example_prompt_redacted: str
+    intent: str
+    operation_kind: str | None = None
+    requested_parts: list[str] | None = None
+    tool_choice: str | None = None
+    metric_hint: str | None = None
+    failure_category: str | None = None
+    verified_against_pms: bool = False
+    approved_by_user_id: str | None = None
+    review_notes: str | None = None
+    is_active: bool = True
+    created_at: str | None = None
+
+
+class AiApprovedPatternListResponse(BaseModel):
+    success: bool = True
+    patterns: list[AiApprovedPatternItem] = Field(default_factory=list)
+
+
+class AiApprovePatternResponse(BaseModel):
+    success: bool = True
+    message: str = "Pattern verified and saved"
+    pattern: AiApprovedPatternItem
+    trace_review: AiTraceReviewResponse | None = None
 
 
 class AiFeedbackPurgeRequest(BaseModel):

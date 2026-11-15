@@ -130,6 +130,8 @@ def _body_for(path: str) -> dict | None:
         return {"retention_days": 90, "dry_run": True}
     if path.endswith("/proposals/confirm"):
         return PROPOSAL_BODY
+    if path.endswith("/approve-pattern"):
+        return {"intent": "ranking", "verified_against_pms": True}
     if path.endswith("/conversations"):
         return {}
     return None
@@ -152,6 +154,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "AiConversationService", Boom)
     monkeypatch.setattr(ai_workspace, "TrainingTraceLogger", Boom)
     monkeypatch.setattr(ai_workspace, "FeedbackGovernanceService", Boom)
+    monkeypatch.setattr(ai_workspace, "ApprovedPatternMatcher", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
     monkeypatch.setattr(ai_workspace, "build_ai_diagnostics_payload", boom)
@@ -167,11 +170,15 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
     inventory = sorted(f"{method} /api{path}" for method, path, _route in routes)
     assert inventory == [
         "DELETE /api/ai/conversations/{conversation_id}",
+        "DELETE /api/ai/feedback/patterns/{pattern_id}",
         "DELETE /api/ai/traces/{trace_id}",
         "GET /api/ai/catalog",
+        "GET /api/ai/conversations",
+        "GET /api/ai/conversations/{conversation_id}",
         "GET /api/ai/conversations/{conversation_id}/context",
         "GET /api/ai/feedback/clusters",
         "GET /api/ai/feedback/export-bundle",
+        "GET /api/ai/feedback/patterns",
         "GET /api/ai/traces/export",
         "GET /api/ai/watching",
         "POST /api/ai/chat",
@@ -179,6 +186,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "POST /api/ai/feedback",
         "POST /api/ai/proposals/confirm",
         "POST /api/ai/traces/purge",
+        "POST /api/ai/traces/{trace_id}/approve-pattern",
         "POST /api/ai/traces/{trace_id}/review",
     ]
     assert ai_workspace.AI_WORKSPACE_ROLES == ["Admin"]
@@ -229,7 +237,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
 def test_non_admin_is_forbidden_on_every_ai_route_when_the_switch_is_on(monkeypatch):
     client = _client(monkeypatch)
     for method, path, _route in _capability_routes():
-        url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1")
+        url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1", pattern_id="pat-1")
         body = _body_for(path)
         admin = client.request(method, url, headers={"X-User-Role": "Admin"}, json=body)
         assert admin.status_code == 418, (method, url, admin.status_code, admin.text)
@@ -243,7 +251,7 @@ def test_ai_routes_stay_closed_for_admin_when_the_switch_is_off(monkeypatch):
     monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: False)
     client = _client(monkeypatch)
     for method, path, _route in _capability_routes():
-        url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1")
+        url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1", pattern_id="pat-1")
         response = client.request(method, url, headers={"X-User-Role": "Admin"}, json=_body_for(path))
         assert response.status_code == 403
         assert response.json()["detail"] == "PMS AI is turned off."

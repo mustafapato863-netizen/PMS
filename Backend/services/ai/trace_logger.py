@@ -9,10 +9,11 @@ import unicodedata
 import uuid
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect, text as sa_text
 from sqlalchemy.orm import Session
 
 from models.ai_schemas import AiDistillationRecord, SessionFilterContext
-from models.models import AiConversation, AiInteractionTrace, AiTurn, Employee
+from models.models import AiApprovedPattern, AiConversation, AiInteractionTrace, AiTurn, Employee
 from services.ai.config import get_ai_runtime_config, redact_secrets
 from services.audit_service import AuditService
 
@@ -591,6 +592,26 @@ def assess_pii_quarantine(
     return (len(reasons) > 0), reasons
 
 
+def _ensure_conversation_v2_columns(bind: Any) -> None:
+    """Safely backfill newly added conversation/turn columns on pre-existing local/SQLite DBs."""
+    try:
+        insp = sa_inspect(bind)
+        tables = set(insp.get_table_names())
+        with bind.begin() as conn:
+            if "ai_conversations" in tables:
+                conv_cols = {c["name"] for c in insp.get_columns("ai_conversations")}
+                if "title" not in conv_cols:
+                    conn.execute(sa_text("ALTER TABLE ai_conversations ADD COLUMN title VARCHAR(200)"))
+            if "ai_turns" in tables:
+                turn_cols = {c["name"] for c in insp.get_columns("ai_turns")}
+                if "user_prompt" not in turn_cols:
+                    conn.execute(sa_text("ALTER TABLE ai_turns ADD COLUMN user_prompt TEXT"))
+                if "error_message" not in turn_cols:
+                    conn.execute(sa_text("ALTER TABLE ai_turns ADD COLUMN error_message TEXT"))
+    except Exception as exc:
+        logger.debug("AI conversation v2 column backfill skipped: %s", exc)
+
+
 def ensure_trace_schema_once(db: Session) -> None:
     """Ensure AI tables exist once per database engine in local/test environments only.
 
@@ -617,6 +638,8 @@ def ensure_trace_schema_once(db: Session) -> None:
             AiConversation.__table__.create(bind=bind, checkfirst=True)
             AiTurn.__table__.create(bind=bind, checkfirst=True)
             AiInteractionTrace.__table__.create(bind=bind, checkfirst=True)
+            AiApprovedPattern.__table__.create(bind=bind, checkfirst=True)
+            _ensure_conversation_v2_columns(bind)
             _INITIALIZED_ENGINE_KEYS.add(engine_key)
     except Exception as exc:
         logger.debug("AI schema one-time check skipped: %s", exc)
@@ -808,6 +831,53 @@ class TrainingTraceLogger:
                     updated_resp = dict(row.structured_response)
                     updated_resp["reviewer_verified"] = bool(reviewer_verified)
                     row.structured_response = updated_resp
+
+            prev_td = dict(row.tool_digest) if isinstance(row.tool_digest, dict) else {}
+            prev_gov = (
+                dict(prev_td.get("feedback_governance"))
+                if isinstance(prev_td.get("feedback_governance"), dict)
+                else {}
+            )
+            review_status = (
+                "approved"
+                if (is_admin_reviewer and bool(reviewer_verified))
+                else ("rejected" if (is_admin_reviewer and reviewer_verified is False) else "pending")
+            )
+            sess_dict = row.session_state if isinstance(row.session_state, dict) else {}
+            plan_dict = prev_td.get("plan") if isinstance(prev_td.get("plan"), dict) else {}
+            digests_list = prev_td.get("digests") if isinstance(prev_td.get("digests"), list) else []
+            first_digest = digests_list[0] if digests_list and isinstance(digests_list[0], dict) else {}
+            op_family = (
+                prev_gov.get("operation_family")
+                or plan_dict.get("intent")
+                or first_digest.get("operation")
+                or first_digest.get("tool_name")
+                or "workspace_chat"
+            )
+            scope_team = (
+                prev_gov.get("scope_team")
+                or plan_dict.get("team")
+                or sess_dict.get("team")
+                or "unspecified"
+            )
+            resolved_tag = category or ("helpful" if rating == "up" else "unspecified")
+            gov_meta = {
+                **prev_gov,
+                "surface": prev_gov.get("surface") or "workspace_chat",
+                "rating": rating,
+                "reason_tag": resolved_tag,
+                "review_status": review_status,
+                "reviewer_verified": bool(row.reviewer_verified),
+                "operation_family": str(op_family)[:80],
+                "scope_team": str(scope_team)[:120],
+            }
+            prev_td["feedback_governance"] = gov_meta
+            row.tool_digest = prev_td
+            updated_sr = dict(row.structured_response) if isinstance(row.structured_response, dict) else {}
+            updated_sr["feedback_governance"] = dict(gov_meta)
+            updated_sr["feedback_category"] = resolved_tag
+            updated_sr["reviewer_verified"] = bool(row.reviewer_verified)
+            row.structured_response = updated_sr
             self.db.commit()
             return True, bool(row.is_distillation_eligible)
         except TraceOwnershipError:

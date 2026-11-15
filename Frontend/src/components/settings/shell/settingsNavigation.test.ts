@@ -9,6 +9,7 @@ describe('settings slugs', () => {
     expect(pageForSlug('evaluation')).toBe('kpis');
     expect(pageForSlug('users')).toBe('users');
     expect(pageForSlug('system-errors')).toBe('system_errors');
+    expect(pageForSlug('ai-feedback')).toBe('ai_feedback');
   });
 
   it('gives no page for a missing or unknown slug', () => {
@@ -22,12 +23,14 @@ describe('settings slugs', () => {
     expect(settingsPathFor('overview')).toBe('/settings/overview');
     expect(settingsPathFor('kpis')).toBe('/settings/evaluation');
     expect(settingsPathFor('upload')).toBe('/settings/data');
+    expect(settingsPathFor('ai_feedback')).toBe('/settings/ai-feedback');
   });
 
   it('maps the legacy tab shortcuts to their sections and ignores anything else', () => {
     expect(pageForLegacyTab('upload')).toBe('upload');
     expect(pageForLegacyTab('users')).toBe('users');
     expect(pageForLegacyTab('corrective_actions')).toBe('corrective_actions');
+    expect(pageForLegacyTab('ai_feedback')).toBe('ai_feedback');
     expect(pageForLegacyTab('teams')).toBeNull();
     expect(pageForLegacyTab('unknown')).toBeNull();
     expect(pageForLegacyTab(null)).toBeNull();

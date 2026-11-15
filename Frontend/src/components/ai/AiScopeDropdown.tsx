@@ -69,7 +69,7 @@ export default function AiScopeDropdown({
         aria-expanded={isOpen}
         disabled={options.length === 0}
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
+        className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-all ${
           isOpen
             ? 'border-blue-500 bg-sky-50/70 text-slate-900 shadow-xs ring-3 ring-blue-500/10'
             : isFiltered
@@ -114,7 +114,7 @@ export default function AiScopeDropdown({
           aria-label={ariaLabel}
           className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[210px] origin-top-right rounded-2xl border border-slate-200/90 bg-white/98 p-1.5 shadow-[0_16px_36px_-6px_rgba(15,23,42,0.14)] backdrop-blur-xl ring-1 ring-slate-900/5"
         >
-          <div className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+          <div className="px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-slate-400">
             Select {prefix}
           </div>
           <div className="mt-0.5 space-y-0.5">
@@ -148,7 +148,7 @@ export default function AiScopeDropdown({
                   <div className="flex items-center gap-1.5">
                     {opt.badge && (
                       <span
-                        className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                        className={`rounded-md px-1.5 py-0.5 text-xs font-bold ${
                           active
                             ? 'bg-white/90 text-blue-700'
                             : 'bg-slate-100 text-slate-500'

@@ -41,10 +41,15 @@ export type ContextualCapabilityMode =
   | 'unsupported';
 
 export type FeedbackCategoryType =
+  | 'wrong_data'
+  | 'misunderstood_question'
+  | 'lost_context'
+  | 'too_long'
   | 'incorrect_answer'
   | 'incorrect_scope'
   | 'incomplete_response'
   | 'poor_suggestion'
+  | 'other'
   | 'helpful';
 
 export interface PageContextV1 {
@@ -619,4 +624,155 @@ export interface AiCorrectiveActionSuggestionResponse {
   success: boolean;
   message: string;
   data: AiCorrectiveActionSuggestionPayload;
+}
+
+export interface AiConversationSummaryItem {
+  conversation_id: string;
+  title?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  turn_count: number;
+  last_outcome?: string | null;
+  last_scope_banner?: string | null;
+  last_period?: string | null;
+  has_restricted_turns: boolean;
+  context_version: number;
+}
+
+export interface AiConversationListResponse {
+  success: boolean;
+  message: string;
+  conversations: AiConversationSummaryItem[];
+}
+
+export type AiConversationTurnStatus =
+  | 'pending'
+  | 'completed'
+  | 'failed'
+  | 'restricted'
+  | 'superseded';
+
+export interface AiConversationTurnDetail {
+  turn_id: string;
+  turn_index: number;
+  status: AiConversationTurnStatus;
+  user_prompt: string;
+  error_message?: string | null;
+  scope_used?: string | null;
+  period_used?: string | null;
+  created_at?: string | null;
+  completed_at?: string | null;
+  response?: AiChatResponsePayload | null;
+}
+
+export interface AiConversationDetailPayload {
+  conversation_id: string;
+  owner_user_id: string;
+  title?: string | null;
+  status: 'active' | 'archived' | 'deleted';
+  context_version: number;
+  confirmed_context: ConfirmedQueryContext;
+  pending_clarification?: AiClarificationPrompt | null;
+  has_restricted_turns: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  turns: AiConversationTurnDetail[];
+}
+
+export interface AiConversationDetailResponse {
+  success: boolean;
+  message: string;
+  data: AiConversationDetailPayload;
+}
+
+export interface AiFeedbackTraceSample {
+  trace_id: string;
+  prompt_redacted: string;
+  intent: string;
+  operation_kind?: string | null;
+  tool_choice?: string | null;
+  rating?: string | null;
+  failure_category: string;
+  feedback_reason?: string | null;
+  review_status: string;
+  reviewer_verified: boolean;
+  created_at?: string | null;
+}
+
+export interface AiFeedbackClusterItem {
+  surface: string;
+  fallback_reason: string;
+  operation_family: string;
+  scope_team: string;
+  reason_tag: string;
+  intent: string;
+  failure_category: string;
+  total_count: number;
+  up_count: number;
+  down_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  traces: AiFeedbackTraceSample[];
+}
+
+export interface AiFeedbackClustersResponse {
+  success: boolean;
+  total_traces: number;
+  clusters: AiFeedbackClusterItem[];
+}
+
+export interface AiApprovedPatternItem {
+  id: string;
+  source_trace_id?: string | null;
+  normalized_pattern: string;
+  example_prompt_redacted: string;
+  intent: string;
+  operation_kind?: string | null;
+  requested_parts?: string[] | null;
+  tool_choice?: string | null;
+  metric_hint?: string | null;
+  failure_category?: string | null;
+  verified_against_pms: boolean;
+  approved_by_user_id?: string | null;
+  review_notes?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+}
+
+export interface AiApprovedPatternListResponse {
+  success: boolean;
+  patterns: AiApprovedPatternItem[];
+}
+
+export interface AiApprovePatternRequest {
+  corrected_pattern_prompt?: string | null;
+  intent: string;
+  operation_kind?: string | null;
+  requested_parts?: string[] | null;
+  tool_choice?: string | null;
+  metric_hint?: string | null;
+  failure_category?: string | null;
+  verified_against_pms: boolean;
+  review_notes?: string | null;
+}
+
+export interface AiTraceReviewResponse {
+  success: boolean;
+  message: string;
+  trace_id: string;
+  reviewer_verified: boolean;
+  reviewer_id: string;
+  reviewed_at: string;
+  is_distillation_eligible: boolean;
+  decision: 'approved' | 'rejected';
+  review_status: 'approved' | 'rejected';
+  proposed_action?: string | null;
+}
+
+export interface AiApprovePatternResponse {
+  success: boolean;
+  message: string;
+  pattern: AiApprovedPatternItem;
+  trace_review?: AiTraceReviewResponse | null;
 }

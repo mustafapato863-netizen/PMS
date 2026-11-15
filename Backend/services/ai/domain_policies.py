@@ -259,7 +259,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
 
     asks_person_word = any(
         re.search(rf"\b{w}\b", lower)
-        for w in ("who", "agent", "agents", "employee", "employees", "person", "people", "his", "her", "performer", "member", "members")
+        for w in ("who", "agent", "agents", "employee", "employees", "person", "people", "his", "her", "performer", "performers", "leader", "leaders", "member", "members")
     )
     if any(
         phrase in lower
@@ -340,14 +340,20 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         ]
         stop_words = {
             "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
-            "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
+            "dxb", "shj", "ajm", "uae", "egy", "egypt", "emirates",
+            "all", "team", "teams", "branch", "branches", "the", "his", "her", "their", "its", "this", "that", "and", "in",
             "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
-            "lowest", "top", "bottom", "trend", "month", "january", "february", "march", "april",
+            "lowest", "weakest", "strongest", "top", "bottom", "most", "fewest", "more", "less",
+            "trend", "month", "months", "overall", "summary", "january", "february", "march", "april",
             "may", "june", "july", "august", "september", "october", "november", "december",
-            "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
-            "scored", "scores", "scoring", "performed", "performing", "performance", "score",
-            "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
+            "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading", "leader", "leaders",
+            "generated", "achieved", "recorded", "delivered", "scored", "scores", "scoring",
+            "performed", "performing", "performance", "score", "rate", "by", "for", "of",
+            "support", "positions", "position", "role", "roles", "employee", "employees",
             "agent", "agents", "performer", "performers", "highest",
+            "booking", "bookings", "attendance", "attended", "reachability", "abandon", "abandoned",
+            "aht", "quality", "target", "targets", "gap", "gaps", "drop", "dropped", "dropping",
+            "show", "tell", "give", "list", "find", "get", "display", "check", "within",
         }
         for pat in name_patterns:
             m = re.search(pat, text, flags=re.IGNORECASE)

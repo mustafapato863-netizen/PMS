@@ -207,6 +207,7 @@ function renderWorkspace(initialEntry = '/ai') {
 describe('PmsAiWorkspaceView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     mockAuthState.currentUser = {
       id: 'mgr-1',
       name: 'Salma Hassan',
@@ -217,6 +218,9 @@ describe('PmsAiWorkspaceView', () => {
     mockedApiFetch.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/conversations') {
+        return { success: true, message: 'Loaded', conversations: [] };
       }
       if (path === '/api/ai/chat') {
         return CHAT_RESPONSE;
@@ -310,7 +314,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.queryByText('Feedback saved')).not.toBeInTheDocument();
   });
 
-  it('renders Executive Brief mode with scope banner, primary source link, and zero-call Show details expansion', async () => {
+  it('renders Executive Brief mode with scope banner, primary source link, and zero-call View details expansion', async () => {
     mockedApiFetch.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
@@ -355,16 +359,16 @@ describe('PmsAiWorkspaceView', () => {
 
     // Visual breakdown cards start collapsed in Brief mode
     expect(screen.queryByText('Tarek Nabil · Inbound')).not.toBeInTheDocument();
-    const showDetailsBtn = screen.getByRole('button', { name: /Show details/i });
-    expect(showDetailsBtn).toHaveAttribute('aria-expanded', 'false');
+    const viewDetailsBtn = screen.getByRole('button', { name: /View details/i });
+    expect(viewDetailsBtn).toHaveAttribute('aria-expanded', 'false');
 
     const chatCallsBeforeExpand = mockedApiFetch.mock.calls.filter(
       (call) => call[0] === '/api/ai/chat',
     ).length;
     expect(chatCallsBeforeExpand).toBe(1);
 
-    // Clicking Show details expands the same authorized evidence with zero additional model calls
-    fireEvent.click(showDetailsBtn);
+    // Clicking View details expands the same authorized evidence with zero additional model calls
+    fireEvent.click(viewDetailsBtn);
 
     expect(screen.getByText('Tarek Nabil · Inbound')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Hide details/i })).toHaveAttribute(
@@ -476,15 +480,18 @@ describe('PmsAiWorkspaceView', () => {
     expect(thirdCallBody.context_version).toBe(2);
     expect(thirdCallBody.clarification_choice_id).toBe('choice-patient-attendance-inbound');
 
-    // Clicking New chat deletes the server conversation and resets the stream
-    const newChatBtn = screen.getByRole('button', { name: /New chat/i });
+    // Clicking New chat resets to a fresh draft conversation WITHOUT calling DELETE on the previous chat
+    const newChatBtn = screen.getByTestId('ai-new-chat-btn');
     fireEvent.click(newChatBtn);
     await waitFor(() => {
-      expect(mockedApiFetch).toHaveBeenCalledWith(
-        '/api/ai/conversations/conv-123',
-        expect.objectContaining({ method: 'DELETE' }),
-      );
+      expect(screen.getByText(/Hi Salma, how can I help\?/i)).toBeInTheDocument();
     });
+    const deleteCalls = mockedApiFetch.mock.calls.filter(
+      (call) =>
+        call[0] === '/api/ai/conversations/conv-123' &&
+        (call[1] as { method?: string } | undefined)?.method === 'DELETE',
+    );
+    expect(deleteCalls).toHaveLength(0);
   });
 
   it('cancels in-flight requests on scope filter change and clears incompatible confirmed context', async () => {
@@ -909,5 +916,393 @@ describe('PmsAiWorkspaceView', () => {
 
     expect(screen.getByText('Compare EGY teams & KPIs')).toBeInTheDocument();
     expect(screen.queryByText(/Dubai|Sharjah|UAE|Ajman|Clinics/i)).not.toBeInTheDocument();
+  });
+
+  it('lists Recent chats, cancels delete cleanly, and confirms delete with DELETE API', async () => {
+    const conversations = [
+      {
+        conversation_id: 'conv-a',
+        title: 'Inbound bookings leader',
+        created_at: '2026-09-01T10:00:00Z',
+        updated_at: '2026-09-01T10:05:00Z',
+        turn_count: 2,
+        last_outcome: 'answer',
+        last_scope_banner: 'Call Center · Inbound · August 2026',
+        last_period: 'August 2026',
+        has_restricted_turns: false,
+        context_version: 2,
+      },
+    ];
+    mockedApiFetch.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/ai/conversations') {
+        return { success: true, message: 'Loaded', conversations };
+      }
+      if (path === '/api/ai/conversations/conv-a' && init?.method === 'DELETE') {
+        return { success: true, message: 'Deleted' };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    const toggleBtn = screen.getByTestId('ai-history-toggle');
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-recent-chat-conv-a')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Inbound bookings leader')).toBeInTheDocument();
+
+    // Cancel delete does not call DELETE
+    fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
+    expect(screen.getByLabelText('Confirm delete conversation')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Cancel delete conversation'));
+    expect(screen.queryByLabelText('Confirm delete conversation')).not.toBeInTheDocument();
+    expect(
+      mockedApiFetch.mock.calls.filter(
+        (c) => c[0] === '/api/ai/conversations/conv-a' && (c[1] as { method?: string })?.method === 'DELETE',
+      ),
+    ).toHaveLength(0);
+
+    // Confirm delete calls DELETE and removes row
+    fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
+    fireEvent.click(screen.getByLabelText('Confirm delete conversation'));
+
+    await waitFor(() => {
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        '/api/ai/conversations/conv-a',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('ai-recent-chat-conv-a')).not.toBeInTheDocument();
+    });
+  });
+
+  it('resumes saved conversation from URL & sessionStorage, renders failed-turn Retry, and handles 404 safely', async () => {
+    const convDetail = {
+      success: true,
+      message: 'Loaded',
+      data: {
+        conversation_id: 'conv-resume',
+        owner_user_id: 'mgr-1',
+        title: 'Inbound score check',
+        status: 'active',
+        context_version: 2,
+        confirmed_context: { function: 'Call Center', team: 'Inbound', month: 'August', year: 2026 },
+        pending_clarification: null,
+        has_restricted_turns: false,
+        created_at: '2026-09-01T10:00:00Z',
+        updated_at: '2026-09-01T10:02:00Z',
+        turns: [
+          {
+            turn_id: 'turn-1',
+            turn_index: 1,
+            status: 'completed',
+            user_prompt: 'What is Inbound score in August?',
+            error_message: null,
+            scope_used: 'Call Center · Inbound',
+            period_used: 'August 2026',
+            created_at: '2026-09-01T10:00:00Z',
+            completed_at: '2026-09-01T10:00:05Z',
+            response: CHAT_RESPONSE.data,
+          },
+          {
+            turn_id: 'turn-2',
+            turn_index: 2,
+            status: 'failed',
+            user_prompt: 'Why did it drop?',
+            error_message: 'AI provider temporarily unavailable.',
+            scope_used: null,
+            period_used: null,
+            created_at: '2026-09-01T10:01:00Z',
+            completed_at: null,
+            response: null,
+          },
+        ],
+      },
+    };
+
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/conversations') {
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: [
+            {
+              conversation_id: 'conv-resume',
+              title: 'Inbound score check',
+              created_at: '2026-09-01T10:00:00Z',
+              updated_at: '2026-09-01T10:02:00Z',
+              turn_count: 2,
+              last_outcome: 'failed',
+              last_scope_banner: 'Call Center · Inbound',
+              last_period: 'August 2026',
+              has_restricted_turns: false,
+              context_version: 2,
+            },
+          ],
+        };
+      }
+      if (path === '/api/ai/conversations/conv-resume') {
+        return convDetail;
+      }
+      if (path === '/api/ai/conversations/conv-missing') {
+        throw new Error('HTTP 404: Conversation not found.');
+      }
+      return { success: true };
+    });
+
+    // 1. Resume via ?conversation=conv-resume
+    const firstRender = renderWorkspace('/ai?conversation=conv-resume');
+    await waitFor(() => {
+      expect(screen.getByText('What is Inbound score in August?')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Why did it drop?')).toBeInTheDocument();
+    expect(screen.getByText('AI provider temporarily unavailable.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+    expect(sessionStorage.getItem('pms_ai_last_conversation_mgr-1')).toBe('conv-resume');
+    firstRender.unmount();
+
+    // 2. Reopen /ai with no query param -> restores from per-user sessionStorage
+    const secondRender = renderWorkspace('/ai');
+    await waitFor(() => {
+      expect(screen.getByText('What is Inbound score in August?')).toBeInTheDocument();
+    });
+    secondRender.unmount();
+
+    // 3. Missing / unauthorized conversation -> non-leaking notice & fallback to empty draft
+    sessionStorage.clear();
+    renderWorkspace('/ai?conversation=conv-missing');
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'That conversation is no longer available or outside your current permissions. Started a new chat.',
+      );
+    });
+    expect(screen.getByText(/Hi Salma, how can I help\?/i)).toBeInTheDocument();
+  });
+
+  it('renders restricted historical turns without leaking revoked scope or citations', async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/conversations') {
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: [
+            {
+              conversation_id: 'conv-revoked',
+              title: 'Restricted conversation',
+              created_at: '2026-09-01T10:00:00Z',
+              updated_at: '2026-09-01T10:05:00Z',
+              turn_count: 1,
+              last_outcome: 'restricted_access',
+              last_scope_banner: null,
+              last_period: null,
+              has_restricted_turns: true,
+              context_version: 1,
+            },
+          ],
+        };
+      }
+      if (path === '/api/ai/conversations/conv-revoked') {
+        return {
+          success: true,
+          message: 'Loaded',
+          data: {
+            conversation_id: 'conv-revoked',
+            owner_user_id: 'mgr-1',
+            title: 'Restricted conversation',
+            status: 'active',
+            context_version: 1,
+            confirmed_context: {},
+            pending_clarification: null,
+            has_restricted_turns: true,
+            created_at: '2026-09-01T10:00:00Z',
+            updated_at: '2026-09-01T10:05:00Z',
+            turns: [
+              {
+                turn_id: 'turn-r1',
+                turn_index: 1,
+                status: 'restricted',
+                user_prompt: 'Restricted question (scope no longer authorized)',
+                error_message: null,
+                scope_used: null,
+                period_used: null,
+                created_at: '2026-09-01T10:00:00Z',
+                completed_at: '2026-09-01T10:00:03Z',
+                response: {
+                  ...CHAT_RESPONSE.data,
+                  outcome: 'restricted_access',
+                  headline:
+                    'This historical answer is hidden because your current permissions no longer include its data scope.',
+                  narrative_bullets: [],
+                  visual_cards: [],
+                  citations: [],
+                  deep_links: [],
+                  primary_source_link: null,
+                  suggested_followups: [],
+                  scope_banner: null,
+                },
+              },
+            ],
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai?conversation=conv-revoked');
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'This historical answer is hidden because your current permissions no longer include its data scope.',
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText('Restricted question (scope no longer authorized)')).toBeInTheDocument();
+    expect(screen.queryByText(/Sharjah|96\.4%/)).not.toBeInTheDocument();
+  });
+
+  it('keeps in-flight request alive across New chat switching without aborting or leaking responses', async () => {
+    let resolveChatA!: (value: unknown) => void;
+    let chatASignal: AbortSignal | undefined;
+
+    mockedApiFetch.mockImplementation((path: string, init?: { body?: string; signal?: AbortSignal }) => {
+      if (path === '/api/ai/conversations') {
+        return Promise.resolve({ success: true, message: 'Loaded', conversations: [] });
+      }
+      if (path === '/api/ai/chat') {
+        const parsed = JSON.parse(String(init?.body || '{}'));
+        if (parsed.prompt === 'Slow question in Chat A') {
+          chatASignal = init?.signal;
+          return new Promise((resolve) => {
+            resolveChatA = resolve;
+          });
+        }
+        return Promise.resolve({
+          ...CHAT_RESPONSE,
+          data: {
+            ...CHAT_RESPONSE.data,
+            conversation_id: 'conv-chat-b',
+            context_version: 1,
+            headline: 'Chat B completed cleanly.',
+          },
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    renderWorkspace('/ai?function=Call%20Center');
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Slow question in Chat A' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Slow question in Chat A')).toBeInTheDocument();
+    });
+
+    // Switch to New chat while Chat A is still in-flight
+    fireEvent.click(screen.getByTestId('ai-new-chat-btn'));
+
+    // Chat A was NOT aborted
+    expect(chatASignal?.aborted).toBe(false);
+
+    // Chat B composer is enabled and can run independently
+    const inputB = screen.getByRole('textbox');
+    expect(inputB).not.toBeDisabled();
+    fireEvent.change(inputB, { target: { value: 'Fast question in Chat B' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat B completed cleanly.')).toBeInTheDocument();
+    });
+
+    // Now Chat A completes in background -> Chat B stream must NOT be overwritten
+    resolveChatA({
+      ...CHAT_RESPONSE,
+      data: {
+        ...CHAT_RESPONSE.data,
+        conversation_id: 'conv-chat-a',
+        context_version: 1,
+        headline: 'Chat A resolved in background.',
+      },
+    });
+
+    await waitFor(() => {
+      const convListCalls = mockedApiFetch.mock.calls.filter(
+        (c) => c[0] === '/api/ai/conversations',
+      );
+      expect(convListCalls.length).toBeGreaterThanOrEqual(4);
+    });
+    expect(screen.getByText('Chat B completed cleanly.')).toBeInTheDocument();
+    expect(screen.queryByText('Chat A resolved in background.')).not.toBeInTheDocument();
+  });
+
+  it('renders conversation-first new-chat screen with <= 3 starters, Guardrails Info popover, mobile Filters toggle, and Escape-dismissible history drawer', async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/conversations') {
+        return {
+          success: true,
+          message: 'OK',
+          conversations: [
+            {
+              conversation_id: 'conv-drawer-1',
+              title: 'Inbound bookings check',
+              created_at: '2026-09-01T10:00:00Z',
+              updated_at: '2026-09-01T10:05:00Z',
+              turn_count: 1,
+              last_outcome: 'answer',
+              last_scope_banner: 'Call Center · Inbound',
+              last_period: 'September 2026',
+              has_restricted_turns: false,
+              context_version: 1,
+            },
+          ],
+        };
+      }
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai?function=Call%20Center');
+
+    // New-chat greeting displays at most 3 starter suggestions and no category tablist
+    const starterGrid = screen.getByTestId('ai-starter-suggestions');
+    expect(starterGrid.querySelectorAll('button').length).toBeLessThanOrEqual(3);
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+
+    // Mobile Filters toggle updates aria-expanded cleanly
+    const filtersToggle = screen.getByRole('button', { name: 'Show scope filters' });
+    expect(filtersToggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(filtersToggle);
+    expect(screen.getByRole('button', { name: 'Hide scope filters' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+
+    // Guardrails Info button opens accessible dialog constrained to container width and closes on Escape
+    const infoBtn = screen.getByRole('button', { name: 'How PMS AI protects data' });
+    fireEvent.click(infoBtn);
+    const guardrailsDialog = screen.getByRole('dialog', { name: 'How PMS AI protects data' });
+    expect(guardrailsDialog).toBeInTheDocument();
+    expect(guardrailsDialog).toHaveClass('max-w-[calc(100%-2rem)]');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(
+      screen.queryByRole('dialog', { name: 'How PMS AI protects data' }),
+    ).not.toBeInTheDocument();
+
+    // Recent chats drawer opens via toggle and closes cleanly via Escape key
+    fireEvent.click(screen.getByTestId('ai-history-toggle'));
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-recent-chats-panel')).toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('ai-recent-chats-panel')).not.toBeInTheDocument();
+    });
   });
 });

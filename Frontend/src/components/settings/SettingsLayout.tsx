@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ClipboardCheck, Database, LayoutDashboard, SlidersHorizontal, Users, type LucideIcon } from 'lucide-react';
+import { Activity, ClipboardCheck, Database, LayoutDashboard, MessageSquareWarning, SlidersHorizontal, Users, type LucideIcon } from 'lucide-react';
 import { settingsPathFor, type SettingsPage, type SettingsRoutePage } from './shell/settingsNavigation';
 
 /**
@@ -37,7 +37,13 @@ const NAV_GROUPS: NavGroup[] = [
   },
   { label: 'Evaluation', items: [{ page: 'kpis', label: 'Evaluation settings', icon: SlidersHorizontal }] },
   { label: 'Access', items: [{ page: 'users', label: 'Users', icon: Users }] },
-  { label: 'System', items: [{ page: 'system_errors', label: 'System errors', icon: Activity }] },
+  {
+    label: 'System',
+    items: [
+      { page: 'system_errors', label: 'System errors', icon: Activity },
+      { page: 'ai_feedback', label: 'AI feedback', icon: MessageSquareWarning },
+    ],
+  },
 ];
 
 function matches(query: string) {

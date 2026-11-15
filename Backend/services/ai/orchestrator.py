@@ -26,7 +26,12 @@ from models.ai_schemas import (
     ValidatedQueryPlanV2,
 )
 from models.report_schemas import MONTHS
-from services.ai.catalog import ai_evidence_cache, evaluation_cache_identity, get_ai_catalog
+from services.ai.catalog import (
+    ai_evidence_cache,
+    check_scope_data_availability,
+    evaluation_cache_identity,
+    get_ai_catalog,
+)
 from services.ai.claim_validator import ClaimFact, build_claim_ledger, validate_claims
 from services.ai.config import get_ai_runtime_config
 from services.ai.contextual_assistant import (
@@ -59,8 +64,8 @@ from services.ai.local_evidence_synthesis import (
 )
 from services.ai.llm_client import active_provider_name, configured_model_name
 from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
-from services.ai.providers import DeterministicLocalProviderAdapter, resolve_variation_index
-from services.ai.router import HybridQueryRouter, RouterValidationResult
+from services.ai.providers import DeterministicLocalProviderAdapter, ProviderUnavailableError, resolve_variation_index
+from services.ai.router import AiProviderUnavailableError, HybridQueryRouter, RouterValidationResult
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
     ToolExecutionContext,
@@ -454,9 +459,30 @@ class PmsAiOrchestrator:
         )
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
-        return self._execute_chat_turn(req)
+        claim_state: dict[str, Any] = {}
+        try:
+            return self._execute_chat_turn(req, _claim_state=claim_state)
+        except (ProviderUnavailableError, AiProviderUnavailableError) as exc:
+            conv_service = claim_state.get("conv_service")
+            claimed_turn = claim_state.get("claimed_turn")
+            if conv_service is not None and claimed_turn is not None:
+                try:
+                    conv_service.fail_turn(
+                        conversation_id=claim_state.get("active_conversation_id"),
+                        turn_id=str(claimed_turn.id),
+                        claim_token=claim_state.get("claimed_token"),
+                        prompt=req.prompt,
+                        error_message=str(exc) or "AI provider unavailable",
+                    )
+                except Exception:
+                    pass
+            raise
 
-    def _execute_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
+    def _execute_chat_turn(
+        self,
+        req: AiChatRequest,
+        _claim_state: dict[str, Any] | None = None,
+    ) -> AiChatResponsePayload:
         t0 = time.perf_counter()
         cfg = get_ai_runtime_config()
         role = str(self.scope.get("role") or "Manager")
@@ -476,9 +502,11 @@ class PmsAiOrchestrator:
             if not live_auth_service._is_function_authorized(lcq.function, self.scope):
                 lcq.function = None
             if (lcq.team or lcq.performance_level) and not live_auth_service._is_team_and_level_authorized(
-                lcq.team, lcq.performance_level, self.scope
+                lcq.team, lcq.performance_level, self.scope, region=lcq.region
             ):
-                if lcq.team and not live_auth_service._is_team_and_level_authorized(lcq.team, "Employee", self.scope):
+                if lcq.team and not live_auth_service._is_team_and_level_authorized(
+                    lcq.team, "Employee", self.scope, region=lcq.region
+                ):
                     lcq.team = None
                     lcq.position = None
                     lcq.metric_id = None
@@ -525,6 +553,11 @@ class PmsAiOrchestrator:
                 return AiChatResponsePayload.model_validate(replayed_payload)
             claimed_token = str(claimed_turn.claim_token)
             active_context_version = claimed_context_version
+            if _claim_state is not None:
+                _claim_state["conv_service"] = conv_service
+                _claim_state["claimed_turn"] = claimed_turn
+                _claim_state["claimed_token"] = claimed_token
+                _claim_state["active_conversation_id"] = active_conversation_id
 
         is_greeting = bool(
             re.fullmatch(
@@ -767,7 +800,7 @@ class PmsAiOrchestrator:
                 narrative_bullets=[
                     "Switch to a published period with verified backend PMS records before running analytical queries or creating corrective actions."
                 ],
-                suggested_followups=["What does this page show?", "How do I find my scorecard?"],
+                suggested_followups=["What does this page show?"],
                 resolved_session_state=req.session_state,
                 scope_banner=eff_ctx_label_initial,
                 effective_context_label=eff_ctx_label_initial,
@@ -1025,6 +1058,7 @@ class PmsAiOrchestrator:
             scope=self.scope,
             published_periods=published_periods,
             employee_candidates=employee_candidates,
+            db=self.db,
         ).resolve_and_validate(
             prompt=req.prompt,
             session_state=req.session_state,
@@ -1059,6 +1093,9 @@ class PmsAiOrchestrator:
                 signals.asks_booking_count = True
         if routed.plan.employee_id:
             signals.detected_employee_query = routed.plan.employee_id
+        elif routed.plan.intent == "ranking":
+            signals.detected_employee_query = None
+        signals.asks_single_person = bool(routed.plan.single_person)
         if routed.confirmed_context.last_operation_kind in ("employee_worst_period", "person_worst_period"):
             signals.asks_worst_month_history = True
             signals.asks_best_month_history = False
@@ -1166,7 +1203,7 @@ class PmsAiOrchestrator:
                 team=routed.plan.team or req.session_state.team,
                 position=routed.plan.position or req.session_state.position,
                 branch=routed.plan.branch or req.session_state.branch,
-                region=req.session_state.region,
+                region=routed.confirmed_context.region or req.session_state.region,
                 performance_level=routed.plan.performance_level or req.session_state.performance_level,
                 month=p_month or req.session_state.month,
                 year=p_year or req.session_state.year,
@@ -1243,7 +1280,7 @@ class PmsAiOrchestrator:
                 citations=[],
                 deep_links=[],
                 primary_source_link=None,
-                suggested_followups=routed.suggested_followups,
+                suggested_followups=list(routed.suggested_followups[:1]),
                 resolved_session_state=resolved_state,
                 scope_banner=scope_banner,
                 clarification=routed.clarification,
@@ -1288,7 +1325,10 @@ class PmsAiOrchestrator:
 
         t_db_start = time.perf_counter()
         self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
-        ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=req.session_state)
+        tool_session_state = req.session_state.model_copy(
+            update={"region": routed.confirmed_context.region}
+        )
+        ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=tool_session_state)
         registry = DeterministicToolRegistry(ctx)
 
         tool_results: list[ToolExecutionResult] = []
@@ -1309,7 +1349,7 @@ class PmsAiOrchestrator:
 
         cache_sig = {
             "intents": list(signals.primary_intents[:2]),
-            "region": req.session_state.region,
+            "region": routed.confirmed_context.region,
             "team": signals.detected_team or req.session_state.team,
             "function": routed.plan.function or req.session_state.function,
             "position": routed.plan.position,
@@ -1619,6 +1659,7 @@ class PmsAiOrchestrator:
                     branch=routed.plan.branch,
                     branches=list(routed.plan.branches or []),
                     performance_level=routed.plan.performance_level,
+                    region=routed.confirmed_context.region,
                 )
                 and live_auth_service.is_returned_evidence_authorized(
                     scope=self.scope,
@@ -1780,6 +1821,7 @@ class PmsAiOrchestrator:
                         branch=routed.plan.branch,
                         branches=list(routed.plan.branches or []),
                         performance_level=routed.plan.performance_level,
+                        region=routed.confirmed_context.region,
                     )
                     and live_auth_service.is_returned_evidence_authorized(
                         scope=self.scope,
@@ -1815,7 +1857,7 @@ class PmsAiOrchestrator:
             team=signals.detected_team or req.session_state.team,
             position=routed.plan.position or req.session_state.position,
             branch=None if signals.asks_branch_comparison else (signals.detected_branch or req.session_state.branch),
-            region=req.session_state.region,
+            region=routed.confirmed_context.region,
             performance_level=signals.detected_level or req.session_state.performance_level,
             month=res_month,
             year=res_year,
@@ -1831,6 +1873,8 @@ class PmsAiOrchestrator:
             if resolved_state.branch and resolved_state.branch.casefold() != "all"
             else "All Branches"
         )
+        if routed.confirmed_context.region and scope_branch == "All Branches":
+            scope_branch = f"All Branches ({routed.confirmed_context.region})"
         if booking_comparison_facts is not None:
             scope_branch = " vs ".join(name for name, _ in booking_comparison_facts.counts)
         scope_level = resolved_state.performance_level or "Employee"
@@ -1876,6 +1920,7 @@ class PmsAiOrchestrator:
             branch=resolved_state.branch or routed.plan.branch,
             branches=list(routed.plan.branches or []),
             performance_level=resolved_state.performance_level or routed.plan.performance_level,
+            region=routed.confirmed_context.region,
             employee_id=detected_emp_id,
             employee_name=detected_emp_name,
         )
@@ -1889,21 +1934,72 @@ class PmsAiOrchestrator:
             )
 
         # Preserve the person actually returned by a single-person query so a
-        # later "his/her" question cannot silently select a different employee.
-        if post_exec_authorized and routed.plan.single_person:
+        # later "his/her" question cannot silently select a different employee,
+        # and store ranked candidates on plural rankings so pronoun follow-ups clarify.
+        if post_exec_authorized:
             person_results = [
                 tr.digest for tr in tool_results
                 if tr.tool_name == "get_agent_spotlight_and_trend"
                 and isinstance(tr.digest, dict)
                 and tr.digest.get("employee_id")
             ]
-            if len(person_results) == 1:
+            if routed.plan.single_person and len(person_results) == 1:
                 person = person_results[0]
                 spotlight = person.get("agent_spotlight") or {}
                 if routed.plan.employee_id or not spotlight.get("ties"):
                     routed.confirmed_context.last_subject_employee_id = str(person["employee_id"])
                     routed.confirmed_context.last_subject_employee_name = str(person.get("employee_name") or "") or None
+                    routed.confirmed_context.candidate_employees = []
                     resolved_state.last_confirmed_query = routed.confirmed_context
+            elif not routed.plan.single_person and person_results:
+                spotlight = person_results[0].get("agent_spotlight") or {}
+                top_cands = [
+                    {
+                        "employee_id": str(c["employee_id"]),
+                        "employee_name": str(c["employee_name"]),
+                        "team": str(c.get("team") or ""),
+                        "position": str(c.get("position") or ""),
+                    }
+                    for c in (spotlight.get("top_agents") or [])
+                    if isinstance(c, dict) and c.get("employee_id") and c.get("employee_name")
+                ]
+                if len(top_cands) > 1:
+                    routed.confirmed_context.candidate_employees = top_cands
+                    routed.confirmed_context.last_subject_employee_id = None
+                    routed.confirmed_context.last_subject_employee_name = None
+                    resolved_state.last_confirmed_query = routed.confirmed_context
+
+        if (
+            post_exec_authorized
+            and routed.outcome == "answer"
+            and total_records_eval == 0
+            and signals.detected_month
+            and signals.detected_year
+            and not routed.plan.employee_id
+            and routed.plan.team not in ("Support Positions", "Call Center", "RCM", "Finance", None)
+            and routed.confirmed_context.region != "All"
+        ):
+            avail = check_scope_data_availability(
+                ctx.get_scoped_records(),
+                country=routed.confirmed_context.region,
+                function=routed.plan.function,
+                team=routed.plan.team,
+                month=signals.detected_month,
+                year=signals.detected_year,
+            )
+            if not avail["has_data"] and avail["available_periods"]:
+                latest_avail = avail["available_periods"][-1]
+                routed.outcome = "unavailable_data"
+                reg_note = f" ({routed.confirmed_context.region})" if routed.confirmed_context.region else ""
+                synthesis.headline = (
+                    f"No published PMS evaluation records exist for {routed.plan.team}{reg_note} in {signals.detected_month} {signals.detected_year}."
+                )
+                synthesis.narrative_bullets = [
+                    f"The latest verified period for this scope is {latest_avail}."
+                ]
+                synthesis.suggested_followups = [
+                    f"What is {routed.plan.team} score in {latest_avail}?"
+                ]
 
         if not post_exec_authorized:
             routed.outcome = "restricted_access"
@@ -2038,7 +2134,7 @@ class PmsAiOrchestrator:
             citations=citations,
             deep_links=deep_links[:3],
             primary_source_link=primary_link,
-            suggested_followups=synthesis.suggested_followups,
+            suggested_followups=synthesis.suggested_followups[:1],
             resolved_session_state=resolved_state,
             scope_banner=scope_banner,
             clarification=routed.clarification,

@@ -26,7 +26,7 @@ export default function AiWatchingRail({
             </h2>
           </div>
           <span
-            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
             aria-label={`${alerts.length} watching ${alerts.length === 1 ? 'alert' : 'alerts'}`}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
@@ -72,15 +72,15 @@ export default function AiWatchingRail({
                     <div className="min-w-0">
                       {alert.badge_text && (
                         <span
-                          className={`mb-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${badgePillClass}`}
+                          className={`mb-0.5 inline-block rounded px-1.5 py-0.5 text-xs font-extrabold uppercase tracking-wider ${badgePillClass}`}
                         >
                           {alert.badge_text}
                         </span>
                       )}
-                      <p className="line-clamp-1 text-[11px] font-extrabold leading-snug text-slate-900">
+                      <p className="line-clamp-1 text-xs font-extrabold leading-snug text-slate-900">
                         {alert.title}
                       </p>
-                      <p className="truncate text-[10px] font-medium text-slate-500">
+                      <p className="truncate text-xs font-medium text-slate-500">
                         {alert.subtitle}
                       </p>
                     </div>
@@ -107,7 +107,7 @@ export default function AiWatchingRail({
 
         <ul className="space-y-2.5">
           {guardrails.map((g) => (
-            <li key={g.label} className="flex items-start gap-2 text-[11px]">
+            <li key={g.label} className="flex items-start gap-2 text-xs">
               <CheckCircle2
                 size={14}
                 className="mt-0.5 shrink-0 text-emerald-500"

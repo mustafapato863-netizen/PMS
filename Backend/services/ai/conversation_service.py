@@ -7,8 +7,12 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import build_user_scope_from_db_user
 from models.ai_schemas import (
+    AiChatResponsePayload,
     AiClarificationPrompt,
     AiConversationContextPayload,
+    AiConversationDetailPayload,
+    AiConversationSummaryItem,
+    AiConversationTurnDetail,
     ClarificationChoice,
     ConfirmedQueryContext,
     SessionFilterContext,
@@ -28,6 +32,7 @@ from repositories.ai_conversation_repository import (
     compute_scope_fingerprint,
 )
 from services.ai.catalog import evaluation_cache_identity
+from services.ai.config import redact_secrets
 from services.ai.trace_logger import sanitize_prompt_for_router_training
 from services.cache_invalidation_service import CacheInvalidationService
 from services.dashboard_record_service import DashboardRecordService
@@ -36,6 +41,7 @@ from utils.report_scope import (
     FUNCTION_SCOPED_ROLES,
     SELF_SCOPED_ROLES,
     filter_records_by_scope,
+    user_can_access_region,
     user_can_access_team,
     user_can_access_team_level,
 )
@@ -155,11 +161,20 @@ class AiConversationService:
             return str(function_name).strip().casefold() in allowed_fns
         return True
 
+    def _is_region_authorized(self, region_name: str | None, eff_scope: dict[str, Any]) -> bool:
+        if not region_name:
+            return True
+        role = str(eff_scope.get("role") or "")
+        if role == "Regional Manager":
+            return user_can_access_region(eff_scope, str(region_name))
+        return True
+
     def _is_team_and_level_authorized(
         self,
         team_name: str | None,
         performance_level: str | None,
         eff_scope: dict[str, Any],
+        region: str | None = None,
     ) -> bool:
         role = str(eff_scope.get("role") or "")
         lvl = str(performance_level or "Employee").strip()
@@ -168,6 +183,8 @@ class AiConversationService:
                 return False
         if team_name:
             if not user_can_access_team(eff_scope, team_name):
+                return False
+            if region and not self._is_region_authorized(region, eff_scope):
                 return False
             if not user_can_access_team_level(eff_scope, team_name, lvl):
                 return False
@@ -254,13 +271,14 @@ class AiConversationService:
         branch: str | None = None,
         branches: list[str] | None = None,
         performance_level: str | None = None,
+        region: str | None = None,
         employee_id: str | None = None,
         employee_name: str | None = None,
     ) -> bool:
         """Check whether the given query plan / context dimensions are authorized under live scope."""
         if not self._is_function_authorized(function, scope):
             return False
-        if not self._is_team_and_level_authorized(team, performance_level, scope):
+        if not self._is_team_and_level_authorized(team, performance_level, scope, region=region):
             return False
         if not self._is_branch_authorized(branch, scope):
             return False
@@ -381,15 +399,21 @@ class AiConversationService:
             lcq.get("performance_level"),
         ]
         eff_level = next((str(lv) for lv in levels_to_check if lv), "Employee")
+        regs_to_check = (plan_scope.get("region"), struct_q.get("region"), resolved_st.get("region"), lcq.get("region"))
+        eff_region = next((str(rg) for rg in regs_to_check if rg), None)
         for t in teams_to_check:
-            if t and not self._is_team_and_level_authorized(str(t), eff_level, eff_scope):
+            if t and not self._is_team_and_level_authorized(str(t), eff_level, eff_scope, region=eff_region):
                 return False
         if not any(teams_to_check) and eff_level in ("Corporate", "Managerial"):
-            if not self._is_team_and_level_authorized(None, eff_level, eff_scope):
+            if not self._is_team_and_level_authorized(None, eff_level, eff_scope, region=eff_region):
                 return False
 
         for fn in (plan_scope.get("function"), struct_q.get("function"), resolved_st.get("function"), lcq.get("function")):
             if fn and not self._is_function_authorized(str(fn), eff_scope):
+                return False
+
+        for reg in (plan_scope.get("region"), struct_q.get("region"), resolved_st.get("region"), lcq.get("region")):
+            if reg and not self._is_region_authorized(str(reg), eff_scope):
                 return False
 
         branches_to_check: list[str] = []
@@ -460,7 +484,7 @@ class AiConversationService:
                 t_team = tev.get("team")
                 t_lvl = tev.get("performance_level") or eff_level
                 t_branch = tev.get("branch")
-                if t_team and not self._is_team_and_level_authorized(str(t_team), str(t_lvl), eff_scope):
+                if t_team and not self._is_team_and_level_authorized(str(t_team), str(t_lvl), eff_scope, region=eff_region):
                     return False
                 if t_branch and not self._is_branch_authorized(str(t_branch), eff_scope):
                     return False
@@ -487,14 +511,17 @@ class AiConversationService:
             mutated = True
 
         if cc.team or cc.performance_level:
-            if not self._is_team_and_level_authorized(cc.team, cc.performance_level, eff_scope):
-                if cc.team and not user_can_access_team(eff_scope, cc.team):
+            if not self._is_team_and_level_authorized(cc.team, cc.performance_level, eff_scope, region=cc.region):
+                if cc.team and (
+                    not user_can_access_team(eff_scope, cc.team)
+                    or (cc.region and not self._is_region_authorized(cc.region, eff_scope))
+                ):
                     cc.team = None
                     cc.position = None
                     cc.metric_id = None
                     cc.metric_display_name = None
                 if cc.performance_level and not self._is_team_and_level_authorized(
-                    cc.team, cc.performance_level, eff_scope
+                    cc.team, cc.performance_level, eff_scope, region=cc.region
                 ):
                     cc.performance_level = None
                 mutated = True
@@ -526,10 +553,10 @@ class AiConversationService:
 
         # 3. Reauthorize pending clarification choices &confirmed_context pending_clarification_choices
         def _choice_authorized(ch: ClarificationChoice) -> bool:
-            if ch.team and not self._is_team_and_level_authorized(ch.team, ch.performance_level, eff_scope):
+            if ch.team and not self._is_team_and_level_authorized(ch.team, ch.performance_level, eff_scope, region=cc.region):
                 return False
             if ch.performance_level and not self._is_team_and_level_authorized(
-                ch.team or cc.team, ch.performance_level, eff_scope
+                ch.team or cc.team, ch.performance_level, eff_scope, region=cc.region
             ):
                 return False
             if ch.branch and not self._is_branch_authorized(ch.branch, eff_scope):
@@ -731,10 +758,12 @@ class AiConversationService:
         redacted_prompt = sanitize_prompt_for_router_training(
             prompt, known_employee_names=known_employee_names, db=self.db
         )
+        clean_user_prompt = redact_secrets(prompt)
 
         turn_row, is_completed = self.repo.claim_or_get_turn(
             conversation_id=str(conv.id),
             client_request_id=eff_req_id,
+            user_prompt=clean_user_prompt,
             user_prompt_redacted=redacted_prompt,
             request_fingerprint=req_fp,
             scope_fingerprint=scope_fp,
@@ -749,6 +778,7 @@ class AiConversationService:
             # Stored evidence is no longer authorized -> reclaim turn and recompute
             turn_row = self.repo.reclaim_turn_for_recompute(
                 turn=turn_row,
+                user_prompt=clean_user_prompt,
                 user_prompt_redacted=redacted_prompt,
                 request_fingerprint=req_fp,
                 scope_fingerprint=scope_fp,
@@ -757,6 +787,49 @@ class AiConversationService:
             )
 
         return turn_row, None
+
+    @staticmethod
+    def _derive_conversation_title(prompt: str | None) -> str | None:
+        clean = " ".join(redact_secrets(str(prompt or "")).strip().split())
+        if not clean:
+            return None
+        if len(clean) > 80:
+            return clean[:77].rstrip() + "..."
+        return clean
+
+    @staticmethod
+    def _extract_period_used(response: AiChatResponsePayload | None) -> str | None:
+        if response is None:
+            return None
+        st = response.resolved_session_state
+        if st and st.month and st.year:
+            return f"{st.month} {st.year}"
+        if st and st.month:
+            return st.month
+        if response.validated_plan_v2 and response.validated_plan_v2.scope.periods:
+            return response.validated_plan_v2.scope.periods[-1]
+        if response.structured_query and response.structured_query.periods:
+            return response.structured_query.periods[-1]
+        return None
+
+    def fail_turn(
+        self,
+        *,
+        conversation_id: str | None,
+        turn_id: str,
+        claim_token: str | None,
+        prompt: str | None = None,
+        error_message: str,
+    ) -> None:
+        clean_err = redact_secrets(str(error_message or "Unable to complete analysis"))
+        title_candidate = self._derive_conversation_title(prompt)
+        self.repo.release_turn_claim(
+            turn_id=turn_id,
+            claim_token=claim_token,
+            error_message=clean_err,
+            conversation_id=conversation_id,
+            title_candidate=title_candidate,
+        )
 
     def complete_turn(
         self,
@@ -781,6 +854,10 @@ class AiConversationService:
         owner_id, _ = self._resolve_owner(eff_scope)
         ctx_dict = confirmed_context.model_dump() if confirmed_context is not None else {}
         pending_clar = response_payload.get("clarification") if isinstance(response_payload, dict) else None
+        turn_row = self.db.query(AiTurn).filter(AiTurn.id == str(turn_id)).first()
+        title_candidate = self._derive_conversation_title(
+            (turn_row.user_prompt or turn_row.user_prompt_redacted) if turn_row is not None else None
+        )
         return self.repo.complete_turn_and_advance_context(
             conversation_id=conversation_id,
             owner_user_id=owner_id,
@@ -799,6 +876,201 @@ class AiConversationService:
             last_subject_employee_id=confirmed_context.last_subject_employee_id if confirmed_context else None,
             last_subject_employee_name=confirmed_context.last_subject_employee_name if confirmed_context else None,
             last_operation_kind=confirmed_context.last_operation_kind if confirmed_context else None,
+            title_candidate=title_candidate,
+        )
+
+    def list_conversations(
+        self,
+        *,
+        scope: dict[str, Any] | None = None,
+        limit: int = 30,
+    ) -> list[AiConversationSummaryItem]:
+        eff_scope = self.validate_live_account_and_scope(scope)
+        owner_id, _ = self._resolve_owner(eff_scope)
+        rows = self.repo.list_owned_conversations(owner_user_id=owner_id, limit=limit)
+        turns_by_conv = self.repo.list_turns_for_conversations(
+            conversation_ids=[str(r.id) for r in rows]
+        )
+        summaries: list[AiConversationSummaryItem] = []
+        for row in rows:
+            conv_id = str(row.id)
+            turns = turns_by_conv.get(conv_id, [])
+            has_restricted = False
+            authorized_turns: list[AiTurn] = []
+            for t in turns:
+                if t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope):
+                    has_restricted = True
+                else:
+                    authorized_turns.append(t)
+
+            last_turn = turns[-1] if turns else None
+            last_turn_restricted = bool(
+                last_turn is not None
+                and last_turn.status == "completed"
+                and not self._is_turn_evidence_authorized(last_turn, eff_scope)
+            )
+            if has_restricted:
+                title = "Restricted conversation"
+            else:
+                title = (
+                    (row.title or "").strip()
+                    or (
+                        self._derive_conversation_title(
+                            turns[0].user_prompt or turns[0].user_prompt_redacted
+                        )
+                        if turns
+                        else None
+                    )
+                    or "New conversation"
+                )
+
+            last_outcome: str | None = None
+            last_scope_banner: str | None = None
+            last_period: str | None = None
+            if last_turn is not None:
+                if last_turn_restricted:
+                    last_outcome = "restricted_access"
+                    last_scope_banner = None
+                    last_period = None
+                else:
+                    last_outcome = (
+                        "failed"
+                        if last_turn.status == "failed"
+                        else (last_turn.outcome or None)
+                    )
+                    if last_turn.status == "completed" and isinstance(last_turn.response_payload, dict):
+                        try:
+                            parsed_resp = AiChatResponsePayload.model_validate(last_turn.response_payload)
+                            last_scope_banner = None if has_restricted else parsed_resp.scope_banner
+                            last_period = None if has_restricted else self._extract_period_used(parsed_resp)
+                        except Exception:
+                            last_scope_banner = None
+                            last_period = None
+
+            summaries.append(
+                AiConversationSummaryItem(
+                    conversation_id=conv_id,
+                    title=title,
+                    created_at=row.created_at.isoformat() if row.created_at else None,
+                    updated_at=row.updated_at.isoformat() if row.updated_at else None,
+                    turn_count=len(turns),
+                    last_outcome=last_outcome,
+                    last_scope_banner=last_scope_banner,
+                    last_period=last_period,
+                    has_restricted_turns=has_restricted,
+                    context_version=int(row.context_version or 1),
+                )
+            )
+        return summaries
+
+    def get_conversation_detail(
+        self,
+        conversation_id: str,
+        *,
+        scope: dict[str, Any] | None = None,
+    ) -> AiConversationDetailPayload | None:
+        eff_scope = self.validate_live_account_and_scope(scope)
+        owner_id, _ = self._resolve_owner(eff_scope)
+        row = self.repo.get_owned_conversation(
+            conversation_id=conversation_id,
+            owner_user_id=owner_id,
+            include_deleted=False,
+        )
+        if row is None:
+            return None
+        sanitized_ctx = self.sanitize_context_for_scope(row, eff_scope)
+        turns = self.repo.list_turns_for_conversation(conversation_id=str(row.id))
+
+        turn_details: list[AiConversationTurnDetail] = []
+        has_restricted = False
+        for t in turns:
+            if t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope):
+                has_restricted = True
+                restricted_resp = AiChatResponsePayload(
+                    trace_id="",
+                    conversation_id=str(row.id),
+                    turn_id=str(t.id),
+                    context_version=int(row.context_version or 1),
+                    outcome="restricted_access",
+                    answer_detail="brief",
+                    headline="This historical answer is hidden because your current permissions no longer include its data scope.",
+                    narrative_bullets=[],
+                    visual_cards=[],
+                    citations=[],
+                    deep_links=[],
+                    primary_source_link=None,
+                    suggested_followups=[],
+                    resolved_session_state=SessionFilterContext(),
+                    scope_banner=None,
+                    typed_evidence=[],
+                    evidence_envelope_v2=[],
+                )
+                turn_details.append(
+                    AiConversationTurnDetail(
+                        turn_id=str(t.id),
+                        turn_index=int(t.turn_index),
+                        status="restricted",
+                        user_prompt="Restricted question (scope no longer authorized)",
+                        error_message=None,
+                        scope_used=None,
+                        period_used=None,
+                        created_at=t.created_at.isoformat() if t.created_at else None,
+                        completed_at=t.completed_at.isoformat() if t.completed_at else None,
+                        response=restricted_resp,
+                    )
+                )
+                continue
+
+            parsed_resp: AiChatResponsePayload | None = None
+            if t.status == "completed" and isinstance(t.response_payload, dict) and t.response_payload:
+                try:
+                    parsed_resp = AiChatResponsePayload.model_validate(t.response_payload)
+                except Exception:
+                    parsed_resp = None
+
+            turn_status = str(t.status or "pending")
+            if turn_status not in ("pending", "completed", "failed", "superseded"):
+                turn_status = "completed" if parsed_resp else "failed"
+
+            turn_details.append(
+                AiConversationTurnDetail(
+                    turn_id=str(t.id),
+                    turn_index=int(t.turn_index),
+                    status=turn_status,  # type: ignore[arg-type]
+                    user_prompt=t.user_prompt or t.user_prompt_redacted or "",
+                    error_message=t.error_message,
+                    scope_used=parsed_resp.scope_banner if parsed_resp else None,
+                    period_used=self._extract_period_used(parsed_resp),
+                    created_at=t.created_at.isoformat() if t.created_at else None,
+                    completed_at=t.completed_at.isoformat() if t.completed_at else None,
+                    response=parsed_resp,
+                )
+            )
+
+        if has_restricted:
+            title = "Restricted conversation"
+        else:
+            title = (
+                (row.title or "").strip()
+                or (
+                    self._derive_conversation_title(turns[0].user_prompt or turns[0].user_prompt_redacted)
+                    if turns
+                    else None
+                )
+            )
+
+        return AiConversationDetailPayload(
+            conversation_id=str(row.id),
+            owner_user_id=str(row.owner_user_id),
+            title=title,
+            status=str(row.status or "active"),  # type: ignore[arg-type]
+            context_version=int(sanitized_ctx.context_version),
+            confirmed_context=sanitized_ctx.confirmed_context,
+            pending_clarification=sanitized_ctx.pending_clarification,
+            has_restricted_turns=has_restricted,
+            created_at=row.created_at.isoformat() if row.created_at else None,
+            updated_at=row.updated_at.isoformat() if row.updated_at else None,
+            turns=turn_details,
         )
 
     def archive_conversation(
