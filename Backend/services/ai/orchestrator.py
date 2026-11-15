@@ -27,6 +27,7 @@ from models.ai_schemas import (
 )
 from models.report_schemas import MONTHS
 from services.ai.catalog import ai_evidence_cache, evaluation_cache_identity, get_ai_catalog
+from services.ai.claim_validator import ClaimFact, build_claim_ledger, validate_claims
 from services.ai.config import get_ai_runtime_config
 from services.ai.contextual_assistant import (
     apply_page_context_to_request,
@@ -1615,25 +1616,80 @@ class PmsAiOrchestrator:
                 )
                 self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
                 if local_synthesis is not None:
-                    synthesis = local_synthesis
-                    final_cards = []
-                    booking_comparison_facts = extract_branch_booking_facts(req.prompt, tool_digests)
-                    if booking_comparison_facts is not None:
-                        citations = [
-                            SourceCitationPill(label=f"Period · {booking_comparison_facts.period}", category="period"),
-                            SourceCitationPill(label=f"Scope · {booking_comparison_facts.scope}", category="scope"),
-                            SourceCitationPill(label="Branches · " + ", ".join(name for name, _ in booking_comparison_facts.counts), category="branch"),
-                        ]
-                        # The answer compares booking counts within one period,
-                        # not month-over-month score changes.
-                        basis_warning = None
-                    else:
-                        score_facts = extract_overall_score_facts(req.prompt, tool_digests)
-                        if score_facts is not None:
+                    accepted_local = True
+                    booking_facts_cand = (
+                        extract_branch_booking_facts(req.prompt, tool_digests)
+                        if routed.plan.intent == "compare_branches"
+                        else None
+                    )
+                    score_facts_cand = (
+                        extract_overall_score_facts(req.prompt, tool_digests)
+                        if booking_facts_cand is None
+                        else None
+                    )
+                    if local_synthesis.provider_used in ("cloudflare", "gemini"):
+                        if booking_facts_cand is not None:
+                            claim_ledger = [
+                                ClaimFact(
+                                    fact_id=f"F{idx}",
+                                    part="compare_branches",
+                                    subject=name,
+                                    team=booking_facts_cand.scope,
+                                    branch=name,
+                                    period=booking_facts_cand.period,
+                                    value=count,
+                                    display=str(count),
+                                    unit="count",
+                                    direction="higher_better",
+                                )
+                                for idx, (name, count) in enumerate(booking_facts_cand.counts, start=1)
+                            ]
+                        elif score_facts_cand is not None:
+                            claim_ledger = [
+                                ClaimFact(
+                                    fact_id="F1",
+                                    part="score",
+                                    subject=score_facts_cand.scope,
+                                    branch=(
+                                        None
+                                        if score_facts_cand.branch.casefold() in ("all branches", "all")
+                                        else score_facts_cand.branch
+                                    ),
+                                    period=score_facts_cand.period,
+                                    value=score_facts_cand.score,
+                                    display=f"{score_facts_cand.score:.1f}%",
+                                    unit="%",
+                                    direction="higher_better",
+                                )
+                            ]
+                        else:
+                            claim_ledger = build_claim_ledger(typed_evidence=typed_evidence)
+                        claim_check = validate_claims(
+                            headline=local_synthesis.headline,
+                            bullets=local_synthesis.narrative_bullets,
+                            ledger=claim_ledger,
+                        )
+                        if not claim_check.valid:
+                            accepted_local = False
+                            synthesis.metrics.fallback_outcome = "invalid_or_unverified_response"
+                    if accepted_local:
+                        synthesis = local_synthesis
+                        final_cards = []
+                        if booking_facts_cand is not None:
+                            booking_comparison_facts = booking_facts_cand
                             citations = [
-                                SourceCitationPill(label=f"Period · {score_facts.period}", category="period"),
-                                SourceCitationPill(label=f"Scope · {score_facts.scope}", category="scope"),
-                                SourceCitationPill(label=f"Branch · {score_facts.branch}", category="branch"),
+                                SourceCitationPill(label=f"Period · {booking_comparison_facts.period}", category="period"),
+                                SourceCitationPill(label=f"Scope · {booking_comparison_facts.scope}", category="scope"),
+                                SourceCitationPill(label="Branches · " + ", ".join(name for name, _ in booking_comparison_facts.counts), category="branch"),
+                            ]
+                            # The answer compares booking counts within one period,
+                            # not month-over-month score changes.
+                            basis_warning = None
+                        elif score_facts_cand is not None:
+                            citations = [
+                                SourceCitationPill(label=f"Period · {score_facts_cand.period}", category="period"),
+                                SourceCitationPill(label=f"Scope · {score_facts_cand.scope}", category="scope"),
+                                SourceCitationPill(label=f"Branch · {score_facts_cand.branch}", category="branch"),
                             ]
                             basis_warning = None
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)

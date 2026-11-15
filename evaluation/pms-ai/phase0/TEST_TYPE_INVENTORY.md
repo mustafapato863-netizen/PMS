@@ -8,14 +8,14 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 40. Test functions or `it` blocks: 497.
+Test files: 43. Test functions or `it` blocks: 535.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 15 | not applicable |
-| `mocked` | 23 | partial |
-| `live-model` | 4 | blocked |
+| `synthetic` | 16 | not applicable |
+| `mocked` | 25 | partial |
+| `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
 
@@ -28,6 +28,8 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
+| `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 14 | not applicable |
+| `Backend/tests/test_ai_conversation_claim_ledger_paired.py` | test | `live-model`, `mocked` | 13 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 44 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter_unified.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 11 | not applicable |
@@ -40,6 +42,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_person_name_routing.py` | test | `synthetic` | 4 | not applicable |
 | `Backend/tests/test_ai_phase1_runtime.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_phase2_reconciliation.py` | test | `synthetic` | 20 | not applicable |
+| `Backend/tests/test_ai_phase4_security_matrix.py` | test | `mocked` | 11 | partial |
 | `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 62 | partial |
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |
@@ -68,6 +71,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 ## Notes
 
 - `Backend/tests/test_ai_booking_count_parity.py`: The module text says source parity. The model side is DeterministicLocalProviderAdapter, so the label is mocked.
+- `Backend/tests/test_ai_conversation_claim_ledger_paired.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_ai_corrective_action_drafter.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_evaluation_outbound_productivity_golden.py`: Compares EmployeePolicy with outbound-anonymous-reference.json. That file is source_reference_only_not_activated, so the parity status is partial.
 - `Backend/tests/test_local_assistant_exploration.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
