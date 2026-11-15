@@ -126,6 +126,8 @@ def _body_for(path: str) -> dict | None:
         return FEEDBACK_BODY
     if path.endswith("/review"):
         return REVIEW_BODY
+    if path.endswith("/purge"):
+        return {"retention_days": 90, "dry_run": True}
     if path.endswith("/proposals/confirm"):
         return PROPOSAL_BODY
     if path.endswith("/conversations"):
@@ -149,6 +151,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "PmsAiOrchestrator", Boom)
     monkeypatch.setattr(ai_workspace, "AiConversationService", Boom)
     monkeypatch.setattr(ai_workspace, "TrainingTraceLogger", Boom)
+    monkeypatch.setattr(ai_workspace, "FeedbackGovernanceService", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
     monkeypatch.setattr(ai_workspace, "build_ai_diagnostics_payload", boom)
@@ -164,14 +167,18 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
     inventory = sorted(f"{method} /api{path}" for method, path, _route in routes)
     assert inventory == [
         "DELETE /api/ai/conversations/{conversation_id}",
+        "DELETE /api/ai/traces/{trace_id}",
         "GET /api/ai/catalog",
         "GET /api/ai/conversations/{conversation_id}/context",
+        "GET /api/ai/feedback/clusters",
+        "GET /api/ai/feedback/export-bundle",
         "GET /api/ai/traces/export",
         "GET /api/ai/watching",
         "POST /api/ai/chat",
         "POST /api/ai/conversations",
         "POST /api/ai/feedback",
         "POST /api/ai/proposals/confirm",
+        "POST /api/ai/traces/purge",
         "POST /api/ai/traces/{trace_id}/review",
     ]
     assert ai_workspace.AI_WORKSPACE_ROLES == ["Admin"]
@@ -196,7 +203,10 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
     # The corrective-action pilot is behind session + Admin + its own switch,
     # and deliberately NOT behind the standalone chat switch.
     pilot = _pilot_routes()
-    assert [f"{method} /api{path}" for method, path, _route in pilot] == ["POST /api/ai/corrective-action-suggestions"]
+    assert sorted(f"{method} /api{path}" for method, path, _route in pilot) == [
+        "POST /api/ai/corrective-action-suggestions",
+        "POST /api/ai/corrective-action-suggestions/feedback",
+    ]
     for _method, _path, route in pilot:
         calls = _walk_calls(route.dependant)
         assert require_ai_diagnostic_session in calls
