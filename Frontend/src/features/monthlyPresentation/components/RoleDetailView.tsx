@@ -29,9 +29,11 @@ import {
   Gauge,
   Layers,
   Plus,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   TrendingUp,
   UserCheck,
   Users,
@@ -51,12 +53,46 @@ import { SelectableKpiCard } from './SelectableKpiCard';
 import { FullWordGradeBadge } from './TeamDeepDiveView';
 
 const KPI_CARDS_PER_ROW = 4;
+const DISMISSED_ROLE_IND_STORAGE_KEY = 'pms_dismissed_role_ind_cards_v1';
+const DISMISSED_ROLE_COHORT_STORAGE_KEY = 'pms_dismissed_role_cohort_cards_v1';
+
+function readRoleDismissedIds(storageKey: string, scopeKey: string): string[] {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const list = parsed?.[scopeKey];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRoleDismissedIds(storageKey: string, scopeKey: string, ids: string[]): void {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string[]>) : {};
+    const next = { ...parsed, [scopeKey]: ids };
+    if (ids.length === 0) {
+      delete next[scopeKey];
+    }
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 export interface RoleDetailViewProps {
   data: RoleDetailData;
   onNavigateToOverview: () => void;
   onNavigateToFunction: () => void;
   onSaveAction: (draft: RoleActionDraft) => Promise<void> | void;
+  onDeleteIndividualAction?: (
+    employeeId: string,
+    monthName: string,
+    actionId?: string,
+  ) => Promise<void> | void;
+  onDeleteAction?: (action: RoleAssignedAction) => Promise<void> | void;
   toolbar?: ReactNode;
   presentationMode?: boolean;
 }
@@ -69,6 +105,8 @@ export default function RoleDetailView({
   onNavigateToOverview,
   onNavigateToFunction,
   onSaveAction,
+  onDeleteIndividualAction,
+  onDeleteAction,
   toolbar,
   presentationMode = false,
 }: RoleDetailViewProps) {
@@ -120,6 +158,20 @@ export default function RoleDetailView({
   };
   const viewScopeKey = `${data.roleSlug}|${data.periodKey}`;
   const [prevViewScopeKey, setPrevViewScopeKey] = useState(viewScopeKey);
+  const [dismissedIndIds, setDismissedIndIds] = useState<string[]>(() =>
+    readRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey),
+  );
+  const [confirmDeleteIndId, setConfirmDeleteIndId] = useState<string | null>(null);
+  const [deletingIndId, setDeletingIndId] = useState<string | null>(null);
+  const [indDeleteError, setIndDeleteError] = useState<Record<string, string>>({});
+
+  const [dismissedRoleActionIds, setDismissedRoleActionIds] = useState<string[]>(() =>
+    readRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey),
+  );
+  const [confirmDeleteRoleId, setConfirmDeleteRoleId] = useState<string | null>(null);
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
+  const [roleDeleteError, setRoleDeleteError] = useState<Record<string, string>>({});
+
   const [aiStateByTarget, setAiStateByTarget] = useState<Record<string, RoleAiState>>({});
   const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
   const abortControllersRef = useRef<Record<string, AbortController>>({});
@@ -131,6 +183,16 @@ export default function RoleDetailView({
     setExpandedEvidenceIds({});
     setIndividualOverrides({});
     setEditingIndividualId(null);
+    setRoleActionOverrides({});
+    setEditingRoleActionId(null);
+    setDismissedIndIds(readRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey));
+    setConfirmDeleteIndId(null);
+    setDeletingIndId(null);
+    setIndDeleteError({});
+    setDismissedRoleActionIds(readRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey));
+    setConfirmDeleteRoleId(null);
+    setDeletingRoleId(null);
+    setRoleDeleteError({});
   }
 
   useEffect(() => {
@@ -177,16 +239,21 @@ export default function RoleDetailView({
   );
   const visibleMembers = memberPages.visible;
 
+  const dismissedIndSet = useMemo(
+    () => new Set(dismissedIndIds.map((id) => id.toLowerCase())),
+    [dismissedIndIds],
+  );
+
   const displayedIndividualCards = useMemo(() => {
     const displayedIds = new Set(visibleMembers.map((m) => m.employeeId));
-    const base = (data.individualActionPlans ?? []).filter((c) =>
-      displayedIds.has(c.employeeId),
+    const base = (data.individualActionPlans ?? []).filter(
+      (c) => displayedIds.has(c.employeeId) && !dismissedIndSet.has(c.employeeId.toLowerCase()),
     );
     return base.map((card) => ({
       ...card,
       ...(individualOverrides[card.id] ?? {}),
     }));
-  }, [data.individualActionPlans, visibleMembers, individualOverrides]);
+  }, [data.individualActionPlans, dismissedIndSet, visibleMembers, individualOverrides]);
 
   const { month: activeMonthName, year: activeYearNum } = useMemo(
     () => parseMonthYearFromLabel(data.monthLabel, data.periodKey),
@@ -247,6 +314,13 @@ export default function RoleDetailView({
         suggested: false,
       },
     }));
+    setDismissedIndIds((prev) => {
+      const next = prev.filter((id) => id.toLowerCase() !== card.employeeId.toLowerCase());
+      if (next.length !== prev.length) {
+        writeRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey, next);
+      }
+      return next;
+    });
     setEditingIndividualId(null);
     setAiStateByTarget((prev) => {
       if (!prev[`ind:${card.id}`]) return prev;
@@ -256,13 +330,73 @@ export default function RoleDetailView({
     });
   };
 
+  const confirmDeleteIndividual = async (card: RoleIndividualActionPlan) => {
+    setDeletingIndId(card.employeeId);
+    setIndDeleteError((prev) => {
+      if (!prev[card.employeeId]) return prev;
+      const next = { ...prev };
+      delete next[card.employeeId];
+      return next;
+    });
+    try {
+      if (onDeleteIndividualAction) {
+        await onDeleteIndividualAction(card.employeeId, activeMonthName, card.actionId);
+      }
+      setDismissedIndIds((prev) => {
+        const exists = prev.some(
+          (id) => id.toLowerCase() === card.employeeId.toLowerCase(),
+        );
+        const next = exists ? prev : [...prev, card.employeeId];
+        writeRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey, next);
+        return next;
+      });
+      setIndividualOverrides((prev) => {
+        if (!prev[card.id]) return prev;
+        const next = { ...prev };
+        delete next[card.id];
+        return next;
+      });
+      setConfirmDeleteIndId(null);
+      if (editingIndividualId === card.id) {
+        setEditingIndividualId(null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete action plan';
+      setIndDeleteError((prev) => ({
+        ...prev,
+        [card.employeeId]: msg,
+      }));
+    } finally {
+      setDeletingIndId(null);
+    }
+  };
+
+  const restoreAllIndividual = () => {
+    setDismissedIndIds([]);
+    writeRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey, []);
+    setIndDeleteError({});
+    setConfirmDeleteIndId(null);
+  };
+
+  const dismissedRoleSet = useMemo(
+    () => new Set(dismissedRoleActionIds),
+    [dismissedRoleActionIds],
+  );
+
+  const restorableDismissedRoleIds = useMemo(
+    () => dismissedRoleActionIds.filter((id) => data.actions.some((a) => a.id === id)),
+    [dismissedRoleActionIds, data.actions],
+  );
+
   const localActions = useMemo(
     () =>
-      [...addedActions, ...data.actions].map((act) => ({
-        ...act,
-        ...(roleActionOverrides[act.id] ?? {}),
-      })),
-    [addedActions, data.actions, roleActionOverrides],
+      [...addedActions, ...data.actions]
+        .filter((act) => !dismissedRoleSet.has(act.id))
+        .map((act) => ({
+          ...act,
+          ...(roleActionOverrides[act.id] ?? {}),
+        })),
+    [addedActions, data.actions, dismissedRoleSet, roleActionOverrides],
   );
 
   const startEditRoleAction = (action: RoleAssignedAction) => {
@@ -303,6 +437,13 @@ export default function RoleDetailView({
         suggested: false,
       },
     }));
+    setDismissedRoleActionIds((prev) => {
+      const next = prev.filter((id) => id !== action.id);
+      if (next.length !== prev.length) {
+        writeRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey, next);
+      }
+      return next;
+    });
     setEditingRoleActionId(null);
     setAiStateByTarget((prev) => {
       if (!prev[`role-act:${action.id}`]) return prev;
@@ -310,6 +451,54 @@ export default function RoleDetailView({
       delete next[`role-act:${action.id}`];
       return next;
     });
+  };
+
+  const confirmDeleteRoleAction = async (action: RoleAssignedAction) => {
+    setDeletingRoleId(action.id);
+    setRoleDeleteError((prev) => {
+      if (!prev[action.id]) return prev;
+      const next = { ...prev };
+      delete next[action.id];
+      return next;
+    });
+    try {
+      if (onDeleteAction) {
+        await onDeleteAction(action);
+      }
+      setAddedActions((prev) => prev.filter((a) => a.id !== action.id));
+      setRoleActionOverrides((prev) => {
+        if (!prev[action.id]) return prev;
+        const next = { ...prev };
+        delete next[action.id];
+        return next;
+      });
+      if (data.actions.some((a) => a.id === action.id)) {
+        setDismissedRoleActionIds((prev) => {
+          const next = prev.includes(action.id) ? prev : [...prev, action.id];
+          writeRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey, next);
+          return next;
+        });
+      }
+      setConfirmDeleteRoleId(null);
+      if (editingRoleActionId === action.id) {
+        setEditingRoleActionId(null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete role action';
+      setRoleDeleteError((prev) => ({
+        ...prev,
+        [action.id]: msg,
+      }));
+    } finally {
+      setDeletingRoleId(null);
+    }
+  };
+
+  const restoreDismissedRoleActions = () => {
+    setDismissedRoleActionIds([]);
+    writeRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey, []);
+    setRoleDeleteError({});
+    setConfirmDeleteRoleId(null);
   };
 
   const formatRoleDraftText = (
@@ -804,7 +993,7 @@ export default function RoleDetailView({
               </span>
               <span
                 data-testid="role-impact-badge"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${impact.badgeBg} ${impact.badgeText} ${impact.badgeBorder}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${impact.badgeBg} ${impact.badgeText} ${impact.badgeBorder}`}
               >
                 <span className={`size-1.5 rounded-full ${impact.dotColor}`} />
                 {data.impactLevel} Impact
@@ -845,7 +1034,7 @@ export default function RoleDetailView({
           {/* Right Metric Cluster: Dominant Score, Full-Word Grade, Movement & Gap */}
           <div className="flex shrink-0 flex-wrap items-center gap-5 rounded-2xl border border-slate-200/80 bg-slate-50/60 px-5 py-4 sm:px-6 sm:py-5">
             <div>
-              <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <div className="text-xs font-bold tracking-wider text-slate-400 uppercase">
                 {data.headcount > 1 ? 'Combined Score' : 'Role Score'}
               </div>
               <div className="mt-1 flex items-baseline gap-3">
@@ -935,7 +1124,7 @@ export default function RoleDetailView({
                 >
                   {data.roleTitle} KPIs
                 </h2>
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-500">
                   {data.kpis.length} {data.kpis.length === 1 ? 'measure' : 'measures'} · sorted worst to best
                 </span>
               </div>
@@ -946,7 +1135,7 @@ export default function RoleDetailView({
             {biggestGapKpi && (
               <div
                 data-testid="biggest-gap-summary-pill"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200/90 bg-rose-50/80 px-2.5 py-1 text-[11px] font-semibold text-rose-900 shadow-2xs"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200/90 bg-rose-50/80 px-2.5 py-1 text-xs font-semibold text-rose-900 shadow-2xs"
               >
                 <Flame className="size-3.5 shrink-0 text-rose-600" aria-hidden />
                 <span>
@@ -966,7 +1155,7 @@ export default function RoleDetailView({
                 data-testid="kpi-carousel-controls"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2 py-1 shadow-2xs"
               >
-                <span className="px-1 text-[11px] font-bold text-slate-500 tabular-nums">
+                <span className="px-1 text-xs font-bold text-slate-500 tabular-nums">
                   {safeCarouselStart + 1}–
                   {Math.min(data.kpis.length, safeCarouselStart + KPI_CARDS_PER_ROW)} of{' '}
                   {data.kpis.length}
@@ -1135,7 +1324,7 @@ export default function RoleDetailView({
               {data.accountabilityGaps.slice(0, 3).map((gap) => (
                 <span
                   key={gap.id}
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${
                     isProblemRole
                       ? 'border-rose-200/80 bg-rose-50/60 text-rose-700'
                       : 'border-slate-200 bg-slate-50 text-slate-600'
@@ -1228,7 +1417,7 @@ export default function RoleDetailView({
                   {data.kpis.slice(0, 4).map((kpi) => (
                     <th key={kpi.kpiKey} className="px-4 py-3 text-right">
                       {kpi.shortName}
-                      <span className="block text-[10px] font-normal text-slate-400 normal-case">
+                      <span className="block text-xs font-normal text-slate-400 normal-case">
                         Target: {kpi.targetDisplay}
                       </span>
                     </th>
@@ -1262,7 +1451,7 @@ export default function RoleDetailView({
                         </div>
                         {member.changeVsPrev !== null ? (
                           <div
-                            className={`text-[11px] font-semibold ${
+                            className={`text-xs font-semibold ${
                               member.changeVsPrev >= 0 ? 'text-emerald-600' : 'text-rose-600'
                             }`}
                           >
@@ -1273,7 +1462,7 @@ export default function RoleDetailView({
                           </div>
                         ) : (
                           <div
-                            className="text-[11px] font-semibold text-slate-400"
+                            className="text-xs font-semibold text-slate-400"
                             title="No previous-month data"
                           >
                             —
@@ -1361,7 +1550,9 @@ export default function RoleDetailView({
       {/* ================================================================== */}
       {/* 5A. 1-ON-1 COACHING & REMEDIATION — Individual Action Plan         */}
       {/* ================================================================== */}
-      {showActionSection(displayedIndividualCards.length, presentationMode) && displayedIndividualCards.length > 0 && (
+      {((showActionSection(displayedIndividualCards.length, presentationMode) &&
+        displayedIndividualCards.length > 0) ||
+        (!presentationMode && dismissedIndIds.length > 0)) && (
         <section
           id="presentation-section-role-coaching"
           data-section-label="Coaching"
@@ -1382,12 +1573,41 @@ export default function RoleDetailView({
               </h2>
             </div>
             {showPresentationControl(presentationMode) && (
-              <p className="text-xs font-medium text-slate-500">
-                One action card per employee shown above · Click &ldquo;Edit&rdquo; on any card to customize &amp; save
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {dismissedIndIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={restoreAllIndividual}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                  >
+                    <RotateCcw className="size-3.5" aria-hidden="true" />
+                    <span>Restore {dismissedIndIds.length} dismissed</span>
+                  </button>
+                )}
+                <p className="text-xs font-medium text-slate-500">
+                  One action card per employee shown above · Click &ldquo;Edit&rdquo; on any card to customize &amp; save
+                </p>
+              </div>
             )}
           </div>
 
+          {displayedIndividualCards.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                No individual action plans for this period.
+              </p>
+              {showPresentationControl(presentationMode) && dismissedIndIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={restoreAllIndividual}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                >
+                  <RotateCcw className="size-3.5" aria-hidden="true" />
+                  <span>Restore dismissed suggestions</span>
+                </button>
+              )}
+            </div>
+          ) : (
           <div
             className={`mt-5 grid grid-cols-1 gap-4 ${
               displayedIndividualCards.length > 1 ? 'md:grid-cols-2' : 'md:grid-cols-1'
@@ -1396,6 +1616,10 @@ export default function RoleDetailView({
             {displayedIndividualCards.map((card) => {
               const isEditing =
                 showPresentationControl(presentationMode) && editingIndividualId === card.id;
+              const isConfirmingDelete =
+                showPresentationControl(presentationMode) && confirmDeleteIndId === card.employeeId;
+              const isDeleting = deletingIndId === card.employeeId;
+              const deleteError = indDeleteError[card.employeeId];
               const cardGradeStyle = GRADE_STYLES[card.grade];
               const indAiTargetKey = `ind:${card.id}`;
               const indAiState = aiStateByTarget[indAiTargetKey];
@@ -1601,14 +1825,25 @@ export default function RoleDetailView({
                               onClick={() => triggerRoleIndividualAi(card)}
                             />
                             {!isEditing && (
-                              <button
-                                type="button"
-                                onClick={() => startEditIndividual(card)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
-                              >
-                                <Edit3 className="size-3" aria-hidden />
-                                <span>Edit</span>
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditIndividual(card)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                                >
+                                  <Edit3 className="size-3" aria-hidden />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`delete-role-individual-action-${card.employeeId}`}
+                                  onClick={() => setConfirmDeleteIndId(card.employeeId)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50"
+                                >
+                                  <Trash2 className="size-3" aria-hidden />
+                                  <span>Delete</span>
+                                </button>
+                              </>
                             )}
                           </>
                         )}
@@ -1624,6 +1859,42 @@ export default function RoleDetailView({
                         }
                       />
                     </div>
+
+                    {isConfirmingDelete && (
+                      <div
+                        role="alertdialog"
+                        aria-label={`Confirm delete action for ${card.personName}`}
+                        className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                      >
+                        <p className="text-xs font-semibold text-rose-900">
+                          Delete this individual action plan for {card.personName}?
+                        </p>
+                        {deleteError && (
+                          <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
+                            {deleteError}
+                          </p>
+                        )}
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            onClick={() => setConfirmDeleteIndId(null)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            data-testid={`confirm-delete-role-individual-action-${card.employeeId}`}
+                            onClick={() => confirmDeleteIndividual(card)}
+                            className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                          >
+                            {isDeleting ? 'Deleting…' : 'Delete Action'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <IndividualEvidenceDrawer
                       panelId={evidencePanelId}
@@ -1648,13 +1919,15 @@ export default function RoleDetailView({
               );
             })}
           </div>
+          )}
         </section>
       )}
 
       {/* ================================================================== */}
       {/* 5. COHORT-WIDE INTERVENTIONS — Role-Level Action Plan              */}
       {/* ================================================================== */}
-      {showActionSection(localActions.length, presentationMode) ? (
+      {(showActionSection(localActions.length, presentationMode) ||
+        (!presentationMode && restorableDismissedRoleIds.length > 0)) ? (
       <section
         id="presentation-section-role-actions"
         data-section-label="Actions"
@@ -1677,16 +1950,40 @@ export default function RoleDetailView({
               Systemic interventions linked directly to the affected KPIs and people in {data.roleTitle}
             </p>
           </div>
-          <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
-            {localActions.length} {localActions.length === 1 ? 'action' : 'actions'}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {showPresentationControl(presentationMode) && restorableDismissedRoleIds.length > 0 && (
+              <button
+                type="button"
+                onClick={restoreDismissedRoleActions}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
+              >
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+                <span>Restore {restorableDismissedRoleIds.length} dismissed</span>
+              </button>
+            )}
+            <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
+              {localActions.length} {localActions.length === 1 ? 'action' : 'actions'}
+            </span>
+          </div>
         </div>
 
         {/* Existing Actions as Cohort-Wide Intervention Cards */}
         {localActions.length === 0 ? (
-          <p className="mt-5 text-sm text-slate-500">
-            No corrective actions recorded for this role yet.
-          </p>
+          <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
+            <p className="text-sm font-medium text-slate-600">
+              No corrective actions recorded for this role yet.
+            </p>
+            {showPresentationControl(presentationMode) && restorableDismissedRoleIds.length > 0 && (
+              <button
+                type="button"
+                onClick={restoreDismissedRoleActions}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700"
+              >
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+                <span>Restore dismissed suggestions</span>
+              </button>
+            )}
+          </div>
         ) : (
           <ul
             className={`mt-6 grid grid-cols-1 gap-4 ${
@@ -1712,6 +2009,10 @@ export default function RoleDetailView({
 
               const isEditingRoleAct =
                 showPresentationControl(presentationMode) && editingRoleActionId === action.id;
+              const isConfirmingRoleDelete =
+                showPresentationControl(presentationMode) && confirmDeleteRoleId === action.id;
+              const isDeletingRole = deletingRoleId === action.id;
+              const cardRoleDeleteError = roleDeleteError[action.id];
               const roleActAiKey = `role-act:${action.id}`;
               const roleActAiState = aiStateByTarget[roleActAiKey];
 
@@ -1751,20 +2052,67 @@ export default function RoleDetailView({
                               onClick={() => triggerRoleActionAi(action)}
                             />
                             {!isEditingRoleAct && (
-                              <button
-                                type="button"
-                                data-testid={`edit-role-action-${action.id}`}
-                                onClick={() => startEditRoleAction(action)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
-                              >
-                                <Edit3 className="size-3" aria-hidden />
-                                <span>Edit</span>
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  data-testid={`edit-role-action-${action.id}`}
+                                  onClick={() => startEditRoleAction(action)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                                >
+                                  <Edit3 className="size-3" aria-hidden />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`delete-role-action-${action.id}`}
+                                  onClick={() => setConfirmDeleteRoleId(action.id)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50"
+                                >
+                                  <Trash2 className="size-3" aria-hidden />
+                                  <span>Delete</span>
+                                </button>
+                              </>
                             )}
                           </>
                         )}
                       </div>
                     </div>
+
+                    {isConfirmingRoleDelete && (
+                      <div
+                        role="alertdialog"
+                        aria-label={`Confirm delete role action ${action.title || action.description}`}
+                        className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                      >
+                        <p className="text-xs font-semibold text-rose-900">
+                          Delete this role-level action?
+                        </p>
+                        {cardRoleDeleteError && (
+                          <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
+                            {cardRoleDeleteError}
+                          </p>
+                        )}
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={isDeletingRole}
+                            onClick={() => setConfirmDeleteRoleId(null)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDeletingRole}
+                            data-testid={`confirm-delete-role-action-${action.id}`}
+                            onClick={() => confirmDeleteRoleAction(action)}
+                            className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                          >
+                            {isDeletingRole ? 'Deleting…' : 'Delete Action'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {showPresentationControl(presentationMode) && (
                       <AiRecommendationBanner

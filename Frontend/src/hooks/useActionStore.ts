@@ -61,6 +61,7 @@ export const actionQueryKeys = {
 };
 
 const ACTION_TYPE_VALUES = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'] as const;
+const ACTION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Module-level shared cache and listeners for Backend API data
 let cachedActions: PMSAction[] | null = null;
@@ -518,29 +519,38 @@ export function useActionStore() {
   );
 
   const deleteAction = useCallback(async (actionId: string, employeeId?: string): Promise<boolean> => {
-    // Add to deleted blacklist
-    addDeletedActionId(actionId);
-
-    // Also remove from local actions
-    const all = loadLocalActions();
-    const filtered = all.filter((a) => a.id !== actionId);
-    saveLocalActions(filtered);
-
-    // Call backend delete route
-    if (employeeId) {
+    const isUuid = ACTION_UUID_RE.test(actionId);
+    if (isUuid && employeeId) {
       try {
-        await apiFetch(`/api/employee/${employeeId}/corrective-actions/${actionId}`, {
-          method: 'DELETE',
-        });
-
-        // Reload actions list from backend
-        await fetchActions();
-
-        return true;
+        const res = await apiFetch<{ success?: boolean }>(
+          `/api/employee/${encodeURIComponent(employeeId)}/corrective-actions/${encodeURIComponent(actionId)}`,
+          { method: 'DELETE' },
+        );
+        if (res && res.success === false) {
+          return false;
+        }
       } catch {
         return false;
       }
     }
+
+    // Add to deleted blacklist and remove from local actions
+    addDeletedActionId(actionId);
+    const all = loadLocalActions();
+    const filtered = all.filter((a) => a.id !== actionId);
+    saveLocalActions(filtered);
+
+    if (cachedActions) {
+      cachedActions = cachedActions.filter((a) => a.id !== actionId);
+      listeners.forEach((listener) => listener(cachedActions!));
+    } else {
+      listeners.forEach((listener) => listener(filtered));
+    }
+
+    if (isUuid && employeeId) {
+      await fetchActions();
+    }
+
     return true;
   }, []);
 

@@ -44,6 +44,7 @@ import {
   recordMatchesRole,
   resolveRoleCards,
   type RoleActionDraft,
+  type RoleAssignedAction,
 } from './roleDetailData';
 import { MonthlyReviewLoading } from './components/MonthlyReviewLoading';
 import {
@@ -86,6 +87,7 @@ interface TeamPlanItemApiRow {
   status: TeamLevelActionPlanCard['status'];
   due_date?: string | null;
   expected_team_impact: string;
+  is_deleted?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -296,8 +298,8 @@ function MonthlyPresentationScreen({
     }
     return [...regions].sort((a, b) => (a === 'EGY' ? -1 : b === 'EGY' ? 1 : 0));
   }, [explicitPreview, serverTeams]);
-  const { getAllActions, saveAction, updateAction } = useActionStore();
-  const storedActions = getAllActions();
+  const { getAllActions, saveAction, updateAction, deleteAction } = useActionStore();
+  const storedActions = useMemo(() => getAllActions(), [getAllActions]);
 
   const rawRegion = searchParams.get('region');
   const normalizedUrlRegion = normalizeRegion(rawRegion);
@@ -727,20 +729,24 @@ function MonthlyPresentationScreen({
     })),
   );
 
+  const canonicalTeam = resolvedTeamData?.canonicalTeam ?? '';
+  const teamPeriodKey = resolvedTeamData?.periodKey ?? '';
+  const teamMonthLabel = resolvedTeamData?.monthLabel ?? '';
+
   const activeTeamPlanScope = useMemo(() => {
-    if (!resolvedTeamData) return null;
-    const parsedPeriod = periodFromKey(resolvedTeamData.periodKey);
-    const [, labelYear] = resolvedTeamData.monthLabel.split(' ');
-    const month = resolvePeriodMonthName(parsedPeriod?.month, resolvedTeamData.monthLabel);
+    if (!canonicalTeam) return null;
+    const parsedPeriod = periodFromKey(teamPeriodKey);
+    const [, labelYear] = teamMonthLabel.split(' ');
+    const month = resolvePeriodMonthName(parsedPeriod?.month, teamMonthLabel);
     const year = parsedPeriod?.year || Number(labelYear) || new Date().getFullYear();
     return {
-      team: resolvedTeamData.canonicalTeam,
+      team: canonicalTeam,
       region: activeRegion,
       month,
       year,
-      scopeKey: teamPlanScopeKey(resolvedTeamData.canonicalTeam, month, year, activeRegion),
+      scopeKey: teamPlanScopeKey(canonicalTeam, month, year, activeRegion),
     };
-  }, [activeRegion, resolvedTeamData]);
+  }, [activeRegion, canonicalTeam, teamPeriodKey, teamMonthLabel]);
 
   const [teamPlanItemsByScope, setTeamPlanItemsByScope] = useState<
     Record<string, TeamLevelActionPlanCard[]>
@@ -772,6 +778,7 @@ function MonthlyPresentationScreen({
           expectedTeamImpact: row.expected_team_impact,
           status: row.status,
           dueDate: row.due_date ?? null,
+          isDeleted: Boolean(row.is_deleted),
         }));
         const merged = mergeTeamPlanItems(localItems, remoteItems);
         writeStoredTeamPlans(scopeKey, merged);
@@ -798,8 +805,9 @@ function MonthlyPresentationScreen({
     async (card: TeamLevelActionPlanCard) => {
       if (!activeTeamPlanScope) return;
       const { team, region, month, year, scopeKey } = activeTeamPlanScope;
+      const cleanCard: TeamLevelActionPlanCard = { ...card, isDeleted: false };
       const currentList = teamPlanItemsByScope[scopeKey] ?? readStoredTeamPlans(scopeKey);
-      const nextList = mergeTeamPlanItems(currentList, [card]);
+      const nextList = mergeTeamPlanItems(currentList, [cleanCard]);
       writeStoredTeamPlans(scopeKey, nextList);
       setTeamPlanItemsByScope((prev) => ({
         ...prev,
@@ -812,21 +820,90 @@ function MonthlyPresentationScreen({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            card_id: card.id,
+            card_id: cleanCard.id,
             team,
             region,
             month,
             year,
-            title: card.title,
-            target_kpi: card.targetKpi,
-            scope_description: card.scopeDescription,
-            owner: card.owner,
-            status: card.status,
-            due_date: card.dueDate ?? null,
-            expected_team_impact: card.expectedTeamImpact,
+            title: cleanCard.title,
+            target_kpi: cleanCard.targetKpi,
+            scope_description: cleanCard.scopeDescription,
+            owner: cleanCard.owner,
+            status: cleanCard.status,
+            due_date: cleanCard.dueDate ?? null,
+            expected_team_impact: cleanCard.expectedTeamImpact,
           }),
         },
       );
+    },
+    [activeTeamPlanScope, explicitPreview, teamPlanItemsByScope],
+  );
+
+  const handleDeleteTeamAction = useCallback(
+    async (card: TeamLevelActionPlanCard) => {
+      if (!activeTeamPlanScope) return;
+      const { team, region, month, year, scopeKey } = activeTeamPlanScope;
+      const isCustom = card.id.startsWith('team-act-custom-');
+      if (!explicitPreview) {
+        const params = new URLSearchParams({
+          team,
+          month,
+          year: String(year),
+          region,
+        });
+        const res = await apiFetch<{ success?: boolean; message?: string }>(
+          `/api/team-actions/plan-items/${encodeURIComponent(card.id)}?${params.toString()}`,
+          { method: 'DELETE' },
+        );
+        if (res && res.success === false) {
+          throw new Error(res.message || 'Failed to delete team action');
+        }
+      }
+      const currentList = teamPlanItemsByScope[scopeKey] ?? readStoredTeamPlans(scopeKey);
+      const nextList = isCustom
+        ? currentList.filter((item) => item.id !== card.id)
+        : mergeTeamPlanItems(currentList, [{ ...card, isDeleted: true }]);
+      writeStoredTeamPlans(scopeKey, nextList);
+      setTeamPlanItemsByScope((prev) => ({
+        ...prev,
+        [scopeKey]: nextList,
+      }));
+    },
+    [activeTeamPlanScope, explicitPreview, teamPlanItemsByScope],
+  );
+
+  const handleRestoreTeamActions = useCallback(
+    async (cardIds: string[]) => {
+      if (!activeTeamPlanScope || cardIds.length === 0) return;
+      const { team, region, month, year, scopeKey } = activeTeamPlanScope;
+      if (!explicitPreview) {
+        const params = new URLSearchParams({
+          team,
+          month,
+          year: String(year),
+          region,
+          purge_tombstone: 'true',
+        });
+        await Promise.all(
+          cardIds.map(async (cardId) => {
+            const res = await apiFetch<{ success?: boolean; message?: string }>(
+              `/api/team-actions/plan-items/${encodeURIComponent(cardId)}?${params.toString()}`,
+              { method: 'DELETE' },
+            );
+            if (res && res.success === false) {
+              throw new Error(res.message || 'Failed to restore team actions');
+            }
+          }),
+        );
+      }
+      const idSet = new Set(cardIds);
+      const currentList = teamPlanItemsByScope[scopeKey] ?? readStoredTeamPlans(scopeKey);
+      const nextList = currentList.filter((item) => !idSet.has(item.id));
+      writeStoredTeamPlans(scopeKey, nextList);
+      setTeamPlanItemsByScope((prev) => ({
+        ...prev,
+        [scopeKey]: nextList,
+      }));
     },
     [activeTeamPlanScope, explicitPreview, teamPlanItemsByScope],
   );
@@ -924,6 +1001,47 @@ function MonthlyPresentationScreen({
       });
     },
     [resolvedTeamData, saveAction, updateAction],
+  );
+
+  const handleDeleteIndividualAction = useCallback(
+    async (employeeId: string, monthName: string, actionId?: string) => {
+      const targetMonth = monthName.trim().toLowerCase();
+      const targetEmployee = employeeId.trim().toLowerCase();
+      const matched =
+        (actionId ? storedActions.find((a) => a.id === actionId) : undefined) ??
+        storedActions.find(
+          (a) =>
+            (a.employee_id || '').trim().toLowerCase() === targetEmployee &&
+            (!targetMonth || (a.month || '').trim().toLowerCase() === targetMonth),
+        );
+      const idToDelete =
+        matched?.id ?? (actionId && ACTION_UUID_RE.test(actionId) ? actionId : undefined);
+      if (idToDelete && typeof deleteAction === 'function') {
+        const ok = await deleteAction(idToDelete, matched?.employee_id || employeeId);
+        if (!ok) {
+          throw new Error('Failed to delete corrective action on server');
+        }
+      }
+    },
+    [deleteAction, storedActions],
+  );
+
+  const handleDeleteRoleAction = useCallback(
+    async (action: RoleAssignedAction) => {
+      const isInStore = storedActions.some((a) => a.id === action.id);
+      if ((!action.suggested || isInStore) && typeof deleteAction === 'function') {
+        const targetEmployeeId =
+          action.employeeId ||
+          resolvedRoleData?.employeeId ||
+          storedActions.find((a) => a.id === action.id)?.employee_id ||
+          '';
+        const ok = await deleteAction(action.id, targetEmployeeId || undefined);
+        if (!ok) {
+          throw new Error('Failed to delete role action on server');
+        }
+      }
+    },
+    [deleteAction, resolvedRoleData?.employeeId, storedActions],
   );
 
   const [presentationMode, setPresentationMode] = useState(false);
@@ -1045,6 +1163,8 @@ function MonthlyPresentationScreen({
           onNavigateToOverview={handleBackToOverview}
           onNavigateToFunction={handleBackToFunction}
           onSaveAction={handleSaveRoleAction}
+          onDeleteAction={handleDeleteRoleAction}
+          onDeleteIndividualAction={handleDeleteIndividualAction}
           toolbar={headerToolbar}
           presentationMode={presentationMode}
         />
@@ -1059,8 +1179,11 @@ function MonthlyPresentationScreen({
           onNavigateToCallCenter={handleBackToFunction}
           onSwitchTeam={handleSelectAgentTeam}
           onSaveIndividualAction={handleSaveIndividualAction}
+          onDeleteIndividualAction={handleDeleteIndividualAction}
           savedTeamActions={savedTeamActionsForActiveScope}
           onSaveTeamAction={handleSaveTeamAction}
+          onDeleteTeamAction={handleDeleteTeamAction}
+          onRestoreTeamActions={handleRestoreTeamActions}
           toolbar={headerToolbar}
           presentationMode={presentationMode}
         />

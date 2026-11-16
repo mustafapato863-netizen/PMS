@@ -955,12 +955,27 @@ class CorrectiveActionService:
         if not action or action.employee_id != employee.id:
             raise CorrectiveActionNotFoundError("Corrective Action not found")
 
+        actor_id = self._uuid(user_id)
+        if actor_id and not self.db.query(User.id).filter(User.id == actor_id).first():
+            actor_id = None
+        previous_status = action.status
+
         try:
             action.is_active = False
-            action.updated_by_user_id = self._uuid(user_id)
+            action.updated_by_user_id = actor_id
             action.updated_at = dt.datetime.now(dt.timezone.utc)
-            self.db.commit()
-            return self.serialize(action)
+            self.db.flush()
+            serialized = self.serialize(action)
+            AuditService.log_operation(
+                self.db,
+                table_name="actions",
+                operation="DELETE",
+                record_id=str(action.id),
+                old_values={"is_active": True, "status": previous_status},
+                new_values={"is_active": False},
+                performed_by_user_id=str(actor_id) if actor_id else None,
+            )
+            return serialized
         except Exception:
             self.db.rollback()
             raise
