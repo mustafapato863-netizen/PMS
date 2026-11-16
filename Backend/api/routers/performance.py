@@ -24,7 +24,7 @@ from utils.report_scope import (
 from config.database import get_db, release_read_transaction
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
-from models.models import Team
+from models.models import PerformanceRecord, Team
 from models.performance_read_schemas import PerformanceCatalogData, PerformanceRecordPage, PerformanceSummaryData
 from exports.report_exporter import ReportExporter
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
@@ -485,6 +485,11 @@ def _authorized_catalog_teams(db: Session, scope: dict, scoped_rows: list[dict])
             observed[(alias_key, region)].add(level)
 
     team_rows = db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+    active_team_keys = {
+        (logical_team_name(row).casefold(), str(row.region or "").strip().upper())
+        for row in team_rows
+    }
+    has_canonical_preapprovals_ip = ("pre-approvals ip", "EGY") in active_team_keys
     grants = {
         str(value).strip().casefold()
         for value in scope.get("accessible_functions", [])
@@ -497,6 +502,15 @@ def _authorized_catalog_teams(db: Session, scope: dict, scoped_rows: list[dict])
     for team in team_rows:
         name = logical_team_name(team)
         region = str(team.region or "").strip().upper() or None
+        if (
+            has_canonical_preapprovals_ip
+            and name.casefold() == "pre-approvals ip offshore"
+            and (region or "") == "EGY"
+            and ("pre-approvals ip offshore", "EGY") not in observed
+            and db.query(PerformanceRecord.id).filter(PerformanceRecord.team_id == team.id).first() is None
+        ):
+            # Legacy horizontal Pre-Approvals IP Offshore row is unused once Pre-Approvals IP is active.
+            continue
         key = (name.casefold(), (region or "").casefold())
         if record_derived_inventory:
             levels = observed.get(key) or observed.get((name.casefold(), ""))
