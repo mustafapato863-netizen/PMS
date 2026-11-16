@@ -24,6 +24,7 @@ from models.schemas import CallsData, EvaluationData, GeoBreakdown, GeoData, Per
 from services.ai.approved_patterns import ApprovedPatternMatcher
 from services.ai.catalog import ai_evidence_cache
 from services.ai.orchestrator import PmsAiOrchestrator
+from services.ai.trace_logger import TrainingTraceLogger
 from services.dashboard_record_service import DashboardRecordService
 
 
@@ -583,10 +584,15 @@ def build_eval_cases() -> list[EvalCase]:
         EvalCase(
             "A24_branch_compare", "suite_a", "a24", 1,
             "Which has more bookings in September: Dubai, Sharjah, or Ajman?",
-            cc_state, False,
+            SessionFilterContext(), False,
             lambda r: _intent_eq(r, "answer", "compare_branches", "ranking"),
             None,
-            lambda r: ("Dubai" in _full_text(r) and "Sharjah" in _full_text(r) and "Ajman" in _full_text(r), f"h={r.headline!r}"),
+            lambda r: (
+                all(f"{branch}: {count}" in r.headline for branch, count in (
+                    ("Dubai", 830), ("Sharjah", 265), ("Ajman", 108),
+                )) and "September 2026" in r.headline and "Clinics:" not in r.headline,
+                f"h={r.headline!r}",
+            ),
         ),
         EvalCase(
             "A25_rcm_coding_egy", "suite_a", "a25", 1,
@@ -1005,6 +1011,12 @@ def run_pattern_learning_evaluation(records: list[PerformanceRecord]) -> dict[st
                         )
                     )
                     assert resp.trace_id
+                    found, _ = TrainingTraceLogger(db).record_feedback(
+                        trace_id=resp.trace_id,
+                        rating="down",
+                        caller_user_id=scope["user_id"],
+                    )
+                    assert found
                     matcher.approve_pattern_from_trace(
                         trace_id=resp.trace_id,
                         payload=AiApprovePatternRequest(

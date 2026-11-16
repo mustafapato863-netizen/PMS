@@ -34,7 +34,6 @@ import {
   Sparkles,
   Target,
   Trash2,
-  TrendingUp,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -800,13 +799,7 @@ export default function RoleDetailView({
     (card: RoleIndividualActionPlan) => {
       const targetKey = `ind:${card.id}`;
       const scopeTeam = card.recordTeam || resolvedRoleTeam;
-      const scopeKey = buildAiScopeKey({
-        team: scopeTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: card.employeeId,
-        focusKpiKey: card.linkedKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(scopeTeam, data.periodKey, card.employeeId, card.linkedKpiKey);
       const isEditingThis = editingIndividualId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -851,13 +844,7 @@ export default function RoleDetailView({
       const empId =
         action.employeeId || (data.headcount === 1 && data.employeeId ? data.employeeId : null);
       const focusKpiKey = action.linkedKpiKey || selected?.kpiKey || null;
-      const scopeKey = buildAiScopeKey({
-        team: resolvedRoleTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: empId,
-        focusKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(resolvedRoleTeam, data.periodKey, empId, focusKpiKey);
       const isEditingThis = editingRoleActionId === action.id;
       const hasUnsaved =
         isEditingThis &&
@@ -910,13 +897,7 @@ export default function RoleDetailView({
       candidateKpiKey && (!candidateKpi || candidateKpi.statusBadge !== 'On Target')
         ? candidateKpiKey
         : null;
-    const scopeKey = buildAiScopeKey({
-      team: resolvedRoleTeam,
-      month: activeMonthName,
-      year: activeYearNum,
-      employeeId: null,
-      focusKpiKey,
-    });
+    const scopeKey = buildAiScopeKey(resolvedRoleTeam, data.periodKey, null, focusKpiKey);
     void runRoleAiRequest(
       'role-form',
       scopeKey,

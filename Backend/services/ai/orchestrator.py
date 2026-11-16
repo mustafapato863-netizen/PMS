@@ -538,6 +538,17 @@ class PmsAiOrchestrator:
             claimed_context_version = int(conv_ctx.context_version)
             if req.session_state.last_confirmed_query is None and conv_ctx.confirmed_context is not None:
                 req.session_state.last_confirmed_query = conv_ctx.confirmed_context
+            elif req.session_state.last_confirmed_query is not None:
+                client_context = req.session_state.last_confirmed_query
+                saved_context = conv_ctx.confirmed_context
+                client_context.candidate_employees = (
+                    saved_context.candidate_employees
+                    if client_context.intent and all(
+                        getattr(client_context, field) == getattr(saved_context, field)
+                        for field in ("function", "team", "position", "region", "branch", "performance_level")
+                    )
+                    else []
+                )
             claimed_turn, replayed_payload = conv_service.claim_or_replay_turn(
                 conversation_id=active_conversation_id,
                 scope=self.scope,

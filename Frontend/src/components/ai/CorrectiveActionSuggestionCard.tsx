@@ -397,7 +397,7 @@ export default function CorrectiveActionSuggestionCard({
                     );
                   })}
                 </div>
-                {data.trend_summary && data.trend_summary.score_delta !== null && data.trend_summary.previous_period && (
+                {data.trend_summary && typeof data.trend_summary.score_delta === "number" && data.trend_summary.previous_period && (
                   <div className="mt-2 border-t border-[var(--border-light)] pt-2 text-xs text-[var(--text-secondary)] space-y-0.5">
                     <p>
                       vs {data.trend_summary.previous_period}:{' '}
@@ -409,7 +409,7 @@ export default function CorrectiveActionSuggestionCard({
                         ? ` (missing ${data.trend_summary.missing_intermediate_periods.join(', ')})`
                         : ''}
                     </p>
-                    {data.trend_summary.window_delta !== null && data.trend_summary.window_start_period && (
+                    {typeof data.trend_summary.window_delta === "number" && data.trend_summary.window_start_period && (
                       <p className="text-[var(--text-muted)]">
                         Full window since {data.trend_summary.window_start_period}:{' '}
                         {data.trend_summary.window_delta >= 0 ? '+' : ''}

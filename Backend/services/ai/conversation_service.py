@@ -11,6 +11,7 @@ from models.ai_schemas import (
     AiClarificationPrompt,
     AiConversationContextPayload,
     AiConversationDetailPayload,
+    AiConversationRetrySettings,
     AiConversationSummaryItem,
     AiConversationTurnDetail,
     ClarificationChoice,
@@ -41,7 +42,6 @@ from utils.report_scope import (
     FUNCTION_SCOPED_ROLES,
     SELF_SCOPED_ROLES,
     filter_records_by_scope,
-    user_can_access_region,
     user_can_access_team,
     user_can_access_team_level,
 )
@@ -162,12 +162,16 @@ class AiConversationService:
         return True
 
     def _is_region_authorized(self, region_name: str | None, eff_scope: dict[str, Any]) -> bool:
-        if not region_name:
+        if not region_name or region_name.strip().casefold() == "all":
             return True
-        role = str(eff_scope.get("role") or "")
-        if role == "Regional Manager":
-            return user_can_access_region(eff_scope, str(region_name))
-        return True
+        allowed = {
+            str(region).strip().casefold()
+            for region in (eff_scope.get("accessible_regions") or eff_scope.get("allowed_regions") or [])
+            if str(region).strip()
+        }
+        if allowed:
+            return "all" in allowed or region_name.strip().casefold() in allowed
+        return eff_scope.get("role") != "Regional Manager"
 
     def _is_team_and_level_authorized(
         self,
@@ -451,6 +455,26 @@ class AiConversationService:
         ):
             return False
 
+        clarification = resp.get("clarification")
+        choices = (clarification.get("choices") or []) if isinstance(clarification, dict) else []
+        for person in [
+            *(lcq.get("candidate_employees") or []),
+            *(lcq.get("pending_clarification_choices") or []),
+            *choices,
+        ]:
+            if not isinstance(person, dict):
+                continue
+            person_id = person.get("employee_id")
+            if not self.is_plan_and_context_authorized(
+                scope=eff_scope,
+                team=person.get("team"),
+                performance_level=person.get("performance_level"),
+                branch=person.get("branch"),
+                region=eff_region,
+                employee_id=str(person_id) if person_id else None,
+            ):
+                return False
+
         # Also validate every evidence item in evidence_summary and response_payload
         ev_sum = turn_row.evidence_summary if isinstance(turn_row.evidence_summary, dict) else {}
         ev_items = list(ev_sum.get("items") or []) + list(resp.get("evidence_envelope_v2") or [])
@@ -504,6 +528,18 @@ class AiConversationService:
         payload = self._row_to_payload(row)
         mutated = False
         cc = payload.confirmed_context
+        candidate_scope_allowed = (
+            self._is_region_authorized(cc.region, eff_scope)
+            and self.is_plan_and_context_authorized(
+                scope=eff_scope,
+                function=cc.function,
+                team=cc.team,
+                region=cc.region,
+                performance_level=cc.performance_level,
+                branch=cc.branch,
+                branches=cc.branches,
+            )
+        )
 
         # 1. Reauthorize confirmed function, team, performance_level, branch, branches
         if cc.function and not self._is_function_authorized(cc.function, eff_scope):
@@ -536,6 +572,10 @@ class AiConversationService:
                 cc.branches = auth_branches
                 mutated = True
 
+        if cc.region and not self._is_region_authorized(cc.region, eff_scope):
+            cc.region = None
+            mutated = True
+
         # 2. Reauthorize saved person (last_subject_employee_id / last_subject_employee_name)
         emp_id = payload.last_subject_employee_id or cc.last_subject_employee_id
         emp_name = payload.last_subject_employee_name or cc.last_subject_employee_name
@@ -551,7 +591,25 @@ class AiConversationService:
                     cc.last_operation_kind = None
                 mutated = True
 
-        # 3. Reauthorize pending clarification choices &confirmed_context pending_clarification_choices
+        if cc.candidate_employees:
+            authorized_candidates = [
+                candidate for candidate in cc.candidate_employees
+                if candidate_scope_allowed and candidate.get("employee_id")
+                and self._is_team_and_level_authorized(
+                    candidate.get("team") or cc.team,
+                    candidate.get("performance_level") or cc.performance_level,
+                    eff_scope,
+                    region=cc.region,
+                )
+                and self._is_employee_authorized_for_scope(
+                    candidate["employee_id"], None, eff_scope
+                )
+            ]
+            if len(authorized_candidates) != len(cc.candidate_employees):
+                cc.candidate_employees = authorized_candidates
+                mutated = True
+
+        # Reauthorize pending clarification choices.
         def _choice_authorized(ch: ClarificationChoice) -> bool:
             if ch.team and not self._is_team_and_level_authorized(ch.team, ch.performance_level, eff_scope, region=cc.region):
                 return False
@@ -771,6 +829,12 @@ class AiConversationService:
             expected_context_version=expected_context_version,
             current_context_version=int(conv.context_version),
             session_filters=session_filters,
+            retry_settings={
+                "session_state": {key: value for key, value in session_filters.items() if key != "last_confirmed_query"},
+                "clarification_choice_id": clarification_choice_id,
+                "answer_detail": answer_detail,
+                "variation_seed": variation_seed,
+            },
         )
         if is_completed and turn_row.response_payload:
             if self._is_turn_evidence_authorized(turn_row, eff_scope):
@@ -1032,11 +1096,30 @@ class AiConversationService:
             if turn_status not in ("pending", "completed", "failed", "superseded"):
                 turn_status = "completed" if parsed_resp else "failed"
 
+            retry_settings = None
+            if turn_status in ("pending", "failed"):
+                stored_retry = (t.evidence_summary or {}).get("retry_settings")
+                if stored_retry:
+                    settings = AiConversationRetrySettings.model_validate(stored_retry)
+                    filters = settings.session_state
+                    if self._is_region_authorized(filters.region, eff_scope) and self.is_plan_and_context_authorized(
+                        scope=eff_scope,
+                        team=filters.team,
+                        function=filters.function,
+                        branch=filters.branch,
+                        region=filters.region,
+                        performance_level=filters.performance_level,
+                        employee_id=filters.employee_id,
+                    ):
+                        retry_settings = settings
+
             turn_details.append(
                 AiConversationTurnDetail(
                     turn_id=str(t.id),
                     turn_index=int(t.turn_index),
                     status=turn_status,  # type: ignore[arg-type]
+                    client_request_id=t.client_request_id,
+                    retry_settings=retry_settings,
                     user_prompt=t.user_prompt or t.user_prompt_redacted or "",
                     error_message=t.error_message,
                     scope_used=parsed_resp.scope_banner if parsed_resp else None,

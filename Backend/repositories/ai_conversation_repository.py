@@ -153,7 +153,14 @@ class AiConversationRepository:
             bind = self.db.get_bind()
             insp = sa_inspect(bind)
             tables = set(insp.get_table_names())
-            ready = "ai_conversations" in tables and "ai_turns" in tables
+            required_columns = {
+                "ai_conversations": {column.name for column in AiConversation.__table__.columns},
+                "ai_turns": {column.name for column in AiTurn.__table__.columns},
+            }
+            ready = all(
+                table in tables and columns <= {column["name"] for column in insp.get_columns(table)}
+                for table, columns in required_columns.items()
+            )
             self._schema_ready_cache = ready
             return ready
         except Exception:
@@ -163,7 +170,7 @@ class AiConversationRepository:
         if not self.is_schema_ready():
             self.db.rollback()
             raise ConversationMigrationUnavailableError(
-                "AI conversation persistence schema is not yet migrated. Run Alembic upgrade c9e1a2b3d4f5."
+                "AI conversation persistence schema is not yet migrated. Run Alembic upgrade e2b4c8d9f0a1."
             )
 
     def create_conversation(
@@ -196,6 +203,16 @@ class AiConversationRepository:
             self.db.commit()
             self.db.refresh(row)
             return row
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.get_owned_conversation(
+                conversation_id=conv_id, owner_user_id=owner_user_id, include_deleted=True
+            )
+            if existing is None:
+                raise
+            if existing.status == "deleted":
+                raise ConversationDeletedError("Conversation has been reset or deleted.")
+            return existing
         except (OperationalError, ProgrammingError) as exc:
             self.db.rollback()
             raise ConversationMigrationUnavailableError(
@@ -381,6 +398,7 @@ class AiConversationRepository:
         expected_context_version: int | None = None,
         current_context_version: int | None = None,
         session_filters: dict[str, Any] | None = None,
+        retry_settings: dict[str, Any] | None = None,
         deadline_seconds: int = 15,
     ) -> tuple[AiTurn, bool]:
         """Claim an idempotent turn slot using compare-and-swap semantics.
@@ -506,6 +524,7 @@ class AiConversationRepository:
                 "request_fingerprint": request_fingerprint,
                 "scope_fingerprint": scope_fingerprint,
                 "eval_id": eval_id,
+                "retry_settings": retry_settings,
             },
             response_payload={},
             outcome="answer",
@@ -622,7 +641,7 @@ class AiConversationRepository:
         }
         if error_message is not None:
             update_fields[AiTurn.error_message] = str(error_message)[:500]
-        self.db.query(AiTurn).filter(
+        updated = self.db.query(AiTurn).filter(
             AiTurn.id == str(turn_id),
             AiTurn.claim_token == str(claim_token),
             AiTurn.status == "pending",
@@ -630,7 +649,7 @@ class AiConversationRepository:
             update_fields,
             synchronize_session=False,
         )
-        if conversation_id:
+        if updated and conversation_id:
             conv_updates: dict[Any, Any] = {AiConversation.updated_at: now_dt}
             if title_candidate:
                 conv_row = (

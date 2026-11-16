@@ -28,7 +28,9 @@ class AuditService:
         new_values: Optional[dict] = None,
         performed_by_user_id: Optional[str] = None,
         ip_address: Optional[str] = None,
-        request_id: Optional[str] = None
+        request_id: Optional[str] = None,
+        *,
+        commit: bool = True,
     ) -> AuditLog:
         """
         Record a data modification operation to the audit log table.
@@ -50,8 +52,11 @@ class AuditService:
                 request_id=request_id
             )
             db.add(audit)
-            db.commit()
-            db.refresh(audit)
+            if commit:
+                db.commit()
+                db.refresh(audit)
+            else:
+                db.flush()
             return audit
         except Exception as e:
             db.rollback()

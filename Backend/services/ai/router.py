@@ -1125,7 +1125,14 @@ class HybridQueryRouter:
             re.search(r"\bbookings?\b", lower)
             and not re.search(r"\b(?:rate|ratio|conversion|attended|attendance)\b", lower)
         )
-        if asks_branch_comparison and asks_booking_count_prompt and not eff_team and not matched_choice:
+        if (
+            asks_branch_comparison and asks_booking_count_prompt and not eff_team
+            and eff_fn in (None, "Call Center") and len(explicit_branches) >= 2
+            and any(user_can_access_team(self.scope, team) for team in ("Inbound", "Outbound"))
+        ):
+            eff_fn = "Call Center"
+            eff_metric = "bookings_count"
+        elif asks_branch_comparison and asks_booking_count_prompt and not eff_team and not matched_choice:
             booking_choices = [
                 ClarificationChoice(
                     id="choice-bookings-inbound",
@@ -2218,6 +2225,10 @@ class HybridQueryRouter:
             w in lower
             for w in ("lowest", "worst", "weakest", "bottom", "negative contributors", "caused")
         )
+        if inherited_ranking_followup and prior and not re.search(
+            r"\b(?:lowest|worst|weakest|bottom|highest|best|top)\b", lower
+        ):
+            asks_worst = prior.ranking_direction == "worst"
         asks_single_person = bool(
             not asks_plural_ranking
             and not (inherited_ranking_followup and prior and len(prior.candidate_employees or []) > 1)
@@ -2547,50 +2558,60 @@ class HybridQueryRouter:
             explicit_metric is None or "dragging" in lower or "missing target" in lower or "why " in lower
         ):
             intent = "score_drivers"
+        elif eff_metric is not None or asks_vs_target:
+            intent = "actual_vs_target"
+        else:
+            intent = "current_value"
+
+        matched_pattern = None
+        if (
+            self.db is not None
+            and not (is_short_followup and prior and prior.intent)
+            and not matched_choice
+            and not resolved_employee_id
+            and not asks_best_month
+            and not asks_worst_month
+            and not is_multi_part_trend_and_ranking
+            and not is_multi_part_score_and_ranking
+        ):
+            from services.ai.approved_patterns import ApprovedPatternMatcher
+
+            matched_pattern = ApprovedPatternMatcher(self.db).match_prompt(
+                text,
+                known_employee_names=[c.employee_name for c in self.employee_candidates if c.employee_name],
+            )
+        if matched_pattern is not None and matched_pattern.intent in (
+            "current_value", "actual_vs_target", "score_drivers", "trend", "compare_periods",
+            "compare_branches", "compare_teams", "ranking", "scorecard_structure", "corrective_actions",
+        ):
+            intent = matched_pattern.intent  # type: ignore[assignment]
+            if matched_pattern.metric_hint and not eff_metric:
+                if matched_pattern.metric_hint in ("bookings_count", "attended_count") and eff_team in ("Inbound", "Outbound"):
+                    eff_metric = f"{eff_team.casefold()}:{matched_pattern.metric_hint}"
+                else:
+                    eff_metric = matched_pattern.metric_hint
+            if intent == "ranking":
+                if matched_pattern.operation_kind == "ranking_bottom":
+                    asks_worst = True
+                if matched_pattern.operation_kind == "ranking_plural" or matched_pattern.tool_choice in (
+                    "get_people_contribution_and_rankings",
+                ):
+                    asks_single_person = False
+                else:
+                    asks_single_person = True
         else:
             matched_pattern = None
-            if self.db is not None and not is_multi_part_trend_and_ranking and not is_multi_part_score_and_ranking:
-                from services.ai.approved_patterns import ApprovedPatternMatcher
-
-                matched_pattern = ApprovedPatternMatcher(self.db).match_prompt(
-                    text,
-                    known_employee_names=[c.employee_name for c in self.employee_candidates if c.employee_name],
-                )
-            if matched_pattern is not None and matched_pattern.intent in (
-                "current_value",
-                "actual_vs_target",
-                "score_drivers",
-                "trend",
-                "compare_periods",
-                "compare_branches",
-                "compare_teams",
-                "ranking",
-                "scorecard_structure",
-                "corrective_actions",
-            ):
-                intent = matched_pattern.intent  # type: ignore[assignment]
-                if matched_pattern.metric_hint and not eff_metric:
-                    if ":" in matched_pattern.metric_hint:
-                        eff_metric = matched_pattern.metric_hint
-                    elif matched_pattern.metric_hint in ("bookings_count", "attended_count"):
-                        t_prefix = "outbound" if (eff_team or "").casefold() == "outbound" else "inbound"
-                        eff_metric = f"{t_prefix}:{matched_pattern.metric_hint}"
-                    else:
-                        eff_metric = matched_pattern.metric_hint
-                if intent == "ranking":
-                    if matched_pattern.operation_kind == "ranking_bottom":
-                        asks_worst = True
-                    asks_single_person = matched_pattern.operation_kind != "ranking_plural"
-            elif eff_metric is not None or asks_vs_target:
-                intent = "actual_vs_target"
-            else:
-                intent = "current_value"
 
         requested_parts: list[str] = (
             ["trend", "ranking"]
             if is_multi_part_trend_and_ranking
             else (["current_value", "ranking"] if is_multi_part_score_and_ranking else [intent])
         )
+
+        if matched_pattern and matched_pattern.requested_parts:
+            parts = list(matched_pattern.requested_parts)
+            if parts in ([intent], ["trend", "ranking"], ["current_value", "ranking"]):
+                requested_parts = parts
 
         if asks_worst_month:
             asks_worst = True
@@ -2879,6 +2900,7 @@ class HybridQueryRouter:
         if (
             provider_override == "auto"
             and local_intent_enabled()
+            and matched_pattern is None
             and plan.intent in ("current_value", "actual_vs_target")
             and (eff_metric is not None or overall_score_question)
             and not is_short_followup

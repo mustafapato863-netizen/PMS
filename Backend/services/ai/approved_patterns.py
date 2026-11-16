@@ -376,6 +376,7 @@ class ApprovedPatternMatcher:
         row = (
             self.db.query(AiInteractionTrace)
             .filter(AiInteractionTrace.id == parsed_uuid)
+            .with_for_update()
             .first()
         )
         if not row:
@@ -432,6 +433,17 @@ class ApprovedPatternMatcher:
                 f"Normalized pattern failed PII check ({', '.join(norm_reasons)})."
             )
 
+        if row.feedback_rating not in ("up", "down"):
+            raise ValueError("Collect feedback on this answer before approving a pattern.")
+
+        existing = (
+            self.db.query(AiApprovedPattern)
+            .filter_by(source_trace_id=str(row.id), normalized_pattern=normalized_pat, is_active=True)
+            .first()
+        )
+        if existing is not None:
+            raise ValueError("An active pattern already exists for this feedback. Deactivate it before replacing it.")
+
         review_res = FeedbackGovernanceService(self.db).review_feedback(
             trace_id=str(row.id),
             reviewer_verified=True,
@@ -442,6 +454,7 @@ class ApprovedPatternMatcher:
             proposed_action=f"pattern:{payload.intent}",
             ip_address=ip_address,
             request_id=request_id,
+            commit=False,
         )
 
         pat_row = AiApprovedPattern(
@@ -457,13 +470,18 @@ class ApprovedPatternMatcher:
             failure_category=payload.failure_category.strip()[:64] if payload.failure_category else None,
             verified_against_pms=True,
             approved_by_user_id=str(approver_user_id or "admin")[:100],
-            review_notes=redact_secrets(payload.review_notes or "")[:240] if payload.review_notes else None,
+            review_notes=(
+                redact_secrets(sanitize_prompt_for_router_training(
+                    payload.review_notes,
+                    known_employee_names=all_names,
+                    _precomputed_tokens=name_tokens,
+                ))[:240]
+                if payload.review_notes else None
+            ),
             is_active=True,
             created_at=datetime.now(timezone.utc),
         )
         self.db.add(pat_row)
-        self.db.commit()
-        self.db.refresh(pat_row)
 
         try:
             actor_uuid = uuid.UUID(str(approver_user_id).strip())
@@ -505,8 +523,9 @@ class ApprovedPatternMatcher:
         if not row:
             return False
         old_active = bool(row.is_active)
+        if not old_active:
+            return True
         row.is_active = False
-        self.db.commit()
 
         try:
             actor_uuid = uuid.UUID(str(actor_user_id).strip())

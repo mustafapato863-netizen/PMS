@@ -345,6 +345,7 @@ class FeedbackGovernanceService:
         proposed_action: str | None = None,
         ip_address: str | None = None,
         request_id: str | None = None,
+        commit: bool = True,
     ) -> AiTraceReviewResponse | None:
         """Admin-only explicit approval/rejection transition with AuditService trail."""
         if str(caller_role or "") != "Admin":
@@ -405,7 +406,6 @@ class FeedbackGovernanceService:
             }
         )
         self._write_gov_meta(row, gov_meta)
-        self.db.commit()
 
         eligible = bool(row.is_distillation_eligible and row.reviewer_verified)
         actor_uuid = _parse_optional_uuid(reviewer_id)
@@ -430,6 +430,7 @@ class FeedbackGovernanceService:
             performed_by_user_id=actor_uuid,
             ip_address=ip_address,
             request_id=request_id,
+            commit=commit,
         )
 
         return AiTraceReviewResponse(
