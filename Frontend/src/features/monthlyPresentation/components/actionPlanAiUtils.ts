@@ -36,6 +36,10 @@ export interface AiCorrectiveActionDraftPayload {
   focus_kpi_key: string;
   focus_kpi_name: string;
   action_type: string;
+  action_choice?: string | null;
+  follow_up_interval?: string | null;
+  official_target_label?: string | null;
+  action_milestone_note?: string | null;
   measured_issue: string;
   recommended_steps: string[];
   uncertainty?: string | null;
@@ -52,14 +56,28 @@ export interface AiCorrectiveActionSuggestionPayload {
   fallback_used?: boolean;
   fallback_reason?: string | null;
   validation_errors?: string[];
+  repair_attempted?: boolean;
   context?: AiCorrectiveActionSuggestionContext;
   focus_kpi_key?: string | null;
+  cohort_in_scope_count?: number | null;
+  cohort_measured_count?: number | null;
+  cohort_unmeasured_count?: number | null;
+  cohort_below_target_count?: number | null;
+  cohort_coverage_label?: string | null;
+  official_target_label?: string | null;
+  measured_actual_label?: string | null;
   measured_facts: string[];
   evidence_limitations: string[];
   supporting_kpis: AiSupportingKpiEvidence[];
   prior_actions?: AiCorrectiveActionSuggestionPriorAction[];
   trend_summary?: AiCorrectiveActionSuggestionTrendSummary | null;
   draft: AiCorrectiveActionDraftPayload | null;
+  evidence_next_step?: string | null;
+  evidence_next_step_label?: string | null;
+  evidence_next_step_role?: string | null;
+  evidence_next_step_follow_up?: string | null;
+  evidence_next_step_action_type?: string | null;
+  evidence_next_step_source?: 'pms_evidence' | null;
   insufficient_evidence_reasons: string[];
   warning?: string | null;
 }
@@ -454,18 +472,13 @@ export function collectSuggestionNotices(
   return deduped;
 }
 
-/**
- * Returns true only when `expectedImpact` represents a real mathematically
- * supported numeric projection rather than a placeholder or verification notice.
- */
-export function hasSupportedProjectedImpact(expectedImpact: string | null | undefined): boolean {
-  const trimmed = String(expectedImpact ?? '').trim();
-  if (!trimmed) return false;
-  if (/^(?:—|-|n\/a|not specified|unavailable|impact to be confirmed)$/i.test(trimmed)) {
-    return false;
-  }
-  if (/\b(?:verify|diagnostic|unavailable|to be confirmed|cannot estimate)\b/i.test(trimmed)) {
-    return false;
-  }
-  return /\d/.test(trimmed);
+/** Only a finite score lift calculated from KPI evidence may be presented as a projection. */
+export function hasSupportedProjectedImpact(
+  projectedScoreLift: number | null | undefined,
+): boolean {
+  return (
+    typeof projectedScoreLift === 'number' &&
+    Number.isFinite(projectedScoreLift) &&
+    projectedScoreLift > 0
+  );
 }

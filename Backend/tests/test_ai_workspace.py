@@ -4013,3 +4013,134 @@ def test_phase2_ambiguous_vs_unambiguous_his_position_followup(monkeypatch):
     finally:
         db.close()
 
+
+def test_list_conversations_avoids_repeated_full_dataset_reloads(monkeypatch):
+    """Listing many conversations/turns must not repeatedly reload all performance records per turn."""
+    from models.ai_schemas import (
+        AiChatResponsePayload,
+        ConfirmedQueryContext,
+        SessionFilterContext,
+    )
+    from services.ai.conversation_service import AiConversationService
+    from services.dashboard_record_service import DashboardRecordService
+
+    records = [
+        _make_call_center_record("EMP201", "Alice Inbound", "Inbound", 91.0, 40, 50, 100, 120, month="August"),
+        _make_call_center_record("EMP202", "Bob Outbound", "Outbound", 78.0, 20, 40, 80, 100, month="August"),
+    ]
+    load_calls = 0
+
+    def _counting_list_records(self, *args, **kwargs):
+        nonlocal load_calls
+        load_calls += 1
+        return list(records)
+
+    monkeypatch.setattr(DashboardRecordService, "list_analysis_records", _counting_list_records)
+
+    db = _build_in_memory_db()
+    try:
+        mgr_scope = {
+            "user_id": "mgr-cache-1",
+            "role": "Manager",
+            "accessible_teams": ["Inbound"],
+            "accessible_team_levels": [("Inbound", "Employee")],
+            "has_unrestricted_team_access": False,
+        }
+        svc = AiConversationService(db, mgr_scope)
+        for idx in range(5):
+            conv = svc.create_conversation(scope=mgr_scope)
+            turn, _ = svc.claim_or_replay_turn(
+                conversation_id=conv.conversation_id,
+                expected_context_version=1,
+                client_request_id=f"cache-req-{idx}",
+                prompt="How did Alice Inbound perform?",
+                scope=mgr_scope,
+            )
+            svc.complete_turn(
+                conversation_id=conv.conversation_id,
+                turn_id=str(turn.id),
+                expected_context_version=1,
+                claim_token=str(turn.claim_token),
+                scope=mgr_scope,
+                outcome="answer",
+                turn_kind="analytical",
+                route_used="deterministic",
+                validated_plan={"scope": {"team": "Inbound", "employee_id": "EMP201", "employee_name": "Alice Inbound"}},
+                evidence_envelope=[],
+                session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+                confirmed_context=ConfirmedQueryContext(
+                    function="Call Center",
+                    team="Inbound",
+                    last_subject_employee_id="EMP201",
+                    last_subject_employee_name="Alice Inbound",
+                ),
+                response_payload=AiChatResponsePayload(
+                    trace_id=f"tr-cache-{idx}",
+                    conversation_id=conv.conversation_id,
+                    turn_id=str(turn.id),
+                    context_version=2,
+                    outcome="answer",
+                    answer_detail="brief",
+                    headline="Alice Inbound scored 91.0%.",
+                    resolved_session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+                ).model_dump(),
+                provider_calls=0,
+                total_ms=1.0,
+            )
+
+        # Fresh per-request service instance for scoped manager: loads dataset at most once.
+        load_calls = 0
+        scoped_items = AiConversationService(db, mgr_scope).list_conversations(scope=mgr_scope, limit=30)
+        assert len(scoped_items) == 5
+        assert all(not item.has_restricted_turns for item in scoped_items)
+        assert load_calls <= 1
+
+        # Fresh per-request service instance for unrestricted Admin: skips dataset reload completely.
+        admin_scope = {"user_id": "admin-cache-1", "role": "Admin", "has_unrestricted_team_access": True}
+        admin_svc = AiConversationService(db, admin_scope)
+        admin_conv = admin_svc.create_conversation(scope=admin_scope)
+        admin_turn, _ = admin_svc.claim_or_replay_turn(
+            conversation_id=admin_conv.conversation_id,
+            expected_context_version=1,
+            client_request_id="admin-cache-req-0",
+            prompt="How did Bob Outbound perform?",
+            scope=admin_scope,
+        )
+        admin_svc.complete_turn(
+            conversation_id=admin_conv.conversation_id,
+            turn_id=str(admin_turn.id),
+            expected_context_version=1,
+            claim_token=str(admin_turn.claim_token),
+            scope=admin_scope,
+            outcome="answer",
+            turn_kind="analytical",
+            route_used="deterministic",
+            validated_plan={"scope": {"team": "Outbound", "employee_id": "EMP202", "employee_name": "Bob Outbound"}},
+            evidence_envelope=[],
+            session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            confirmed_context=ConfirmedQueryContext(
+                function="Call Center",
+                team="Outbound",
+                last_subject_employee_id="EMP202",
+                last_subject_employee_name="Bob Outbound",
+            ),
+            response_payload=AiChatResponsePayload(
+                trace_id="tr-admin-cache-0",
+                conversation_id=admin_conv.conversation_id,
+                turn_id=str(admin_turn.id),
+                context_version=2,
+                outcome="answer",
+                answer_detail="brief",
+                headline="Bob Outbound scored 78.0%.",
+                resolved_session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            ).model_dump(),
+            provider_calls=0,
+            total_ms=1.0,
+        )
+        load_calls = 0
+        admin_items = AiConversationService(db, admin_scope).list_conversations(scope=admin_scope, limit=30)
+        assert len(admin_items) == 1
+        assert load_calls == 0
+    finally:
+        db.close()
+

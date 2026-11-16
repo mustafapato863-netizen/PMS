@@ -70,6 +70,9 @@ class AiConversationService:
         self.repo = AiConversationRepository(db)
         self.owner_user_id = str(self.scope.get("user_id") or "anonymous")
         self.owner_role = str(self.scope.get("role") or "Manager")
+        self._all_records_cache: list[Any] | None = None
+        self._all_emp_index_cache: tuple[set[str], set[str]] | None = None
+        self._scoped_emp_index_cache: dict[str, tuple[set[str], set[str]]] = {}
 
     def is_schema_ready(self) -> bool:
         return self.repo.is_schema_ready()
@@ -212,6 +215,40 @@ class AiConversationService:
                         return False
         return True
 
+    @staticmethod
+    def _build_employee_index(records: list[Any]) -> tuple[set[str], set[str]]:
+        emp_ids: set[str] = set()
+        emp_names: set[str] = set()
+        for r in records:
+            rid = str(getattr(r, "employee_id", "") or "").strip().casefold()
+            if rid:
+                emp_ids.add(rid)
+            rname = str(getattr(r, "employee_name", "") or "").strip().casefold()
+            if rname:
+                emp_names.add(rname)
+        return emp_ids, emp_names
+
+    def _get_employee_auth_indexes(
+        self,
+        eff_scope: dict[str, Any],
+    ) -> tuple[set[str], set[str], set[str], set[str]]:
+        """Load and index employee IDs/names across full and scoped datasets at most once per request/scope."""
+        if self._all_records_cache is None or self._all_emp_index_cache is None:
+            all_recs = DashboardRecordService(self.db).list_analysis_records() or []
+            self._all_records_cache = all_recs
+            self._all_emp_index_cache = self._build_employee_index(all_recs)
+
+        scope_fp = compute_scope_fingerprint(eff_scope)
+        scoped_index = self._scoped_emp_index_cache.get(scope_fp)
+        if scoped_index is None:
+            scoped_recs = filter_records_by_scope(self._all_records_cache, eff_scope)
+            scoped_index = self._build_employee_index(scoped_recs)
+            self._scoped_emp_index_cache[scope_fp] = scoped_index
+
+        all_ids, all_names = self._all_emp_index_cache
+        scoped_ids, scoped_names = scoped_index
+        return all_ids, all_names, scoped_ids, scoped_names
+
     def _is_employee_authorized_for_scope(
         self,
         employee_id: str | None,
@@ -230,30 +267,32 @@ class AiConversationService:
             if employee_id and str(employee_id).strip().casefold() != caller_emp_id.casefold():
                 return False
 
+        # Unrestricted global roles and unrestricted Managers see all employee records in filter_records_by_scope,
+        # so employee-level scoping is always satisfied without reloading the entire performance table.
+        if not is_self_only and (
+            role in {"Admin", "General Manager", "Performance Team", "Viewer"}
+            or (role == "Manager" and bool(eff_scope.get("has_unrestricted_team_access")))
+            or bool(eff_scope.get("legacy_unscoped"))
+        ):
+            return True
+
         try:
-            all_recs = DashboardRecordService(self.db).list_analysis_records() or []
+            all_ids, all_names, scoped_ids, scoped_names = self._get_employee_auth_indexes(eff_scope)
         except Exception:
             return False
 
         emp_id_norm = str(employee_id or "").strip().casefold()
         emp_name_norm = str(employee_name or "").strip().casefold()
 
-        matching_all = [
-            r
-            for r in all_recs
-            if (emp_id_norm and str(getattr(r, "employee_id", "") or "").strip().casefold() == emp_id_norm)
-            or (emp_name_norm and str(getattr(r, "employee_name", "") or "").strip().casefold() == emp_name_norm)
-        ]
-        scoped_recs = filter_records_by_scope(all_recs, eff_scope)
-        matching_scoped = [
-            r
-            for r in scoped_recs
-            if (emp_id_norm and str(getattr(r, "employee_id", "") or "").strip().casefold() == emp_id_norm)
-            or (emp_name_norm and str(getattr(r, "employee_name", "") or "").strip().casefold() == emp_name_norm)
-        ]
-
-        if matching_all:
-            return len(matching_scoped) > 0
+        has_any_match = bool(
+            (emp_id_norm and emp_id_norm in all_ids)
+            or (emp_name_norm and emp_name_norm in all_names)
+        )
+        if has_any_match:
+            return bool(
+                (emp_id_norm and emp_id_norm in scoped_ids)
+                or (emp_name_norm and emp_name_norm in scoped_names)
+            )
 
         # If no records exist in the dataset for this employee at all:
         if is_self_only:
@@ -960,19 +999,17 @@ class AiConversationService:
             conv_id = str(row.id)
             turns = turns_by_conv.get(conv_id, [])
             has_restricted = False
-            authorized_turns: list[AiTurn] = []
-            for t in turns:
-                if t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope):
+            last_turn_restricted = False
+            for idx, t in enumerate(turns):
+                is_restricted_turn = (
+                    t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope)
+                )
+                if is_restricted_turn:
                     has_restricted = True
-                else:
-                    authorized_turns.append(t)
+                if idx == len(turns) - 1:
+                    last_turn_restricted = is_restricted_turn
 
             last_turn = turns[-1] if turns else None
-            last_turn_restricted = bool(
-                last_turn is not None
-                and last_turn.status == "completed"
-                and not self._is_turn_evidence_authorized(last_turn, eff_scope)
-            )
             if has_restricted:
                 title = "Restricted conversation"
             else:

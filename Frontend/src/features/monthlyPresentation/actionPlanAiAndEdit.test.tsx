@@ -740,7 +740,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(within(drawer).getByText('Diagnostic')).toBeInTheDocument();
     expect(within(drawer).getByText('0.0% (unverified)')).toBeInTheDocument();
     expect(within(drawer).getByText(/Open · August 2026/i)).toBeInTheDocument();
-    expect(within(drawer).getByText(/Projected impact if Booking Rate reaches 50\.0% target:/i)).toBeInTheDocument();
+    expect(within(drawer).getByText(/Potential score lift if Booking Rate reaches 50/i)).toBeInTheDocument();
 
     // Duplicate-request prevention while in-flight, and Next step remains visible & editable
     const suggestBtn = within(card).getByRole('button', { name: /Generate AI recommendation for Salma Hassan/i });
@@ -850,12 +850,11 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     });
     expect(notices).toEqual(['Verify Quality source records before coaching.']);
 
-    expect(hasSupportedProjectedImpact('Verify source records before estimating score impact')).toBe(false);
-    expect(hasSupportedProjectedImpact('Diagnostic KPI (not weighted in overall score)')).toBe(false);
-    expect(hasSupportedProjectedImpact('Not specified')).toBe(false);
-    expect(hasSupportedProjectedImpact('—')).toBe(false);
-    expect(hasSupportedProjectedImpact('')).toBe(false);
-    expect(hasSupportedProjectedImpact('+6.0 pts agent score if Booking Rate reaches 50.0%')).toBe(true);
+    expect(hasSupportedProjectedImpact(null)).toBe(false);
+    expect(hasSupportedProjectedImpact(Number.NaN)).toBe(false);
+    expect(hasSupportedProjectedImpact(0)).toBe(false);
+    expect(hasSupportedProjectedImpact(-1)).toBe(false);
+    expect(hasSupportedProjectedImpact(6)).toBe(true);
 
     const { rerender } = render(
       <IndividualEvidenceDrawer
@@ -864,13 +863,14 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
         employeeId="EMP-UNV"
         testIdPrefix="individual"
         expectedImpact="Verify source records before estimating score impact"
+        projectedAgentScoreLift={null}
         linkedKpiLabel="Quality Score"
         linkedKpiTarget="95.0%"
       />,
     );
     expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('individual-impact-unavailable-EMP-UNV')).toHaveTextContent(
-      /Score impact unavailable: Verify source records before estimating score impact/i,
+      /Action plan note \(not recalculated from KPI evidence\): Verify source records before estimating score impact/i,
     );
 
     rerender(
@@ -880,6 +880,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
         employeeId="EMP-DIAG"
         testIdPrefix="individual"
         expectedImpact="Diagnostic KPI (not weighted in overall score)"
+        projectedAgentScoreLift={null}
       />,
     );
     expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
@@ -894,6 +895,7 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
         employeeId="EMP-EMPTY"
         testIdPrefix="individual"
         expectedImpact="Not specified"
+        projectedAgentScoreLift={null}
       />,
     );
     expect(screen.queryByText(/Projected impact/i)).not.toBeInTheDocument();
@@ -1391,5 +1393,95 @@ describe('Action Plan delete, restore, and presentation mode hiding', () => {
     expect(screen.getByRole('alertdialog', { name: /Confirm delete role action/i })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps Team-Level cards compact behind View evidence, isolates card height with items-start, and offers PMS evidence fallback on rejected drafts without saving', { timeout: 15000 }, async () => {
+    const user = userEvent.setup();
+    const onSaveTeamAction = vi.fn().mockResolvedValue(undefined);
+    const data = makeTeamFixture();
+
+    vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValueOnce({
+      success: true,
+      data: {
+        outcome: 'draft_rejected',
+        provider_used: 'none',
+        fallback_reason: 'validation_failed',
+        validation_errors: ['word_outside_allowed_vocabulary'],
+        cohort_in_scope_count: 7,
+        cohort_measured_count: 6,
+        cohort_unmeasured_count: 1,
+        cohort_below_target_count: 6,
+        cohort_coverage_label: '6 measured out of 7 in scope (1 unmeasured · 6 below target)',
+        official_target_label: '75%',
+        measured_facts: [
+          '6 of 6 Outbound members with complete data were below target on Reachability in September 2026 (higher is better).',
+          'Target for Reachability: 75%.',
+          'Cohort counts: 6 measured out of 7 in scope (1 unmeasured; 6 below target).',
+        ],
+        evidence_limitations: [],
+        supporting_kpis: [],
+        insufficient_evidence_reasons: [],
+        draft: null,
+        evidence_next_step: 'Review Reachability by dialing window and check disconnected numbers before changing the schedule.',
+        evidence_next_step_label: 'Suggested next step from PMS evidence',
+        evidence_next_step_role: 'Workforce Analyst',
+        evidence_next_step_follow_up: 'Review after one week',
+        evidence_next_step_action_type: 'Monitor',
+        evidence_next_step_source: 'pms_evidence',
+      },
+    });
+
+    render(
+      <TeamDeepDiveView
+        data={data}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+        onSaveTeamAction={onSaveTeamAction}
+      />,
+    );
+
+    const teamCard = screen.getByTestId('team-action-card-team-act-1');
+    // Grids size cards independently so expanding notices or evidence does not stretch neighbors
+    expect(teamCard.parentElement?.className).toContain('items-start');
+    const indCard = screen.getByTestId('individual-action-card-EMP-101');
+    expect(indCard.parentElement?.className).toContain('items-start');
+
+    // Cohort counts and conditional projection start collapsed inside View evidence
+    const teamDrawer = within(teamCard).getByTestId('team-evidence-drawer-team-act-1');
+    expect(teamDrawer).not.toBeVisible();
+    expect(within(teamCard).getByText('Review date')).toBeInTheDocument();
+
+    // Trigger AI -> draft_rejected renders 1-sentence inline status + Retry beside Suggest, plus PMS evidence fallback
+    await user.click(
+      within(teamCard).getByRole('button', { name: /Generate AI recommendation for Standardize call wrap-up macro templates/i }),
+    );
+    await waitFor(() => {
+      expect(within(teamCard).getByText('AI draft did not pass evidence verification.')).toBeInTheDocument();
+    });
+    expect(within(teamCard).getByRole('button', { name: /^Retry$/i })).toBeInTheDocument();
+    expect(within(teamCard).getByText('Suggested next step from PMS evidence')).toBeInTheDocument();
+    expect(
+      within(teamCard).getByText(/Review Reachability by dialing window and check disconnected numbers/i),
+    ).toBeInTheDocument();
+    expect(onSaveTeamAction).not.toHaveBeenCalled();
+
+    // Existing card remains editable; "Use suggested step" populates editable fields without saving
+    await user.click(within(teamCard).getByRole('button', { name: /Use suggested step/i }));
+    expect(onSaveTeamAction).not.toHaveBeenCalled();
+    expect(
+      within(teamCard).getByDisplayValue(
+        'Review Reachability by dialing window and check disconnected numbers before changing the schedule.',
+      ),
+    ).toBeInTheDocument();
+
+    // Expanding View evidence exposes explicit "6 measured out of 7 in scope" and conditional projection
+    await user.click(within(teamCard).getByRole('button', { name: /View evidence/i }));
+    expect(teamDrawer).toBeVisible();
+    expect(within(teamDrawer).getByTestId('team-cohort-counts-team-act-1')).toHaveTextContent(
+      '6 measured out of 7 in scope (1 unmeasured · 6 below target)',
+    );
+    expect(within(teamDrawer).getByTestId('team-action-plan-estimate-team-act-1')).toHaveTextContent(
+      /Action plan estimate .* not recalculated from KPI evidence.*\+1\.2% team score lift/i,
+    );
   });
 });

@@ -3,6 +3,7 @@ import { ApiError } from '../../../lib/apiClient';
 import {
   AiRecommendationBanner,
   AiRecommendIconButton,
+  AiStatusInline,
   formatScoreChangeLabel,
   IndividualEvidenceDrawer,
   ViewEvidenceToggleButton,
@@ -657,6 +658,20 @@ export default function RoleDetailView({
     [editingIndividualId],
   );
 
+  const applyRoleIndividualEvidenceFallback = useCallback(
+    (card: RoleIndividualActionPlan, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.evidence_next_step) return;
+      setEditingIndividualId(card.id);
+      setDraftIndAction(payload.evidence_next_step);
+      setDraftIndMainIssue(payload.measured_facts?.[0] || card.mainIssue);
+      setDraftIndOwner(payload.evidence_next_step_role || card.owner);
+      setDraftIndImpact(card.expectedImpact);
+      setDraftIndFollowUpLabel(payload.evidence_next_step_follow_up || card.followUpLabel || '');
+      setDraftIndObservationStatus(card.observationStatus);
+    },
+    [],
+  );
+
   const applyRoleActionAiDraft = useCallback(
     (action: RoleAssignedAction, payload: AiCorrectiveActionSuggestionPayload) => {
       if (!payload.draft) return;
@@ -680,6 +695,19 @@ export default function RoleDetailView({
       }));
     },
     [editingRoleActionId],
+  );
+
+  const applyRoleActionEvidenceFallback = useCallback(
+    (action: RoleAssignedAction, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.evidence_next_step) return;
+      setEditingRoleActionId(action.id);
+      setDraftRoleDesc(payload.evidence_next_step);
+      setDraftRoleOwner(payload.evidence_next_step_role || action.owner);
+      setDraftRoleStatus(action.status === 'Cancelled' ? 'Open' : action.status);
+      setDraftRoleDueDate(action.dueDate ?? '');
+      setDraftRoleImpact(action.expectedImpact);
+    },
+    [],
   );
 
   const applyRoleFormAiDraft = useCallback(
@@ -1708,7 +1736,7 @@ export default function RoleDetailView({
             </div>
           ) : (
           <div
-            className={`mt-5 grid grid-cols-1 gap-4 ${
+            className={`mt-5 grid grid-cols-1 items-start gap-4 ${
               displayedIndividualCards.length > 1 ? 'md:grid-cols-2' : 'md:grid-cols-1'
             }`}
           >
@@ -1900,6 +1928,7 @@ export default function RoleDetailView({
 
                     {showPresentationControl(presentationMode) && (
                       <AiRecommendationBanner
+                        inlineStatusHandled
                         loading={indAiState?.loading}
                         payload={indAiState?.payload}
                         error={indAiState?.error}
@@ -1909,6 +1938,11 @@ export default function RoleDetailView({
                         onApplyDraft={() => {
                           if (indAiState?.payload) {
                             applyRoleIndividualAiDraft(card, indAiState.payload);
+                          }
+                        }}
+                        onApplyEvidenceStep={() => {
+                          if (indAiState?.payload) {
+                            applyRoleIndividualEvidenceFallback(card, indAiState.payload);
                           }
                         }}
                         onDiscard={() =>
@@ -1938,6 +1972,15 @@ export default function RoleDetailView({
                               presentationMode={presentationMode}
                               ariaLabel={`Generate AI recommendation for ${card.personName}`}
                               onClick={() => triggerRoleIndividualAi(card)}
+                            />
+                            <AiStatusInline
+                              loading={indAiState?.loading}
+                              payload={indAiState?.payload}
+                              error={indAiState?.error}
+                              draftApplied={indAiState?.draftApplied}
+                              presentationMode={presentationMode}
+                              onRetry={() => triggerRoleIndividualAi(card)}
+                              onDismiss={() => discardAiTarget(indAiTargetKey)}
                             />
                             {!isEditing && (
                               <>
@@ -2039,6 +2082,7 @@ export default function RoleDetailView({
                       allKpiEvidence={card.allKpiEvidence}
                       priorActions={card.priorActions}
                       expectedImpact={card.expectedImpact}
+                      projectedAgentScoreLift={linkedEvidence?.projectedAgentScoreLift}
                       linkedKpiLabel={linkedEvidence?.label}
                       linkedKpiTarget={linkedEvidence?.targetFormatted}
                     />
@@ -2114,7 +2158,7 @@ export default function RoleDetailView({
           </div>
         ) : (
           <ul
-            className={`mt-6 grid grid-cols-1 gap-4 ${
+            className={`mt-6 grid grid-cols-1 items-start gap-4 ${
               localActions.length > 2
                 ? 'lg:grid-cols-3'
                 : localActions.length > 1
@@ -2174,6 +2218,7 @@ export default function RoleDetailView({
 
                     {showPresentationControl(presentationMode) && (
                       <AiRecommendationBanner
+                        inlineStatusHandled
                         loading={roleActAiState?.loading}
                         payload={roleActAiState?.payload}
                         error={roleActAiState?.error}
@@ -2183,6 +2228,11 @@ export default function RoleDetailView({
                         onApplyDraft={() => {
                           if (roleActAiState?.payload) {
                             applyRoleActionAiDraft(action, roleActAiState.payload);
+                          }
+                        }}
+                        onApplyEvidenceStep={() => {
+                          if (roleActAiState?.payload) {
+                            applyRoleActionEvidenceFallback(action, roleActAiState.payload);
                           }
                         }}
                         onDiscard={() =>
@@ -2389,6 +2439,15 @@ export default function RoleDetailView({
                         presentationMode={presentationMode}
                         ariaLabel={`Generate AI recommendation for ${action.title || action.description}`}
                         onClick={() => triggerRoleActionAi(action)}
+                      />
+                      <AiStatusInline
+                        loading={roleActAiState?.loading}
+                        payload={roleActAiState?.payload}
+                        error={roleActAiState?.error}
+                        draftApplied={roleActAiState?.draftApplied}
+                        presentationMode={presentationMode}
+                        onRetry={() => triggerRoleActionAi(action)}
+                        onDismiss={() => discardAiTarget(roleActAiKey)}
                       />
                       {!isEditingRoleAct && (
                         <>

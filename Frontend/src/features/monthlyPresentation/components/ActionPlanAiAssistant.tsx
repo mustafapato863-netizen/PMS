@@ -57,6 +57,175 @@ export function AiRecommendIconButton({
   );
 }
 
+export interface AiStatusInlineProps {
+  loading?: boolean;
+  payload?: AiCorrectiveActionSuggestionPayload | null;
+  error?: ActionPlanAiError | null;
+  draftApplied?: boolean;
+  presentationMode?: boolean;
+  onRetry: () => void;
+  onDismiss?: () => void;
+}
+
+/**
+ * Renders a concise, single-sentence AI status indicator right beside Suggest action,
+ * keeping provider errors, missing-evidence checks, and Retry out of the card body.
+ */
+export function AiStatusInline({
+  loading = false,
+  payload = null,
+  error = null,
+  draftApplied = false,
+  presentationMode = false,
+  onRetry,
+  onDismiss,
+}: AiStatusInlineProps) {
+  const { canEditActions, isAdmin } = useCanUseActionPlanAi(presentationMode);
+  const [enablingPilot, setEnablingPilot] = useState(false);
+  const [enableError, setEnableError] = useState<string | null>(null);
+
+  if (!canEditActions) return null;
+  if (!loading && !payload && !error) return null;
+
+  if (loading) {
+    return (
+      <span
+        role="status"
+        aria-busy="true"
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700"
+      >
+        <span>Generating draft…</span>
+      </span>
+    );
+  }
+
+  if (error) {
+    const pilotBlocked = isPilotDisabled403(error);
+    const isUnauthorized = error.status === 401;
+    const isForbidden = error.status === 403 && !pilotBlocked;
+
+    const handleEnableAndRetry = async () => {
+      setEnablingPilot(true);
+      setEnableError(null);
+      try {
+        await enableCorrectiveActionPilotSetting();
+        onRetry();
+      } catch (err) {
+        setEnableError(
+          err instanceof ApiError || err instanceof Error
+            ? err.message
+            : 'Could not enable AI Corrective Action Pilot.',
+        );
+      } finally {
+        setEnablingPilot(false);
+      }
+    };
+
+    const statusText = pilotBlocked
+      ? isAdmin
+        ? 'AI Corrective Action Pilot is currently disabled.'
+        : 'AI Pilot is disabled; ask an Administrator to enable it.'
+      : isUnauthorized
+        ? 'Sign in required to generate AI suggestions.'
+        : isForbidden
+          ? 'Permission required for AI suggestions.'
+          : 'Could not generate AI recommendation.';
+
+    return (
+      <div role="alert" className="flex flex-wrap items-center gap-1.5 text-xs text-rose-800">
+        <span>{enableError || statusText}</span>
+        {!isUnauthorized && !isForbidden && (
+          <>
+            {pilotBlocked && isAdmin && (
+              <button
+                type="button"
+                disabled={enablingPilot}
+                onClick={handleEnableAndRetry}
+                className="inline-flex items-center gap-1 rounded bg-indigo-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {enablingPilot && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+                <span>{enablingPilot ? 'Enabling Pilot…' : 'Enable AI Pilot & Generate'}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded border border-rose-300 bg-white px-2 py-0.5 text-xs font-medium text-rose-800 hover:bg-rose-50"
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              <span>Retry</span>
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (!payload) return null;
+
+  if (payload.outcome === 'suggested') {
+    if (!draftApplied) return null;
+    return (
+      <span role="status" className="text-xs font-medium text-emerald-700">
+        Draft loaded in editor.
+      </span>
+    );
+  }
+
+  if (payload.outcome === 'insufficient_evidence') {
+    const firstNotice = collectSuggestionNotices(payload)[0];
+    const verifyText = firstNotice
+      ? `Insufficient KPI evidence — verify source records: ${firstNotice}`
+      : 'Insufficient KPI evidence — verify source records.';
+    return (
+      <div role="status" className="flex flex-wrap items-center gap-1.5 text-xs text-amber-900">
+        <span>{verifyText}</span>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss AI notice"
+            className="rounded p-0.5 text-amber-800 hover:bg-amber-100"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const outcomeSentence =
+    payload.outcome === 'model_unavailable'
+      ? 'AI suggestion provider is temporarily unavailable.'
+      : payload.outcome === 'draft_rejected'
+        ? 'AI draft did not pass evidence verification.'
+        : 'AI draft unavailable for this record.';
+
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-1.5 text-xs text-amber-950">
+      <span>{outcomeSentence}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex items-center gap-1 rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+      >
+        <RefreshCw className="h-3 w-3" aria-hidden="true" />
+        <span>Retry</span>
+      </button>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss AI notice"
+          className="rounded p-0.5 text-amber-800 hover:bg-amber-100"
+        >
+          <X className="h-3 w-3" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export interface AiRecommendationBannerProps {
   loading?: boolean;
   payload?: AiCorrectiveActionSuggestionPayload | null;
@@ -64,7 +233,9 @@ export interface AiRecommendationBannerProps {
   needsOverwriteConfirm?: boolean;
   draftApplied?: boolean;
   presentationMode?: boolean;
+  inlineStatusHandled?: boolean;
   onApplyDraft: () => void;
+  onApplyEvidenceStep?: () => void;
   onDiscard: () => void;
   onRetry: () => void;
 }
@@ -76,7 +247,9 @@ export function AiRecommendationBanner({
   needsOverwriteConfirm = false,
   draftApplied = false,
   presentationMode = false,
+  inlineStatusHandled = false,
   onApplyDraft,
+  onApplyEvidenceStep,
   onDiscard,
   onRetry,
 }: AiRecommendationBannerProps) {
@@ -88,6 +261,7 @@ export function AiRecommendationBanner({
   if (!loading && !payload && !error) return null;
 
   if (loading) {
+    if (inlineStatusHandled) return null;
     return (
       <div
         role="status"
@@ -99,16 +273,12 @@ export function AiRecommendationBanner({
           <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" aria-hidden="true" />
           <span>Analyzing multi-month KPI evidence and drafting recommendation…</span>
         </div>
-        <div className="mt-2.5 space-y-2 animate-pulse" aria-hidden="true">
-          <div className="h-3 w-2/3 rounded bg-indigo-200/60" />
-          <div className="h-3 w-full rounded bg-indigo-200/50" />
-          <div className="h-3 w-4/5 rounded bg-indigo-200/40" />
-        </div>
       </div>
     );
   }
 
   if (error) {
+    if (inlineStatusHandled) return null;
     const pilotBlocked = isPilotDisabled403(error);
     const isUnauthorized = error.status === 401;
     const isForbidden = error.status === 403 && !pilotBlocked;
@@ -211,6 +381,11 @@ export function AiRecommendationBanner({
     .filter(Boolean);
 
   if (payload.outcome !== 'suggested' || !payload.draft) {
+    const hasEvidenceStep = Boolean(payload.evidence_next_step && payload.outcome !== 'insufficient_evidence');
+    if (inlineStatusHandled && !hasEvidenceStep) {
+      return null;
+    }
+
     const reasons = collectSuggestionNotices(payload);
     const canRetryOutcome =
       payload.outcome === 'model_unavailable' || payload.outcome === 'draft_rejected';
@@ -222,6 +397,55 @@ export function AiRecommendationBanner({
           : payload.outcome === 'draft_rejected'
             ? 'AI draft did not pass evidence verification'
             : 'AI draft unavailable for this record';
+
+    if (inlineStatusHandled && hasEvidenceStep) {
+      return (
+        <div
+          role="region"
+          aria-label="Suggested next step from PMS evidence"
+          className="mt-2.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs text-slate-800"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <span className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs font-semibold text-amber-900">
+              {payload.evidence_next_step_label || 'Suggested next step from PMS evidence'}
+            </span>
+            <button
+              type="button"
+              onClick={onDiscard}
+              aria-label="Dismiss AI notice"
+              className="rounded p-0.5 text-amber-800 hover:bg-amber-100"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+          <p className="mt-2 font-medium leading-relaxed text-slate-900">
+            {payload.evidence_next_step}
+          </p>
+          {(payload.evidence_next_step_role || payload.evidence_next_step_follow_up) && (
+            <p className="mt-1 text-xs text-slate-600">
+              {[
+                payload.evidence_next_step_role ? `Role: ${payload.evidence_next_step_role}` : null,
+                payload.evidence_next_step_follow_up ? `Follow-up: ${payload.evidence_next_step_follow_up}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+          {onApplyEvidenceStep && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onApplyEvidenceStep}
+                className="rounded bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                Use suggested step
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div
         role="status"
@@ -231,11 +455,7 @@ export function AiRecommendationBanner({
           <div>
             <p className="font-semibold">{outcomeHeading}</p>
             {reasons.length > 0 && (
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-amber-900">
-                {reasons.map((reason, idx) => (
-                  <li key={`${idx}-${reason.slice(0, 20)}`}>{reason}</li>
-                ))}
-              </ul>
+              <p className="mt-1 text-amber-900">{reasons[0]}</p>
             )}
           </div>
           <button
@@ -247,16 +467,21 @@ export function AiRecommendationBanner({
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
-        {measuredFacts.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {measuredFacts.map((fact, idx) => (
-              <span
-                key={`${idx}-${fact.slice(0, 18)}`}
-                className="rounded border border-amber-200 bg-white px-2 py-0.5 text-xs text-amber-900"
+        {hasEvidenceStep && (
+          <div className="mt-2 rounded border border-amber-200 bg-white p-2.5 text-slate-800">
+            <p className="text-xs font-semibold text-amber-900">
+              {payload.evidence_next_step_label || 'Suggested next step from PMS evidence'}
+            </p>
+            <p className="mt-1 font-medium text-slate-900">{payload.evidence_next_step}</p>
+            {onApplyEvidenceStep && (
+              <button
+                type="button"
+                onClick={onApplyEvidenceStep}
+                className="mt-2 rounded bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
               >
-                {fact}
-              </span>
-            ))}
+                Use suggested step
+              </button>
+            )}
           </div>
         )}
         {canRetryOutcome && (
@@ -368,6 +593,13 @@ export function AiRecommendationBanner({
             )}
           </div>
           <p className="text-slate-600">{payload.draft.measured_issue}</p>
+          {payload.draft.official_target_label && (
+            <p className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Official KPI target:</span>{' '}
+              {payload.draft.official_target_label}
+              {payload.draft.action_milestone_note ? ` · ${payload.draft.action_milestone_note}` : ''}
+            </p>
+          )}
           {payload.draft.recommended_follow_up && (
             <p className="text-xs font-medium text-indigo-800">
               Follow-up: {payload.draft.recommended_follow_up}
@@ -419,6 +651,7 @@ export interface IndividualEvidenceDrawerProps {
   allKpiEvidence?: AgentKpiEvidenceItem[];
   priorActions?: PriorActionSummary[];
   expectedImpact: string;
+  projectedAgentScoreLift?: number | null;
   linkedKpiLabel?: string;
   linkedKpiTarget?: string;
 }
@@ -438,27 +671,23 @@ export function IndividualEvidenceDrawer({
   allKpiEvidence = [],
   priorActions = [],
   expectedImpact,
+  projectedAgentScoreLift,
   linkedKpiLabel,
   linkedKpiTarget,
 }: IndividualEvidenceDrawerProps) {
   const trimmedImpact = String(expectedImpact ?? '').trim();
-  const isNumericProjection = hasSupportedProjectedImpact(trimmedImpact);
+  const isNumericProjection = hasSupportedProjectedImpact(projectedAgentScoreLift);
   const showImpactLabel =
     linkedKpiLabel && linkedKpiTarget
-      ? `Projected impact if ${linkedKpiLabel} reaches ${linkedKpiTarget} target:`
-      : 'Projected impact:';
-  const hasExplicitUnit = /\b(?:pts|points)\b|%/i.test(trimmedImpact);
+      ? `Potential score lift if ${linkedKpiLabel} reaches ${linkedKpiTarget} target:`
+      : 'Potential score lift:';
   const projectionDetail = isNumericProjection
-    ? `${trimmedImpact}${hasExplicitUnit ? '' : ' pts'}${
-        /assuming other kpis stay constant/i.test(trimmedImpact)
-          ? ''
-          : ' (assuming other KPIs stay constant)'
-      }`
+    ? `+${projectedAgentScoreLift!.toFixed(1)} pts agent score (assuming other KPIs stay constant)`
     : '';
   const hasNeutralUnavailableNote =
     !isNumericProjection &&
     Boolean(trimmedImpact) &&
-    !/^(?:—|-|n\/a|not specified)$/i.test(trimmedImpact);
+    !/^(?:—|-|n\/a|not specified|impact to be confirmed)$/i.test(trimmedImpact);
 
   return (
     <div
@@ -599,10 +828,135 @@ export function IndividualEvidenceDrawer({
           data-testid={`${testIdPrefix}-impact-unavailable-${employeeId}`}
           className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600"
         >
-          <span className="font-semibold">Score impact unavailable: </span>
+          <span className="font-semibold">Action plan note (not recalculated from KPI evidence): </span>
           <span>{trimmedImpact}</span>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export interface TeamEvidenceDrawerProps {
+  panelId: string;
+  isOpen: boolean;
+  cardId: string;
+  scopeDescription: string;
+  expectedTeamImpact: string;
+  targetKpiLabel?: string;
+  linkedKpiActualLabel?: string;
+  linkedKpiTargetLabel?: string;
+  teamTrendLabel?: string | null;
+  aiPayload?: AiCorrectiveActionSuggestionPayload | null;
+}
+
+export function TeamEvidenceDrawer({
+  panelId,
+  isOpen,
+  cardId,
+  scopeDescription,
+  expectedTeamImpact,
+  targetKpiLabel,
+  linkedKpiActualLabel,
+  linkedKpiTargetLabel,
+  teamTrendLabel,
+  aiPayload,
+}: TeamEvidenceDrawerProps) {
+  const trimmedImpact = String(expectedTeamImpact ?? '').trim();
+  const hasPlanEstimate =
+    Boolean(trimmedImpact) &&
+    !/^(?:—|-|n\/a|not specified|impact to be confirmed)$/i.test(trimmedImpact);
+
+  const cohortCoverage =
+    aiPayload?.cohort_coverage_label?.trim() || scopeDescription;
+  const aiFacts = (Array.isArray(aiPayload?.measured_facts) ? aiPayload.measured_facts : [])
+    .map((fact) => formatMeasuredFact(fact, aiPayload?.supporting_kpis))
+    .filter(Boolean);
+
+  return (
+    <div
+      id={panelId}
+      data-testid={`team-evidence-drawer-${cardId}`}
+      hidden={!isOpen}
+      className="mt-3 space-y-2.5 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700"
+    >
+      {/* Cohort Counts */}
+      {cohortCoverage && (
+        <div className="space-y-1">
+          <div className="font-bold uppercase tracking-wider text-slate-500">
+            Cohort Counts
+          </div>
+          <p
+            data-testid={`team-cohort-counts-${cardId}`}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-medium text-slate-800"
+          >
+            {cohortCoverage}
+          </p>
+        </div>
+      )}
+
+      {/* Performance Trend */}
+      {(teamTrendLabel || aiPayload?.trend_summary?.score_direction) && (
+        <div className="space-y-1">
+          <div className="font-bold uppercase tracking-wider text-slate-500">
+            Performance Trend
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {teamTrendLabel && (
+              <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
+                {teamTrendLabel}
+              </span>
+            )}
+            {aiPayload?.trend_summary?.previous_score != null &&
+              aiPayload?.trend_summary?.current_score != null && (
+                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
+                  Team score: {aiPayload.trend_summary.previous_score.toFixed(1)}% →{' '}
+                  {aiPayload.trend_summary.current_score.toFixed(1)}%
+                  {aiPayload.trend_summary.previous_period
+                    ? ` vs ${aiPayload.trend_summary.previous_period}`
+                    : ''}
+                </span>
+              )}
+          </div>
+        </div>
+      )}
+
+      {/* Source Evidence */}
+      {(targetKpiLabel || linkedKpiActualLabel || aiFacts.length > 0) && (
+        <div className="space-y-1">
+          <div className="font-bold uppercase tracking-wider text-slate-500">
+            Source Evidence
+          </div>
+          {(linkedKpiActualLabel || linkedKpiTargetLabel || aiPayload?.official_target_label) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-medium text-slate-800">
+              <span>{targetKpiLabel || 'Focus KPI'}</span>
+              <span className="tabular-nums">
+                {linkedKpiActualLabel ? `Actual: ${linkedKpiActualLabel} · ` : ''}
+                Official target: {aiPayload?.official_target_label || linkedKpiTargetLabel || '—'}
+              </span>
+            </div>
+          )}
+          {aiFacts.length > 0 && (
+            <ul className="space-y-1 text-slate-600">
+              {aiFacts.slice(0, 4).map((fact, idx) => (
+                <li key={`${idx}-${fact.slice(0, 16)}`}>{fact}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Stored action-plan estimates are not recalculated from current score evidence. */}
+      {hasPlanEstimate && (
+        <div
+          data-testid={`team-action-plan-estimate-${cardId}`}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600"
+        >
+          <span className="font-semibold">
+            Action plan estimate (not recalculated from KPI evidence):{' '}
+          </span>
+          <span>{trimmedImpact}</span>
+        </div>
+      )}
     </div>
   );
 }

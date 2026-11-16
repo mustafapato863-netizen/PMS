@@ -450,17 +450,21 @@ class AiCorrectiveActionSuggestionPriorAction(BaseModel):
 
 
 class AiCorrectiveActionSuggestionDraft(BaseModel):
-    """Unapproved draft. Facts and uncertainty come from PMS evidence; only the
-    steps are written by the model, and only after closed-vocabulary validation."""
+    """Unapproved draft. Facts and uncertainty come from PMS evidence; wording is built
+    from validated structured action choices or closed-vocabulary steps."""
 
     title: str
     focus_kpi_key: str
     focus_kpi_name: str
     action_type: CorrectiveActionDraftType
+    action_choice: str | None = None
+    follow_up_interval: str | None = None
+    official_target_label: str | None = None
+    action_milestone_note: str | None = None
     # Built in code from the evidence ledger; the model cannot alter it.
     measured_issue: str
     measured_issue_source: Literal["pms_evidence"] = "pms_evidence"
-    # Model-written, validated: imperative, no numbers, closed vocabulary.
+    # Validated steps (built from validated structured choice or closed-vocabulary validation).
     recommended_steps: list[str] = Field(default_factory=list, min_length=1, max_length=3)
     recommended_steps_source: Literal["cloudflare", "gemini"] = "cloudflare"
     # Built in code: what the evidence does not show.
@@ -480,8 +484,16 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     model_version: str | None = None
     fallback_reason: str | None = None
     validation_errors: list[str] = Field(default_factory=list)
+    repair_attempted: bool = False
     context: AiCorrectiveActionSuggestionContext
     focus_kpi_key: str | None = None
+    cohort_in_scope_count: int | None = None
+    cohort_measured_count: int | None = None
+    cohort_unmeasured_count: int | None = None
+    cohort_below_target_count: int | None = None
+    cohort_coverage_label: str | None = None
+    official_target_label: str | None = None
+    measured_actual_label: str | None = None
     # Deterministic statements built from the evidence ledger, never by the model.
     measured_facts: list[str] = Field(default_factory=list)
     # Deterministic evidence caveats (always includes that the cause is not established).
@@ -492,6 +504,14 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     trend_summary: AiCorrectiveActionSuggestionTrendSummary | None = None
     insufficient_evidence_reasons: list[str] = Field(default_factory=list)
     draft: AiCorrectiveActionSuggestionDraft | None = None
+    # When evidence is sufficient but the AI provider failed/was rejected, PMS supplies
+    # an explicit evidence-based next step without asserting AI approval.
+    evidence_next_step: str | None = None
+    evidence_next_step_label: str | None = None
+    evidence_next_step_role: str | None = None
+    evidence_next_step_follow_up: str | None = None
+    evidence_next_step_action_type: CorrectiveActionDraftType | None = None
+    evidence_next_step_source: Literal["pms_evidence"] | None = None
     model_latency_ms: float | None = None
     read_only: Literal[True] = True
     requires_human_confirmation: Literal[True] = True

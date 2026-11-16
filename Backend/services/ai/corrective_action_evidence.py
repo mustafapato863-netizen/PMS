@@ -977,7 +977,21 @@ class CorrectiveActionEvidenceService:
         if records and not kpi_items:
             reasons.append("no_kpi_values_for_period")
         if linked_key and not any(item["kpi_key"] == linked_key for item in kpi_items):
-            reasons.append(f"linked_kpi_not_found:{linked_key}")
+            linked_cf = linked_key.casefold()
+            linked_norm = _norm_token(linked_key)
+            ci_keys = {str(item["kpi_key"]) for item in kpi_items if str(item["kpi_key"]).casefold() == linked_cf}
+            if len(ci_keys) == 1:
+                linked_key = next(iter(ci_keys))
+            else:
+                name_keys = {
+                    str(item["kpi_key"])
+                    for item in kpi_items
+                    if _norm_token(item.get("display_name")) == linked_norm
+                }
+                if len(name_keys) == 1:
+                    linked_key = next(iter(name_keys))
+                else:
+                    reasons.append(f"linked_kpi_not_found:{linked_key}")
 
         # Scoring basis: the pinned team-configuration version(s) stored on
         # the period's own records, if any. No pinned basis is reported as

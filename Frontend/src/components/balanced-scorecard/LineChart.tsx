@@ -1,5 +1,8 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import { percentageScoreAxisMax } from './lineChartUtils';
+import {
+  percentageScoreAxisMax,
+  percentageScoreAxisTicks,
+} from './lineChartUtils';
 
 interface LineChartProps {
   history: Array<{
@@ -222,9 +225,8 @@ export function LineChart({
 
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
-  const dynamicPadding = Math.max(6, (rawMax - rawMin) * 0.14);
 
-  const minValue = Math.max(0, Math.floor(rawMin - dynamicPadding));
+  const minValue = rawMin < 0 ? Math.floor(rawMin) : 0;
   const maxValue = Math.max(percentageScoreAxisMax(rawMax), minValue + 1);
 
   const range = Math.max(1, maxValue - minValue);
@@ -240,15 +242,16 @@ export function LineChart({
 
   const targetY = usableTarget !== null ? toY(usableTarget) : null;
 
-  const ticks = Array.from({ length: 4 }, (_, index) => {
-    const value = minValue + (range * index) / 3;
+  const tickValues =
+    minValue === 0
+      ? percentageScoreAxisTicks(maxValue)
+      : Array.from({ length: 4 }, (_, index) => minValue + (range * (index + 1)) / 4);
 
-    return {
-      value,
-      y: toY(value),
-      label: `${Math.round(value)}%`,
-    };
-  });
+  const ticks = tickValues.map((value) => ({
+    value,
+    y: toY(value),
+    label: `${Math.round(value)}%`,
+  }));
 
   const labelEvery =
     history.length > 8 ? Math.ceil(history.length / 6) : 1;

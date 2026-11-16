@@ -1763,5 +1763,296 @@ def test_insufficient_evidence_humanizes_reason_codes_and_omits_raw_kpi_keys(db,
     assert "booking rate" in joined_empty.lower()
 
 
+def test_structured_choice_suggestion_and_dialing_window_rendering(db, monkeypatch):
+    """Structured action_choice + follow_up_interval renders grounded PMS wording and separates official target."""
+    from services.dashboard_record_service import DashboardRecordService
+
+    _seed(db)
+    rec = {
+        "id": str(uuid.uuid4()),
+        "employee_id": "EMP-1",
+        "employee_name": "Sara Inbound",
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee",
+        "position": "Call Center Agent",
+        "region": "EGY",
+        "score": 70.0,
+        "raw_data": {"A.Reachability%": 0.533, "T.Reachability%": 0.75},
+        "kpi_values": [
+            {
+                "kpi_key": "Other",
+                "label": "Reachability",
+                "actual_value": 53.3,
+                "target_value": 75.0,
+                "unit": "%",
+                "direction": "higher_better",
+                "weight_applied": 0.2,
+                "achievement_ratio": 53.3 / 75.0,
+            }
+        ],
+    }
+    monkeypatch.setattr(DashboardRecordService, "list_records", lambda self, **kwargs: [rec] if kwargs.get("month") == "September" else [])
+
+    class _Engine:
+        def generate(self, _req):
+            return ProviderResponse(
+                outcome="success",
+                provider="cloudflare",
+                model="@cf/ibm-granite/granite-4.0-h-micro",
+                content=json.dumps(
+                    {
+                        "focus_kpi_key": "Other",
+                        "action_choice": "review_by_dialing_window",
+                        "action_type": "Monitor",
+                        "follow_up_interval": "after_1_week",
+                    }
+                ),
+                latency_ms=25.0,
+                attempts=[ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="success")],
+            )
+
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: _Engine())
+    # Pass human label "reachability" -> evidence resolver matches KPI key "Other" unambiguously.
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Inbound",
+            month="September",
+            year=2026,
+            employee_id="EMP-1",
+            linked_kpi_key="reachability",
+        ),
+    )
+    assert payload.outcome == "suggested", payload.validation_errors
+    assert payload.draft is not None
+    assert payload.draft.action_choice == "review_by_dialing_window"
+    assert payload.draft.follow_up_interval == "after_1_week"
+    assert payload.draft.recommended_steps == [
+        "Review Reachability by dialing window and check disconnected numbers before changing the schedule."
+    ]
+    assert payload.draft.official_target_label == "75%"
+    assert "separate from official KPI target (75%)" in (payload.draft.action_milestone_note or "")
 
 
+def test_malformed_output_gets_single_bounded_repair_and_falls_back_to_pms_evidence(db, monkeypatch):
+    """One bounded repair recovers malformed JSON; persistent failure yields draft_rejected + PMS evidence step."""
+    _seed(db)
+
+    class _RepairRecoversEngine:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, _req):
+            self.calls += 1
+            if self.calls == 1:
+                return ProviderResponse(
+                    outcome="success",
+                    provider="cloudflare",
+                    model="@cf/test",
+                    content='{"focus_kpi_key": "upsell", broken',
+                    latency_ms=10.0,
+                )
+            return ProviderResponse(
+                outcome="success",
+                provider="cloudflare",
+                model="@cf/test",
+                content=json.dumps(
+                    {
+                        "focus_kpi_key": "upsell",
+                        "action_choice": "targeted_coaching",
+                        "action_type": "Coaching",
+                        "follow_up_interval": "after_2_weeks",
+                    }
+                ),
+                latency_ms=12.0,
+            )
+
+    rec_engine = _RepairRecoversEngine()
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: rec_engine)
+    recovered = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(**_body()),
+    )
+    assert rec_engine.calls == 2
+    assert recovered.outcome == "suggested"
+    assert recovered.repair_attempted is True
+    assert recovered.draft is not None
+    assert recovered.draft.action_choice == "targeted_coaching"
+
+    class _AlwaysMalformedEngine:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, _req):
+            self.calls += 1
+            return ProviderResponse(
+                outcome="success",
+                provider="cloudflare",
+                model="@cf/test",
+                content="not valid json at all",
+                latency_ms=10.0,
+            )
+
+    bad_engine = _AlwaysMalformedEngine()
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: bad_engine)
+    rejected = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(**_body()),
+    )
+    # Bounded to at most 1 repair attempt (2 calls total).
+    assert bad_engine.calls == 2
+    assert rejected.outcome == "draft_rejected"
+    assert rejected.draft is None
+    assert rejected.repair_attempted is True
+    assert rejected.fallback_reason == "malformed_model_response"
+    assert rejected.evidence_next_step_source == "pms_evidence"
+    assert rejected.evidence_next_step_label == "Suggested next step from PMS evidence"
+    assert rejected.evidence_next_step is not None
+    assert rejected.evidence_next_step_role is not None
+
+
+def test_wording_only_rejection_reproduction_and_log_sanitization(db, monkeypatch, caplog):
+    """Reproduces the live wording-only rejection ('word_outside_allowed_vocabulary'/'invented_cause') cleanly."""
+    _seed(db)
+
+    class _LegacyWordingEngine:
+        def generate(self, _req):
+            return ProviderResponse(
+                outcome="success",
+                provider="cloudflare",
+                model="@cf/ibm-granite/granite-4.0-h-micro",
+                content=json.dumps(
+                    {
+                        "focus_kpi_key": "upsell",
+                        "action_type": "Monitor",
+                        "steps": [
+                            "Clarify upsell definition with team",
+                            "Document any gaps in coverage",
+                        ],
+                        "follow_up": "after one week",
+                    }
+                ),
+                latency_ms=15.0,
+            )
+
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: _LegacyWordingEngine())
+    with caplog.at_level("INFO", logger="services.ai.corrective_action_drafter"):
+        payload = CorrectiveActionDrafter(db).suggest(
+            user_scope=ADMIN_SCOPE,
+            request=AiCorrectiveActionSuggestionRequest(**_body()),
+        )
+
+    assert payload.outcome == "draft_rejected"
+    assert payload.draft is None
+    assert payload.fallback_reason == "validation_failed"
+    assert {"word_outside_allowed_vocabulary", "invented_cause"} <= set(payload.validation_errors)
+    assert payload.evidence_next_step is not None
+    assert payload.evidence_next_step_source == "pms_evidence"
+    # Diagnostic logs never include employee PII or raw draft text.
+    log_text = " ".join(rec.getMessage() for rec in caplog.records)
+    assert "EMP-1" not in log_text
+    assert "Clarify upsell definition" not in log_text
+    assert '"validation_errors"' in log_text
+
+
+def test_seven_in_scope_six_measured_labels_both_counts_explicitly(db, monkeypatch):
+    """Fixture with 7 Outbound agents in scope and 6 measured Reachability entries exposes and labels both counts."""
+    from services.dashboard_record_service import DashboardRecordService
+
+    team = Team(
+        id=uuid.uuid4(),
+        name="outbound",
+        db_name="Outbound",
+        display_name="Outbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add(team)
+    db.flush()
+
+    records = []
+    for idx in range(1, 8):
+        emp = Employee(
+            id=uuid.uuid4(),
+            employee_id=f"OUT-{idx}",
+            name=f"Outbound Agent {idx}",
+            team_id=team.id,
+            region="EGY",
+            is_active=True,
+        )
+        db.add(emp)
+        db.flush()
+        records.append(
+            {
+                "id": str(uuid.uuid4()),
+                "employee_id": f"OUT-{idx}",
+                "employee_name": f"Outbound Agent {idx}",
+                "team": "Outbound",
+                "month": "September",
+                "year": 2026,
+                "performance_level": "Employee",
+                "position": "Call Center Agent",
+                "region": "EGY",
+                "score": 76.0 if idx <= 6 else 85.0,
+                "raw_data": {"A.Reachability%": 0.53 if idx <= 6 else ""},
+                "kpi_values": [
+                    {
+                        "kpi_key": "Other",
+                        "label": "Reachability",
+                        # 6 agents have measured Reachability below 75%; 7th agent is unmeasured (actual None).
+                        "actual_value": 53.0 if idx <= 6 else None,
+                        "target_value": 75.0,
+                        "unit": "%",
+                        "direction": "higher_better",
+                        "weight_applied": 0.2,
+                        "achievement_ratio": (53.0 / 75.0) if idx <= 6 else None,
+                    }
+                ],
+            }
+        )
+    db.commit()
+
+    monkeypatch.setattr(
+        DashboardRecordService,
+        "list_records",
+        lambda self, **kwargs: records if kwargs.get("month") == "September" else [],
+    )
+
+    class _UnavailableEngine:
+        def generate(self, _req):
+            return ProviderResponse(
+                content="",
+                model="none",
+                outcome="timeout",
+                provider="cloudflare",
+                attempts=[ProviderAttempt(provider="cloudflare", model="@cf/test", status="timeout")],
+                latency_ms=100.0,
+            )
+
+    monkeypatch.setattr(drafter_module, "get_unified_provider_engine", lambda: _UnavailableEngine())
+    payload = CorrectiveActionDrafter(db).suggest(
+        user_scope=ADMIN_SCOPE,
+        request=AiCorrectiveActionSuggestionRequest(
+            team="Outbound",
+            month="September",
+            year=2026,
+            performance_level="Employee",
+            linked_kpi_key="Other",
+        ),
+    )
+
+    assert payload.outcome == "model_unavailable"
+    assert payload.draft is None
+    assert payload.cohort_in_scope_count == 7
+    assert payload.cohort_measured_count == 6
+    assert payload.cohort_unmeasured_count == 1
+    assert payload.cohort_below_target_count == 6
+    assert payload.cohort_coverage_label == "6 measured out of 7 in scope (1 unmeasured · 6 below target)"
+    assert any("6 measured out of 7 in scope" in fact for fact in payload.measured_facts)
+    assert payload.official_target_label == "75%"
+    # Missing 1 of 7 triggers verification fallback step even when provider is unavailable.
+    assert payload.evidence_next_step_source == "pms_evidence"
+    assert "Verify Reachability source records" in (payload.evidence_next_step or "")
