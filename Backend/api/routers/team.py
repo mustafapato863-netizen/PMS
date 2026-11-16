@@ -44,6 +44,7 @@ class TeamPlanItemResponse(BaseModel):
     due_date: Optional[str] = None
     expected_team_impact: str = ""
     updated_at: Optional[str] = None
+    is_deleted: bool = False
 
 
 @router.get("/", response_model=StandardResponse)
@@ -182,3 +183,44 @@ def save_team_plan_item(
         raise
     except Exception:
         return StandardResponse(success=False, message="Failed to save team plan item.")
+
+
+@router.delete("/plan-items/{card_id}", response_model=StandardResponse)
+def delete_team_plan_item(
+    card_id: str,
+    request: Request,
+    team: str = Query(..., min_length=1),
+    month: str = Query(..., min_length=1),
+    year: int = Query(..., ge=2000, le=2100),
+    region: Optional[str] = Query(default=None),
+    purge_tombstone: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("create_actions")),
+):
+    try:
+        scope = get_current_user_scope(db, request)
+        deleted = TeamActionService(db).delete_plan_item(
+            card_id=card_id,
+            team_name=team,
+            month=month,
+            year=year,
+            current_user=scope,
+            region=region,
+            purge_tombstone=purge_tombstone,
+        )
+        validated = TeamPlanItemResponse(**deleted).model_dump()
+        return StandardResponse(
+            success=True,
+            message="Team plan item deleted successfully",
+            data=validated,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail == "Team not found" else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        return StandardResponse(success=False, message="Failed to delete team plan item.")

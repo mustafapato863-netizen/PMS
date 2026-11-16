@@ -1,5 +1,6 @@
 import type { AgentRecord, PMSAction } from '../../types';
 import { GRADE_PALETTE, getGradeClass } from '../../constants/grades';
+import { parseActionRootCauseMeta } from '../../utils/actionNoteFormatter';
 import {
   kpiRows,
   normalizeRegion,
@@ -2732,14 +2733,22 @@ export function buildCallCenterDeepDiveFromRecords(
   );
   const actionItems: PositionActionPlanItem[] =
     ccActions.length > 0
-      ? ccActions.slice(0, 4).map((act, idx) => ({
-          id: act.id || `act-real-${idx}`,
-          owningPosition: mapWeakestKpiToOwner(act.linked_kpi_key ?? '', act.action_text ?? '', 'call-center'),
-          actionTitle: act.action_text,
-          targetScope: `${act.team || 'Call Center'}${act.employee_name ? ` · ${act.employee_name}` : ''}`,
-          expectedImpactPct: round1(1.4 - idx * 0.25),
-          expectedKpiOutcome: act.root_cause_note || 'Improves target KPI achievement next month',
-        }))
+      ? ccActions.slice(0, 4).map((act, idx) => {
+          const parsedNote = parseActionRootCauseMeta(act.root_cause_note);
+          return {
+            id: act.id || `act-real-${idx}`,
+            owningPosition:
+              parsedNote.owner ||
+              mapWeakestKpiToOwner(act.linked_kpi_key ?? '', act.action_text ?? '', 'call-center'),
+            actionTitle: act.action_text,
+            targetScope: `${act.team || 'Call Center'}${act.employee_name ? ` · ${act.employee_name}` : ''}`,
+            expectedImpactPct: round1(1.4 - idx * 0.25),
+            expectedKpiOutcome:
+              parsedNote.expectedImpact ||
+              parsedNote.mainIssue ||
+              'Improves target KPI achievement next month',
+          };
+        })
       : [];
 
   const totalLift = round1(
@@ -3073,18 +3082,26 @@ export function buildFunctionDeepDiveFromRecords(
   );
   const actionItems: PositionActionPlanItem[] =
     fnActions.length > 0
-      ? fnActions.slice(0, 4).map((act, idx) => ({
-          id: act.id || `act-${normSlug}-${idx}`,
-          owningPosition: mapWeakestKpiToOwner(
-            act.linked_kpi_key ?? '',
-            act.action_text ?? '',
-            normSlug,
-          ),
-          actionTitle: act.action_text,
-          targetScope: `${act.team}${act.employee_name ? ` · ${act.employee_name}` : ''}`,
-          expectedImpactPct: round1(2.0 - idx * 0.3),
-          expectedKpiOutcome: act.root_cause_note || 'Improves target KPI achievement next month',
-        }))
+      ? fnActions.slice(0, 4).map((act, idx) => {
+          const parsedNote = parseActionRootCauseMeta(act.root_cause_note);
+          return {
+            id: act.id || `act-${normSlug}-${idx}`,
+            owningPosition:
+              parsedNote.owner ||
+              mapWeakestKpiToOwner(
+                act.linked_kpi_key ?? '',
+                act.action_text ?? '',
+                normSlug,
+              ),
+            actionTitle: act.action_text,
+            targetScope: `${act.team}${act.employee_name ? ` · ${act.employee_name}` : ''}`,
+            expectedImpactPct: round1(2.0 - idx * 0.3),
+            expectedKpiOutcome:
+              parsedNote.expectedImpact ||
+              parsedNote.mainIssue ||
+              'Improves target KPI achievement next month',
+          };
+        })
       : fallback.actionsByPosition.items;
 
   const totalLift = round1(

@@ -20,6 +20,7 @@ from models.ai_schemas import (
     MetricValueKindType,
     TypedMetricEvidence,
 )
+from models.report_schemas import MONTHS
 from services.ai.config import get_ai_runtime_config
 from services.ai.evidence import CatalogEvidence, evidence_dict, publish_evidence
 from services.ai.corporate_bsc_catalog_data import CORPORATE_BSC_CATALOG_TEAMS
@@ -342,13 +343,19 @@ def check_scope_data_availability(
 
         matching_period_records += 1
 
+    def _period_sort_key(period_str: str) -> tuple[int, int, str]:
+        parts = period_str.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            return (int(parts[1]), MONTHS.get(parts[0].title(), 0), period_str)
+        return (0, 0, period_str)
+
     return {
         "has_data": matching_period_records > 0,
         "record_count": matching_period_records,
         "period": f"{month} {year}" if month and year else "All periods",
         "scope": team or function or "All",
         "country": country or "All",
-        "available_periods": sorted(list(available_periods_set)),
+        "available_periods": sorted(list(available_periods_set), key=_period_sort_key),
     }
 
 # Canonical country attribution by team and performance level.
@@ -423,6 +430,7 @@ def user_can_access_team(
     team_name: str,
     *,
     performance_level: str | None = None,
+    region: str | None = None,
 ) -> bool:
     normalized_scope = dict(scope)
     if "accessible_branches" not in normalized_scope and "allowed_branches" in normalized_scope:
@@ -451,6 +459,9 @@ def user_can_access_team(
             return False
         if "ALL" in allowed_regions or ({"EGY", "UAE"} <= allowed_regions):
             return True
+        region_upper = str(region or "").strip().upper()
+        if t_key in {"support positions", "call center support positions"} and region_upper in {"EGY", "UAE"}:
+            return region_upper in allowed_regions
         team_reg = canonical_team_region(team_name, performance_level).upper()
         if team_reg == "ALL":
             if t_key in explicit_teams:

@@ -25,6 +25,7 @@ from models.ai_schemas import (
     AiFeedbackClusterItem,
     AiFeedbackClustersResponse,
     AiFeedbackPurgeResponse,
+    AiFeedbackTraceSample,
     AiPilotFeedbackRequest,
     AiPilotFeedbackResponse,
     AiTraceReviewResponse,
@@ -452,15 +453,19 @@ class FeedbackGovernanceService:
         rating: str | None = None,
         review_status: str | None = None,
     ) -> AiFeedbackClustersResponse:
-        """Deterministic failure clustering by (surface, fallback_reason, operation_family, scope_team, reason_tag)."""
+        """Deterministic failure clustering by (surface, fallback_reason, operation_family, scope_team, reason_tag) with redacted trace samples."""
         if str(caller_role or "") != "Admin":
             raise PermissionError("Only Admin reviewers can view AI feedback clusters.")
 
         ensure_trace_schema_once(self.db)
         _names, tokens = self._name_tokens()
-        rows = self.db.query(AiInteractionTrace).all()
+        rows = (
+            self.db.query(AiInteractionTrace)
+            .order_by(AiInteractionTrace.created_at.desc())
+            .all()
+        )
 
-        grouped: dict[tuple[str, str, str, str, str], dict[str, int]] = defaultdict(
+        grouped: dict[tuple[str, str, str, str, str], dict[str, Any]] = defaultdict(
             lambda: {
                 "total": 0,
                 "up": 0,
@@ -468,6 +473,7 @@ class FeedbackGovernanceService:
                 "pending": 0,
                 "approved": 0,
                 "rejected": 0,
+                "traces": [],
             }
         )
         matched_total = 0
@@ -492,13 +498,24 @@ class FeedbackGovernanceService:
                 continue
 
             session_dict = row.session_state if isinstance(row.session_state, dict) else {}
+            td_dict = row.tool_digest if isinstance(row.tool_digest, dict) else {}
+            plan_dict = td_dict.get("plan") if isinstance(td_dict.get("plan"), dict) else {}
+            digests_list = td_dict.get("digests") if isinstance(td_dict.get("digests"), list) else []
+            first_digest = digests_list[0] if digests_list and isinstance(digests_list[0], dict) else {}
+
             fallback_reason = (
                 self._sanitize_scope_label(str(meta.get("fallback_reason") or "none"), tokens=tokens, max_len=80)
                 or "none"
             )
             operation_family = (
                 self._sanitize_scope_label(
-                    str(meta.get("operation_family") or session_dict.get("operation") or row_surface),
+                    str(
+                        meta.get("operation_family")
+                        or plan_dict.get("intent")
+                        or first_digest.get("operation")
+                        or session_dict.get("operation")
+                        or row_surface
+                    ),
                     tokens=tokens,
                     max_len=80,
                 )
@@ -506,7 +523,7 @@ class FeedbackGovernanceService:
             )
             scope_team = (
                 self._sanitize_scope_label(
-                    str(meta.get("scope_team") or session_dict.get("team") or "unspecified"),
+                    str(meta.get("scope_team") or plan_dict.get("team") or session_dict.get("team") or "unspecified"),
                     tokens=tokens,
                     max_len=120,
                 )
@@ -516,7 +533,7 @@ class FeedbackGovernanceService:
             if not reason_tag and isinstance(row.structured_response, dict):
                 reason_tag = str(row.structured_response.get("feedback_category") or "")
             if not reason_tag:
-                reason_tag = "unspecified"
+                reason_tag = "helpful" if row_rating == "up" else "unspecified"
             reason_tag = self._sanitize_scope_label(reason_tag, tokens=tokens, max_len=60) or "unspecified"
 
             key = (row_surface, fallback_reason, operation_family, scope_team, reason_tag)
@@ -532,6 +549,36 @@ class FeedbackGovernanceService:
                 bucket["rejected"] += 1
             else:
                 bucket["pending"] += 1
+
+            if len(bucket["traces"]) < 5:
+                raw_prompt = row.sanitized_prompt or row.prompt or ""
+                prompt_redacted = (
+                    self._sanitize_text(raw_prompt, tokens=tokens, max_len=240)
+                    or "<REDACTED_PROMPT>"
+                )
+                tool_choice = None
+                if isinstance(row.tool_calls, list) and row.tool_calls:
+                    first_tc = row.tool_calls[0]
+                    if isinstance(first_tc, dict):
+                        tool_choice = str(first_tc.get("tool_name") or "")[:80] or None
+                if not tool_choice and first_digest.get("tool_name"):
+                    tool_choice = str(first_digest.get("tool_name"))[:80] or None
+                clean_fb_reason = self._sanitize_text(row.feedback_reason, tokens=tokens, max_len=160)
+                bucket["traces"].append(
+                    AiFeedbackTraceSample(
+                        trace_id=str(row.id),
+                        prompt_redacted=prompt_redacted,
+                        intent=operation_family,
+                        operation_kind=str(plan_dict.get("operation_kind_v2") or first_digest.get("operation") or operation_family)[:64],
+                        tool_choice=tool_choice,
+                        rating=row_rating or None,
+                        failure_category=reason_tag,
+                        feedback_reason=clean_fb_reason,
+                        review_status=row_status,
+                        reviewer_verified=bool(row.reviewer_verified),
+                        created_at=row.created_at.isoformat() if row.created_at else None,
+                    )
+                )
             matched_total += 1
 
         clusters = [
@@ -541,12 +588,15 @@ class FeedbackGovernanceService:
                 operation_family=key[2],
                 scope_team=key[3],
                 reason_tag=key[4],
+                intent=key[2],
+                failure_category=key[4],
                 total_count=counts["total"],
                 up_count=counts["up"],
                 down_count=counts["down"],
                 pending_count=counts["pending"],
                 approved_count=counts["approved"],
                 rejected_count=counts["rejected"],
+                traces=counts["traces"],
             )
             for key, counts in sorted(
                 grouped.items(),

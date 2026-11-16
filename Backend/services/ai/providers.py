@@ -502,7 +502,7 @@ def _build_dynamic_followups(
         return []
     offset = variant_idx % len(filtered)
     rotated = filtered[offset:] + filtered[:offset]
-    return rotated[:4]
+    return rotated[:1]
 
 
 class DeterministicLocalProviderAdapter:
@@ -585,7 +585,12 @@ class DeterministicLocalProviderAdapter:
             e_name = sp.get("entity_name") or "Agent"
             e_id = sp.get("entity_id")
             e_pos = str(sp.get("position") or "").strip()
-            pos_txt = f" · {e_pos}" if e_pos and e_pos.casefold() not in ("agent", "call center agent") else ""
+            asks_role_or_pos = bool(re.search(r"\b(?:position|role|title)\b", (prompt or "").casefold()))
+            pos_txt = (
+                f" · {e_pos}"
+                if e_pos and (asks_role_or_pos or e_pos.casefold() not in ("agent", "call center agent"))
+                else ""
+            )
             e_team = sp.get("team") or scope
             has_period_score = bool(sp.get("selected_period_has_score", sp.get("score") is not None))
             sc = float(sp.get("score") or 0.0)
@@ -606,6 +611,11 @@ class DeterministicLocalProviderAdapter:
                 return f"{v:.1f}%"
 
             sc_disp = _fmt_pct(sc)
+            rank_disp = (
+                str(sp.get("ranking_metric_display"))
+                if rank_metric_lbl != "Overall PMS Score" and sp.get("ranking_metric_display")
+                else f"{sc_disp} (Grade {gr})"
+            )
             chg_txt = f", moving {chg:+.1f}% vs {prev_lbl}" if chg is not None else ""
             six_txt = f" ({six_d:+.1f}% since {first_lbl})" if six_d is not None and first_lbl else ""
             ties = list(sp.get("ties") or [])
@@ -752,33 +762,51 @@ class DeterministicLocalProviderAdapter:
                 bullets.append(
                     f"Note: {period} has no published evaluation score for {e_name} ({e_id}); PMS AI does not substitute another month's score."
                 )
+            elif sp.get("single_person") is False and sp.get("top_agents") and not signals.detected_employee_query:
+                top_list = list(sp.get("top_agents") or [])[:3]
+                dir_lbl = "lowest" if r_dir == "worst" else "top"
+                summary_items = ", ".join(
+                    f"#{item['rank']} {item['employee_name']} ({float(item['score']):.1f}%)"
+                    for item in top_list
+                )
+                headline = f"The {dir_lbl} {len(top_list)} agents in {e_team} ({branch}) for {period} by {rank_metric_lbl}: {summary_items}."
+                bullets.append(
+                    "Ranked breakdown: "
+                    + " · ".join(
+                        f"#{item['rank']} {item['employee_name']} ({item['employee_id']}"
+                        + (f" · {item['position']}" if item.get("position") else "")
+                        + f"): {float(item['score']):.1f}% (Grade {item['grade']})"
+                        for item in top_list
+                    )
+                    + "."
+                )
             elif r_dir == "worst" and not signals.detected_employee_query:
                 if variant_idx == 1:
                     headline = (
-                        f"Coaching priority in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) recorded the lowest {rank_metric_lbl} at {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                        f"Coaching priority in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) recorded the lowest {rank_metric_lbl} at {rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
                 elif variant_idx == 2:
                     headline = (
-                        f"Bottom-ranked benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) sits at Rank #{rank_num} of {tot_team} by {rank_metric_lbl} with {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                        f"Bottom-ranked benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) sits at Rank #{rank_num} of {tot_team} by {rank_metric_lbl} with {rank_disp}{tie_txt}{chg_txt}{six_txt}."
                     )
                 else:
                     headline = (
                         f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                        f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                        f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
             elif not signals.detected_employee_query:
                 if variant_idx == 1:
                     headline = (
-                        f"Leading {e_team} ({branch}) in {period}, {e_name} ({e_id}{pos_txt}) ranks #1 of {tot_team} by {rank_metric_lbl} at {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                        f"Leading {e_team} ({branch}) in {period}, {e_name} ({e_id}{pos_txt}) ranks #1 of {tot_team} by {rank_metric_lbl} at {rank_disp}{tie_txt}{chg_txt}{six_txt}."
                     )
                 elif variant_idx == 2:
                     headline = (
-                        f"Top benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) holds #1 of {tot_team} on {rank_metric_lbl} with {sc_disp} (Grade {gr}{tie_txt}){chg_txt}{six_txt}."
+                        f"Top benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) holds #1 of {tot_team} on {rank_metric_lbl} with {rank_disp}{tie_txt}{chg_txt}{six_txt}."
                     )
                 else:
                     headline = (
                         f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                        f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                        f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
             else:
                 if variant_idx == 1:
@@ -795,6 +823,8 @@ class DeterministicLocalProviderAdapter:
                         f"in {period}{chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
                     )
 
+            if asks_role_or_pos and e_pos:
+                bullets.append(f"Role / Position: {e_pos} in {e_team} ({period}).")
             if variant_idx in (1, 2) and has_period_score:
                 bullets.append(
                     f"Peer position: {e_name} ({e_id}) sits at Rank #{rank_num} of {tot_team} in {e_team} ({period}) with {sc_disp} (Grade {gr})."
@@ -1316,7 +1346,7 @@ class DeterministicLocalProviderAdapter:
                             for c in top_c[:3]
                         )
                         bullets.append(
-                            f"Root-cause drivers on {requested_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
+                            f"Contributing factors on {requested_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
                         )
             elif worst and avg_score is not None:
                 w_score = worst.get("current_score") or 0.0
@@ -1336,7 +1366,7 @@ class DeterministicLocalProviderAdapter:
                         f"with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
                     )
                 if worst.get("main_cause"):
-                    bullets.append(f"Primary driver: {worst['main_cause']}.")
+                    bullets.append(f"Top contributing factor: {worst['main_cause']}.")
             elif lowest_kpi:
                 below_low_cnt = int(lowest_kpi.get("people_below_target") or 0)
                 below_low_note = f", {below_low_cnt} agents below target" if below_low_cnt > 0 else ""
@@ -1362,7 +1392,7 @@ class DeterministicLocalProviderAdapter:
                         for c in top_c[:3]
                     )
                     bullets.append(
-                        f"Root-cause drivers on {lowest_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
+                        f"Contributing factors on {lowest_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
                     )
             elif avg_score is not None:
                 delta_str = f" ({score_change:+.1f}%)" if score_change is not None else ""
@@ -1373,7 +1403,8 @@ class DeterministicLocalProviderAdapter:
                 else:
                     headline = f"{scope} average performance in {period} ({branch}) is {avg_score:.1f}%{delta_str} across {tot_rec} evaluated records."
             else:
-                headline = f"No performance records matched the selected filters ({scope} · {period})."
+                reg_note = f" · {merged['region']}" if merged.get("region") else ""
+                headline = f"No performance records matched the selected filters ({scope}{reg_note} · {period})."
 
             if lowest_kpi and (
                 worst

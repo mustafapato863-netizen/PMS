@@ -5,6 +5,7 @@ import { useUserRole } from '../../context/RoleContext';
 import { useUpdateActionStatus } from '../../hooks/useActionStore';
 import { canEditActionFollowUp, dueBadgeLabel } from '../actions/dueBadge';
 import { ActionStatusMenu } from '../actions/ActionStatusMenu';
+import { formatActionRootCauseNote, parseActionRootCauseMeta } from '../../utils/actionNoteFormatter';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ACTION_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -259,7 +260,7 @@ const ActionTimeline = ({
                 </div>
                 {action.note && (
                   <p className="text-xs text-[var(--text-secondary)] italic mt-1.5 border-t border-[var(--border-light)] pt-1.5 font-medium">
-                    Root cause: {action.note}
+                    Root cause: {formatActionRootCauseNote(action.note)}
                   </p>
                 )}
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--border-light)]">
@@ -274,7 +275,7 @@ const ActionTimeline = ({
                             id: action.id,
                             action_type: action.type as ActionType,
                             action_text: action.text,
-                            root_cause_note: action.note || '',
+                            root_cause_note: parseActionRootCauseMeta(action.note).mainIssue,
                             status: action.status as ActionStatus,
                             due_date: action.dueDate,
                             owner_id: action.ownerId,

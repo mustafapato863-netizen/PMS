@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
 import type { PMSAction } from '../../types';
-import { canEditActionFollowUp } from './dueBadge';
+import { canDeleteCorrectiveAction, canEditActionFollowUp } from './dueBadge';
 import { ActionFollowUpBoard, EMPTY_FOLLOW_UP_SUMMARY } from './ActionFollowUpBoard';
 
 const overdueAction: PMSAction = {
@@ -74,5 +74,48 @@ describe('ActionFollowUpBoard', () => {
     renderBoard(false);
     expect(screen.queryAllByLabelText('Status for Review call handling')).toHaveLength(0);
     expect(screen.getAllByText('Open').length).toBeGreaterThan(0);
+  });
+
+  it('gates delete by role and handles inline confirmation, Escape dismiss, and errors', async () => {
+    expect(canDeleteCorrectiveAction('Admin')).toBe(true);
+    expect(canDeleteCorrectiveAction('General Manager')).toBe(true);
+    expect(canDeleteCorrectiveAction('Manager')).toBe(true);
+    expect(canDeleteCorrectiveAction('Performance Team')).toBe(true);
+    expect(canDeleteCorrectiveAction('Executive')).toBe(false);
+    expect(canDeleteCorrectiveAction('Viewer')).toBe(false);
+
+    const user = userEvent.setup();
+    const onDeleteAction = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    render(
+      <MemoryRouter>
+        <ActionFollowUpBoard
+          actions={[overdueAction]}
+          summary={{ ...EMPTY_FOLLOW_UP_SUMMARY, overdue: 1, open: 1 }}
+          canEdit
+          canDelete
+          onDeleteAction={onDeleteAction}
+          owners={[{ id: 'owner-1', name: 'Ada Owner' }]}
+          teams={['Inbound']}
+          months={['September']}
+          filters={{}}
+          onFiltersChange={vi.fn()}
+          onStatusChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByTestId('delete-follow-up-action-a1'));
+    expect(screen.getByRole('alertdialog', { name: /Confirm delete action for Agent One/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('delete-follow-up-action-a1'));
+    await user.click(screen.getByRole('button', { name: 'Delete Action' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Failed to delete corrective action/i);
+
+    await user.click(screen.getByRole('button', { name: 'Delete Action' }));
+    expect(onDeleteAction).toHaveBeenCalledTimes(2);
+    expect(onDeleteAction).toHaveBeenLastCalledWith(overdueAction);
   });
 });

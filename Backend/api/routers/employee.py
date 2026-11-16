@@ -550,7 +550,7 @@ async def delete_corrective_action(
     action_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Performance Team"]))
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}

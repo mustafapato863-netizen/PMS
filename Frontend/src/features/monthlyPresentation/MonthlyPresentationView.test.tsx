@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import * as apiClientModule from '../../lib/apiClient';
 import MonthlyPresentationView from './MonthlyPresentationView';
 import type { MonthlyPresentationViewProps } from './MonthlyPresentationView';
 import { OFFSHORE_EGYPT_SEP_2026_DATA } from './monthlyOverviewData';
@@ -1019,9 +1020,11 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.queryByText('Add Corrective Action')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)(?:Save)?Edit(?:Delete)?/g, ''),
     );
 
     const expectPresenting = () => {
@@ -1064,10 +1067,12 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expectPresenting();
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No corrective actions recorded for this role yet.')).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)(?:Save)?Edit(?:Delete)?/g, ''),
     );
 
     fireEvent.click(modeSwitch());
@@ -1433,5 +1438,56 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(qaRender.getAllByText('Fahmy Sabry El-Saadany').length).toBeGreaterThan(0);
     expect(qaRender.getByTestId('role-detail-score')).toHaveTextContent('84.4%');
     qaRender.unmount();
+  });
+
+  it('fetches /api/team-actions/plan-items only once (no infinite re-render loop) when viewing Team Deep Dive', async () => {
+    const planItemsSpy = vi
+      .spyOn(apiClientModule, 'apiFetch')
+      .mockResolvedValue({ success: true, data: [] });
+
+    try {
+      monthlyTestState.summary = {
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+        data: [
+          {
+            identity: { employee_id: 'SGHD70001', name: 'Agent One', team: 'Inbound', month: 'September' },
+            region: 'EGY',
+            year: 2026,
+            performance_level: 'Employee',
+            raw_data: {},
+            evaluation: { score: 0.88, grade: 'C' },
+            kpi_values: [],
+          },
+        ],
+      };
+
+      const view = render(
+        <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=call-center&team=inbound&period=2026-09']}>
+          <MonthlyPresentationView />
+          <LocationProbe />
+        </MemoryRouter>,
+      );
+
+      expect(view.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+
+      await waitFor(() => {
+        const planItemCalls = planItemsSpy.mock.calls.filter(([url]) =>
+          String(url).startsWith('/api/team-actions/plan-items'),
+        );
+        expect(planItemCalls).toHaveLength(1);
+      });
+
+      // Allow any microtasks/re-renders triggered by setTeamPlanItemsByScope to settle and verify no extra fetches occur
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const finalPlanItemCalls = planItemsSpy.mock.calls.filter(([url]) =>
+        String(url).startsWith('/api/team-actions/plan-items'),
+      );
+      expect(finalPlanItemCalls).toHaveLength(1);
+      view.unmount();
+    } finally {
+      planItemsSpy.mockRestore();
+    }
   });
 });

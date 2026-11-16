@@ -23,7 +23,11 @@ import {
   gradeForScore,
   type GradeLetter,
 } from '../../features/monthlyPresentation/monthlyOverviewData';
-import type { AiChatResponsePayload, StructuredVisualCard } from '../../features/ai/types';
+import type {
+  AiChatResponsePayload,
+  FeedbackCategoryType,
+  StructuredVisualCard,
+} from '../../features/ai/types';
 import { apiFetch } from '../../lib/apiClient';
 
 interface AiResponseCardProps {
@@ -579,6 +583,9 @@ export default function AiResponseCard({
   isSending = false,
 }: AiResponseCardProps) {
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+  const [showFlagForm, setShowFlagForm] = useState(false);
+  const [flagCategory, setFlagCategory] = useState<FeedbackCategoryType>('wrong_data');
+  const [flagReason, setFlagReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -615,7 +622,11 @@ export default function AiResponseCard({
     ? response.narrative_bullets
     : response.narrative_bullets.filter((b, idx) => idx === 0 || b.startsWith('Note:') || b.toLowerCase().includes('no evaluated score') || b.toLowerCase().includes('no published'));
 
-  const handleFeedback = async (rating: 'up' | 'down') => {
+  const handleFeedback = async (
+    rating: 'up' | 'down',
+    category?: FeedbackCategoryType,
+    reason?: string,
+  ) => {
     if (submitting) return;
     setSubmitting(true);
     setFeedbackError(false);
@@ -625,9 +636,14 @@ export default function AiResponseCard({
         body: JSON.stringify({
           trace_id: response.trace_id,
           rating,
+          category: category || (rating === 'up' ? 'helpful' : flagCategory),
+          ...(reason?.trim() ? { reason: reason.trim() } : {}),
         }),
       });
       setFeedback(rating);
+      if (rating === 'down') {
+        setShowFlagForm(false);
+      }
     } catch {
       setFeedbackError(true);
     } finally {
@@ -753,7 +769,7 @@ export default function AiResponseCard({
                 }
                 className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
               >
-                <span>{detailsExpanded ? 'Hide details' : 'Show details'}</span>
+                <span>{detailsExpanded ? 'Hide details' : 'View details'}</span>
                 {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
             )}
@@ -877,41 +893,121 @@ export default function AiResponseCard({
             ))}
           </div>
 
-          {response.trace_id && <div className="flex items-center gap-1">
-            {feedback === 'up' && (
-              <span className="mr-1 text-xs font-bold text-emerald-600">Feedback saved</span>
-            )}
-            {feedbackError && <span role="alert" className="mr-1 text-xs text-rose-600">Could not save feedback. Try again.</span>}
-            <button
-              type="button"
-              onClick={() => void handleFeedback('up')}
-              aria-label="Mark response as useful"
-              title="Mark response as useful (subject to administrator review)"
-              disabled={submitting}
-              className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
-                feedback === 'up'
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700'
-              }`}
-            >
-              <Check size={12} />
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleFeedback('down')}
-              aria-label="Flag response as inaccurate"
-              title="Flag response"
-              disabled={submitting}
-              className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
-                feedback === 'down'
-                  ? 'border-rose-400 bg-rose-50 text-rose-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700'
-              }`}
-            >
-              <X size={12} />
-            </button>
-          </div>}
+          {response.trace_id && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {feedback === 'up' && (
+                <span className="mr-1 text-xs font-bold text-emerald-600">Feedback saved</span>
+              )}
+              {feedback === 'down' && (
+                <span className="mr-1 text-xs font-bold text-rose-600">Feedback saved</span>
+              )}
+              {feedbackError && (
+                <span role="alert" className="mr-1 text-xs font-semibold text-rose-600">
+                  Could not save feedback. Try again.
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFlagForm(false);
+                  void handleFeedback('up', 'helpful');
+                }}
+                aria-label="Mark response as useful"
+                title="Mark response as useful (pending administrator review)"
+                disabled={submitting}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
+                  feedback === 'up'
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700'
+                }`}
+              >
+                <Check size={12} />
+                <span>Helpful</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFlagForm((prev) => !prev)}
+                aria-label="Flag response as inaccurate"
+                aria-expanded={showFlagForm}
+                title="Flag response with failure tag"
+                disabled={submitting}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold transition-colors disabled:opacity-50 ${
+                  feedback === 'down' || showFlagForm
+                    ? 'border-rose-400 bg-rose-50 text-rose-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700'
+                }`}
+              >
+                <X size={12} />
+                <span>Not helpful</span>
+              </button>
+            </div>
+          )}
         </div>
+
+        {response.trace_id && showFlagForm && (
+          <div
+            data-testid="ai-feedback-flag-panel"
+            className="mt-2.5 rounded-xl border border-rose-200/80 bg-rose-50/40 p-3"
+          >
+            <p className="text-xs font-bold text-slate-800">
+              What went wrong? Select a tag for Admin review:
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(
+                [
+                  { key: 'wrong_data', label: 'Wrong data' },
+                  { key: 'misunderstood_question', label: 'Misunderstood question' },
+                  { key: 'lost_context', label: 'Lost context' },
+                  { key: 'too_long', label: 'Too long' },
+                ] as const
+              ).map((tag) => {
+                const selected = flagCategory === tag.key;
+                return (
+                  <button
+                    key={tag.key}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setFlagCategory(tag.key)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-bold transition-colors ${
+                      selected
+                        ? 'border-rose-500 bg-rose-600 text-white'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-rose-300 hover:text-rose-700'
+                    }`}
+                  >
+                    {tag.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={flagReason}
+                onChange={(e) => setFlagReason(e.target.value)}
+                maxLength={120}
+                aria-label="Optional feedback note"
+                placeholder="Optional short note (max 120 chars)"
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-rose-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleFeedback('down', flagCategory, flagReason)}
+                className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                {submitting ? 'Sending…' : 'Send feedback'}
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setShowFlagForm(false)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

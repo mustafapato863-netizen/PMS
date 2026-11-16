@@ -1,5 +1,7 @@
-import { ClipboardList, Sparkles } from 'lucide-react';
+import { ClipboardList, MessageSquareWarning, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAiAvailability } from '../../../features/ai/aiAvailabilityContext';
+import { settingsPathFor } from './settingsNavigation';
 
 /** Administration controls. Visible while AI itself is hidden from every role, including Admin. */
 export function AiFeatureSwitch() {
@@ -34,6 +36,13 @@ export function AiFeatureSwitch() {
                 ? 'On for every signed-in role that already has access.'
                 : 'Off for every user, including administrators. The assistant, Ask AI, and the PMS AI page stay hidden.'}
             </p>
+            <Link
+              to={settingsPathFor('ai_feedback')}
+              className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--insights-accent)] hover:underline"
+            >
+              <MessageSquareWarning size={13} aria-hidden="true" />
+              <span>Review AI feedback &amp; approved patterns</span>
+            </Link>
             {error && <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{error}</p>}
           </div>
         </div>
@@ -49,7 +58,7 @@ export function AiFeatureSwitch() {
           }`}
         >
           <span className="sr-only">{on ? 'On' : 'Off'}</span>
-          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-[11px] font-bold text-slate-900 shadow-sm">
+          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-xs font-bold text-slate-900 shadow-sm">
             {saving ? '…' : on ? 'On' : 'Off'}
           </span>
         </button>
@@ -87,7 +96,7 @@ export function AiFeatureSwitch() {
           }`}
         >
           <span className="sr-only">{pilotOn ? 'On' : 'Off'}</span>
-          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-[11px] font-bold text-slate-900 shadow-sm">
+          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-xs font-bold text-slate-900 shadow-sm">
             {saving ? '…' : pilotOn ? 'On' : 'Off'}
           </span>
         </button>

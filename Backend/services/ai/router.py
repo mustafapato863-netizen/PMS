@@ -481,12 +481,19 @@ def _detect_metric_id(
     if any(k in text_lower for k in ("quality score", "qa quality", "quality achievement")):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:quality_score"
-    if any(
-        k in text_lower
-        for k in (
-            "attendance rate",
-            "patient attendance",
-            "patient attended",
+    if (
+        any(
+            k in text_lower
+            for k in (
+                "attendance rate",
+                "patient attendance",
+                "patient attended",
+            )
+        )
+        or (
+            t_norm in ("inbound", "outbound")
+            and re.search(r"\battendance\b", text_lower)
+            and "attendance compliance" not in text_lower
         )
     ):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
@@ -541,6 +548,10 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         "that", "those", "these", "last", "latest", "first", "next",
         "previous", "current", "published", "unpublished", "selected",
         "not", "been", "did", "does", "do", "would", "could", "should",
+        "generated", "achieved", "recorded", "delivered", "leader", "leaders",
+        "role", "roles", "weakest", "strongest", "most", "fewest", "more", "less",
+        "emirates", "their", "its", "it", "down", "missing", "miss", "missed",
+        "drag", "dragging", "score", "scores", "within", "check", "evaluate",
     }
     # Pattern 0 is the possessive span. Its head is the token glued to "'s".
     # The other patterns introduce a name after a cue ("for", "employee", ...).
@@ -633,8 +644,10 @@ class HybridQueryRouter:
         scope: dict[str, Any],
         published_periods: Iterable[str] | None = None,
         employee_candidates: Iterable[EmployeeHistoryCandidate] | None = None,
+        db: Any = None,
     ) -> None:
         self.scope = scope
+        self.db = db
         self.catalog = get_ai_catalog()
         self.published_periods: set[str] | None = (
             {str(p).strip() for p in published_periods if re.match(r"^\d{4}-(0[1-9]|1[0-2])$", str(p).strip())}
@@ -932,18 +945,66 @@ class HybridQueryRouter:
             )
         )
 
+        is_country_switch_uae = bool(
+            is_short_followup
+            and prior
+            and re.search(r"\b(?:uae|emirates)\b", lower)
+            and not explicit_branches
+            and not explicit_team
+        )
+        is_country_switch_egy = bool(
+            is_short_followup
+            and prior
+            and re.search(r"\b(?:egy|egypt)\b", lower)
+            and not explicit_branches
+            and not explicit_team
+        )
+        is_country_followup = is_country_switch_uae or is_country_switch_egy
+
+        eff_region: str | None = None
+        if is_country_switch_uae or has_uae_hint:
+            eff_region = "UAE"
+        elif is_country_switch_egy or has_egy_hint:
+            eff_region = "EGY"
+        elif is_short_followup and prior and prior.region and not explicit_team and not explicit_branches:
+            eff_region = prior.region
+        elif session_state.region and session_state.region not in ("All", "all", "") and not explicit_branches:
+            eff_region = session_state.region.strip().upper()
+
         eff_team = explicit_team
         if not eff_team and not asks_team_comparison:
             if matched_choice and matched_choice.team:
                 eff_team = matched_choice.team
             elif is_short_followup and prior and prior.team:
-                eff_team = prior.team
-                inherited_filters.append("team")
+                prior_team_val = prior.team
+                if is_country_switch_uae:
+                    egy_to_uae = {
+                        "Coding EGY": "Coding",
+                        "Submission EGY": "Submission",
+                        "Resubmission": "Re-Submission",
+                        "Pre-Approvals IP Offshore": "Pre-Approvals IP Final",
+                    }
+                    eff_team = egy_to_uae.get(prior_team_val, prior_team_val)
+                    inherited_filters.append("region")
+                elif is_country_switch_egy:
+                    uae_to_egy = {
+                        "Coding": "Coding EGY",
+                        "Submission": "Submission EGY",
+                        "Re-Submission": "Resubmission",
+                        "Pre-Approvals IP Final": "Pre-Approvals IP Offshore",
+                        "Pre-Approvals IP Final Dubai": "Pre-Approvals IP Offshore",
+                        "Pre-Approvals IP Final SHJAJM": "Pre-Approvals IP Offshore",
+                    }
+                    eff_team = uae_to_egy.get(prior_team_val, prior_team_val)
+                    inherited_filters.append("region")
+                else:
+                    eff_team = prior_team_val
+                    inherited_filters.append("team")
             elif session_state.team and session_state.team not in ("All", "all"):
                 eff_team = session_state.team
 
         eff_pos = detected_pos
-        if not eff_pos:
+        if not eff_pos and not is_country_followup:
             if matched_choice and matched_choice.position:
                 eff_pos = matched_choice.position
             elif is_short_followup and prior and prior.position:
@@ -968,10 +1029,12 @@ class HybridQueryRouter:
             )
         )
         eff_branch = explicit_branch
-        if not eff_branch and not asks_branch_comparison:
+        if not eff_branch and not asks_branch_comparison and not is_country_followup:
             if matched_choice and matched_choice.branch:
                 eff_branch = matched_choice.branch
-            elif is_short_followup and prior and prior.branch and not prior_was_branch_comparison:
+            elif is_short_followup and prior and prior.branch and (
+                not prior_was_branch_comparison or (has_explicit_month and not explicit_branches)
+            ):
                 eff_branch = prior.branch
                 inherited_filters.append("branch")
             elif (
@@ -983,8 +1046,10 @@ class HybridQueryRouter:
                 pass
 
         eff_branches: list[str] = list(explicit_branches)
-        if not eff_branches:
-            if is_short_followup and prior and prior.branches and not prior_was_branch_comparison:
+        if not eff_branches and not is_country_followup:
+            if is_short_followup and prior and prior.branches and (
+                not prior_was_branch_comparison or (has_explicit_month and not explicit_branches)
+            ):
                 eff_branches = list(prior.branches)
             elif eff_branch:
                 eff_branches = [eff_branch]
@@ -1019,9 +1084,9 @@ class HybridQueryRouter:
         )
         eff_metric = explicit_metric
         if not eff_metric and is_short_followup and prior and prior.metric_id:
-            # Inherit metric only if team did not switch to an incompatible team
+            # Inherit metric only if cross-team (no team prefix) or team did not switch to an incompatible team
             prior_metric_team = prior.metric_id.split(":")[0]
-            if not eff_team or eff_team.casefold().startswith(prior_metric_team):
+            if ":" not in prior.metric_id or not eff_team or eff_team.casefold().startswith(prior_metric_team):
                 eff_metric = prior.metric_id
                 inherited_filters.append("metric")
 
@@ -1957,30 +2022,132 @@ class HybridQueryRouter:
             )
 
 
+        asks_person_role_or_ref = bool(
+            re.search(r"\b(?:top\s+agent|top\s+performer|that\s+agent|that\s+employee|the\s+leader)\b", lower)
+        )
+        prior_was_ranking = bool(
+            prior
+            and prior.intent == "ranking"
+            and prior.last_operation_kind
+            not in (
+                "person_summary",
+                "person_best_period",
+                "person_worst_period",
+                "employee_best_period",
+                "employee_worst_period",
+            )
+        )
+        is_person_attribute_followup = bool(
+            has_subject_pronoun
+            or asks_person_role_or_ref
+            or re.search(r"\b(?:position|role|title|score|trend|history)\b", lower)
+        )
         if (
             not resolved_employee_id
             and not explicit_person_query
-            and (is_short_followup or has_subject_pronoun)
+            and not is_country_followup
+            and (is_short_followup or has_subject_pronoun or asks_person_role_or_ref)
             and not is_ranking_correction
             and prior
-            and prior.last_subject_employee_id
             and not explicit_team
         ):
-            resolved_employee_id = prior.last_subject_employee_id
-            resolved_employee_name = prior.last_subject_employee_name
-            inherited_filters.append("employee")
+            prior_cands = list(prior.candidate_employees or [])
+            if len(prior_cands) > 1 and (
+                has_subject_pronoun or re.search(r"\b(?:position|role|title|score|trend|history)\b", lower)
+            ):
+                cand_choices = [
+                    ClarificationChoice(
+                        id=f"choice-person-{c.get('employee_id')}",
+                        label=f"{c.get('employee_name')} ({c.get('employee_id')})" + (f" · {c.get('position')}" if c.get("position") else ""),
+                        prompt_to_send=f"What is {c.get('employee_name')}'s ({c.get('employee_id')}) position and score in {c.get('team') or eff_team or 'Inbound'}?",
+                        team=c.get("team") or eff_team,
+                        position=c.get("position"),
+                        performance_level=eff_level,
+                        employee_id=c.get("employee_id"),
+                        employee_name=c.get("employee_name"),
+                    )
+                    for c in prior_cands[:4]
+                    if c.get("employee_id") and c.get("employee_name")
+                ]
+                if len(cand_choices) >= 2:
+                    clar_multi = AiClarificationPrompt(
+                        code="AMBIGUOUS_PERSON",
+                        question="Multiple agents were listed in the previous turn. Which agent would you like to inspect?",
+                        choices=cand_choices,
+                    )
+                    return RouterValidationResult(
+                        outcome="clarification",
+                        plan=StructuredQueryPlan(
+                            intent="clarify",
+                            team=eff_team,
+                            function=eff_fn,
+                            periods=eff_periods,
+                            turn_kind_v2="clarification",
+                            clarification_code="AMBIGUOUS_PERSON",
+                        ),
+                        confirmed_context=ConfirmedQueryContext(
+                            intent="clarify",
+                            team=eff_team,
+                            function=eff_fn,
+                            periods=eff_periods,
+                            region=eff_region,
+                            candidate_employees=prior_cands,
+                            pending_clarification_code="AMBIGUOUS_PERSON",
+                            pending_clarification_choices=cand_choices,
+                        ),
+                        clarification=clar_multi,
+                        headline=clar_multi.question,
+                        narrative_bullets=["Select which employee you would like to view."],
+                        route_used="local_rules",
+                    )
+            if prior.last_subject_employee_id and (not prior_was_ranking or is_person_attribute_followup):
+                resolved_employee_id = prior.last_subject_employee_id
+                resolved_employee_name = prior.last_subject_employee_name
+                inherited_filters.append("employee")
 
         asks_trend = any(
             w in lower
             for w in ("6-month", "trend", "trajectory", "progression", "over time", "multi-month", "history")
         )
+        asks_plural_ranking = any(
+            phrase in lower
+            for phrase in (
+                "top 3 agents",
+                "top 5 agents",
+                "top agents",
+                "top employees",
+                "best performers",
+                "bottom agents",
+                "lowest scoring employees",
+                "top negative contributors",
+                "which employees",
+            )
+        )
+        inherited_ranking_followup = bool(
+            is_short_followup
+            and prior_was_ranking
+            and not is_person_attribute_followup
+            and not explicit_person_query
+            and not asks_team_comparison
+            and not asks_branch_comparison
+            and not asks_trend
+        )
         asks_ranking_person = bool(
             is_ranking_correction
+            or inherited_ranking_followup
             or possessive_person_match
             or asks_month_extremum
+            or asks_plural_ranking
+            or re.search(r"\b(?:leading|leads)\b.{0,25}\bbookings?\b", lower)
             or any(
                 phrase in lower
                 for phrase in (
+                    "bookings leader",
+                    "booking leader",
+                    "top bookings",
+                    "top booking",
+                    "most bookings",
+                    "highest bookings",
                     "best agent",
                     "better agent",
                     "best inbound",
@@ -1989,6 +2156,7 @@ class HybridQueryRouter:
                     "best in support",
                     "#1 top performer",
                     "top performer",
+                    "top agent",
                     "top inbound",
                     "top outbound",
                     "top support",
@@ -2023,6 +2191,11 @@ class HybridQueryRouter:
                     "who is the highest",
                     "who is top",
                     "who is the top",
+                    "achieved the highest",
+                    "highest score",
+                    "lowest score",
+                    "generated the most",
+                    "achieved the most",
                     "top negative contributors",
                     "which employees caused",
                     "bottom agents",
@@ -2036,6 +2209,8 @@ class HybridQueryRouter:
                     "led performance",
                     "rank ",
                     "who leads",
+                    "role of the top",
+                    "position of the top",
                 )
             )
         )
@@ -2044,64 +2219,84 @@ class HybridQueryRouter:
             for w in ("lowest", "worst", "weakest", "bottom", "negative contributors", "caused")
         )
         asks_single_person = bool(
-            is_ranking_correction
-            or emp_id_match
-            or possessive_person_match
-            or asks_month_extremum
-            or resolved_employee_id
-            or any(
-                phrase in lower
-                for phrase in (
-                    "best agent",
-                    "better agent",
-                    "best inbound",
-                    "best outbound",
-                    "best support",
-                    "best in support",
-                    "#1 top performer",
-                    "top performer",
-                    "top inbound",
-                    "top outbound",
-                    "top support",
-                    "top in support",
-                    "lowest agent",
-                    "lowest performer",
-                    "lowest inbound",
-                    "lowest outbound",
-                    "lowest support",
-                    "lowest in support",
-                    "worst inbound",
-                    "worst outbound",
-                    "worst support",
-                    "worst in support",
-                    "worst performing agent",
-                    "weakest",
-                    "who is lowest",
-                    "who is the lowest",
-                    "who was lowest",
-                    "who was the lowest",
-                    "who is worst",
-                    "who is the worst",
-                    "who was worst",
-                    "who was the worst",
-                    "who is best",
-                    "who is the best",
-                    "who was best",
-                    "who was the best",
-                    "who performed best",
-                    "who performed worst",
-                    "who is highest",
-                    "who is the highest",
-                    "who is top",
-                    "who is the top",
-                    "scored lowest",
-                    "scored highest",
-                    "had the lowest",
-                    "had the highest",
-                    "has the lowest",
-                    "has the highest",
-                    "led performance",
-                    "who leads",
+            not asks_plural_ranking
+            and not (inherited_ranking_followup and prior and len(prior.candidate_employees or []) > 1)
+            and (
+                is_ranking_correction
+                or inherited_ranking_followup
+                or emp_id_match
+                or possessive_person_match
+                or asks_month_extremum
+                or resolved_employee_id
+                or re.search(r"\b(?:leading|leads)\b.{0,25}\bbookings?\b", lower)
+                or any(
+                    phrase in lower
+                    for phrase in (
+                        "bookings leader",
+                        "booking leader",
+                        "top bookings",
+                        "top booking",
+                        "most bookings",
+                        "highest bookings",
+                        "best agent",
+                        "better agent",
+                        "best inbound",
+                        "best outbound",
+                        "best support",
+                        "best in support",
+                        "#1 top performer",
+                        "top performer",
+                        "top agent",
+                        "top inbound",
+                        "top outbound",
+                        "top support",
+                        "top in support",
+                        "lowest agent",
+                        "lowest performer",
+                        "lowest inbound",
+                        "lowest outbound",
+                        "lowest support",
+                        "lowest in support",
+                        "worst inbound",
+                        "worst outbound",
+                        "worst support",
+                        "worst in support",
+                        "worst performing agent",
+                        "weakest",
+                        "who is lowest",
+                        "who is the lowest",
+                        "who was lowest",
+                        "who was the lowest",
+                        "who is worst",
+                        "who is the worst",
+                        "who was worst",
+                        "who was the worst",
+                        "who is best",
+                        "who is the best",
+                        "who was best",
+                        "who was the best",
+                        "who performed best",
+                        "who performed worst",
+                        "who is highest",
+                        "who is the highest",
+                        "who is top",
+                        "who is the top",
+                        "achieved the highest",
+                        "highest score",
+                        "lowest score",
+                        "generated the most",
+                        "achieved the most",
+                        "scored lowest",
+                        "scored highest",
+                        "had the lowest",
+                        "had the highest",
+                        "has the lowest",
+                        "has the highest",
+                        "led performance",
+                        "who leads",
+                        "role of the top",
+                        "position of the top",
+                    )
                 )
             )
         )
@@ -2269,6 +2464,12 @@ class HybridQueryRouter:
                 "why was ",
                 "why were ",
                 "kpi bottlenecks",
+                "dragging",
+                "missing target",
+                "miss target",
+                "missed target",
+                "what is pulling",
+                "what pulled",
             )
         ) or bool(
             re.search(
@@ -2316,7 +2517,11 @@ class HybridQueryRouter:
                 if not has_explicit_direction_word:
                     asks_worst = prior.ranking_direction == "worst"
                 asks_single_person = bool(prior.single_person)
-            if intent == "compare_branches" and not eff_branches and prior.branches:
+            if prior_was_branch_comparison and len(explicit_branches) == 1 and not asks_branch_comparison:
+                if intent == "compare_branches":
+                    intent = "actual_vs_target" if eff_metric else "current_value"
+                explicit_compare_branch = None
+            elif intent == "compare_branches" and not eff_branches and prior.branches and not is_country_followup:
                 eff_branches = list(prior.branches)
                 if not eff_branch and prior.branch:
                     eff_branch = prior.branch
@@ -2338,12 +2543,48 @@ class HybridQueryRouter:
             intent = "ranking"
         elif asks_trend and not asks_ranking_person:
             intent = "trend"
-        elif asks_score_drivers and explicit_metric is None:
+        elif asks_score_drivers and (
+            explicit_metric is None or "dragging" in lower or "missing target" in lower or "why " in lower
+        ):
             intent = "score_drivers"
-        elif eff_metric is not None or asks_vs_target:
-            intent = "actual_vs_target"
         else:
-            intent = "current_value"
+            matched_pattern = None
+            if self.db is not None and not is_multi_part_trend_and_ranking and not is_multi_part_score_and_ranking:
+                from services.ai.approved_patterns import ApprovedPatternMatcher
+
+                matched_pattern = ApprovedPatternMatcher(self.db).match_prompt(
+                    text,
+                    known_employee_names=[c.employee_name for c in self.employee_candidates if c.employee_name],
+                )
+            if matched_pattern is not None and matched_pattern.intent in (
+                "current_value",
+                "actual_vs_target",
+                "score_drivers",
+                "trend",
+                "compare_periods",
+                "compare_branches",
+                "compare_teams",
+                "ranking",
+                "scorecard_structure",
+                "corrective_actions",
+            ):
+                intent = matched_pattern.intent  # type: ignore[assignment]
+                if matched_pattern.metric_hint and not eff_metric:
+                    if ":" in matched_pattern.metric_hint:
+                        eff_metric = matched_pattern.metric_hint
+                    elif matched_pattern.metric_hint in ("bookings_count", "attended_count"):
+                        t_prefix = "outbound" if (eff_team or "").casefold() == "outbound" else "inbound"
+                        eff_metric = f"{t_prefix}:{matched_pattern.metric_hint}"
+                    else:
+                        eff_metric = matched_pattern.metric_hint
+                if intent == "ranking":
+                    if matched_pattern.operation_kind == "ranking_bottom":
+                        asks_worst = True
+                    asks_single_person = matched_pattern.operation_kind != "ranking_plural"
+            elif eff_metric is not None or asks_vs_target:
+                intent = "actual_vs_target"
+            else:
+                intent = "current_value"
 
         requested_parts: list[str] = (
             ["trend", "ranking"]
@@ -2436,8 +2677,9 @@ class HybridQueryRouter:
                 if t_cand and t_cand not in teams_to_check:
                     teams_to_check.append(t_cand)
             check_lvl = plan.performance_level or eff_level
+            check_reg = eff_region or ("UAE" if has_uae_hint else ("EGY" if has_egy_hint else None))
             unauthorized_team = next(
-                (t for t in teams_to_check if not user_can_access_team(self.scope, t, performance_level=check_lvl)),
+                (t for t in teams_to_check if not user_can_access_team(self.scope, t, performance_level=check_lvl, region=check_reg)),
                 None,
             )
             if not unauthorized_team:
@@ -2447,9 +2689,9 @@ class HybridQueryRouter:
                     if r
                 }
                 if acc_regions and "ALL" not in acc_regions and len(acc_regions) < 2:
-                    if has_uae_hint and "UAE" not in acc_regions:
+                    if (has_uae_hint or eff_region == "UAE") and "UAE" not in acc_regions:
                         unauthorized_team = "UAE"
-                    elif has_egy_hint and "EGY" not in acc_regions:
+                    elif (has_egy_hint or eff_region == "EGY") and "EGY" not in acc_regions:
                         unauthorized_team = "Egypt"
             if unauthorized_team:
                 allowed_fns = ", ".join(self.scope.get("accessible_functions") or []) or "your assigned teams"
@@ -2820,6 +3062,7 @@ class HybridQueryRouter:
             position=plan.position,
             branch=plan.branch,
             branches=plan.branches,
+            region=eff_region,
             performance_level=plan.performance_level,
             metric_id=plan.metric,
             periods=plan.periods,

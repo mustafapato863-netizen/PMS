@@ -278,6 +278,7 @@ export interface TeamLevelActionPlanCard {
   /** Stored due date when the action has one. Absent values stay unset. */
   dueDate?: string | null;
   linkedKpiKey?: string;
+  isDeleted?: boolean;
 }
 
 export function teamActionDueLabel(dueDate: string | null | undefined): string {

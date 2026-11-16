@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import os
 import uuid
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from models.models import AiConversation, AiInteractionTrace, AiTurn
-from services.ai.trace_logger import ensure_trace_schema_once
+from services.ai.trace_logger import _ensure_conversation_v2_columns, ensure_trace_schema_once
 from utils.report_scope import canonical_scope_identity
 
 
@@ -127,6 +128,23 @@ class AiConversationRepository:
         self.db = db
         self._schema_ready_cache: bool | None = None
         ensure_trace_schema_once(self.db)
+        self.ensure_v2_columns()
+
+    def ensure_v2_columns(self) -> None:
+        """Backfill newly added v2 conversation/turn columns in local/test environments only."""
+        app_env = os.environ.get("APP_ENV", "").strip().casefold()
+        disable_ddl = os.environ.get("PMS_DISABLE_RUNTIME_DDL", "").strip().casefold() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if app_env in ("production", "staging", "prod", "stage") or disable_ddl:
+            return
+        try:
+            _ensure_conversation_v2_columns(self.db.get_bind())
+        except Exception:
+            pass
 
     def is_schema_ready(self) -> bool:
         if self._schema_ready_cache is not None:
@@ -231,6 +249,50 @@ class AiConversationRepository:
             conversation_id=conversation_id,
         )
 
+    def list_owned_conversations(
+        self,
+        *,
+        owner_user_id: str,
+        limit: int = 30,
+    ) -> list[AiConversation]:
+        self._require_schema_ready()
+        safe_limit = max(1, min(int(limit or 30), 50))
+        return (
+            self.db.query(AiConversation)
+            .filter(
+                AiConversation.owner_user_id == str(owner_user_id or "anonymous"),
+                AiConversation.status != "deleted",
+                AiConversation.deleted_at.is_(None),
+            )
+            .order_by(AiConversation.updated_at.desc(), AiConversation.created_at.desc())
+            .limit(safe_limit)
+            .all()
+        )
+
+    def list_turns_for_conversation(self, *, conversation_id: str) -> list[AiTurn]:
+        self._require_schema_ready()
+        return (
+            self.db.query(AiTurn)
+            .filter(AiTurn.conversation_id == str(conversation_id))
+            .order_by(AiTurn.turn_index.asc(), AiTurn.created_at.asc())
+            .all()
+        )
+
+    def list_turns_for_conversations(self, *, conversation_ids: list[str]) -> dict[str, list[AiTurn]]:
+        self._require_schema_ready()
+        if not conversation_ids:
+            return {}
+        rows = (
+            self.db.query(AiTurn)
+            .filter(AiTurn.conversation_id.in_([str(cid) for cid in conversation_ids]))
+            .order_by(AiTurn.conversation_id.asc(), AiTurn.turn_index.asc(), AiTurn.created_at.asc())
+            .all()
+        )
+        grouped: dict[str, list[AiTurn]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.conversation_id), []).append(row)
+        return grouped
+
     def archive_conversation(
         self,
         *,
@@ -311,6 +373,7 @@ class AiConversationRepository:
         *,
         conversation_id: str,
         client_request_id: str,
+        user_prompt: str | None = None,
         user_prompt_redacted: str,
         request_fingerprint: str = "",
         scope_fingerprint: str = "",
@@ -399,6 +462,7 @@ class AiConversationRepository:
 
             return self.reclaim_turn_for_recompute(
                 turn=existing,
+                user_prompt=user_prompt,
                 user_prompt_redacted=user_prompt_redacted,
                 request_fingerprint=request_fingerprint,
                 scope_fingerprint=scope_fingerprint,
@@ -434,7 +498,9 @@ class AiConversationRepository:
             status="pending",
             claim_token=claim_tok,
             processing_deadline=deadline_dt,
+            user_prompt=user_prompt,
             user_prompt_redacted=user_prompt_redacted,
+            error_message=None,
             validated_plan={},
             evidence_summary={
                 "request_fingerprint": request_fingerprint,
@@ -489,6 +555,7 @@ class AiConversationRepository:
         self,
         *,
         turn: AiTurn,
+        user_prompt: str | None = None,
         user_prompt_redacted: str,
         request_fingerprint: str,
         scope_fingerprint: str,
@@ -506,6 +573,17 @@ class AiConversationRepository:
         ev_sum["eval_id"] = eval_id
         ev_sum["reclaimed_from_completed"] = bool(was_completed)
 
+        update_fields: dict[Any, Any] = {
+            AiTurn.status: "pending",
+            AiTurn.claim_token: claim_tok,
+            AiTurn.processing_deadline: deadline_dt,
+            AiTurn.user_prompt_redacted: user_prompt_redacted,
+            AiTurn.error_message: None,
+            AiTurn.evidence_summary: ev_sum,
+        }
+        if user_prompt is not None:
+            update_fields[AiTurn.user_prompt] = user_prompt
+
         updated = (
             self.db.query(AiTurn)
             .filter(
@@ -513,13 +591,7 @@ class AiConversationRepository:
                 AiTurn.claim_token == turn.claim_token,
             )
             .update(
-                {
-                    AiTurn.status: "pending",
-                    AiTurn.claim_token: claim_tok,
-                    AiTurn.processing_deadline: deadline_dt,
-                    AiTurn.user_prompt_redacted: user_prompt_redacted,
-                    AiTurn.evidence_summary: ev_sum,
-                },
+                update_fields,
                 synchronize_session=False,
             )
         )
@@ -536,22 +608,41 @@ class AiConversationRepository:
         *,
         turn_id: str,
         claim_token: str | None,
+        error_message: str | None = None,
+        conversation_id: str | None = None,
+        title_candidate: str | None = None,
     ) -> None:
         """Release an active turn claim when a request fails before or during completion."""
         if not turn_id or not claim_token:
             return
         now_dt = datetime.now(timezone.utc)
+        update_fields: dict[Any, Any] = {
+            AiTurn.status: "failed",
+            AiTurn.processing_deadline: now_dt - timedelta(seconds=1),
+        }
+        if error_message is not None:
+            update_fields[AiTurn.error_message] = str(error_message)[:500]
         self.db.query(AiTurn).filter(
             AiTurn.id == str(turn_id),
             AiTurn.claim_token == str(claim_token),
             AiTurn.status == "pending",
         ).update(
-            {
-                AiTurn.status: "failed",
-                AiTurn.processing_deadline: now_dt - timedelta(seconds=1),
-            },
+            update_fields,
             synchronize_session=False,
         )
+        if conversation_id:
+            conv_updates: dict[Any, Any] = {AiConversation.updated_at: now_dt}
+            if title_candidate:
+                conv_row = (
+                    self.db.query(AiConversation)
+                    .filter(AiConversation.id == str(conversation_id))
+                    .first()
+                )
+                if conv_row is not None and not (conv_row.title or "").strip():
+                    conv_updates[AiConversation.title] = title_candidate[:200]
+            self.db.query(AiConversation).filter(
+                AiConversation.id == str(conversation_id)
+            ).update(conv_updates, synchronize_session=False)
         self.db.commit()
 
     def complete_turn_and_advance_context(
@@ -574,6 +665,7 @@ class AiConversationRepository:
         last_subject_employee_id: str | None = None,
         last_subject_employee_name: str | None = None,
         last_operation_kind: str | None = None,
+        title_candidate: str | None = None,
     ) -> int:
         """Atomically verify claim ownership and context version, complete the turn, and advance context_version."""
         self._require_schema_ready()
@@ -636,6 +728,7 @@ class AiConversationRepository:
             .update(
                 {
                     AiTurn.status: "completed",
+                    AiTurn.error_message: None,
                     AiTurn.validated_plan: dict(validated_plan or {}),
                     AiTurn.evidence_summary: merged_ev_summary,
                     AiTurn.response_payload: response_with_version,
@@ -654,6 +747,18 @@ class AiConversationRepository:
                 "Turn claim token was superseded or turn was already completed by another worker."
             )
 
+        conv_update_fields: dict[Any, Any] = {
+            AiConversation.context_version: next_version,
+            AiConversation.confirmed_context: dict(new_confirmed_context or {}),
+            AiConversation.pending_clarification: pending_clarification,
+            AiConversation.last_subject_employee_id: last_subject_employee_id,
+            AiConversation.last_subject_employee_name: last_subject_employee_name,
+            AiConversation.last_operation_kind: last_operation_kind,
+            AiConversation.updated_at: now_dt,
+        }
+        if title_candidate and not (conv.title or "").strip():
+            conv_update_fields[AiConversation.title] = title_candidate[:200]
+
         updated_conv = (
             self.db.query(AiConversation)
             .filter(
@@ -663,15 +768,7 @@ class AiConversationRepository:
                 AiConversation.context_version == target_version,
             )
             .update(
-                {
-                    AiConversation.context_version: next_version,
-                    AiConversation.confirmed_context: dict(new_confirmed_context or {}),
-                    AiConversation.pending_clarification: pending_clarification,
-                    AiConversation.last_subject_employee_id: last_subject_employee_id,
-                    AiConversation.last_subject_employee_name: last_subject_employee_name,
-                    AiConversation.last_operation_kind: last_operation_kind,
-                    AiConversation.updated_at: now_dt,
-                },
+                conv_update_fields,
                 synchronize_session=False,
             )
         )

@@ -6,6 +6,7 @@ import { fmtDate } from '../../../features/executive/format';
 import { actionStatus } from './execModel';
 import { ActionStatusMenu } from '../../actions/ActionStatusMenu';
 import type { ActionStatus } from '../../../types';
+import { formatActionRootCauseNote } from '../../../utils/actionNoteFormatter';
 import { ExecCard, ExecCardHeader, SoftEmpty, StatusPill } from './ExecPrimitives';
 
 type Filter = 'all' | 'open' | 'overdue' | 'due_this_week' | 'closed';
@@ -95,7 +96,7 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
         </span>
         <span role="cell" className="min-w-0 text-xs text-[var(--text-secondary)]">
           <span className="md:hidden text-[var(--text-muted)]">Reason: </span>
-          <span className="block truncate">{item.root_cause || '—'}</span>
+          <span className="block truncate">{formatActionRootCauseNote(item.root_cause) || '—'}</span>
           {item.linked_kpi_key && <span className="block truncate text-[var(--text-muted)]">KPI: {item.linked_kpi_key}</span>}
         </span>
         <span role="cell" className={`min-w-0 text-xs ${item.owner ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>

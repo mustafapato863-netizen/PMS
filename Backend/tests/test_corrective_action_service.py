@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from models.models import Action, Base, Employee, PerformancePlan, PerformanceRecord, PlanMilestone, Team, User
+from models.models import Action, AuditLog, Base, Employee, PerformancePlan, PerformanceRecord, PlanMilestone, Team, User
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
 
 
@@ -26,6 +26,7 @@ def db():
             PerformancePlan.__table__,
             PlanMilestone.__table__,
             Action.__table__,
+            AuditLog.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
@@ -321,3 +322,133 @@ def test_transfer_import_accepts_legacy_manager_action_rows(db, employee):
     assert restored.action_type == "Training"
     assert restored.action_text == "Review the legacy workflow"
     assert restored.root_cause_note == "Legacy root cause"
+
+
+def test_deactivate_logs_delete_audit_and_tolerates_synthetic_user_id(db, employee):
+    service = CorrectiveActionService(db)
+    saved, _ = service.save(
+        employee_identifier=employee.employee_id,
+        month="October",
+        year=2026,
+        manager_action="Coaching: Practice objection handling",
+    )
+
+    synthetic_actor = str(uuid.uuid4())
+    deactivated = service.deactivate(
+        employee_identifier=employee.employee_id,
+        action_id=saved["id"],
+        user_id=synthetic_actor,
+    )
+
+    assert deactivated is not None
+    assert deactivated["id"] == saved["id"]
+    row = db.query(Action).filter(Action.id == uuid.UUID(saved["id"])).one()
+    assert row.is_active is False
+    assert row.updated_by_user_id is None
+
+    audit = (
+        db.query(AuditLog)
+        .filter(AuditLog.table_name == "actions", AuditLog.record_id == uuid.UUID(saved["id"]))
+        .one()
+    )
+    assert audit.operation == "DELETE"
+    assert audit.old_values == {"is_active": True, "status": "Open"}
+    assert audit.new_values == {"is_active": False}
+    assert audit.performed_by_user_id is None
+
+    # Real user FK is preserved when present
+    real_user = User(
+        id=uuid.uuid4(),
+        username="perf_lead",
+        email="perf@example.com",
+        password_hash="hashed",
+        full_name="Perf Lead",
+        role="Performance Team",
+        is_active=True,
+    )
+    db.add(real_user)
+    db.commit()
+
+    saved2, _ = service.save(
+        employee_identifier=employee.employee_id,
+        month="November",
+        year=2026,
+        manager_action="Coaching: Follow-up QA review",
+    )
+    service.deactivate(
+        employee_identifier=employee.employee_id,
+        action_id=saved2["id"],
+        user_id=str(real_user.id),
+    )
+    row2 = db.query(Action).filter(Action.id == uuid.UUID(saved2["id"])).one()
+    assert row2.updated_by_user_id == real_user.id
+    audit2 = (
+        db.query(AuditLog)
+        .filter(AuditLog.table_name == "actions", AuditLog.record_id == uuid.UUID(saved2["id"]))
+        .one()
+    )
+    assert audit2.operation == "DELETE"
+    assert audit2.performed_by_user_id == real_user.id
+
+
+def test_delete_corrective_action_router_allows_performance_team_and_forbids_viewer(db, employee, monkeypatch):
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from api.routers import employee as employee_router_module
+    from config.database import get_db
+
+    service = CorrectiveActionService(db)
+    saved, _ = service.save(
+        employee_identifier=employee.employee_id,
+        month="October",
+        year=2026,
+        manager_action="Coaching: Call calibration review",
+    )
+
+    active_user = {
+        "user": {
+            "user_id": str(uuid.uuid4()),
+            "role": "Viewer",
+            "accessible_teams": ["Test Team"],
+            "accessible_regions": [],
+            "accessible_functions": [],
+            "has_unrestricted_team_access": True,
+        }
+    }
+    monkeypatch.setattr(
+        employee_router_module,
+        "get_current_user_scope",
+        lambda _db, _req: active_user["user"],
+    )
+
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def inject_user(request: Request, call_next):
+        request.state.user = active_user["user"]
+        return await call_next(request)
+
+    app.include_router(employee_router_module.router, prefix="/api/employee")
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    res_403 = client.delete(f"/api/employee/{employee.employee_id}/corrective-actions/{saved['id']}")
+    assert res_403.status_code == 403
+
+    active_user["user"]["role"] = "Performance Team"
+    res_ok = client.delete(f"/api/employee/{employee.employee_id}/corrective-actions/{saved['id']}")
+    assert res_ok.status_code == 200
+    assert res_ok.json()["success"] is True
+
+    row = db.query(Action).filter(Action.id == uuid.UUID(saved["id"])).one()
+    assert row.is_active is False
+    audit = (
+        db.query(AuditLog)
+        .filter(AuditLog.table_name == "actions", AuditLog.record_id == uuid.UUID(saved["id"]))
+        .one()
+    )
+    assert audit.operation == "DELETE"

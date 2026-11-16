@@ -509,7 +509,7 @@ class DeterministicToolRegistry:
                     title=f"Prioritize Root-Cause Intervention in {w_team_disp} ({w_score_capped:.1f}%)",
                     rationale=(
                         f"{w_team_disp} shows the largest gap to 100% (-{w_gap:.1f} pts across "
-                        f"{worst_team_obj.total_employees} evaluated agents). Primary driver: "
+                        f"{worst_team_obj.total_employees} evaluated agents). Top contributing factor: "
                         f"{worst_team_obj.main_cause or 'High-weight KPI deficit'}."
                     ),
                     expected_impact=f"Closing 50% of the {w_team_disp} KPI gap adds +{round(w_gap * 0.5, 1):.1f} pts to the team average.",
@@ -1638,6 +1638,65 @@ class DeterministicToolRegistry:
         target_key = cat_def.kpi_key.casefold() if cat_def else None
         target_display = cat_def.display_name if cat_def else kpi_query.strip()
 
+        if (target_key in ("totalbookings", "bookings_count")) or q_norm in (
+            "bookings_count",
+            "totalbookings",
+            "bookings",
+            "booking count",
+        ):
+            geo = getattr(rec, "geo", None)
+            b_obj = getattr(geo, "bookings", None) if geo is not None else (geo.get("bookings") if isinstance(geo, dict) else None)
+            if b_obj is not None:
+                if isinstance(b_obj, dict):
+                    cnt = sum(int(b_obj.get(k, 0) or 0) for k in ("dubai", "sharjah", "ajman", "clinics"))
+                else:
+                    cnt = (
+                        int(getattr(b_obj, "dubai", 0) or 0)
+                        + int(getattr(b_obj, "sharjah", 0) or 0)
+                        + int(getattr(b_obj, "ajman", 0) or 0)
+                        + int(getattr(b_obj, "clinics", 0) or 0)
+                    )
+                return {
+                    "kpi_key": "bookings_count",
+                    "kpi_label": cat_def.display_name if cat_def else "Bookings Count",
+                    "unit": "bookings",
+                    "numeric_value": float(cnt),
+                    "target_numeric": 0.0,
+                    "actual_display": f"{cnt:,} bookings",
+                    "achievement_percent": 100.0,
+                    "direction": "higher_better",
+                    "sort_metric": float(cnt),
+                }
+
+        if (target_key in ("attendedpatients", "attended_count")) or q_norm in (
+            "attended_count",
+            "attendedpatients",
+            "attended",
+        ):
+            geo = getattr(rec, "geo", None)
+            a_obj = getattr(geo, "attended", None) if geo is not None else (geo.get("attended") if isinstance(geo, dict) else None)
+            if a_obj is not None:
+                if isinstance(a_obj, dict):
+                    cnt = sum(int(a_obj.get(k, 0) or 0) for k in ("dubai", "sharjah", "ajman", "clinics"))
+                else:
+                    cnt = (
+                        int(getattr(a_obj, "dubai", 0) or 0)
+                        + int(getattr(a_obj, "sharjah", 0) or 0)
+                        + int(getattr(a_obj, "ajman", 0) or 0)
+                        + int(getattr(a_obj, "clinics", 0) or 0)
+                    )
+                return {
+                    "kpi_key": "attended_count",
+                    "kpi_label": cat_def.display_name if cat_def else "Attended Patients",
+                    "unit": "attended",
+                    "numeric_value": float(cnt),
+                    "target_numeric": 0.0,
+                    "actual_display": f"{cnt:,} attended",
+                    "achievement_percent": 100.0,
+                    "direction": "higher_better",
+                    "sort_metric": float(cnt),
+                }
+
         raw_kpis = getattr(rec, "kpi_values", None) or []
         for kv in raw_kpis:
             k_key = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
@@ -1737,6 +1796,10 @@ class DeterministicToolRegistry:
                     continue
             if target_pos and r_pos.casefold() != target_pos.casefold():
                 continue
+            if resolved["region"]:
+                rec_reg = _shared_record_region(rec, r_team).strip().casefold()
+                if rec_reg != str(resolved["region"]).strip().casefold():
+                    continue
             if resolved["branch"]:
                 if not record_matches_branch(rec, resolved["branch"]):
                     continue
@@ -1826,7 +1889,13 @@ class DeterministicToolRegistry:
                 tool_name="get_agent_spotlight_and_trend",
                 arguments={**resolved, "employee_query": employee_query, "ranking_direction": ranking_direction, "kpi": kpi},
                 records_evaluated=0,
-                digest={"period": period_label, "scope": target_team or "Call Center", "spotlight": None, "agent_spotlight": None},
+                digest={
+                    "period": period_label,
+                    "scope": target_team or "Call Center",
+                    "region": resolved["region"],
+                    "spotlight": None,
+                    "agent_spotlight": None,
+                },
                 visual_cards=[],
                 citations=[SourceCitationPill(label=f"Period · {period_label}", category="period")],
                 deep_links=[],
@@ -2004,7 +2073,7 @@ class DeterministicToolRegistry:
         curr_score = float(raw_curr) if selected_period_has_score and raw_curr is not None else 0.0
         curr_grade = self._grade_for_score(curr_score)
         ranking_metric_display = (
-            f"{selected_kpi_snap['actual_display']} {ranking_metric_label} (Overall Score {curr_score:.1f}%)"
+            f"{selected_kpi_snap['actual_display']} (Overall Score {curr_score:.1f}%)"
             if selected_kpi_snap
             else f"{curr_score:.1f}% Overall PMS Score"
         )
@@ -2101,33 +2170,48 @@ class DeterministicToolRegistry:
 
         # Optional compact top-3 list ONLY if user asked plural ("who are the best agents")
         extra_items: list[AiEntityListItem] = []
+        top_agents_list: list[dict[str, Any]] = []
         if not single_person and not employee_query and len(team_period_recs) > 1:
             ordered = team_period_recs if ranking_direction != "worst" else list(reversed(team_period_recs))
-            for idx, r in enumerate(ordered[:3], start=1):
+            for idx, r in enumerate(ordered[:5], start=1):
                 r_id = str(getattr(r, "employee_id", "") or "")
-                r_nm = str(getattr(r, "employee_name", "") or r_id).title()
+                r_nm_raw = str(getattr(r, "employee_name", "") or r_id).strip()
+                r_nm = r_nm_raw.title() if r_nm_raw == r_nm_raw.lower() else r_nm_raw
+                r_pos_val = str(getattr(r, "position", "") or "").strip() or None
                 r_sc = round(float(getattr(getattr(r, "evaluation", None), "score", 0.0) or 0.0), 2)
                 r_gr = self._grade_for_score(r_sc)
-                extra_items.append(
-                    AiEntityListItem(
-                        id=r_id,
-                        title=f"#{idx} · {r_nm} ({r_id})",
-                        subtitle=f"{emp_team} · {period_label}",
-                        badge_text=f"Grade {r_gr} · {r_sc:.1f}%",
-                        severity="good" if r_sc >= 90 else ("warning" if r_sc >= 80 else "critical"),
-                        metric_value=f"{r_sc:.1f}%",
-                        route_link=build_verified_deep_link(
-                            f"/employee/{r_id}",
-                            month=res_month,
-                            year=res_year,
-                            branch=resolved["branch"],
-                            function=resolved["function"],
-                            team=emp_team,
-                            position=emp_pos,
-                            performance_level=resolved["performance_level"],
-                        ),
-                    )
+                top_agents_list.append(
+                    {
+                        "rank": idx,
+                        "employee_id": r_id,
+                        "employee_name": r_nm,
+                        "team": emp_team,
+                        "position": r_pos_val,
+                        "score": r_sc,
+                        "grade": r_gr,
+                    }
                 )
+                if idx <= 3:
+                    extra_items.append(
+                        AiEntityListItem(
+                            id=r_id,
+                            title=f"#{idx} · {r_nm} ({r_id})",
+                            subtitle=f"{emp_team} · {period_label}",
+                            badge_text=f"Grade {r_gr} · {r_sc:.1f}%",
+                            severity="good" if r_sc >= 90 else ("warning" if r_sc >= 80 else "critical"),
+                            metric_value=f"{r_sc:.1f}%",
+                            route_link=build_verified_deep_link(
+                                f"/employee/{r_id}",
+                                month=res_month,
+                                year=res_year,
+                                branch=resolved["branch"],
+                                function=resolved["function"],
+                                team=emp_team,
+                                position=emp_pos,
+                                performance_level=resolved["performance_level"],
+                            ),
+                        )
+                    )
 
         spotlight_meta = AiSpotlightMetadata(
             kicker=kicker,
@@ -2205,8 +2289,11 @@ class DeterministicToolRegistry:
             "rank": rank_idx,
             "total_in_team": total_in_team,
             "ranking_direction": ranking_direction,
+            "single_person": single_person,
+            "top_agents": top_agents_list,
             "ranking_metric_label": ranking_metric_label,
             "ranking_metric_display": ranking_metric_display,
+            "region": resolved["region"],
             "period": period_label,
             "scope": f"{emp_team} ({branch_label})",
             "source_route": primary_emp_route,

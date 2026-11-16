@@ -34,6 +34,10 @@ describe('SettingsLayout', () => {
     expect(dataUploads).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Users' })).not.toHaveAttribute('aria-current');
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
+    expect(within(nav).getByRole('link', { name: 'AI feedback' })).toHaveAttribute(
+      'href',
+      '/settings/ai-feedback',
+    );
     expect(screen.getByText('Panel content')).toBeInTheDocument();
   });
 

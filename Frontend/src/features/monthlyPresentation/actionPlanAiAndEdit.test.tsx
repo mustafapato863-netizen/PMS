@@ -1144,3 +1144,252 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     expect(onSaveRoleAction).not.toHaveBeenCalled();
   });
 });
+
+describe('Action Plan delete, restore, and presentation mode hiding', () => {
+  it('handles inline Cancel, Confirm, Restore, and presentationMode hiding for TeamDeepDiveView Individual and Team-Level cards', async () => {
+    const user = userEvent.setup();
+    const onDeleteIndividualAction = vi.fn().mockResolvedValue(undefined);
+    const onDeleteTeamAction = vi.fn().mockResolvedValue(undefined);
+    const onRestoreTeamActions = vi.fn().mockResolvedValue(undefined);
+
+    const { rerender } = render(
+      <TeamDeepDiveView
+        data={makeTeamFixture()}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+        onSwitchTeam={() => {}}
+        onDeleteIndividualAction={onDeleteIndividualAction}
+        onDeleteTeamAction={onDeleteTeamAction}
+        onRestoreTeamActions={onRestoreTeamActions}
+      />,
+    );
+
+    // 1. Individual Action Plan: Cancel keeps card
+    await user.click(screen.getByTestId('delete-individual-action-EMP-101'));
+    const indDialog = screen.getByRole('alertdialog', { name: /Confirm delete action for Maryam Elsayed/i });
+    await user.click(within(indDialog).getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.getByTestId('individual-action-card-EMP-101')).toBeInTheDocument();
+    expect(onDeleteIndividualAction).not.toHaveBeenCalled();
+
+    // 2. Individual Action Plan: Confirm deletes card -> empty state -> Restore brings it back
+    await user.click(screen.getByTestId('delete-individual-action-EMP-101'));
+    await user.click(screen.getByTestId('confirm-delete-individual-action-EMP-101'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('individual-action-card-EMP-101')).not.toBeInTheDocument();
+    });
+    expect(onDeleteIndividualAction).toHaveBeenCalledWith('EMP-101', 'September', 'ind-inbound-0');
+    expect(screen.getByText('No individual action plans for this period.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Restore dismissed suggestions/i }));
+    expect(screen.getByTestId('individual-action-card-EMP-101')).toBeInTheDocument();
+
+    // 3. Team-Level Action Plan: Cancel keeps card -> Confirm deletes -> Restore brings it back
+    await user.click(screen.getByTestId('delete-team-action-team-act-1'));
+    const teamDialog = screen.getByRole('alertdialog', { name: /Confirm delete team action/i });
+    await user.click(within(teamDialog).getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.getByTestId('team-action-card-team-act-1')).toBeInTheDocument();
+    expect(onDeleteTeamAction).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('delete-team-action-team-act-1'));
+    await user.click(screen.getByTestId('confirm-delete-team-action-team-act-1'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('team-action-card-team-act-1')).not.toBeInTheDocument();
+    });
+    expect(onDeleteTeamAction).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/No team-level actions for this period/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Restore default actions/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('team-action-card-team-act-1')).toBeInTheDocument();
+    });
+    expect(onRestoreTeamActions).toHaveBeenCalledWith(['team-act-1']);
+
+    // 4. Presentation mode hides Delete and Restore controls
+    await user.click(screen.getByTestId('delete-individual-action-EMP-101'));
+    await user.click(screen.getByTestId('confirm-delete-individual-action-EMP-101'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('individual-action-card-EMP-101')).not.toBeInTheDocument();
+    });
+
+    rerender(
+      <TeamDeepDiveView
+        data={makeTeamFixture()}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+        onSwitchTeam={() => {}}
+        onDeleteIndividualAction={onDeleteIndividualAction}
+        onDeleteTeamAction={onDeleteTeamAction}
+        onRestoreTeamActions={onRestoreTeamActions}
+        presentationMode={true}
+      />,
+    );
+    expect(screen.queryByTestId('delete-team-action-team-act-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument();
+  });
+
+  it('handles inline Cancel, Confirm, Restore, and presentationMode hiding for RoleDetailView Individual and Role-Level cards', async () => {
+    const user = userEvent.setup();
+    const onDeleteIndividualAction = vi.fn().mockResolvedValue(undefined);
+    const onDeleteAction = vi.fn().mockResolvedValue(undefined);
+
+    const { rerender } = render(
+      <RoleDetailView
+        data={makeRoleFixture()}
+        onNavigateToOverview={() => {}}
+        onNavigateToFunction={() => {}}
+        onSaveAction={vi.fn().mockResolvedValue(undefined)}
+        onDeleteIndividualAction={onDeleteIndividualAction}
+        onDeleteAction={onDeleteAction}
+      />,
+    );
+
+    // 1. Role Individual Action Plan: Cancel keeps card -> Confirm deletes -> Restore brings it back
+    await user.click(screen.getByTestId('delete-role-individual-action-EMP-HR-1'));
+    const indDialog = screen.getByRole('alertdialog', { name: /Confirm delete action for Nour Hassan/i });
+    await user.click(within(indDialog).getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.getByTestId('role-individual-action-card-EMP-HR-1')).toBeInTheDocument();
+    expect(onDeleteIndividualAction).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('delete-role-individual-action-EMP-HR-1'));
+    await user.click(screen.getByTestId('confirm-delete-role-individual-action-EMP-HR-1'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('role-individual-action-card-EMP-HR-1')).not.toBeInTheDocument();
+    });
+    expect(onDeleteIndividualAction).toHaveBeenCalledWith('EMP-HR-1', 'September', undefined);
+    expect(screen.getByText('No individual action plans for this period.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Restore dismissed suggestions/i }));
+    expect(screen.getByTestId('role-individual-action-card-EMP-HR-1')).toBeInTheDocument();
+
+    // 2. Role-Level Action Plan: Cancel keeps card -> Confirm deletes -> Restore brings it back
+    await user.click(screen.getByTestId('delete-role-action-role-act-1'));
+    const roleDialog = screen.getByRole('alertdialog', { name: /Confirm delete role action/i });
+    await user.click(within(roleDialog).getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.getByTestId('role-action-role-act-1')).toBeInTheDocument();
+    expect(onDeleteAction).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('delete-role-action-role-act-1'));
+    await user.click(screen.getByTestId('confirm-delete-role-action-role-act-1'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('role-action-role-act-1')).not.toBeInTheDocument();
+    });
+    expect(onDeleteAction).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('No corrective actions recorded for this role yet.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Restore dismissed suggestions/i }));
+    expect(screen.getByTestId('role-action-role-act-1')).toBeInTheDocument();
+
+    // 3. Presentation mode hides all Delete & Restore controls
+    await user.click(screen.getByTestId('delete-role-action-role-act-1'));
+    await user.click(screen.getByTestId('confirm-delete-role-action-role-act-1'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('role-action-role-act-1')).not.toBeInTheDocument();
+    });
+
+    rerender(
+      <RoleDetailView
+        data={makeRoleFixture()}
+        onNavigateToOverview={() => {}}
+        onNavigateToFunction={() => {}}
+        onSaveAction={vi.fn().mockResolvedValue(undefined)}
+        onDeleteIndividualAction={onDeleteIndividualAction}
+        onDeleteAction={onDeleteAction}
+        presentationMode={true}
+      />,
+    );
+    expect(screen.queryByTestId('delete-role-individual-action-EMP-HR-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument();
+  });
+
+  it('renders Saved vs Suggested badges, supports 1-click Save, Escape-closes Delete dialogs, and keeps team/role headers de-crowded', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    let resolveIndSave!: () => void;
+    const onSaveIndividualAction = vi.fn().mockImplementation(
+      () => new Promise<void>((resolve) => { resolveIndSave = resolve; }),
+    );
+    const teamFixture = makeTeamFixture();
+    teamFixture.individualActionPlans[0] = {
+      ...teamFixture.individualActionPlans[0],
+      isSavedToStore: false,
+    };
+
+    const { rerender } = render(
+      <TeamDeepDiveView
+        data={teamFixture}
+        onNavigateToOverview={() => {}}
+        onNavigateToCallCenter={() => {}}
+        onSaveIndividualAction={onSaveIndividualAction}
+      />,
+    );
+
+    const indCard = screen.getByTestId('individual-action-card-EMP-101');
+    expect(within(indCard).getByText('Suggested — not saved')).toBeInTheDocument();
+    const quickSaveInd = within(indCard).getByTestId('quick-save-individual-action-EMP-101');
+    await user.click(quickSaveInd);
+    expect(quickSaveInd).toBeDisabled();
+    expect(quickSaveInd).toHaveTextContent('Saving…');
+    resolveIndSave();
+    await waitFor(() => {
+      expect(within(indCard).getByText('Saved')).toBeInTheDocument();
+    });
+    expect(within(indCard).queryByTestId('quick-save-individual-action-EMP-101')).not.toBeInTheDocument();
+
+    // Team-Level header row contains strictly Whole-Team Action + Status Pill (no action buttons in header)
+    const teamCard = screen.getByTestId('team-action-card-team-act-1');
+    const teamHeaderRow = within(teamCard).getByText('Whole-Team Action').parentElement!;
+    expect(within(teamHeaderRow).queryByRole('button')).not.toBeInTheDocument();
+
+    // Escape closes inline Delete alertdialog in TeamDeepDiveView
+    await user.click(within(indCard).getByTestId('delete-individual-action-EMP-101'));
+    expect(screen.getByRole('alertdialog', { name: /Confirm delete action for Maryam Elsayed/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    await user.click(within(teamCard).getByTestId('delete-team-action-team-act-1'));
+    expect(screen.getByRole('alertdialog', { name: /Confirm delete team action/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    // RoleDetailView parity: Saved vs Suggested badges, 1-click Save on both individual and role-level cards, Escape close
+    const roleFixture = makeRoleFixture();
+    roleFixture.individualActionPlans = [
+      { ...roleFixture.individualActionPlans![0], suggested: true },
+    ];
+    roleFixture.actions = [
+      { ...roleFixture.actions[0], suggested: true },
+    ];
+    const onSaveAction = vi.fn().mockResolvedValue(undefined);
+
+    rerender(
+      <RoleDetailView
+        data={roleFixture}
+        onNavigateToOverview={() => {}}
+        onNavigateToFunction={() => {}}
+        onSaveAction={onSaveAction}
+      />,
+    );
+
+    const roleIndCard = screen.getByTestId('role-individual-action-card-EMP-HR-1');
+    expect(within(roleIndCard).getByText('Suggested — not saved')).toBeInTheDocument();
+    await user.click(within(roleIndCard).getByTestId('quick-save-role-individual-action-EMP-HR-1'));
+    await waitFor(() => {
+      expect(within(roleIndCard).getByText('Saved')).toBeInTheDocument();
+    });
+    expect(within(roleIndCard).queryByTestId('quick-save-role-individual-action-EMP-HR-1')).not.toBeInTheDocument();
+
+    const roleCard = screen.getByTestId('role-action-role-act-1');
+    const roleHeaderRow = within(roleCard).getByText('Suggested action — not saved').parentElement!;
+    expect(within(roleHeaderRow).queryByRole('button')).not.toBeInTheDocument();
+    await user.click(within(roleCard).getByTestId('quick-save-role-action-role-act-1'));
+    await waitFor(() => {
+      expect(within(roleCard).getByText('Whole-Role Action')).toBeInTheDocument();
+    });
+    expect(within(roleCard).queryByTestId('quick-save-role-action-role-act-1')).not.toBeInTheDocument();
+
+    await user.click(within(roleCard).getByTestId('delete-role-action-role-act-1'));
+    expect(screen.getByRole('alertdialog', { name: /Confirm delete role action/i })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+});

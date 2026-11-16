@@ -11,10 +11,15 @@ from api.dependencies import require_authenticated_scope, require_role
 from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
+    AiApprovedPatternListResponse,
+    AiApprovePatternRequest,
+    AiApprovePatternResponse,
     AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
     AiConversationCreateRequest,
+    AiConversationDetailResponse,
+    AiConversationListResponse,
     AiConversationResponse,
     AiCorrectiveActionConfirmRequest,
     AiCorrectiveActionConfirmResponse,
@@ -34,6 +39,7 @@ from models.ai_schemas import (
 )
 from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
+from services.ai.approved_patterns import ApprovedPatternMatcher
 from services.ai.feedback_service import FeedbackGovernanceService
 from services.ai.llm_client import (
     get_recent_fallback_reason,
@@ -334,6 +340,61 @@ def create_ai_conversation(
     )
 
 
+@router.get("/conversations", response_model=AiConversationListResponse)
+def list_ai_conversations(
+    request: Request,
+    limit: int = Query(default=30, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiConversationListResponse:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    try:
+        conversations = svc.list_conversations(limit=limit)
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    release_read_transaction(db)
+    return AiConversationListResponse(
+        success=True,
+        message="Conversations loaded",
+        conversations=conversations,
+    )
+
+
+@router.get("/conversations/{conversation_id}", response_model=AiConversationDetailResponse)
+def get_ai_conversation_detail(
+    conversation_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiConversationDetailResponse:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    try:
+        data = svc.get_conversation_detail(conversation_id)
+    except (ConversationOwnershipError, ConversationDeletedError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    release_read_transaction(db)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return AiConversationDetailResponse(
+        success=True,
+        message="Conversation loaded",
+        data=data,
+    )
+
+
 @router.get("/conversations/{conversation_id}/context", response_model=AiConversationResponse)
 def get_ai_conversation_context(
     conversation_id: str,
@@ -503,6 +564,91 @@ def get_ai_feedback_clusters(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     release_read_transaction(db)
     return payload
+
+
+@router.get("/feedback/patterns", response_model=AiApprovedPatternListResponse)
+def get_ai_approved_patterns(
+    request: Request,
+    db: Session = Depends(get_db),
+    include_inactive: bool = Query(default=False),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiApprovedPatternListResponse:
+    require_authenticated_scope(db, request)
+    patterns = ApprovedPatternMatcher(db).list_patterns(active_only=not include_inactive)
+    release_read_transaction(db)
+    return AiApprovedPatternListResponse(success=True, patterns=patterns)
+
+
+@router.post("/traces/{trace_id}/approve-pattern", response_model=AiApprovePatternResponse)
+def post_approve_ai_pattern(
+    trace_id: str,
+    body: AiApprovePatternRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiApprovePatternResponse:
+    scope = require_authenticated_scope(db, request)
+    approver_id = str(scope.get("user_id") or "admin")
+    caller_role = str(scope.get("role") or "")
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    try:
+        pattern, review_res = ApprovedPatternMatcher(db).approve_pattern_from_trace(
+            trace_id=trace_id,
+            payload=body,
+            approver_user_id=approver_id,
+            caller_role=caller_role,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except LookupError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return AiApprovePatternResponse(
+        success=True,
+        message="Pattern verified against live PMS data and saved",
+        pattern=pattern,
+        trace_review=review_res,
+    )
+
+
+@router.delete("/feedback/patterns/{pattern_id}")
+def delete_ai_approved_pattern(
+    pattern_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> dict[str, object]:
+    scope = require_authenticated_scope(db, request)
+    actor_id = str(scope.get("user_id") or "admin")
+    caller_role = str(scope.get("role") or "")
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    try:
+        removed = ApprovedPatternMatcher(db).deactivate_pattern(
+            pattern_id=pattern_id,
+            actor_user_id=actor_id,
+            caller_role=caller_role,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if not removed:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approved pattern not found")
+    return {
+        "success": True,
+        "message": "Approved pattern removed",
+        "pattern_id": pattern_id,
+    }
 
 
 @router.post("/traces/purge", response_model=AiFeedbackPurgeResponse)

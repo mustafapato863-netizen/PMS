@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from models.models import Action, Team, User
 from repositories.action_repository import ActionRepository
+from services.audit_service import AuditService
 from services.corrective_action_service import month_match_values
 from utils.regions import first_region
 from utils.report_scope import user_can_access_region, user_can_access_team
@@ -163,21 +164,24 @@ class TeamActionService:
             raise ValueError(f"Invalid due_date: {value}") from exc
 
     @staticmethod
+    def _parse_plan_meta(raw_note: str | None) -> dict[str, Any]:
+        if not raw_note:
+            return {}
+        try:
+            parsed = json.loads(raw_note)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    @staticmethod
     def _serialize_plan_item(action: Action, resolved_team: Team | None = None) -> dict:
         team_obj = resolved_team or action.team
         evidence_ref = str(action.evidence_reference or "")
         card_id = evidence_ref[len(_COHORT_PLAN_PREFIX):] if evidence_ref.startswith(_COHORT_PLAN_PREFIX) else str(action.id)
-        meta: dict[str, Any] = {}
-        if action.root_cause_note:
-            try:
-                parsed = json.loads(action.root_cause_note)
-                if isinstance(parsed, dict):
-                    meta = parsed
-            except (TypeError, ValueError):
-                meta = {}
+        meta = TeamActionService._parse_plan_meta(action.root_cause_note)
         ui_status = str(meta.get("ui_status") or action.status or "Open")
         if ui_status not in _VALID_PLAN_ITEM_STATUSES:
-            ui_status = action.status or "Open"
+            ui_status = action.status if action.status in _VALID_PLAN_ITEM_STATUSES else "Open"
         timestamp = action.updated_at or action.created_at
         return {
             "id": str(action.id),
@@ -194,6 +198,7 @@ class TeamActionService:
             "due_date": action.due_date.isoformat() if action.due_date else None,
             "expected_team_impact": str(meta.get("expected_team_impact") or ""),
             "updated_at": timestamp.isoformat() if timestamp else None,
+            "is_deleted": bool(meta.get("is_deleted", False)),
         }
 
     @staticmethod
@@ -341,6 +346,7 @@ class TeamActionService:
                 "owner": str(payload.get("owner") or "").strip(),
                 "expected_team_impact": str(payload.get("expected_team_impact") or "").strip(),
                 "ui_status": ui_status,
+                "is_deleted": False,
             }
         )
 
@@ -381,6 +387,156 @@ class TeamActionService:
             self.db.commit()
             self.db.refresh(action)
             return self._serialize_plan_item(action, resolved_team)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def delete_plan_item(
+        self,
+        *,
+        card_id: str,
+        team_name: str,
+        month: str,
+        year: int,
+        current_user: Any = None,
+        region: Optional[str] = None,
+        purge_tombstone: bool = False,
+    ) -> dict:
+        scope = self._scope_from_current_user(current_user)
+        if not scope:
+            raise PermissionError("Authentication required")
+
+        card_id_clean = str(card_id or "").strip()
+        if not card_id_clean:
+            raise ValueError("card_id is required")
+        team_ref = str(team_name or "").strip()
+        if not team_ref:
+            raise ValueError("team is required")
+        month_clean = str(month or "").strip()
+        if not month_clean:
+            raise ValueError("month is required")
+        try:
+            year_val = int(year)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Valid year is required") from exc
+        if year_val < 2000 or year_val > 2100:
+            raise ValueError("Year out of range")
+
+        resolved_team = self._team(team_ref, region=region)
+        resolved_name = logical_team_name(resolved_team)
+        self._ensure_team_action_scope(scope, resolved_name)
+        self._ensure_region_scope(scope, resolved_team)
+
+        actor_id = self._actor_uuid(scope.get("user_id"))
+        month_variants = month_match_values(month_clean)
+        action = self.actions.get_active_cohort_plan_item(
+            resolved_team.id,
+            month_variants,
+            year_val,
+            card_id_clean,
+        )
+        now = dt.datetime.now(dt.timezone.utc)
+
+        try:
+            if card_id_clean.startswith("team-act-custom-") or purge_tombstone:
+                title = action.action_text if action else ""
+                if action:
+                    old_values = {
+                        "is_active": bool(action.is_active),
+                        "status": action.status,
+                        "card_id": card_id_clean,
+                    }
+                    action.is_active = False
+                    action.status = "Cancelled"
+                    action.updated_by_user_id = actor_id
+                    action.updated_at = now
+                    self.db.flush()
+                    AuditService.log_operation(
+                        self.db,
+                        table_name="actions",
+                        operation="DELETE",
+                        record_id=str(action.id),
+                        old_values=old_values,
+                        new_values={
+                            "is_active": False,
+                            "status": "Cancelled",
+                            "card_id": card_id_clean,
+                        },
+                        performed_by_user_id=str(actor_id) if actor_id else None,
+                    )
+                return {
+                    "id": str(action.id) if action else card_id_clean,
+                    "card_id": card_id_clean,
+                    "team": resolved_name,
+                    "region": getattr(resolved_team, "region", None),
+                    "month": month_clean,
+                    "year": year_val,
+                    "title": title,
+                    "is_deleted": not purge_tombstone,
+                }
+
+            existing_meta = self._parse_plan_meta(action.root_cause_note) if action else {}
+            old_values = (
+                {
+                    "is_active": bool(action.is_active),
+                    "status": action.status,
+                    "is_deleted": bool(existing_meta.get("is_deleted", False)),
+                    "card_id": card_id_clean,
+                }
+                if action
+                else None
+            )
+            ui_status = str(existing_meta.get("ui_status") or "Open")
+            if ui_status not in _VALID_PLAN_ITEM_STATUSES:
+                ui_status = "Open"
+            tombstone_meta = json.dumps(
+                {
+                    **existing_meta,
+                    "is_deleted": True,
+                    "ui_status": ui_status,
+                }
+            )
+            if action:
+                action.is_active = True
+                action.status = "Cancelled"
+                action.action_text = action.action_text or "[Deleted team action]"
+                action.root_cause_note = tombstone_meta
+                action.updated_by_user_id = actor_id
+                action.updated_at = now
+            else:
+                action = Action(
+                    team_id=resolved_team.id,
+                    employee_id=None,
+                    month=month_clean,
+                    year=year_val,
+                    action_type="Team Action",
+                    plan_title="[Deleted team action]",
+                    action_text="[Deleted team action]",
+                    root_cause_note=tombstone_meta,
+                    status="Cancelled",
+                    evidence_reference=f"{_COHORT_PLAN_PREFIX}{card_id_clean}",
+                    is_active=True,
+                    created_by_user_id=actor_id,
+                    updated_by_user_id=actor_id,
+                )
+                self.actions.add(action)
+            self.db.flush()
+            serialized = self._serialize_plan_item(action, resolved_team)
+            AuditService.log_operation(
+                self.db,
+                table_name="actions",
+                operation="DELETE",
+                record_id=str(action.id),
+                old_values=old_values,
+                new_values={
+                    "is_active": True,
+                    "status": "Cancelled",
+                    "is_deleted": True,
+                    "card_id": card_id_clean,
+                },
+                performed_by_user_id=str(actor_id) if actor_id else None,
+            )
+            return serialized
         except Exception:
             self.db.rollback()
             raise

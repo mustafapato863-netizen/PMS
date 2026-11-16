@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "ai_approved_patterns": [],
  "ai_conversations": [],
  "ai_interaction_traces": [],
  "ai_turns": [],

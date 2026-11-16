@@ -3,35 +3,35 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
-  BarChart3,
-  Building2,
   Calendar,
   ChevronDown,
   ChevronUp,
   Compass,
-  GitBranch,
+  History,
   Info,
-  Layers,
   LayoutGrid,
-  PieChart,
   RotateCcw,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
-  Target,
-  Users,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/auth';
 import { useAppStore } from '../store/appStore';
 import { apiFetch } from '../lib/apiClient';
 import type { User } from '../types';
 import AiResponseCard from '../components/ai/AiResponseCard';
-import AiScopeDropdown from '../components/ai/AiScopeDropdown';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
+import ConversationHistoryPanel from '../components/ai/ConversationHistoryPanel';
+import ScopeFilterBar from '../components/ai/ScopeFilterBar';
 import { buildFallbackStarterPrompts, mergeStarterScenarios } from '../features/ai/starterPrompts';
 import type {
   AiChatMessage,
   AiChatResponsePayload,
+  AiConversationDetailResponse,
+  AiConversationListResponse,
+  AiConversationSummaryItem,
   AiStarterPrompt,
   AiWatchingPayload,
   ConfirmedQueryContext,
@@ -62,47 +62,35 @@ interface ConversationTurn {
   isPending?: boolean;
 }
 
-const STARTER_ICON_MAP = {
-  alert: <Users size={16} />,
-  users: <Users size={16} />,
-  chart: <BarChart3 size={16} />,
-  shield: <ShieldCheck size={16} />,
-};
+interface ChatSessionState {
+  chatKey: string;
+  conversationId: string | null;
+  contextVersion: number;
+  lastConfirmedQuery: ConfirmedQueryContext | null;
+  turns: ConversationTurn[];
+  isSending: boolean;
+  abortController: AbortController | null;
+  requestSeq: number;
+}
 
-const CATEGORY_STYLES: Record<
-  string,
-  {
-    badge: string;
-    iconBox: string;
-    cardHover: string;
-  }
-> = {
-  team: {
-    badge: 'bg-sky-100/90 text-sky-700',
-    iconBox: 'border border-sky-100 bg-sky-50 text-sky-600',
-    cardHover: 'hover:border-sky-300 hover:shadow-md',
-  },
-  people: {
-    badge: 'bg-emerald-100/90 text-emerald-700',
-    iconBox: 'border border-emerald-100 bg-emerald-50 text-emerald-600',
-    cardHover: 'hover:border-emerald-300 hover:shadow-md',
-  },
-  branch: {
-    badge: 'bg-sky-100/90 text-sky-700',
-    iconBox: 'border border-sky-100 bg-sky-50 text-sky-600',
-    cardHover: 'hover:border-sky-300 hover:shadow-md',
-  },
-  kpi: {
-    badge: 'bg-blue-100/90 text-blue-700',
-    iconBox: 'border border-blue-100 bg-blue-50 text-blue-600',
-    cardHover: 'hover:border-blue-300 hover:shadow-md',
-  },
-  governance: {
-    badge: 'bg-emerald-100/90 text-emerald-700',
-    iconBox: 'border border-emerald-100 bg-emerald-50 text-emerald-600',
-    cardHover: 'hover:border-emerald-300 hover:shadow-md',
-  },
-};
+let draftSeqCounter = 0;
+function createDraftKey(): string {
+  draftSeqCounter += 1;
+  return `draft-${Date.now()}-${draftSeqCounter}`;
+}
+
+function makeEmptyChatSession(chatKey: string, conversationId: string | null = null): ChatSessionState {
+  return {
+    chatKey,
+    conversationId,
+    contextVersion: 0,
+    lastConfirmedQuery: null,
+    turns: [],
+    isSending: false,
+    abortController: null,
+    requestSeq: 0,
+  };
+}
 
 export default function PmsAiWorkspaceView() {
   const { currentUser } = useAuth();
@@ -112,6 +100,7 @@ export default function PmsAiWorkspaceView() {
 function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const activeMonth = useAppStore((s) => s.activeMonth);
   const [searchParams, setSearchParams] = useSearchParams();
+  const storageKey = `pms_ai_last_conversation_${currentUser?.id ?? 'anonymous'}`;
 
   const [selectedTeam, setSelectedTeam] = useState<string>(
     () => searchParams.get('team') || 'All',
@@ -124,37 +113,241 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   );
   const [answerDetail, setAnswerDetail] = useState<'auto' | 'brief' | 'details'>('auto');
   const [promptInput, setPromptInput] = useState('');
-  const [turns, setTurns] = useState<ConversationTurn[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [contextVersion, setContextVersion] = useState<number>(0);
-  const [lastConfirmedQuery, setLastConfirmedQuery] = useState<ConfirmedQueryContext | null>(null);
-  const [isSending, setIsSending] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const initialConvParam = searchParams.get('conversation');
+  const [activeChatKey, setActiveChatKey] = useState<string>(
+    () => initialConvParam || createDraftKey(),
+  );
+  const [sessionsByKey, setSessionsByKey] = useState<Record<string, ChatSessionState>>(() => ({
+    [initialConvParam || activeChatKey]: makeEmptyChatSession(
+      initialConvParam || activeChatKey,
+      initialConvParam || null,
+    ),
+  }));
+  const [recentConversations, setRecentConversations] = useState<AiConversationSummaryItem[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isLoadingConversation, setIsLoadingConversation] = useState<boolean>(false);
+  const [conversationNotice, setConversationNotice] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
+  const [showHistoryPanel, setShowHistoryPanel] = useState<boolean>(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 1024px)').matches
+      : false,
+  );
+
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [showGuardrailsInfo, setShowGuardrailsInfo] = useState<boolean>(false);
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
   const [showMidChatScenarios, setShowMidChatScenarios] = useState<boolean>(false);
   const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(false);
-  const activeRequestSeqRef = useRef<number>(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!showGuardrailsInfo) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowGuardrailsInfo(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showGuardrailsInfo]);
+
+  const sessionsRef = useRef<Record<string, ChatSessionState>>(sessionsByKey);
+  sessionsRef.current = sessionsByKey;
+  const activeChatKeyRef = useRef<string>(activeChatKey);
+  activeChatKeyRef.current = activeChatKey;
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+  const userInteractedRef = useRef<boolean>(false);
   const streamEndRef = useRef<HTMLDivElement>(null);
 
-  const cancelInFlightRequests = useCallback(() => {
-    activeRequestSeqRef.current += 1;
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    setIsSending(false);
-    setTurns((prev) => prev.filter((t) => !t.isPending));
-  }, []);
+  const activeSession = useMemo(
+    () => sessionsByKey[activeChatKey] ?? makeEmptyChatSession(activeChatKey),
+    [sessionsByKey, activeChatKey],
+  );
+  const turns = activeSession.turns;
+  const conversationId = activeSession.conversationId;
+  const contextVersion = activeSession.contextVersion;
+  const lastConfirmedQuery = activeSession.lastConfirmedQuery;
+  const isSending = activeSession.isSending;
 
-  useEffect(
-    () => () => {
-      activeRequestSeqRef.current += 1;
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
+  const updateSession = useCallback(
+    (chatKey: string, updater: (prev: ChatSessionState) => ChatSessionState) => {
+      const currMap = sessionsRef.current;
+      const existing = currMap[chatKey] ?? makeEmptyChatSession(chatKey);
+      const nextSession = updater(existing);
+      const nextMap = { ...currMap, [chatKey]: nextSession };
+      sessionsRef.current = nextMap;
+      setSessionsByKey(nextMap);
+      return nextSession;
     },
     [],
   );
+
+  const setUrlConversationParam = useCallback(
+    (nextConvId: string | null) => {
+      const next = new URLSearchParams(searchParamsRef.current);
+      if (nextConvId) {
+        next.set('conversation', nextConvId);
+      } else {
+        next.delete('conversation');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [setSearchParams],
+  );
+
+  const saveLastConversationId = useCallback(
+    (nextConvId: string | null) => {
+      try {
+        if (nextConvId) {
+          sessionStorage.setItem(storageKey, nextConvId);
+        } else {
+          sessionStorage.removeItem(storageKey);
+        }
+      } catch {
+        // Ignore storage errors in restricted contexts
+      }
+    },
+    [storageKey],
+  );
+
+  const cancelActiveChatInFlight = useCallback(() => {
+    const key = activeChatKeyRef.current;
+    const curr = sessionsRef.current[key];
+    if (!curr) return;
+    if (curr.abortController) {
+      curr.abortController.abort();
+    }
+    updateSession(key, (prev) => ({
+      ...prev,
+      requestSeq: prev.requestSeq + 1,
+      abortController: null,
+      isSending: false,
+      turns: prev.turns.filter((t) => !t.isPending),
+    }));
+  }, [updateSession]);
+
+  useEffect(
+    () => () => {
+      for (const sess of Object.values(sessionsRef.current)) {
+        sess.abortController?.abort();
+      }
+    },
+    [],
+  );
+
+  const refreshRecentConversations = useCallback(async (): Promise<AiConversationSummaryItem[]> => {
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const res = await apiFetch<AiConversationListResponse>('/api/ai/conversations');
+      const items = Array.isArray(res?.conversations) ? res.conversations : [];
+      setRecentConversations(items);
+      return items;
+    } catch {
+      setHistoryError('Could not load recent conversations.');
+      return [];
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  const openConversation = useCallback(
+    async (targetConvId: string) => {
+      userInteractedRef.current = true;
+      setConversationNotice(null);
+      setConfirmDeleteId(null);
+
+      // If this conversation is already live in memory with an active or loaded stream, switch straight to it
+      // without disturbing any in-flight request on either chat.
+      const existingInMemory = sessionsRef.current[targetConvId];
+      if (existingInMemory && (existingInMemory.isSending || existingInMemory.turns.length > 0)) {
+        activeChatKeyRef.current = targetConvId;
+        setActiveChatKey(targetConvId);
+        setUrlConversationParam(targetConvId);
+        saveLastConversationId(targetConvId);
+        return;
+      }
+
+      setIsLoadingConversation(true);
+      try {
+        const res = await apiFetch<AiConversationDetailResponse>(
+          `/api/ai/conversations/${encodeURIComponent(targetConvId)}`,
+        );
+        const detail = res?.data;
+        if (!detail || !detail.conversation_id) {
+          throw new Error('404: Conversation not found');
+        }
+        const hydratedTurns: ConversationTurn[] = (detail.turns || []).map((t) => {
+          const isFailed = t.status === 'failed';
+          const isPending = t.status === 'pending';
+          return {
+            id: t.turn_id,
+            userPrompt: t.user_prompt,
+            clientRequestId: t.turn_id,
+            response: t.response ?? undefined,
+            error: isFailed ? t.error_message || 'Unable to complete analysis' : undefined,
+            isPending,
+          };
+        });
+        const resolvedId = detail.conversation_id;
+        updateSession(resolvedId, (prev) => ({
+          ...prev,
+          chatKey: resolvedId,
+          conversationId: resolvedId,
+          contextVersion: detail.context_version ?? 1,
+          lastConfirmedQuery: detail.confirmed_context ?? null,
+          turns: prev.isSending ? prev.turns : hydratedTurns,
+        }));
+        activeChatKeyRef.current = resolvedId;
+        setActiveChatKey(resolvedId);
+        setUrlConversationParam(resolvedId);
+        saveLastConversationId(resolvedId);
+      } catch {
+        setConversationNotice(
+          'That conversation is no longer available or outside your current permissions. Started a new chat.',
+        );
+        saveLastConversationId(null);
+        const draftKey = createDraftKey();
+        updateSession(draftKey, () => makeEmptyChatSession(draftKey, null));
+        activeChatKeyRef.current = draftKey;
+        setActiveChatKey(draftKey);
+        setUrlConversationParam(null);
+      } finally {
+        setIsLoadingConversation(false);
+      }
+    },
+    [saveLastConversationId, setUrlConversationParam, updateSession],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const urlConv = searchParamsRef.current.get('conversation');
+    void (async () => {
+      const items = await refreshRecentConversations();
+      if (!mounted) return;
+      if (urlConv) {
+        await openConversation(urlConv);
+        return;
+      }
+      if (userInteractedRef.current) return;
+      let savedId: string | null = null;
+      try {
+        savedId = sessionStorage.getItem(storageKey);
+      } catch {
+        savedId = null;
+      }
+      if (savedId && items.some((c) => c.conversation_id === savedId)) {
+        await openConversation(savedId);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [openConversation, refreshRecentConversations, storageKey]);
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
@@ -184,38 +377,42 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       monthParam,
       yearParam,
     };
-    cancelInFlightRequests();
-    setLastConfirmedQuery((curr) => {
-      if (!curr) return null;
+    cancelActiveChatInFlight();
+    updateSession(activeChatKeyRef.current, (prev) => {
+      const curr = prev.lastConfirmedQuery;
+      if (!curr) return prev;
       return {
-        ...curr,
-        ...(fnChanged
-          ? {
-              function: functionParam,
-              team: null,
-              position: null,
-              metric_id: null,
-              last_subject_employee_id: null,
-              last_subject_employee_name: null,
-            }
-          : {}),
-        ...(posChanged
-          ? {
-              position: positionParam,
-              metric_id: null,
-              last_subject_employee_id: null,
-              last_subject_employee_name: null,
-            }
-          : {}),
-        ...(monthChanged || yearChanged
-          ? {
-              periods: [],
-              compare_period: null,
-            }
-          : {}),
+        ...prev,
+        lastConfirmedQuery: {
+          ...curr,
+          ...(fnChanged
+            ? {
+                function: functionParam,
+                team: null,
+                position: null,
+                metric_id: null,
+                last_subject_employee_id: null,
+                last_subject_employee_name: null,
+              }
+            : {}),
+          ...(posChanged
+            ? {
+                position: positionParam,
+                metric_id: null,
+                last_subject_employee_id: null,
+                last_subject_employee_name: null,
+              }
+            : {}),
+          ...(monthChanged || yearChanged
+            ? {
+                periods: [],
+                compare_period: null,
+              }
+            : {}),
+        },
       };
     });
-  }, [functionParam, positionParam, monthParam, yearParam, cancelInFlightRequests]);
+  }, [functionParam, positionParam, monthParam, yearParam, cancelActiveChatInFlight, updateSession]);
 
   const sessionState: SessionFilterContext = useMemo(
     () => ({
@@ -233,7 +430,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   );
 
   const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function', value: string) => {
-    cancelInFlightRequests();
+    cancelActiveChatInFlight();
     const next = new URLSearchParams(searchParams);
     if (value === 'All' || value === 'all' || !value) {
       next.delete(key);
@@ -247,14 +444,18 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     }
     setSearchParams(next, { replace: true });
     if (key === 'function') {
-      setLastConfirmedQuery(null);
+      updateSession(activeChatKeyRef.current, (prev) => ({
+        ...prev,
+        lastConfirmedQuery: null,
+      }));
     }
     if (key === 'team') {
       setSelectedTeam(value);
-      setLastConfirmedQuery((prev) =>
-        prev
+      updateSession(activeChatKeyRef.current, (prev) => ({
+        ...prev,
+        lastConfirmedQuery: prev.lastConfirmedQuery
           ? {
-              ...prev,
+              ...prev.lastConfirmedQuery,
               team: value !== 'All' ? value : null,
               position: null,
               metric_id: null,
@@ -262,27 +463,35 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               last_subject_employee_name: null,
             }
           : null,
-      );
+      }));
     }
     if (key === 'branch') {
       setSelectedBranch(value);
-      setLastConfirmedQuery((prev) =>
-        prev ? { ...prev, branch: value !== 'all' ? value : null, compare_branch: null } : null,
-      );
+      updateSession(activeChatKeyRef.current, (prev) => ({
+        ...prev,
+        lastConfirmedQuery: prev.lastConfirmedQuery
+          ? {
+              ...prev.lastConfirmedQuery,
+              branch: value !== 'all' ? value : null,
+              compare_branch: null,
+            }
+          : null,
+      }));
     }
     if (key === 'performance_level') {
       setSelectedLevel(value);
-      setLastConfirmedQuery((prev) =>
-        prev
+      updateSession(activeChatKeyRef.current, (prev) => ({
+        ...prev,
+        lastConfirmedQuery: prev.lastConfirmedQuery
           ? {
-              ...prev,
+              ...prev.lastConfirmedQuery,
               performance_level: value !== 'All' ? value : null,
               metric_id: null,
               last_subject_employee_id: null,
               last_subject_employee_name: null,
             }
           : null,
-      );
+      }));
     }
   };
 
@@ -382,6 +591,56 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     }
   }, [turns]);
 
+  const startNewChat = useCallback(() => {
+    userInteractedRef.current = true;
+    setConversationNotice(null);
+    setConfirmDeleteId(null);
+    const draftKey = createDraftKey();
+    updateSession(draftKey, () => makeEmptyChatSession(draftKey, null));
+    activeChatKeyRef.current = draftKey;
+    setActiveChatKey(draftKey);
+    setUrlConversationParam(null);
+    saveLastConversationId(null);
+    setPromptInput('');
+  }, [saveLastConversationId, setUrlConversationParam, updateSession]);
+
+  const handleDeleteConversation = useCallback(
+    async (targetConvId: string) => {
+      setDeletingConvId(targetConvId);
+      try {
+        await apiFetch(`/api/ai/conversations/${encodeURIComponent(targetConvId)}`, {
+          method: 'DELETE',
+        });
+        setConfirmDeleteId(null);
+        setRecentConversations((prev) =>
+          prev.filter((c) => c.conversation_id !== targetConvId),
+        );
+        const existing = sessionsRef.current[targetConvId];
+        if (existing?.abortController) {
+          existing.abortController.abort();
+        }
+        const nextMap = { ...sessionsRef.current };
+        delete nextMap[targetConvId];
+        sessionsRef.current = nextMap;
+        setSessionsByKey(nextMap);
+
+        if (activeChatKeyRef.current === targetConvId) {
+          const draftKey = createDraftKey();
+          updateSession(draftKey, () => makeEmptyChatSession(draftKey, null));
+          activeChatKeyRef.current = draftKey;
+          setActiveChatKey(draftKey);
+          setUrlConversationParam(null);
+          saveLastConversationId(null);
+        }
+      } catch {
+        setConversationNotice('Could not delete this conversation. Please try again.');
+      } finally {
+        setDeletingConvId(null);
+      }
+    },
+    [saveLastConversationId, setUrlConversationParam, updateSession],
+  );
+
   const sendPrompt = useCallback(
     async (
       rawPrompt: string,
@@ -394,22 +653,25 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       },
     ) => {
       const cleanPrompt = rawPrompt.trim();
-      if (!cleanPrompt || isSending) return;
+      const originKey = activeChatKeyRef.current;
+      const originSession = sessionsRef.current[originKey] ?? makeEmptyChatSession(originKey);
+      if (!cleanPrompt || originSession.isSending) return;
 
-      const reqSeq = activeRequestSeqRef.current + 1;
-      activeRequestSeqRef.current = reqSeq;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      userInteractedRef.current = true;
+      setConversationNotice(null);
+
+      const reqSeq = originSession.requestSeq + 1;
       const controller = new AbortController();
-      abortControllerRef.current = controller;
 
       const isRetry = Boolean(options?.retryTurnId);
       const turnId = options?.retryTurnId || `turn-${Date.now()}-${reqSeq}`;
 
-      let effectiveConversationId = conversationId;
-      let effectiveContextVersion = contextVersion;
-      let effectiveSessionState: SessionFilterContext = sessionState;
+      let effectiveConversationId = originSession.conversationId;
+      let effectiveContextVersion = originSession.contextVersion;
+      let effectiveSessionState: SessionFilterContext = {
+        ...sessionState,
+        last_confirmed_query: originSession.lastConfirmedQuery,
+      };
       const clientRequestId =
         options?.reuseClientRequestId && !options?.conflictCode
           ? options.reuseClientRequestId
@@ -419,10 +681,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         effectiveConversationId = null;
         effectiveSessionState = { ...sessionState, last_confirmed_query: null };
         effectiveContextVersion = 0;
-        setConversationId(null);
-        setContextVersion(0);
-        // lastConfirmedQuery cleared above
-        setLastConfirmedQuery(null);
+        updateSession(originKey, (prev) => ({
+          ...prev,
+          conversationId: null,
+          contextVersion: 0,
+          lastConfirmedQuery: null,
+        }));
       } else if (options?.conflictCode === 409) {
         effectiveContextVersion = 0;
         if (effectiveConversationId) {
@@ -433,12 +697,17 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
             }>(`/api/ai/conversations/${effectiveConversationId}/context`);
             if (typeof ctxRes?.data?.context_version === 'number') {
               effectiveContextVersion = ctxRes.data.context_version;
-              setContextVersion(ctxRes.data.context_version);
+              updateSession(originKey, (prev) => ({
+                ...prev,
+                contextVersion: ctxRes.data!.context_version!,
+              }));
             }
             if (ctxRes?.data && 'confirmed_context' in ctxRes.data) {
-
               const refreshedConfirmed = ctxRes.data.confirmed_context ?? null;
-              setLastConfirmedQuery(refreshedConfirmed);
+              updateSession(originKey, (prev) => ({
+                ...prev,
+                lastConfirmedQuery: refreshedConfirmed,
+              }));
               effectiveSessionState = { ...sessionState, last_confirmed_query: refreshedConfirmed };
             }
           } catch {
@@ -448,8 +717,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       }
 
       const historySource = isRetry
-        ? turns.filter((t) => t.id !== turnId).slice(-4)
-        : turns.slice(-4);
+        ? originSession.turns.filter((t) => t.id !== turnId).slice(-4)
+        : originSession.turns.slice(-4);
       const historyPayload: AiChatMessage[] = [];
       for (const t of historySource) {
         historyPayload.push({ role: 'user', content: t.userPrompt });
@@ -458,42 +727,47 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         }
       }
 
-      if (isRetry) {
-        setTurns((prev) =>
-          prev.map((item) =>
-            item.id === turnId
-              ? {
-                  ...item,
-                  clientRequestId,
-                  variationSeed: options?.variationSeed ?? item.variationSeed,
-                  error: undefined,
-                  conflictCode: undefined,
-                  isPending: true,
-                }
-              : item,
-          ),
-        );
-      } else {
-        setTurns((prev) => [
+      updateSession(originKey, (prev) => {
+        const nextTurns = isRetry
+          ? prev.turns.map((item) =>
+              item.id === turnId
+                ? {
+                    ...item,
+                    clientRequestId,
+                    variationSeed: options?.variationSeed ?? item.variationSeed,
+                    error: undefined,
+                    conflictCode: undefined,
+                    isPending: true,
+                  }
+                : item,
+            )
+          : [
+              ...prev.turns,
+              {
+                id: turnId,
+                userPrompt: cleanPrompt,
+                clientRequestId,
+                clarificationChoiceId,
+                variationSeed: options?.variationSeed,
+                isPending: true,
+              },
+            ];
+        return {
           ...prev,
-          {
-            id: turnId,
-            userPrompt: cleanPrompt,
-            clientRequestId,
-            clarificationChoiceId,
-            variationSeed: options?.variationSeed,
-            isPending: true,
-          },
-        ]);
-      }
+          requestSeq: reqSeq,
+          abortController: controller,
+          isSending: true,
+          turns: nextTurns,
+        };
+      });
       setPromptInput('');
-      setIsSending(true);
 
       try {
         const res = await apiFetch<{ success: boolean; data: AiChatResponsePayload }>(
           '/api/ai/chat',
           {
             method: 'POST',
+            signal: controller.signal,
             body: JSON.stringify({
               prompt: cleanPrompt,
               conversation_id: effectiveConversationId,
@@ -510,37 +784,78 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
             }),
           },
         );
-        if (activeRequestSeqRef.current !== reqSeq || controller.signal.aborted) {
+        const latestOrigin = sessionsRef.current[originKey];
+        if (!latestOrigin || latestOrigin.requestSeq !== reqSeq || controller.signal.aborted) {
           return;
         }
-        if (res.data.conversation_id) {
-          setConversationId(res.data.conversation_id);
-        }
-        if (typeof res.data.context_version === 'number') {
-          setContextVersion(res.data.context_version);
-        }
-        if (res.data.resolved_session_state?.last_confirmed_query) {
-          const nextConfirmed = res.data.resolved_session_state.last_confirmed_query;
-          setLastConfirmedQuery((prev) =>
-            res.data.outcome === 'clarification' && prev
+
+        const serverConvId = res.data.conversation_id || latestOrigin.conversationId;
+        const targetKey = serverConvId || originKey;
+
+        const nextConfirmedFromServer = res.data.resolved_session_state?.last_confirmed_query;
+        let computedConfirmed = latestOrigin.lastConfirmedQuery;
+        if (nextConfirmedFromServer) {
+          computedConfirmed =
+            res.data.outcome === 'clarification' && latestOrigin.lastConfirmedQuery
               ? {
-                  ...prev,
+                  ...latestOrigin.lastConfirmedQuery,
                   ...Object.fromEntries(
-                    Object.entries(nextConfirmed).filter(([, v]) => v !== null && v !== undefined),
+                    Object.entries(nextConfirmedFromServer).filter(
+                      ([, v]) => v !== null && v !== undefined,
+                    ),
                   ),
                 }
-              : nextConfirmed,
-          );
+              : nextConfirmedFromServer;
         }
-        setTurns((prev) =>
-          prev.map((item) =>
+
+        const completedSession: ChatSessionState = {
+          ...latestOrigin,
+          chatKey: targetKey,
+          conversationId: serverConvId || null,
+          contextVersion:
+            typeof res.data.context_version === 'number'
+              ? res.data.context_version
+              : latestOrigin.contextVersion,
+          lastConfirmedQuery: computedConfirmed,
+          isSending: false,
+          abortController: null,
+          turns: latestOrigin.turns.map((item) =>
             item.id === turnId
-              ? { ...item, response: res.data, error: undefined, conflictCode: undefined, isPending: false }
+              ? {
+                  ...item,
+                  response: res.data,
+                  error: undefined,
+                  conflictCode: undefined,
+                  isPending: false,
+                }
               : item,
           ),
-        );
+        };
+
+        const nextMap = { ...sessionsRef.current };
+        if (targetKey !== originKey) {
+          delete nextMap[originKey];
+        }
+        nextMap[targetKey] = completedSession;
+        sessionsRef.current = nextMap;
+        setSessionsByKey(nextMap);
+
+        if (activeChatKeyRef.current === originKey) {
+          if (targetKey !== originKey) {
+            activeChatKeyRef.current = targetKey;
+            setActiveChatKey(targetKey);
+          }
+          if (serverConvId) {
+            setUrlConversationParam(serverConvId);
+            saveLastConversationId(serverConvId);
+          }
+        }
+        if (serverConvId) {
+          void refreshRecentConversations();
+        }
       } catch (err) {
-        if (activeRequestSeqRef.current !== reqSeq || controller.signal.aborted) {
+        const latestOrigin = sessionsRef.current[originKey];
+        if (!latestOrigin || latestOrigin.requestSeq !== reqSeq || controller.signal.aborted) {
           return;
         }
         const msg = err instanceof Error ? err.message : 'Unable to reach PMS AI service';
@@ -550,20 +865,26 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
             : msg.includes('409') || /stale|conflict|already in progress/i.test(msg)
             ? 409
             : undefined;
-        setTurns((prev) =>
-          prev.map((item) =>
+        updateSession(originKey, (prev) => ({
+          ...prev,
+          isSending: false,
+          abortController: null,
+          turns: prev.turns.map((item) =>
             item.id === turnId
               ? { ...item, error: msg, conflictCode, isPending: false }
               : item,
           ),
-        );
-      } finally {
-        if (activeRequestSeqRef.current === reqSeq) {
-          setIsSending(false);
-        }
+        }));
       }
     },
-    [answerDetail, contextVersion, conversationId, isSending, sessionState, turns],
+    [
+      answerDetail,
+      refreshRecentConversations,
+      saveLastConversationId,
+      sessionState,
+      setUrlConversationParam,
+      updateSession,
+    ],
   );
 
   const firstName = useMemo(() => {
@@ -604,10 +925,52 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     return fallbackStarterPrompts;
   }, [serverStarterPrompts, fallbackStarterPrompts]);
 
-  const filteredStarterPrompts = useMemo(() => {
-    if (selectedCategory === 'all') return starterPrompts;
-    return starterPrompts.filter((p) => p.category === selectedCategory);
-  }, [starterPrompts, selectedCategory]);
+  const topThreeStarters: AiStarterPrompt[] = useMemo(() => {
+    const region = (
+      sessionState.region ||
+      watchingData?.resolved_session_state?.region ||
+      ''
+    ).toUpperCase();
+    if (region === 'EGY') {
+      const egySpecific = starterPrompts.find(
+        (p) => p.label === 'Compare EGY teams & KPIs' || p.prompt === 'Compare EGY teams & KPIs',
+      );
+      const rest = starterPrompts.filter((p) => p !== egySpecific);
+      return (egySpecific ? [egySpecific, ...rest] : rest).slice(0, 3);
+    }
+    return starterPrompts.slice(0, 3);
+  }, [starterPrompts, sessionState.region, watchingData?.resolved_session_state?.region]);
+
+  const sendingByConvId = useMemo<Record<string, boolean>>(() => {
+    const out: Record<string, boolean> = {};
+    for (const [key, sess] of Object.entries(sessionsByKey)) {
+      if (sess.isSending) {
+        out[sess.conversationId || key] = true;
+      }
+    }
+    return out;
+  }, [sessionsByKey]);
+
+  const guardrailHighlights = useMemo(
+    () =>
+      watchingData?.guardrails?.length
+        ? watchingData.guardrails
+        : [
+            {
+              label: 'Authorized scope only',
+              detail: 'Every metric and agent record stays strictly inside your active RBAC scope.',
+            },
+            {
+              label: 'Verified PMS evidence',
+              detail: 'Figures are queried directly from saved PMS records with zero fabrication.',
+            },
+            {
+              label: 'Read-only analytical copilot',
+              detail: 'PMS AI never alters scores, targets, or employee records without your action.',
+            },
+          ],
+    [watchingData?.guardrails],
+  );
 
   const latestSuggestedChips: string[] = useMemo(() => {
     const lastCompleted = [...turns].reverse().find((t) => t.response?.suggested_followups?.length);
@@ -627,168 +990,128 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   return (
     <div className="min-h-full bg-gradient-to-br from-[#EDF4FC] via-[#F5F9FD] to-[#EBF3FA] px-3 py-3 sm:px-5">
       <div className="mx-auto max-w-[1440px]">
-        <div
-          className={`grid grid-cols-1 gap-4 ${
-            showWatchingPanel ? 'xl:grid-cols-[1fr_310px]' : 'xl:grid-cols-1'
-          }`}
-        >
-          {/* Center Workspace Card */}
+        <div className="flex min-h-0 flex-col gap-4 lg:flex-row lg:items-stretch">
+          {/* Left Rail (desktop lg:+) / Slide-over Drawer (< lg): Recent chats */}
+          <ConversationHistoryPanel
+            isOpen={showHistoryPanel}
+            conversations={recentConversations}
+            activeConversationId={conversationId}
+            sendingByConvId={sendingByConvId}
+            isLoading={isLoadingHistory}
+            errorMessage={historyError}
+            confirmDeleteId={confirmDeleteId}
+            deletingConvId={deletingConvId}
+            onClose={() => setShowHistoryPanel(false)}
+            onNewChat={() => {
+              startNewChat();
+              const isDesktop =
+                typeof window !== 'undefined' &&
+                typeof window.matchMedia === 'function' &&
+                window.matchMedia('(min-width: 1024px)').matches;
+              if (!isDesktop) setShowHistoryPanel(false);
+            }}
+            onSelectConversation={(convId) => {
+              void openConversation(convId);
+              const isDesktop =
+                typeof window !== 'undefined' &&
+                typeof window.matchMedia === 'function' &&
+                window.matchMedia('(min-width: 1024px)').matches;
+              if (!isDesktop) setShowHistoryPanel(false);
+            }}
+            onRequestDelete={(convId) => setConfirmDeleteId(convId)}
+            onConfirmDelete={(convId) => void handleDeleteConversation(convId)}
+            onCancelDelete={() => setConfirmDeleteId(null)}
+            onRetryLoad={() => void refreshRecentConversations()}
+          />
+
+          {/* Center Conversation-First Workspace */}
           <section
             aria-label="PMS AI analytical conversation workspace"
-            className="relative flex min-h-[calc(100dvh-108px)] flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_10px_35px_rgb(15,23,42,0.06)]"
+            className="relative flex h-[calc(100dvh-108px)] min-h-[520px] min-w-0 flex-1 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_10px_35px_rgb(15,23,42,0.06)]"
           >
-            {/* Seamless Top Radial Aurora Glow (no sharp rectangular cutoff) */}
+            {/* Seamless Top Radial Aurora Glow */}
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_75%_65%_at_50%_0%,rgba(56,189,248,0.18),rgba(16,185,129,0.07)_55%,transparent_100%)]"
+              className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_75%_65%_at_50%_0%,rgba(56,189,248,0.16),rgba(16,185,129,0.06)_55%,transparent_100%)]"
               aria-hidden="true"
             />
 
-            {/* Top Header Bar */}
-            <div className="relative z-30 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-100/90 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:px-5">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-sm shadow-blue-500/30">
+            {/* Compact Top Header Bar */}
+            <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100/90 bg-white/90 px-4 py-2.5 backdrop-blur-md sm:px-5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-sm shadow-blue-500/30">
                   <Sparkles size={16} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-sm font-extrabold tracking-tight text-slate-900">
                       PMS AI
                     </h1>
                     <span className="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700">
-                      <Calendar size={11} className="text-sky-600" />
+                      <Calendar size={12} className="text-sky-600" />
                       {resolvedYearLabel ? `${resolvedMonthLabel} ${resolvedYearLabel}` : resolvedMonthLabel}
                     </span>
                   </div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                    Reads your workspace · Proposes quantified decisions · Never acts without you
+                  <p className="hidden items-center gap-1.5 text-xs font-medium text-slate-500 sm:flex">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                    <span className="truncate">
+                      Verified PMS metrics within your authorized scope
+                    </span>
                   </p>
                 </div>
               </div>
 
-              {/* Custom Luminous Scope Context Dropdowns + New Chat */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                {availableFunctions.length > 1 && (
-                  <AiScopeDropdown
-                    ariaLabel="Filter Department"
-                    prefix="Dept"
-                    value={sessionState.function || 'All'}
-                    defaultValue="All"
-                    icon={<Building2 size={12} />}
-                    onChange={(val) => handleFilterChange('function', val)}
-                    options={[
-                      {
-                        value: 'All',
-                        label: 'All authorized departments',
-                        badge: `${availableFunctions.length} Depts`,
-                      },
-                      ...availableFunctions.map((fn) => ({
-                        value: fn,
-                        label: fn,
-                        badge: 'Dept',
-                      })),
-                    ]}
-                  />
-                )}
-
-                <AiScopeDropdown
-                  ariaLabel={sessionState.function ? `Filter ${sessionState.function} Team` : 'Filter Team'}
-                  prefix="Team"
-                  value={selectedTeam}
-                  defaultValue="All"
-                  icon={<Users size={12} />}
-                  onChange={(val) => handleFilterChange('team', val)}
-                  options={[
-                    {
-                      value: 'All',
-                      label: sessionState.function ? `All ${sessionState.function}` : 'All authorized departments',
-                      badge: `${availableTeams.length} Teams`,
-                    },
-                    ...availableTeams.map((t) => ({
-                      value: t.value,
-                      label: t.label,
-                      badge: t.badge,
-                    })),
-                  ]}
-                />
-
-                <AiScopeDropdown
-                  ariaLabel="Filter Branch"
-                  prefix="Branch"
-                  value={selectedBranch}
-                  defaultValue="all"
-                  icon={<Building2 size={12} />}
-                  onChange={(val) => handleFilterChange('branch', val)}
-                  options={[
-                    ...(availableBranches.length > 1
-                      ? [
-                          {
-                            value: 'all',
-                            label: 'All branches',
-                            badge: `${availableBranches.length} Branches`,
-                          },
-                        ]
-                      : []),
-                    ...availableBranches.map((bk) => ({
-                      value: bk.toLowerCase(),
-                      label: bk.charAt(0).toUpperCase() + bk.slice(1),
-                      badge: bk.toLowerCase() === 'clinics' ? 'Outpatient' : 'Hospital',
-                    })),
-                  ]}
-                />
-
-                <AiScopeDropdown
-                  ariaLabel="Filter Performance Level"
-                  prefix="Level"
-                  value={selectedLevel}
-                  defaultValue="All"
-                  icon={<Layers size={12} />}
-                  onChange={(val) => handleFilterChange('performance_level', val)}
-                  options={[
-                    ...(availableLevels.length > 1
-                      ? [{ value: 'All', label: 'All Levels', badge: 'Full Scope' }]
-                      : []),
-                    ...availableLevels.map((lvl) => ({
-                      value: lvl,
-                      label: lvl === 'Employee' ? 'Employee' : `${lvl} BSC`,
-                      badge:
-                        lvl === 'Employee'
-                          ? 'Agents'
-                          : lvl === 'Managerial'
-                          ? 'Leaders'
-                          : 'Executive',
-                    })),
-                  ]}
-                />
-
-                <div
-                  role="group"
-                  aria-label="Response detail mode"
-                  className="inline-flex items-center rounded-full border border-slate-200/90 bg-slate-50/90 p-0.5 text-xs font-bold"
+              {/* Scope Controls + Compact Workspace Actions */}
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-expanded={showFilters}
+                  aria-label={showFilters ? 'Hide scope filters' : 'Show scope filters'}
+                  onClick={() => setShowFilters((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors lg:hidden ${
+                    showFilters
+                      ? 'border-blue-200 bg-blue-50 text-blue-700'
+                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
+                  }`}
                 >
+                  <SlidersHorizontal size={12} />
+                  <span>Filters</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="ai-history-toggle"
+                  aria-expanded={showHistoryPanel}
+                  aria-label={showHistoryPanel ? 'Hide recent chats' : 'Show recent chats'}
+                  onClick={() => setShowHistoryPanel((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
+                    showHistoryPanel
+                      ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300'
+                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
+                  }`}
+                >
+                  <History size={12} />
+                  <span>Recent chats</span>
+                  {recentConversations.length > 0 && (
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs font-extrabold tabular-nums text-slate-700">
+                      {recentConversations.length}
+                    </span>
+                  )}
+                </button>
+
+                <div className="relative">
                   <button
                     type="button"
-                    aria-pressed={answerDetail === 'brief' || answerDetail === 'auto'}
-                    onClick={() => setAnswerDetail('brief')}
-                    className={`rounded-full px-2.5 py-1 transition-colors ${
-                      answerDetail === 'brief' || answerDetail === 'auto'
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-blue-600'
+                    aria-expanded={showGuardrailsInfo}
+                    aria-label="How PMS AI protects data"
+                    onClick={() => setShowGuardrailsInfo((prev) => !prev)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
+                      showGuardrailsInfo
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200/90 bg-white text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
                     }`}
                   >
-                    Brief
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={answerDetail === 'details'}
-                    onClick={() => setAnswerDetail('details')}
-                    className={`rounded-full px-2.5 py-1 transition-colors ${
-                      answerDetail === 'details'
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-blue-600'
-                    }`}
-                  >
-                    Details
+                    <Info size={12} />
+                    <span>Info</span>
                   </button>
                 </div>
 
@@ -807,175 +1130,153 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   <span>{showWatchingPanel ? 'Hide rail' : 'Show rail'}</span>
                 </button>
 
-                {turns.length > 0 && (
+                {(turns.length > 0 || conversationId !== null) && (
                   <button
                     type="button"
-                    onClick={() => {
-                      cancelInFlightRequests();
-                      if (conversationId) {
-                        void apiFetch(`/api/ai/conversations/${conversationId}`, {
-                          method: 'DELETE',
-                        }).catch(() => undefined);
-                      }
-                      setTurns([]);
-                      setConversationId(null);
-                      setContextVersion(0);
-        // lastConfirmedQuery cleared above
-        setLastConfirmedQuery(null);
-                      // lastConfirmedQuery cleared above
-                    }}
+                    data-testid="ai-new-chat-btn"
+                    onClick={startNewChat}
                     className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
                   >
                     <RotateCcw size={12} />
                     <span>New chat</span>
                   </button>
                 )}
+
+                <ScopeFilterBar
+                  availableFunctions={availableFunctions}
+                  selectedFunction={sessionState.function}
+                  availableTeams={availableTeams}
+                  selectedTeam={selectedTeam}
+                  availableBranches={availableBranches}
+                  selectedBranch={selectedBranch}
+                  availableLevels={availableLevels}
+                  selectedLevel={selectedLevel}
+                  answerDetail={answerDetail}
+                  onFilterChange={handleFilterChange}
+                  onChangeAnswerDetail={(mode) => setAnswerDetail(mode)}
+                  className={
+                    showFilters
+                      ? 'mt-1.5 flex w-full border-t border-slate-100 pt-2 lg:mt-0 lg:w-auto lg:border-t-0 lg:pt-0'
+                      : 'hidden lg:flex'
+                  }
+                />
               </div>
+
+              {showGuardrailsInfo && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Dismiss data protection info"
+                    onClick={() => setShowGuardrailsInfo(false)}
+                    className="fixed inset-0 z-30 cursor-default bg-transparent"
+                  />
+                  <div
+                    role="dialog"
+                    aria-label="How PMS AI protects data"
+                    className="absolute right-4 top-full z-40 mt-2 w-80 max-w-[calc(100%-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={15} className="text-emerald-600" />
+                        <h2 className="text-xs font-extrabold text-slate-900">
+                          How PMS AI protects data
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Close data protection info"
+                        onClick={() => setShowGuardrailsInfo(false)}
+                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <ul className="mt-2.5 space-y-2">
+                      {guardrailHighlights.map((g) => (
+                        <li key={g.label} className="text-xs leading-relaxed text-slate-600">
+                          <span className="font-bold text-slate-900">{g.label}:</span>{' '}
+                          <span>{g.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Center Body */}
-            <div className="relative z-10 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-              {turns.length === 0 ? (
-                <div className="mx-auto flex h-full max-w-4xl flex-col items-center justify-center py-2">
-                  {/* Compact Glossy 3D Squircle Hero Badge */}
-                  <div className="relative mb-2.5">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-[0_10px_24px_-4px_rgba(37,99,235,0.5)] ring-4 ring-white">
-                      <Sparkles size={22} />
-                    </div>
-                    <span
-                      className="pointer-events-none absolute -top-1.5 -right-2.5 text-sky-500"
-                      aria-hidden="true"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M4 10L1 7M12 5V1M18 11L22 9"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </span>
+            <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+              {conversationNotice && (
+                <div
+                  role="status"
+                  className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800"
+                >
+                  <span>{conversationNotice}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss conversation notice"
+                    onClick={() => setConversationNotice(null)}
+                    className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {isLoadingConversation ? (
+                <div className="mx-auto max-w-3xl space-y-3 py-6" aria-label="Loading conversation">
+                  <div className="h-10 w-2/3 animate-pulse rounded-2xl bg-slate-100" />
+                  <div className="h-28 w-full animate-pulse rounded-2xl bg-slate-100" />
+                </div>
+              ) : turns.length === 0 ? (
+                <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-6 text-center">
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-[0_10px_24px_-4px_rgba(37,99,235,0.45)] ring-4 ring-white">
+                    <Sparkles size={22} />
                   </div>
 
-                  <h2 className="bg-gradient-to-r from-slate-900 via-blue-600 to-slate-900 bg-clip-text text-center text-xl font-extrabold tracking-tight text-transparent sm:text-2xl">
+                  <h2 className="bg-gradient-to-r from-slate-900 via-blue-700 to-slate-900 bg-clip-text text-xl font-extrabold tracking-tight text-transparent sm:text-2xl">
                     Hi {firstName}, how can I help?
                   </h2>
-                  <p className="mt-1 max-w-lg text-center text-xs font-medium text-slate-500">
-                    Select a quick scenario below, or ask about any agent, 6-month trend, team, or branch.
+                  <p className="mt-1.5 max-w-md text-xs font-medium leading-relaxed text-slate-500">
+                    Ask a question about team scores, branch bookings, KPI drivers, or agent performance within your scope.
                   </p>
 
-                  {/* Compact Pill Category Tabs */}
-                  <div
-                    role="tablist"
-                    aria-label="Filter analytical scenarios by category"
-                    className="mt-3.5 flex flex-wrap items-center justify-center gap-1.5"
-                  >
-                    {[
-                      { key: 'all', label: 'All Scenarios', icon: <LayoutGrid size={12} /> },
-                      { key: 'team', label: 'Teams', icon: <Users size={12} /> },
-                      { key: 'people', label: 'People & Trends', icon: <PieChart size={12} /> },
-                      { key: 'branch', label: 'Branches', icon: <GitBranch size={12} /> },
-                      { key: 'kpi', label: 'KPIs & Decisions', icon: <BarChart3 size={12} /> },
-                      { key: 'governance', label: 'SIP & Actions', icon: <Target size={12} /> },
-                    ].map((tab) => {
-                      const active = selectedCategory === tab.key;
-                      const count =
-                        tab.key === 'all'
-                          ? starterPrompts.length
-                          : starterPrompts.filter((p) => p.category === tab.key).length;
-                      return (
-                        <button
-                          key={tab.key}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => setSelectedCategory(tab.key)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all ${
-                            active
-                              ? 'bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-sm shadow-blue-500/25'
-                              : 'border border-slate-200/90 bg-white/90 text-slate-600 hover:border-blue-300 hover:text-blue-600'
-                          }`}
-                        >
-                          <span className={active ? 'text-white' : 'text-blue-600'}>
-                            {tab.icon}
-                          </span>
-                          <span>{tab.label}</span>
-                          <span
-                            className={`rounded-full px-1.5 py-0.5 text-xs font-extrabold tabular-nums ${
-                              active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Sleek, Compact 3-Column Scenario Cards */}
-                  {filteredStarterPrompts.length === 0 ? (
+                  {topThreeStarters.length > 0 && (
                     <div
-                      data-testid="ai-scenarios-empty"
-                      className="mt-4 flex w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center"
+                      data-testid="ai-starter-suggestions"
+                      className="mt-6 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-3"
                     >
-                      <p className="text-sm font-bold text-slate-700">
-                        No scenarios match this category for the current scope.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCategory('all')}
-                        className="mt-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-blue-600 hover:border-blue-400"
-                      >
-                        View all scenarios
-                      </button>
-                    </div>
-                  ) : (
-                  <div className="mt-4 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredStarterPrompts.map((item) => {
-                      const style = CATEGORY_STYLES[item.category] || CATEGORY_STYLES.team;
-                      return (
+                      {topThreeStarters.map((item) => (
                         <button
                           key={item.id}
                           type="button"
                           onClick={() => void sendPrompt(item.prompt)}
-                          className={`group flex flex-col justify-between rounded-2xl border border-slate-200/85 bg-white/95 p-3 text-left shadow-2xs transition-all hover:-translate-y-0.5 ${style.cardHover}`}
+                          className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white/95 p-3.5 text-left shadow-2xs transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
                         >
                           <div>
                             <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105 ${style.iconBox}`}
-                                >
-                                  {STARTER_ICON_MAP[item.icon_key] || STARTER_ICON_MAP.chart}
-                                </div>
-                                <span
-                                  className={`inline-block rounded-md px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider ${style.badge}`}
-                                >
-                                  {item.badge || item.category.toUpperCase()}
-                                </span>
-                              </div>
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-                                <span>Run</span>
-                                <ArrowRight size={10} />
+                              <span className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                                {item.badge || 'Insight'}
                               </span>
+                              <ArrowRight
+                                size={13}
+                                className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600"
+                              />
                             </div>
-
-                            <p className="mt-2 line-clamp-1 text-xs font-extrabold text-slate-900">
+                            <p className="mt-2 line-clamp-2 text-xs font-extrabold text-slate-900">
                               {item.label}
                             </p>
-                            {item.subtitle && (
-                              <p
-                                dir="auto"
-                                className="mt-0.5 line-clamp-2 text-xs leading-snug text-slate-500"
-                              >
-                                {item.subtitle}
-                              </p>
-                            )}
                           </div>
+                          {item.subtitle && (
+                            <p
+                              dir="auto"
+                              className="mt-1 line-clamp-2 text-xs leading-snug text-slate-500"
+                            >
+                              {item.subtitle}
+                            </p>
+                          )}
                         </button>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               ) : (
@@ -1121,7 +1422,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
                   {showScenarioTray && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {latestSuggestedChips.slice(0, 4).map((chipPrompt) => (
+                      {latestSuggestedChips.slice(0, 1).map((chipPrompt) => (
                         <button
                           key={chipPrompt}
                           type="button"
@@ -1180,12 +1481,14 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
           {/* Compact Right Rail: AI is watching + Guardrails */}
           {showWatchingPanel && (
-            <AiWatchingRail
-              alerts={watchingData?.alerts || []}
-              guardrails={watchingData?.guardrails || []}
-              isLoading={isWatchingLoading}
-              onSelectAlert={(prompt) => void sendPrompt(prompt)}
-            />
+            <div className="w-full shrink-0 lg:w-[300px] xl:w-[310px]">
+              <AiWatchingRail
+                alerts={watchingData?.alerts || []}
+                guardrails={watchingData?.guardrails || []}
+                isLoading={isWatchingLoading}
+                onSelectAlert={(prompt) => void sendPrompt(prompt)}
+              />
+            </div>
           )}
         </div>
       </div>

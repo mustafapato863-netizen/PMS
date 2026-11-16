@@ -11,6 +11,7 @@ import { UserManagementPanel } from '../components/settings/UserManagementPanel'
 import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
 import { DataSnapshotPanel } from '../components/settings/DataSnapshotPanel';
 import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
+import { AiFeedbackLearningPanel } from '../components/settings/AiFeedbackLearningPanel';
 import { AdminOverview } from '../components/settings/shell/AdminOverview';
 import { AdminPageHeader } from '../components/settings/shell/AdminPageHeader';
 import { pageForLegacyTab, pageForSlug, settingsPathFor } from '../components/settings/shell/settingsNavigation';
@@ -57,6 +58,7 @@ const SettingsView = () => {
         {page === 'kpis' && <EvaluationSettingsPanel />}
         {page === 'users' && <UserManagementPanel />}
         {page === 'system_errors' && <SystemErrorsPanel />}
+        {page === 'ai_feedback' && <AiFeedbackLearningPanel />}
       </SettingsLayout>
     </motion.main>
   );

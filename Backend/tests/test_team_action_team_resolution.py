@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from models.models import Base, Team
+from models.models import Action, AuditLog, Base, Team
 from services.team_action_service import TeamActionService
 
 # (name, db_name, display_name) for the team rows the dashboards read. Display names are the
@@ -418,3 +418,203 @@ def test_cohort_plan_items_router_enforces_team_and_region_scope(full_db, monkey
         params={"team": "Inbound", "month": "September", "year": 2026, "region": "EGY"},
     )
     assert res_region_403.status_code == 403
+
+
+def test_delete_plan_item_custom_and_builtin_tombstone_and_restore(full_db):
+    inbound = Team(
+        id=uuid.uuid4(),
+        name="Inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    full_db.add(inbound)
+    full_db.commit()
+
+    user = _make_user(role="Manager", accessible_teams=["Inbound"], has_unrestricted=False)
+    service = TeamActionService(full_db)
+
+    # 1. Custom card save -> delete deactivates & logs AuditLog(operation="DELETE")
+    custom_saved = service.save_plan_item(
+        {
+            "card_id": "team-act-custom-123",
+            "team": "Inbound",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Custom coaching drill",
+        },
+        current_user=user,
+    )
+    deleted_custom = service.delete_plan_item(
+        card_id="team-act-custom-123",
+        team_name="Inbound",
+        region="EGY",
+        month="September",
+        year=2026,
+        current_user=user,
+    )
+    assert deleted_custom["is_deleted"] is True
+    custom_row = full_db.query(Action).filter(Action.id == uuid.UUID(custom_saved["id"])).one()
+    assert custom_row.is_active is False
+    assert custom_row.status == "Cancelled"
+    assert service.list_plan_items("Inbound", "September", 2026, current_user=user, region="EGY") == []
+    custom_audit = (
+        full_db.query(AuditLog)
+        .filter(AuditLog.table_name == "actions", AuditLog.record_id == uuid.UUID(custom_saved["id"]), AuditLog.operation == "DELETE")
+        .one()
+    )
+    assert custom_audit.new_values["is_active"] is False
+
+    # 2. Built-in card delete creates persistent tombstone (is_deleted=True) & logs DELETE audit
+    tombstone = service.delete_plan_item(
+        card_id="inbound-team-1",
+        team_name="Inbound",
+        region="EGY",
+        month="September",
+        year=2026,
+        current_user=user,
+    )
+    assert tombstone["card_id"] == "inbound-team-1"
+    assert tombstone["is_deleted"] is True
+    listed = service.list_plan_items("Inbound", "September", 2026, current_user=user, region="EGY")
+    assert len(listed) == 1
+    assert listed[0]["card_id"] == "inbound-team-1"
+    assert listed[0]["is_deleted"] is True
+
+    # 3. Re-saving clears is_deleted
+    resaved = service.save_plan_item(
+        {
+            "card_id": "inbound-team-1",
+            "team": "Inbound",
+            "region": "EGY",
+            "month": "September",
+            "year": 2026,
+            "title": "Restored & updated team plan",
+            "status": "Open",
+        },
+        current_user=user,
+    )
+    assert resaved["is_deleted"] is False
+
+    # 4. Tombstone + purge_tombstone=True removes tombstone completely
+    service.delete_plan_item(
+        card_id="inbound-team-1",
+        team_name="Inbound",
+        region="EGY",
+        month="September",
+        year=2026,
+        current_user=user,
+    )
+    purged = service.delete_plan_item(
+        card_id="inbound-team-1",
+        team_name="Inbound",
+        region="EGY",
+        month="September",
+        year=2026,
+        current_user=user,
+        purge_tombstone=True,
+    )
+    assert purged["is_deleted"] is False
+    assert service.list_plan_items("Inbound", "September", 2026, current_user=user, region="EGY") == []
+
+
+def test_delete_plan_items_router_enforces_rbac_and_scope(full_db, monkeypatch):
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from api.routers import team as team_router_module
+    from config.database import get_db
+
+    inbound = Team(
+        id=uuid.uuid4(),
+        name="Inbound",
+        db_name="Inbound",
+        display_name="Inbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    outbound = Team(
+        id=uuid.uuid4(),
+        name="Outbound",
+        db_name="Outbound",
+        display_name="Outbound",
+        region="UAE",
+        team_level="employee",
+        is_active=True,
+    )
+    full_db.add_all([inbound, outbound])
+    full_db.commit()
+
+    active_user = {
+        "user": {
+            "user_id": str(uuid.uuid4()),
+            "role": "Viewer",
+            "accessible_teams": ["Inbound"],
+            "accessible_regions": [],
+            "accessible_functions": [],
+            "has_unrestricted_team_access": False,
+        }
+    }
+    monkeypatch.setattr(team_router_module, "get_current_user_scope", lambda _db, _req: active_user["user"])
+
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def inject_user(request: Request, call_next):
+        request.state.user = active_user["user"]
+        return await call_next(request)
+
+    app.include_router(team_router_module.router, prefix="/api/team-actions")
+
+    def override_db():
+        yield full_db
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    # Viewer lacks create_actions permission -> 403
+    res_403 = client.delete(
+        "/api/team-actions/plan-items/inbound-team-1",
+        params={"team": "Inbound", "month": "September", "year": 2026, "region": "EGY"},
+    )
+    assert res_403.status_code == 403
+
+    # Manager for Outbound fails scope check for Inbound -> 403
+    active_user["user"] = {
+        "user_id": str(uuid.uuid4()),
+        "role": "Manager",
+        "accessible_teams": ["Outbound"],
+        "accessible_regions": [],
+        "accessible_functions": [],
+        "has_unrestricted_team_access": False,
+    }
+    res_scope_403 = client.delete(
+        "/api/team-actions/plan-items/inbound-team-1",
+        params={"team": "Inbound", "month": "September", "year": 2026, "region": "EGY"},
+    )
+    assert res_scope_403.status_code == 403
+
+    # Manager for Inbound succeeds + purge_tombstone clears it
+    active_user["user"]["accessible_teams"] = ["Inbound"]
+    res_del = client.delete(
+        "/api/team-actions/plan-items/inbound-team-1",
+        params={"team": "Inbound", "month": "September", "year": 2026, "region": "EGY"},
+    )
+    assert res_del.status_code == 200
+    assert res_del.json()["data"]["is_deleted"] is True
+
+    res_purge = client.delete(
+        "/api/team-actions/plan-items/inbound-team-1",
+        params={
+            "team": "Inbound",
+            "month": "September",
+            "year": 2026,
+            "region": "EGY",
+            "purge_tombstone": "true",
+        },
+    )
+    assert res_purge.status_code == 200
+    assert res_purge.json()["data"]["is_deleted"] is False

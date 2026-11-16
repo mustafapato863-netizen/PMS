@@ -1055,7 +1055,7 @@ export default function CallCenterDeepDiveView({
                       {item.actionTitle}
                     </p>
 
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                       <span className="font-medium text-slate-600">
                         Target: {item.targetScope}
                       </span>
