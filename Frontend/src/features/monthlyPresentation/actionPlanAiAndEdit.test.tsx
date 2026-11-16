@@ -1481,7 +1481,7 @@ describe('Action Plan delete, restore, and presentation mode hiding', () => {
       '6 measured out of 7 in scope (1 unmeasured · 6 below target)',
     );
     expect(within(teamDrawer).getByTestId('team-action-plan-estimate-team-act-1')).toHaveTextContent(
-      /Action plan estimate .* not recalculated from KPI evidence.*\+1\.2% team score lift/i,
+      /Action plan estimate \(not recalculated from KPI evidence\):.*\+1\.2% team score lift/i,
     );
   });
 });
