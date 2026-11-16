@@ -36,11 +36,14 @@ import type {
   AiWatchingPayload,
   ConfirmedQueryContext,
   SessionFilterContext,
+  AiConversationRetrySettings,
 } from '../features/ai/types';
 
-type CatalogChoice = string | { value?: string; key?: string; label?: string; name?: string; badge?: string | null; function?: string; function_key?: string };
+type CatalogChoice = string | { value?: string; key?: string; label?: string; name?: string; badge?: string | null; function?: string; function_key?: string; regions?: string[] };
 interface CatalogOptions {
   eligible_functions?: CatalogChoice[];
+  eligible_regions?: string[];
+  metrics?: Array<{ team: string; position?: string | null; performance_level: string }>;
   functions?: CatalogChoice[];
   eligible_teams?: CatalogChoice[];
   teams?: CatalogChoice[];
@@ -53,9 +56,10 @@ interface CatalogOptions {
 interface ConversationTurn {
   id: string;
   userPrompt: string;
-  clientRequestId: string;
+  clientRequestId?: string;
   clarificationChoiceId?: string;
   variationSeed?: number;
+  retrySettings?: AiConversationRetrySettings;
   response?: AiChatResponsePayload;
   error?: string;
   conflictCode?: 404 | 409;
@@ -73,10 +77,8 @@ interface ChatSessionState {
   requestSeq: number;
 }
 
-let draftSeqCounter = 0;
 function createDraftKey(): string {
-  draftSeqCounter += 1;
-  return `draft-${Date.now()}-${draftSeqCounter}`;
+  return `draft-${globalThis.crypto.randomUUID()}`;
 }
 
 function makeEmptyChatSession(chatKey: string, conversationId: string | null = null): ChatSessionState {
@@ -100,6 +102,8 @@ export default function PmsAiWorkspaceView() {
 function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const activeMonth = useAppStore((s) => s.activeMonth);
   const [searchParams, setSearchParams] = useSearchParams();
+  const setSearchParamsRef = useRef(setSearchParams);
+  setSearchParamsRef.current = setSearchParams;
   const storageKey = `pms_ai_last_conversation_${currentUser?.id ?? 'anonymous'}`;
 
   const [selectedTeam, setSelectedTeam] = useState<string>(
@@ -128,6 +132,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [isLoadingConversation, setIsLoadingConversation] = useState<boolean>(false);
+  const openConversationSequence = useRef(0);
   const [conversationNotice, setConversationNotice] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
@@ -169,7 +174,6 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   );
   const turns = activeSession.turns;
   const conversationId = activeSession.conversationId;
-  const contextVersion = activeSession.contextVersion;
   const lastConfirmedQuery = activeSession.lastConfirmedQuery;
   const isSending = activeSession.isSending;
 
@@ -194,9 +198,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       } else {
         next.delete('conversation');
       }
-      setSearchParams(next, { replace: true });
+      setSearchParamsRef.current(next, { replace: true });
     },
-    [setSearchParams],
+    [],
   );
 
   const saveLastConversationId = useCallback(
@@ -257,6 +261,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
   const openConversation = useCallback(
     async (targetConvId: string) => {
+      const sequence = ++openConversationSequence.current;
       userInteractedRef.current = true;
       setConversationNotice(null);
       setConfirmDeleteId(null);
@@ -264,7 +269,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       // If this conversation is already live in memory with an active or loaded stream, switch straight to it
       // without disturbing any in-flight request on either chat.
       const existingInMemory = sessionsRef.current[targetConvId];
-      if (existingInMemory && (existingInMemory.isSending || existingInMemory.turns.length > 0)) {
+      if (existingInMemory?.isSending) {
+        setIsLoadingConversation(false);
         activeChatKeyRef.current = targetConvId;
         setActiveChatKey(targetConvId);
         setUrlConversationParam(targetConvId);
@@ -277,20 +283,22 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         const res = await apiFetch<AiConversationDetailResponse>(
           `/api/ai/conversations/${encodeURIComponent(targetConvId)}`,
         );
+        if (sequence !== openConversationSequence.current) return;
         const detail = res?.data;
         if (!detail || !detail.conversation_id) {
           throw new Error('404: Conversation not found');
         }
         const hydratedTurns: ConversationTurn[] = (detail.turns || []).map((t) => {
-          const isFailed = t.status === 'failed';
-          const isPending = t.status === 'pending';
+          const isFailed = t.status === 'failed' || t.status === 'pending';
           return {
             id: t.turn_id,
             userPrompt: t.user_prompt,
-            clientRequestId: t.turn_id,
+            clientRequestId: t.client_request_id ?? undefined,
+            retrySettings: t.retry_settings ?? undefined,
+            clarificationChoiceId: t.retry_settings?.clarification_choice_id ?? undefined,
+            variationSeed: t.retry_settings?.variation_seed ?? undefined,
             response: t.response ?? undefined,
             error: isFailed ? t.error_message || 'Unable to complete analysis' : undefined,
-            isPending,
           };
         });
         const resolvedId = detail.conversation_id;
@@ -307,6 +315,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         setUrlConversationParam(resolvedId);
         saveLastConversationId(resolvedId);
       } catch {
+        if (sequence !== openConversationSequence.current) return;
         setConversationNotice(
           'That conversation is no longer available or outside your current permissions. Started a new chat.',
         );
@@ -317,7 +326,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         setActiveChatKey(draftKey);
         setUrlConversationParam(null);
       } finally {
-        setIsLoadingConversation(false);
+        if (sequence === openConversationSequence.current) setIsLoadingConversation(false);
       }
     },
     [saveLastConversationId, setUrlConversationParam, updateSession],
@@ -328,12 +337,11 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     const urlConv = searchParamsRef.current.get('conversation');
     void (async () => {
       const items = await refreshRecentConversations();
-      if (!mounted) return;
+      if (!mounted || userInteractedRef.current) return;
       if (urlConv) {
         await openConversation(urlConv);
         return;
       }
-      if (userInteractedRef.current) return;
       let savedId: string | null = null;
       try {
         savedId = sessionStorage.getItem(storageKey);
@@ -429,7 +437,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     [functionParam, selectedTeam, positionParam, selectedBranch, regionParam, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
-  const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function', value: string) => {
+  const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function' | 'region' | 'position', value: string) => {
     cancelActiveChatInFlight();
     const next = new URLSearchParams(searchParams);
     if (value === 'All' || value === 'all' || !value) {
@@ -437,16 +445,21 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     } else {
       next.set(key, value);
     }
-    if (key === 'function') {
+    if (key === 'function' || key === 'region') {
       next.delete('team');
       next.delete('position');
       setSelectedTeam('All');
     }
+    if (key === 'region') {
+      next.delete('branch');
+      setSelectedBranch('all');
+    }
+    if (key === 'team' || key === 'performance_level') next.delete('position');
     setSearchParams(next, { replace: true });
-    if (key === 'function') {
+    if (key === 'function' || key === 'region') {
       updateSession(activeChatKeyRef.current, (prev) => ({
         ...prev,
-        lastConfirmedQuery: null,
+        lastConfirmedQuery: key === 'region' ? {} : null,
       }));
     }
     if (key === 'team') {
@@ -499,6 +512,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     'pms-ai-watching',
     sessionState.function,
     sessionState.team,
+    sessionState.position,
+    sessionState.region,
     sessionState.branch,
     sessionState.performance_level,
     sessionState.month,
@@ -511,6 +526,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       const qs = new URLSearchParams();
       if (sessionState.function) qs.set('function', sessionState.function);
       if (sessionState.team) qs.set('team', sessionState.team);
+      if (sessionState.position) qs.set('position', sessionState.position);
+      if (sessionState.region) qs.set('region', sessionState.region);
       if (sessionState.branch) qs.set('branch', sessionState.branch);
       if (sessionState.performance_level) qs.set('performance_level', sessionState.performance_level);
       if (sessionState.month) qs.set('month', sessionState.month);
@@ -551,13 +568,27 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const availableTeams = useMemo<Array<{ value: string; label: string; badge?: string }>>(() => {
     const list: CatalogChoice[] = catalogData?.eligible_teams ?? catalogData?.teams ?? watchingData?.eligible_teams ?? [];
     return list
+      .filter((t) => typeof t === 'string' || !sessionState.region || !t.regions ||
+        t.regions.includes(sessionState.region))
       .filter((t) => !sessionState.function || (typeof t !== 'string' && String(t.function || t.function_key || '').trim().toLowerCase() === sessionState.function.trim().toLowerCase()))
       .map((t) => ({
         value: typeof t === 'string' ? t : t.value || t.key || t.name || '',
         label: typeof t === 'string' ? t : t.label || t.name || t.value || '',
         badge: typeof t === 'object' ? t.badge || t.function || t.function_key : undefined,
       }));
-  }, [catalogData, watchingData, sessionState.function]);
+  }, [catalogData, watchingData, sessionState.function, sessionState.region]);
+
+  const availablePositions = useMemo(() => {
+    if (!sessionState.team) return [];
+    return [...new Set(
+      (catalogData?.metrics ?? [])
+        .filter((metric) =>
+          metric.team === sessionState.team
+          && (!sessionState.performance_level || metric.performance_level === sessionState.performance_level),
+        )
+        .flatMap((metric) => metric.position ? [metric.position] : []),
+    )].sort();
+  }, [catalogData, sessionState.team, sessionState.performance_level]);
 
   const availableBranches = useMemo<string[]>(() => {
     const list = catalogData?.eligible_branches || catalogData?.branches || [];
@@ -592,6 +623,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   }, [turns]);
 
   const startNewChat = useCallback(() => {
+    openConversationSequence.current += 1;
+    setIsLoadingConversation(false);
     userInteractedRef.current = true;
     setConversationNotice(null);
     setConfirmDeleteId(null);
@@ -666,19 +699,21 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       const isRetry = Boolean(options?.retryTurnId);
       const turnId = options?.retryTurnId || `turn-${Date.now()}-${reqSeq}`;
 
-      let effectiveConversationId = originSession.conversationId;
+      let effectiveConversationId = originSession.conversationId || originKey;
       let effectiveContextVersion = originSession.contextVersion;
+      const retrySettings = originSession.turns.find((turn) => turn.id === options?.retryTurnId)?.retrySettings;
+      const effectiveAnswerDetail = retrySettings ? (retrySettings.answer_detail ?? 'auto') : answerDetail;
       let effectiveSessionState: SessionFilterContext = {
-        ...sessionState,
+        ...(retrySettings?.session_state ?? sessionState),
         last_confirmed_query: originSession.lastConfirmedQuery,
       };
       const clientRequestId =
         options?.reuseClientRequestId && !options?.conflictCode
           ? options.reuseClientRequestId
-          : `req-${Date.now()}-${reqSeq}`;
+          : globalThis.crypto.randomUUID();
 
       if (options?.conflictCode === 404) {
-        effectiveConversationId = null;
+        effectiveConversationId = createDraftKey();
         effectiveSessionState = { ...sessionState, last_confirmed_query: null };
         effectiveContextVersion = 0;
         updateSession(originKey, (prev) => ({
@@ -688,13 +723,20 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
           lastConfirmedQuery: null,
         }));
       } else if (options?.conflictCode === 409) {
+        updateSession(originKey, (prev) => ({
+          ...prev,
+          requestSeq: reqSeq,
+          abortController: controller,
+          isSending: true,
+        }));
         effectiveContextVersion = 0;
         if (effectiveConversationId) {
           try {
             const ctxRes = await apiFetch<{
               success: boolean;
               data?: { context_version?: number; confirmed_context?: ConfirmedQueryContext };
-            }>(`/api/ai/conversations/${effectiveConversationId}/context`);
+            }>(`/api/ai/conversations/${effectiveConversationId}/context`, { signal: controller.signal });
+            if (controller.signal.aborted) return;
             if (typeof ctxRes?.data?.context_version === 'number') {
               effectiveContextVersion = ctxRes.data.context_version;
               updateSession(originKey, (prev) => ({
@@ -708,9 +750,10 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 ...prev,
                 lastConfirmedQuery: refreshedConfirmed,
               }));
-              effectiveSessionState = { ...sessionState, last_confirmed_query: refreshedConfirmed };
+              effectiveSessionState = { ...effectiveSessionState, last_confirmed_query: refreshedConfirmed };
             }
           } catch {
+            if (controller.signal.aborted) return;
             effectiveContextVersion = 0;
           }
         }
@@ -728,12 +771,19 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       }
 
       updateSession(originKey, (prev) => {
+        const savedRetrySettings = {
+          session_state: { ...effectiveSessionState, last_confirmed_query: null },
+          answer_detail: effectiveAnswerDetail,
+          clarification_choice_id: clarificationChoiceId,
+          variation_seed: options?.variationSeed,
+        };
         const nextTurns = isRetry
           ? prev.turns.map((item) =>
               item.id === turnId
                 ? {
                     ...item,
                     clientRequestId,
+                    retrySettings: savedRetrySettings,
                     variationSeed: options?.variationSeed ?? item.variationSeed,
                     error: undefined,
                     conflictCode: undefined,
@@ -747,6 +797,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 id: turnId,
                 userPrompt: cleanPrompt,
                 clientRequestId,
+                retrySettings: savedRetrySettings,
                 clarificationChoiceId,
                 variationSeed: options?.variationSeed,
                 isPending: true,
@@ -755,6 +806,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         return {
           ...prev,
           requestSeq: reqSeq,
+          conversationId: effectiveConversationId,
           abortController: controller,
           isSending: true,
           turns: nextTurns,
@@ -777,7 +829,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               session_state: effectiveSessionState,
               history: historyPayload,
               provider_override: 'auto',
-              answer_detail: answerDetail,
+              answer_detail: effectiveAnswerDetail,
               ...(typeof options?.variationSeed === 'number' && options.variationSeed > 0
                 ? { variation_seed: options.variationSeed }
                 : {}),
@@ -862,7 +914,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         const conflictCode: 404 | 409 | undefined =
           msg.includes('404') || /deleted|no longer available/i.test(msg)
             ? 404
-            : msg.includes('409') || /stale|conflict|already in progress/i.test(msg)
+            : /stale context/i.test(msg)
             ? 409
             : undefined;
         updateSession(originKey, (prev) => ({
@@ -875,6 +927,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               : item,
           ),
         }));
+        void refreshRecentConversations();
       }
     },
     [
@@ -958,15 +1011,15 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
         : [
             {
               label: 'Authorized scope only',
-              detail: 'Every metric and agent record stays strictly inside your active RBAC scope.',
+              description: 'Every metric and agent record stays strictly inside your active RBAC scope.',
             },
             {
               label: 'Verified PMS evidence',
-              detail: 'Figures are queried directly from saved PMS records with zero fabrication.',
+              description: 'Figures come from saved PMS records.',
             },
             {
               label: 'Read-only analytical copilot',
-              detail: 'PMS AI never alters scores, targets, or employee records without your action.',
+              description: 'PMS AI reads scores, targets, and employee records.',
             },
           ],
     [watchingData?.guardrails],
@@ -1143,6 +1196,10 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 )}
 
                 <ScopeFilterBar
+                  availableRegions={catalogData?.eligible_regions ?? []}
+                  selectedRegion={regionParam}
+                  availablePositions={availablePositions}
+                  selectedPosition={positionParam}
                   availableFunctions={availableFunctions}
                   selectedFunction={sessionState.function}
                   availableTeams={availableTeams}
@@ -1195,7 +1252,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       {guardrailHighlights.map((g) => (
                         <li key={g.label} className="text-xs leading-relaxed text-slate-600">
                           <span className="font-bold text-slate-900">{g.label}:</span>{' '}
-                          <span>{g.detail}</span>
+                          <span>{g.description}</span>
                         </li>
                       ))}
                     </ul>
@@ -1332,6 +1389,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                                 retryTurnId: turn.id,
                                 reuseClientRequestId: turn.clientRequestId,
                                 conflictCode: turn.conflictCode,
+                                variationSeed: turn.variationSeed,
                               })
                             }
                             className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"

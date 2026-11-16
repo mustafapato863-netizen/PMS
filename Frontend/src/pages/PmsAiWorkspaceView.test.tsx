@@ -801,8 +801,8 @@ describe('PmsAiWorkspaceView', () => {
     const deptBtn = await screen.findByLabelText('Filter Department');
     expect(deptBtn).toBeInTheDocument();
 
-    // Both department and team filter dropdowns default to neutral "All authorized departments"
-    expect(screen.getAllByText('All authorized departments').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('All authorized departments')).toBeInTheDocument();
+    expect(screen.getByText('All authorized teams')).toBeInTheDocument();
 
     // Select Department: Operations
     fireEvent.click(deptBtn);
@@ -1009,6 +1009,11 @@ describe('PmsAiWorkspaceView', () => {
           },
           {
             turn_id: 'turn-2',
+            client_request_id: 'original-retry-id',
+            retry_settings: {
+              session_state: { team: 'Inbound', month: 'August', year: 2026 },
+              answer_detail: 'details',
+            },
             turn_index: 2,
             status: 'failed',
             user_prompt: 'Why did it drop?',
@@ -1050,6 +1055,9 @@ describe('PmsAiWorkspaceView', () => {
       if (path === '/api/ai/conversations/conv-missing') {
         throw new Error('HTTP 404: Conversation not found.');
       }
+      if (path === '/api/ai/chat') {
+        return { ...CHAT_RESPONSE, data: { ...CHAT_RESPONSE.data, conversation_id: 'conv-resume' } };
+      }
       return { success: true };
     });
 
@@ -1068,6 +1076,16 @@ describe('PmsAiWorkspaceView', () => {
     const secondRender = renderWorkspace('/ai');
     await waitFor(() => {
       expect(screen.getByText('What is Inbound score in August?')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      const retry = mockedApiFetch.mock.calls.find(([route]) => route === '/api/ai/chat');
+      expect(JSON.parse(String(retry?.[1]?.body))).toMatchObject({
+        client_request_id: 'original-retry-id',
+        conversation_id: 'conv-resume',
+        session_state: { team: 'Inbound', month: 'August', year: 2026 },
+        answer_detail: 'details',
+      });
     });
     secondRender.unmount();
 
@@ -1168,14 +1186,14 @@ describe('PmsAiWorkspaceView', () => {
     let resolveChatA!: (value: unknown) => void;
     let chatASignal: AbortSignal | undefined;
 
-    mockedApiFetch.mockImplementation((path: string, init?: { body?: string; signal?: AbortSignal }) => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
       if (path === '/api/ai/conversations') {
         return Promise.resolve({ success: true, message: 'Loaded', conversations: [] });
       }
       if (path === '/api/ai/chat') {
         const parsed = JSON.parse(String(init?.body || '{}'));
         if (parsed.prompt === 'Slow question in Chat A') {
-          chatASignal = init?.signal;
+          chatASignal = init?.signal ?? undefined;
           return new Promise((resolve) => {
             resolveChatA = resolve;
           });
@@ -1234,7 +1252,7 @@ describe('PmsAiWorkspaceView', () => {
       const convListCalls = mockedApiFetch.mock.calls.filter(
         (c) => c[0] === '/api/ai/conversations',
       );
-      expect(convListCalls.length).toBeGreaterThanOrEqual(4);
+      expect(convListCalls.length).toBe(3);
     });
     expect(screen.getByText('Chat B completed cleanly.')).toBeInTheDocument();
     expect(screen.queryByText('Chat A resolved in background.')).not.toBeInTheDocument();

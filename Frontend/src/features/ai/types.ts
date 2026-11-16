@@ -472,6 +472,7 @@ export interface AiStarterPrompt {
 }
 
 export interface AiEligibleTeamItem {
+  regions?: string[];
   value: string;
   label: string;
   function: string;
@@ -652,8 +653,17 @@ export type AiConversationTurnStatus =
   | 'restricted'
   | 'superseded';
 
+export interface AiConversationRetrySettings {
+  session_state: SessionFilterContext;
+  clarification_choice_id?: string | null;
+  answer_detail?: 'auto' | 'brief' | 'details' | null;
+  variation_seed?: number | null;
+}
+
 export interface AiConversationTurnDetail {
   turn_id: string;
+  client_request_id?: string | null;
+  retry_settings?: AiConversationRetrySettings | null;
   turn_index: number;
   status: AiConversationTurnStatus;
   user_prompt: string;

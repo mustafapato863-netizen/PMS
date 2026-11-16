@@ -100,7 +100,7 @@ def test_unavailable_and_clarification_turns_emit_valid_trace_ids(monkeypatch):
 
     clarification = orchestrator.run_chat_turn(
         AiChatRequest(
-            prompt="Which branch had more bookings in September 2026: Dubai or Sharjah?",
+            prompt="Compare bookings across all branches in September 2026.",
             session_state=SessionFilterContext(month="September", year=2026),
             provider_override="deterministic",
         )
@@ -272,6 +272,17 @@ def test_admin_only_rbac_pms_gate_pii_rejection_and_audit_trail(monkeypatch):
     assert pii_rejected.status_code == 422
     assert "PII" in pii_rejected.json()["detail"] or "email" in pii_rejected.json()["detail"].lower()
 
+    assert client.post(
+        f"/api/ai/traces/{trace_res.trace_id}/approve-pattern",
+        headers={"x-test-role": "Admin"},
+        json={"intent": "ranking", "verified_against_pms": True},
+    ).status_code == 422
+    assert client.post(
+        "/api/ai/feedback",
+        headers={"x-test-role": "Admin", "x-test-user-id": "mgr-1"},
+        json={"trace_id": trace_res.trace_id, "rating": "down"},
+    ).status_code == 200
+
     # Valid approval with employee name automatically redacted before persistence
     admin_uuid = str(uuid.uuid4())
     approved = client.post(
@@ -383,6 +394,11 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
         )
     )
     client = _build_app(db, monkeypatch=monkeypatch)
+    assert client.post(
+        "/api/ai/feedback",
+        headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},
+        json={"trace_id": tr.trace_id, "rating": "down"},
+    ).status_code == 200
     approve = client.post(
         f"/api/ai/traces/{tr.trace_id}/approve-pattern",
         headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},

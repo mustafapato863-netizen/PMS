@@ -794,6 +794,7 @@ class AiEligibleTeamItem(BaseModel):
     label: str
     function: str
     badge: str | None = None
+    regions: list[str] = Field(default_factory=list)
 
 
 class AiWatchingPayload(BaseModel):
@@ -894,9 +895,18 @@ class AiConversationListResponse(BaseModel):
     conversations: list[AiConversationSummaryItem] = Field(default_factory=list)
 
 
+class AiConversationRetrySettings(BaseModel):
+    session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
+    clarification_choice_id: str | None = None
+    answer_detail: Literal["auto", "brief", "details"] | None = None
+    variation_seed: int | None = None
+
+
 class AiConversationTurnDetail(BaseModel):
     turn_id: str
     turn_index: int
+    client_request_id: str | None = None
+    retry_settings: AiConversationRetrySettings | None = None
     status: Literal["pending", "completed", "failed", "restricted", "superseded"]
     user_prompt: str
     error_message: str | None = None
@@ -976,6 +986,7 @@ class AiCatalogMetricItem(BaseModel):
 class AiCatalogPayload(BaseModel):
     eligible_teams: list[AiEligibleTeamItem] = Field(default_factory=list)
     eligible_functions: list[str] = Field(default_factory=list)
+    eligible_regions: list[str] = Field(default_factory=list)
     eligible_branches: list[str] = Field(default_factory=list)
     eligible_levels: list[str] = Field(default_factory=list)
     metrics: list[AiCatalogMetricItem] = Field(default_factory=list)

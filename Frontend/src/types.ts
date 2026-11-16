@@ -26,6 +26,7 @@ export interface AgentRecord {
     actual_value: number;
     target_value: number;
     achievement_ratio: number;
+    achievement_percent?: number;
     weight_applied: number;
     contribution: number;
     cap_achievement?: boolean;
@@ -636,6 +637,7 @@ export interface ActionParty {
 }
 
 export interface PMSAction {
+  year?: number | null;
   id: string;
   employee_id: string;
   employee_name: string;

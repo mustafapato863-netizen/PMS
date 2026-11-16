@@ -3443,6 +3443,7 @@ def test_ai_conversations_list_detail_ownership_and_failed_turn_retry(monkeypatc
     turns_failed = res_detail_failed.json()["data"]["turns"]
     assert len(turns_failed) == 2
     assert turns_failed[1]["status"] == "failed"
+    assert turns_failed[1]["client_request_id"] == "req-phase1-t2-retryable"
     assert turns_failed[1]["user_prompt"] == "Who is leading bookings in Dubai?"
     assert "Cloudflare 503 simulated outage" in (turns_failed[1]["error_message"] or "")
 
@@ -3455,7 +3456,7 @@ def test_ai_conversations_list_detail_ownership_and_failed_turn_retry(monkeypatc
             "prompt": "Who is leading bookings in Dubai?",
             "conversation_id": conv_id,
             "context_version": ctx_ver,
-            "client_request_id": "req-phase1-t2-retryable",
+            "client_request_id": turns_failed[1]["client_request_id"],
             "session_state": {"function": "Call Center", "month": "August", "year": 2026},
         },
     )
@@ -3605,6 +3606,15 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
             year=2026,
             last_subject_employee_id="EMP102",
             last_subject_employee_name="Nour Samir",
+            candidate_employees=[
+                {
+                    "employee_id": "EMP101",
+                    "employee_name": "Layla Hassan",
+                    "team": "Outbound",
+                    "performance_level": "Managerial",
+                },
+                {"employee_id": "EMP102", "employee_name": "Nour Samir", "team": "Inbound"},
+            ],
         )
         resp2 = AiChatResponsePayload(
             trace_id="tr-2",
@@ -3623,7 +3633,7 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
                 performance_level="Operational",
                 month="August",
                 year=2026,
-                last_confirmed_query=cc2,
+                last_confirmed_query=cc2.model_copy(update={"candidate_employees": []}),
             ),
             scope_banner="Call Center · Inbound · Dubai · August 2026",
         )
@@ -3673,6 +3683,7 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
         detail_full = svc.get_conversation_detail(conv_id, scope=full_scope)
         assert detail_full is not None
         assert detail_full.has_restricted_turns is False
+        assert len(detail_full.confirmed_context.candidate_employees) == 2
         assert [t.status for t in detail_full.turns] == ["completed", "completed"]
 
         # Test all 5 revocation dimensions: team, branch, region, level, employee
@@ -3706,8 +3717,37 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
             assert t1.response.citations == []
             assert t1.response.visual_cards == []
             assert t2.status == "completed"
+            if rev_scope["accessible_teams"] == ["Inbound"]:
+                assert [person["employee_id"] for person in detail.confirmed_context.candidate_employees] == ["EMP102"]
     finally:
         db.close()
+
+
+def test_month_only_followup_preserves_bottom_ranking():
+    from models.ai_schemas import ConfirmedQueryContext, SessionFilterContext
+    from services.ai.router import HybridQueryRouter
+
+    result = HybridQueryRouter(scope={"role": "Admin"}).resolve_and_validate(
+        prompt="What about August?",
+        session_state=SessionFilterContext(
+            function="Call Center",
+            year=2026,
+            last_confirmed_query=ConfirmedQueryContext(
+                intent="ranking",
+                function="Call Center",
+                team="Outbound",
+                periods=["2026-09"],
+                ranking_direction="worst",
+                single_person=True,
+            ),
+        ),
+        provider_override="deterministic",
+    )
+
+    assert result.plan.intent == "ranking"
+    assert result.plan.team == "Outbound"
+    assert result.plan.ranking_direction == "worst"
+    assert result.plan.periods == ["2026-08"]
 
 
 def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
@@ -3717,6 +3757,7 @@ def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from sqlalchemy import create_engine, inspect, text
+    import pytest
 
     mig_dir = Path(__file__).resolve().parent.parent / "migrations" / "versions"
     mig_file = next(mig_dir.glob("*e2b4c8d9f0a1*.py"))
@@ -3775,6 +3816,13 @@ def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
         orig_op = mig_mod.op
         mig_mod.op = Operations(ctx)
         try:
+            conn.execute(text(
+                "INSERT INTO ai_conversations (id, owner_user_id, status, title) "
+                "VALUES ('test', 'owner', 'active', 'Saved conversation')"
+            ))
+            with pytest.raises(RuntimeError, match="Downgrade would discard saved AI data"):
+                mig_mod.downgrade()
+            conn.execute(text("DELETE FROM ai_conversations WHERE id = 'test'"))
             mig_mod.downgrade()
         finally:
             mig_mod.op = orig_op

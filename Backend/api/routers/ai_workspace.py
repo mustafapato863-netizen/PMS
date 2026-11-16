@@ -233,6 +233,7 @@ def get_ai_watching_workspace(
     db: Session = Depends(get_db),
     function: str | None = Query(default=None),
     team: str | None = Query(default=None),
+    position: str | None = Query(default=None),
     branch: str | None = Query(default=None),
     region: str | None = Query(default=None),
     performance_level: str | None = Query(default=None),
@@ -244,6 +245,7 @@ def get_ai_watching_workspace(
     session_state = SessionFilterContext(
         function=function,
         team=team,
+        position=position,
         branch=branch,
         region=region,
         performance_level=performance_level,

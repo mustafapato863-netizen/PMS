@@ -1665,7 +1665,7 @@ class PmsAiCatalog:
         scope: dict[str, Any],
         *,
         active_function: str | None = None,
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, Any]:
         cfg = get_ai_runtime_config()
         fn_norm = str(active_function or "").strip().casefold()
 
@@ -1723,6 +1723,14 @@ class PmsAiCatalog:
                     label=t,
                     function=fn_for_t,
                     badge=fn_for_t,
+                    regions=[
+                        region for region in ("EGY", "UAE")
+                        if user_can_access_team(scope, t, region=region)
+                        and (
+                            canonical_team_region(t) in (region, "ALL")
+                            or canonical_team_region(t, "Corporate") == region
+                        )
+                    ],
                 )
             )
 
@@ -1750,6 +1758,15 @@ class PmsAiCatalog:
 
     def get_authorized_catalog_payload(self, scope: dict[str, Any]) -> AiCatalogPayload:
         eligible = self.get_eligible_scope_options(scope)
+        granted_regions = {
+            str(region).strip().upper()
+            for region in (scope.get("accessible_regions") or scope.get("allowed_regions") or [])
+        }
+        eligible_regions = [
+            region for region in ("EGY", "UAE")
+            if (not granted_regions or "ALL" in granted_regions or region in granted_regions)
+            and any(region in team.regions for team in eligible["eligible_teams"])
+        ]
         eligible_team_names = {t.value.casefold() for t in eligible["eligible_teams"]}
         eligible_levels_set = {lvl.casefold() for lvl in eligible["eligible_levels"]}
         metrics_out: list[AiCatalogMetricItem] = []
@@ -1790,6 +1807,7 @@ class PmsAiCatalog:
         return AiCatalogPayload(
             eligible_teams=eligible["eligible_teams"],
             eligible_functions=eligible["eligible_functions"],
+            eligible_regions=eligible_regions,
             eligible_branches=eligible["eligible_branches"],
             eligible_levels=eligible["eligible_levels"],
             metrics=metrics_out,

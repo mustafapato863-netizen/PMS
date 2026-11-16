@@ -915,8 +915,12 @@ describe('multi-month agent trend context and individual action metadata codec',
       ],
       rawAgent: {
         identity: { employee_id: 'EMP-900', name: 'Nadia Agent', team: 'Inbound', month: 'October' },
-        evaluation: { score: 76.7 },
-        raw_data: { 'A.QualityScore': '', Bookings: 12 },
+        calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '00:00:00' },
+        geo: { bookings: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 }, attended: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 } },
+        actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+        achievement: { booking_ach: 0, attend_ach: 0 },
+        evaluation: { score: 76.7, grade: 'Below Average' },
+        raw_data: { 'A.QualityScore': '', Bookings: '12' },
         kpi_values: [
           {
             kpi_key: 'Booking',
@@ -975,7 +979,7 @@ describe('multi-month agent trend context and individual action metadata codec',
           },
         ],
       },
-    } as Parameters<typeof deriveAgentTrendContext>[1];
+    } satisfies ExecRecord;
 
     const ctx = deriveAgentTrendContext(
       'EMP-900',
@@ -1041,10 +1045,14 @@ describe('multi-month agent trend context and individual action metadata codec',
           position: 'Inbound Agent',
           performance_level: 'Employee',
           raw_data: {
-            InboundCalls: 120,
-            'A.Booking%': 30,
+            InboundCalls: '120',
+            'A.Booking%': '30',
             'A.QualityScore': '',
           },
+          calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '00:00:00' },
+          geo: { bookings: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 }, attended: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 } },
+          actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+          achievement: { booking_ach: 0, attend_ach: 0 },
           evaluation: { score: 62.0, grade: 'D' },
           kpi_values: [
             {

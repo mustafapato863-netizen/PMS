@@ -10,6 +10,10 @@ interface TeamOption {
 interface ScopeFilterBarProps {
   availableFunctions: string[];
   selectedFunction: string | null | undefined;
+  availableRegions: string[];
+  selectedRegion: string | null;
+  availablePositions: string[];
+  selectedPosition: string | null;
   availableTeams: TeamOption[];
   selectedTeam: string;
   availableBranches: string[];
@@ -18,7 +22,7 @@ interface ScopeFilterBarProps {
   selectedLevel: string;
   answerDetail: 'auto' | 'brief' | 'details';
   onFilterChange: (
-    key: 'function' | 'team' | 'branch' | 'performance_level',
+    key: 'function' | 'team' | 'branch' | 'performance_level' | 'region' | 'position',
     value: string,
   ) => void;
   onChangeAnswerDetail: (mode: 'brief' | 'details') => void;
@@ -31,6 +35,10 @@ interface ScopeFilterBarProps {
 export default function ScopeFilterBar({
   availableFunctions,
   selectedFunction,
+  availableRegions,
+  selectedRegion,
+  availablePositions,
+  selectedPosition,
   availableTeams,
   selectedTeam,
   availableBranches,
@@ -44,6 +52,20 @@ export default function ScopeFilterBar({
 }: ScopeFilterBarProps) {
   return (
     <div className={`min-w-0 flex-wrap items-center gap-1.5 ${className}`}>
+      {availableRegions.length > 0 && (
+        <AiScopeDropdown
+          ariaLabel="Filter Country"
+          prefix="Country"
+          value={selectedRegion || 'All'}
+          defaultValue="All"
+          icon={<Building2 size={12} />}
+          onChange={(value) => onFilterChange('region', value)}
+          options={[
+            { value: 'All', label: 'All authorized countries' },
+            ...availableRegions.map((value) => ({ value, label: value === 'EGY' ? 'Egypt' : value })),
+          ]}
+        />
+      )}
       {availableFunctions.length > 1 && (
         <AiScopeDropdown
           ariaLabel="Filter Department"
@@ -77,7 +99,7 @@ export default function ScopeFilterBar({
         options={[
           {
             value: 'All',
-            label: selectedFunction ? `All ${selectedFunction}` : 'All authorized departments',
+            label: selectedFunction ? `All ${selectedFunction} teams` : 'All authorized teams',
             badge: `${availableTeams.length} Teams`,
           },
           ...availableTeams.map((t) => ({
@@ -88,6 +110,21 @@ export default function ScopeFilterBar({
         ]}
       />
 
+      {availablePositions.length > 0 && (
+        <AiScopeDropdown
+          ariaLabel="Filter Position"
+          prefix="Position"
+          value={selectedPosition || 'All'}
+          defaultValue="All"
+          icon={<Users size={12} />}
+          onChange={(value) => onFilterChange('position', value)}
+          options={[
+            { value: 'All', label: 'All positions' },
+            ...availablePositions.map((value) => ({ value, label: value })),
+          ]}
+        />
+      )}
+
       <AiScopeDropdown
         ariaLabel="Filter Branch"
         prefix="Branch"
@@ -96,7 +133,7 @@ export default function ScopeFilterBar({
         icon={<Building2 size={12} />}
         onChange={(val) => onFilterChange('branch', val)}
         options={[
-          ...(availableBranches.length > 1
+          ...(availableBranches.length !== 1
             ? [
                 {
                   value: 'all',

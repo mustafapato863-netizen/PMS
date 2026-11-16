@@ -34,7 +34,6 @@ import {
   Sparkles,
   Target,
   Trash2,
-  TrendingUp,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -1005,13 +1004,7 @@ function TeamDeepDiveViewContent({
     (card: IndividualActionPlanCard) => {
       const targetKey = `ind:${card.id}`;
       const scopeTeam = card.recordTeam || data.canonicalTeam;
-      const scopeKey = buildAiScopeKey({
-        team: scopeTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: card.employeeId,
-        focusKpiKey: card.linkedKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(scopeTeam, data.periodKey, card.employeeId, card.linkedKpiKey);
       const isEditingThis = editingIndividualId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -1054,13 +1047,7 @@ function TeamDeepDiveViewContent({
     (card: TeamLevelActionPlanCard) => {
       const targetKey = `team:${card.id}`;
       const focusKpiKey = resolveTeamCardFocusKpiKey(card, data.kpis, activeExplorerKpi?.kpiKey);
-      const scopeKey = buildAiScopeKey({
-        team: data.canonicalTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: null,
-        focusKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(data.canonicalTeam, data.periodKey, null, focusKpiKey);
       const isEditingThis = editingTeamId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -1111,13 +1098,7 @@ function TeamDeepDiveViewContent({
       activeExplorerKpi && activeExplorerKpi.verdictBadge !== 'Target Met'
         ? activeExplorerKpi.kpiKey
         : null;
-    const scopeKey = buildAiScopeKey({
-      team: data.canonicalTeam,
-      month: activeMonthName,
-      year: activeYearNum,
-      employeeId: null,
-      focusKpiKey,
-    });
+    const scopeKey = buildAiScopeKey(data.canonicalTeam, data.periodKey, null, focusKpiKey);
     const hasUnsaved =
       newTeamTitle.trim().length > 0 || newTeamTargetKpi.trim().length > 0;
     void runAiRequest(

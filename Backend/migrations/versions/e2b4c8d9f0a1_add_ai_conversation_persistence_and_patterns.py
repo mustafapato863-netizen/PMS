@@ -86,6 +86,23 @@ def downgrade() -> None:
     insp = sa.inspect(bind)
     existing_tables = set(insp.get_table_names())
 
+    for table, columns in (
+        ("ai_approved_patterns", ()),
+        ("ai_turns", ("user_prompt", "error_message")),
+        ("ai_conversations", ("title",)),
+    ):
+        if table not in existing_tables:
+            continue
+        stored = sa.Table(table, sa.MetaData(), autoload_with=bind)
+        checks = [stored.c[name].is_not(None) for name in columns if name in stored.c]
+        if columns and not checks:
+            continue
+        query = sa.select(sa.literal(1)).select_from(stored).limit(1)
+        if checks:
+            query = query.where(sa.or_(*checks))
+        if bind.execute(query).first() is not None:
+            raise RuntimeError(f"Downgrade would discard saved AI data in {table}.")
+
     if "ai_approved_patterns" in existing_tables:
         op.drop_index("idx_ai_approved_patterns_active_intent", table_name="ai_approved_patterns")
         op.drop_index("ix_ai_approved_patterns_source_trace_id", table_name="ai_approved_patterns")
