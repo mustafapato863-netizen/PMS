@@ -104,3 +104,155 @@ def test_a_period_with_a_positive_row_is_listed_even_beside_zero_rows():
 def test_rows_without_score_information_are_listed_fail_open():
     months = _catalog_months(_rows(("June", None), ("July", None)))
     assert months == ["July", "June"]
+
+
+def _seed_preapprovals_teams(db, *, include_ip: bool = True, include_offshore_record: bool = False):
+    from models.models import Employee, PerformanceRecord, Team
+    import uuid
+
+    teams = []
+    if include_ip:
+        teams.append(
+            Team(
+                id=uuid.uuid4(),
+                name="Pre-Approvals IP",
+                db_name="Pre-Approvals IP",
+                display_name="Pre-Approvals IP",
+                region="EGY",
+                team_level="employee",
+                is_active=True,
+            )
+        )
+    offshore = Team(
+        id=uuid.uuid4(),
+        name="Pre-Approvals IP Offshore",
+        db_name="Pre-Approvals IP Offshore",
+        display_name="Pre-Approvals IP Offshore",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    teams.append(offshore)
+    db.add_all(teams)
+    db.flush()
+
+    if include_offshore_record:
+        emp = Employee(
+            id=uuid.uuid4(),
+            employee_id="EMP-OFF-1",
+            name="Offshore Specialist",
+            team_id=offshore.id,
+            region="EGY",
+            performance_level="Employee",
+            position_name="Pre-Authorization Specialist",
+        )
+        db.add(emp)
+        db.flush()
+        db.add(
+            PerformanceRecord(
+                id=uuid.uuid4(),
+                employee_id=emp.id,
+                team_id=offshore.id,
+                month="June",
+                year=2026,
+                performance_level="Employee",
+                position_name="Pre-Approvals IP Specialist",
+                region="EGY",
+                score=88.5,
+                grade="C",
+                status="Meets",
+            )
+        )
+    db.commit()
+    return offshore
+
+
+def test_catalog_hides_empty_legacy_preapprovals_ip_offshore_when_preapprovals_ip_is_active():
+    from api.routers.performance import _authorized_catalog_teams
+
+    db = _session()
+    try:
+        _seed_preapprovals_teams(db, include_ip=True, include_offshore_record=False)
+        teams, _ = _authorized_catalog_teams(
+            db,
+            {"role": "Admin", "has_unrestricted_team_access": True},
+            [],
+        )
+        names = [item["team"] for item in teams]
+        assert "Pre-Approvals IP" in names
+        assert "Pre-Approvals IP Offshore" not in names
+    finally:
+        db.close()
+
+
+def test_catalog_keeps_preapprovals_ip_offshore_when_it_has_records_or_canonical_missing():
+    from api.routers.performance import _authorized_catalog_teams
+
+    db_with_records = _session()
+    try:
+        _seed_preapprovals_teams(db_with_records, include_ip=True, include_offshore_record=True)
+        teams, _ = _authorized_catalog_teams(
+            db_with_records,
+            {"role": "Admin", "has_unrestricted_team_access": True},
+            [],
+        )
+        assert "Pre-Approvals IP Offshore" in [item["team"] for item in teams]
+    finally:
+        db_with_records.close()
+
+    db_without_ip = _session()
+    try:
+        _seed_preapprovals_teams(db_without_ip, include_ip=False, include_offshore_record=False)
+        teams, _ = _authorized_catalog_teams(
+            db_without_ip,
+            {"role": "Admin", "has_unrestricted_team_access": True},
+            [],
+        )
+        assert [item["team"] for item in teams] == ["Pre-Approvals IP Offshore"]
+    finally:
+        db_without_ip.close()
+
+
+def test_migration_deactivates_empty_legacy_preapprovals_ip_offshore_only_when_safe():
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from models.models import Team
+
+    mig_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "f4d2e8a9c1b3_deactivate_legacy_preapprovals_ip_offshore.py"
+    )
+    spec = importlib.util.spec_from_file_location("mig_f4d2e8a9c1b3", mig_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    db_empty = _session()
+    try:
+        offshore = _seed_preapprovals_teams(db_empty, include_ip=True, include_offshore_record=False)
+        conn = db_empty.connection()
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            module.upgrade()
+        db_empty.commit()
+        refreshed = db_empty.query(Team).filter(Team.id == offshore.id).one()
+        assert refreshed.is_active is False
+    finally:
+        db_empty.close()
+
+    db_with_records = _session()
+    try:
+        offshore = _seed_preapprovals_teams(db_with_records, include_ip=True, include_offshore_record=True)
+        conn = db_with_records.connection()
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            module.upgrade()
+        db_with_records.commit()
+        refreshed = db_with_records.query(Team).filter(Team.id == offshore.id).one()
+        assert refreshed.is_active is True
+    finally:
+        db_with_records.close()
