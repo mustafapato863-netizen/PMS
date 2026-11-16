@@ -279,6 +279,7 @@ function TeamDeepDiveViewContent({
   const [indSaveFeedback, setIndSaveFeedback] = useState<
     Record<string, { type: 'success' | 'error'; message: string }>
   >({});
+  const [savingIndividualId, setSavingIndividualId] = useState<string | null>(null);
 
   // Agent pagination state (10 agents per page with cachedNext buffer)
   const agentListKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
@@ -427,7 +428,23 @@ function TeamDeepDiveViewContent({
     setDeletingTeamId(null);
     setTeamDeleteError({});
     setTeamRestoreError(null);
+    setSavingIndividualId(null);
   }
+
+  useEffect(() => {
+    if (!confirmDeleteIndId && !confirmDeleteTeamId) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (confirmDeleteIndId && deletingIndId !== confirmDeleteIndId) {
+        setConfirmDeleteIndId(null);
+      }
+      if (confirmDeleteTeamId && deletingTeamId !== confirmDeleteTeamId) {
+        setConfirmDeleteTeamId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [confirmDeleteIndId, confirmDeleteTeamId, deletingIndId, deletingTeamId]);
 
   useEffect(() => {
     const controllers = abortControllersRef.current;
@@ -558,6 +575,39 @@ function TeamDeepDiveViewContent({
           [card.id]: { type: 'error', message: msg },
         }));
       }
+    }
+  };
+
+  const quickSaveIndividual = async (card: IndividualActionPlanCard) => {
+    const updated: IndividualActionPlanCard = {
+      ...card,
+      isSavedToStore: true,
+    };
+    setSavingIndividualId(card.id);
+    try {
+      if (onSaveIndividualAction) {
+        await onSaveIndividualAction(updated);
+      }
+      setIndividualOverrides((prev) => ({ ...prev, [card.id]: updated }));
+      setDismissedIndIds((prev) => {
+        const next = prev.filter((id) => id.toLowerCase() !== card.employeeId.toLowerCase());
+        if (next.length !== prev.length) {
+          writeDismissedIds(DISMISSED_TEAM_IND_STORAGE_KEY, viewScopeKey, next);
+        }
+        return next;
+      });
+      setIndSaveFeedback((prev) => ({
+        ...prev,
+        [card.id]: { type: 'success', message: 'Saved action plan' },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed';
+      setIndSaveFeedback((prev) => ({
+        ...prev,
+        [card.id]: { type: 'error', message: msg },
+      }));
+    } finally {
+      setSavingIndividualId(null);
     }
   };
 
@@ -1885,8 +1935,19 @@ function TeamDeepDiveViewContent({
                     </div>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Next step
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                          Next step
+                        </span>
+                        {card.isSavedToStore ? (
+                          <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                            Saved
+                          </span>
+                        ) : (
+                          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                            Suggested — not saved
+                          </span>
+                        )}
                       </div>
                       <p
                         data-testid={`individual-action-text-${card.employeeId}`}
@@ -1952,6 +2013,19 @@ function TeamDeepDiveViewContent({
                           />
                           {!isEditing && (
                             <>
+                              {!card.isSavedToStore && (
+                                <button
+                                  type="button"
+                                  disabled={savingIndividualId === card.id}
+                                  data-testid={`quick-save-individual-action-${card.employeeId}`}
+                                  aria-label={`Save action plan for ${card.agentName}`}
+                                  onClick={() => void quickSaveIndividual(card)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                                >
+                                  <Check className="size-3" aria-hidden="true" />
+                                  <span>{savingIndividualId === card.id ? 'Saving…' : 'Save'}</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => startEditIndividual(card)}
@@ -2287,97 +2361,26 @@ function TeamDeepDiveViewContent({
                 className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
               >
                 <div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700">
                       <Layers className="size-3" />
                       Whole-Team Action
                     </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        data-testid={`team-action-status-${card.id}`}
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                          card.status === 'In Progress'
-                            ? 'bg-amber-100 text-amber-800'
-                            : card.status === 'Completed'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : card.status === 'Planned'
-                            ? 'bg-sky-100 text-sky-800'
-                            : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {card.status}
-                      </span>
-                      {showPresentationControl(presentationMode) && (
-                        <>
-                          <AiRecommendIconButton
-                            compact
-                            loading={teamAiState?.loading}
-                            presentationMode={presentationMode}
-                            ariaLabel={`Generate AI recommendation for ${card.title}`}
-                            onClick={() => triggerTeamAi(card)}
-                          />
-                          {!isEditingTeam && (
-                            <>
-                              <button
-                                type="button"
-                                data-testid={`edit-team-action-${card.id}`}
-                                onClick={() => startEditTeam(card)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                              >
-                                <Edit3 className="size-3" />
-                                <span>Edit</span>
-                              </button>
-                              <button
-                                type="button"
-                                data-testid={`delete-team-action-${card.id}`}
-                                onClick={() => setConfirmDeleteTeamId(card.id)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                              >
-                                <Trash2 className="size-3" aria-hidden="true" />
-                                <span>Delete</span>
-                              </button>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {isConfirmingTeamDelete && (
-                    <div
-                      role="alertdialog"
-                      aria-label={`Confirm delete team action ${card.title}`}
-                      className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                    <span
+                      data-testid={`team-action-status-${card.id}`}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                        card.status === 'In Progress'
+                          ? 'bg-amber-100 text-amber-800'
+                          : card.status === 'Completed'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : card.status === 'Planned'
+                          ? 'bg-sky-100 text-sky-800'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
                     >
-                      <p className="text-xs font-semibold text-rose-900">
-                        Delete this team-level action?
-                      </p>
-                      {cardDeleteError && (
-                        <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
-                          {cardDeleteError}
-                        </p>
-                      )}
-                      <div className="mt-2 flex justify-end gap-2">
-                        <button
-                          type="button"
-                          disabled={isDeletingTeam}
-                          onClick={() => setConfirmDeleteTeamId(null)}
-                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isDeletingTeam}
-                          data-testid={`confirm-delete-team-action-${card.id}`}
-                          onClick={() => confirmDeleteTeamAction(card)}
-                          className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
-                        >
-                          {isDeletingTeam ? 'Deleting…' : 'Delete Action'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                      {card.status}
+                    </span>
+                  </div>
 
                   {showPresentationControl(presentationMode) && (
                     <AiRecommendationBanner
@@ -2563,6 +2566,76 @@ function TeamDeepDiveViewContent({
                     </span>
                   </div>
                 </div>
+
+                {isConfirmingTeamDelete && (
+                  <div
+                    role="alertdialog"
+                    aria-label={`Confirm delete team action ${card.title}`}
+                    className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                  >
+                    <p className="text-xs font-semibold text-rose-900">
+                      Delete this team-level action?
+                    </p>
+                    {cardDeleteError && (
+                      <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
+                        {cardDeleteError}
+                      </p>
+                    )}
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={isDeletingTeam}
+                        onClick={() => setConfirmDeleteTeamId(null)}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingTeam}
+                        data-testid={`confirm-delete-team-action-${card.id}`}
+                        onClick={() => confirmDeleteTeamAction(card)}
+                        className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        {isDeletingTeam ? 'Deleting…' : 'Delete Action'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {showPresentationControl(presentationMode) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-200/70 pt-3">
+                    <AiRecommendIconButton
+                      compact
+                      loading={teamAiState?.loading}
+                      presentationMode={presentationMode}
+                      ariaLabel={`Generate AI recommendation for ${card.title}`}
+                      onClick={() => triggerTeamAi(card)}
+                    />
+                    {!isEditingTeam && (
+                      <>
+                        <button
+                          type="button"
+                          data-testid={`edit-team-action-${card.id}`}
+                          onClick={() => startEditTeam(card)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
+                        >
+                          <Edit3 className="size-3" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`delete-team-action-${card.id}`}
+                          onClick={() => setConfirmDeleteTeamId(card.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                        >
+                          <Trash2 className="size-3" aria-hidden="true" />
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </article>
             );
           })}

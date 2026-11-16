@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CalendarDays, RefreshCw, Search } from 'lucide-react';
+import { AlertCircle, CalendarDays, RefreshCw, Search, Trash2 } from 'lucide-react';
 import CustomDropdown from '../common/CustomDropdown';
-import { useActionOwners, useFollowUp, useUpdateActionStatus } from '../../hooks/useActionStore';
+import { useActionOwners, useActionStore, useFollowUp, useUpdateActionStatus } from '../../hooks/useActionStore';
+import { useUserRole } from '../../context/RoleContext';
 import type { ActionStatus, PMSAction } from '../../types';
-import { dueBadgeLabel, todayIso } from './dueBadge';
+import { canDeleteCorrectiveAction, dueBadgeLabel, todayIso } from './dueBadge';
 import { ActionStatusMenu, StatusPill } from './ActionStatusMenu';
 import { EMPTY_FOLLOW_UP_SUMMARY, type FollowUpFilters, type FollowUpSummary } from './followUpTypes';
 import { executiveFunctionForTeam } from '../../features/executive/functions';
@@ -35,6 +36,8 @@ interface ActionFollowUpBoardProps {
   filters: FollowUpFilters;
   onFiltersChange: (filters: FollowUpFilters) => void;
   onStatusChange: (id: string, update: { status: ActionStatus; completion_note?: string; due_date?: string }) => Promise<unknown> | void;
+  canDelete?: boolean;
+  onDeleteAction?: (action: PMSAction) => Promise<boolean> | boolean;
 }
 
 function badgeClass(action: PMSAction): string {
@@ -113,8 +116,87 @@ export function ActionFollowUpBoard({
   filters,
   onFiltersChange,
   onStatusChange,
+  canDelete = false,
+  onDeleteAction,
 }: ActionFollowUpBoardProps) {
   const [search, setSearch] = useState('');
+  const [confirmTarget, setConfirmTarget] = useState<{ id: string; surface: 'table' | 'card' } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    if (!confirmTarget || deletingId === confirmTarget.id) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setConfirmTarget(null);
+        setDeleteError('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [confirmTarget, deletingId]);
+
+  const handleConfirmDelete = async (action: PMSAction) => {
+    if (!onDeleteAction) return;
+    setDeletingId(action.id);
+    setDeleteError('');
+    try {
+      const ok = await onDeleteAction(action);
+      if (ok === false) {
+        setDeleteError('Failed to delete corrective action.');
+        return;
+      }
+      setConfirmTarget(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete corrective action.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const showDeleteCol = Boolean(canDelete && onDeleteAction);
+
+  const renderDeleteDialog = (action: PMSAction) => {
+    const isDeleting = deletingId === action.id;
+    return (
+      <div
+        role="alertdialog"
+        aria-label={`Confirm delete action for ${action.employee_name || action.employee_id}`}
+        className="mt-2 rounded-xl border border-rose-500/25 bg-rose-500/5 p-3"
+      >
+        <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+          Delete corrective action for {action.employee_name || action.employee_id}?
+        </p>
+        {deleteError && (
+          <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            {deleteError}
+          </p>
+        )}
+        <div className="mt-2 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={() => {
+              setConfirmTarget(null);
+              setDeleteError('');
+            }}
+            className="rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={() => void handleConfirmDelete(action)}
+            className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-black text-white hover:bg-rose-700 disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting…' : 'Delete Action'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return actions;
@@ -167,60 +249,131 @@ export function ActionFollowUpBoard({
             <table className="w-full min-w-[920px] text-left">
               <thead className="text-xs font-black uppercase tracking-wide text-[var(--text-muted)]">
                 <tr>
-                  {['Employee', 'Team', 'Type', 'Action', 'Owner', 'Due date', 'Due', 'Status'].map((heading) => (
+                  {[
+                    'Employee',
+                    'Team',
+                    'Type',
+                    'Action',
+                    'Owner',
+                    'Due date',
+                    'Due',
+                    'Status',
+                    ...(showDeleteCol ? ['Actions'] : []),
+                  ].map((heading) => (
                     <th key={heading} className="px-3 py-2">{heading}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {visible.map((action) => (
-                  <tr key={action.id} className="border-t border-[var(--border-light)] align-top">
-                    {['employee', 'team', 'type', 'action', 'owner', 'due', 'badge', 'status'].map((cell) => (
-                      <td key={cell} className="px-3 py-3">
-                        {cell === 'employee' && <EmployeeCell action={action} />}
-                        {cell === 'team' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.team || 'Unassigned'}</span>}
-                        {cell === 'type' && <span className="text-xs font-bold text-[var(--text-primary)]">{action.action_type}</span>}
-                        {cell === 'action' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</span>}
-                        {cell === 'owner' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.owner?.name || 'Unassigned'}</span>}
-                        {cell === 'due' && (canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.due_date || 'No due date'}</span>)}
-                        {cell === 'badge' && <DueBadge action={action} />}
-                        {cell === 'status' && (
-                          <ActionStatusMenu
-                            status={action.status || 'Open'}
-                            canEdit={canEdit}
-                            ariaLabel={`Status for ${action.action_text}`}
-                            onChange={(update) => onStatusChange(action.id, update)}
-                          />
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {visible.map((action) => {
+                  const canDeleteRow = showDeleteCol && Boolean(action.employee_id);
+                  const isConfirmingTable = confirmTarget?.id === action.id && confirmTarget.surface === 'table';
+                  const cells = [
+                    'employee',
+                    'team',
+                    'type',
+                    'action',
+                    'owner',
+                    'due',
+                    'badge',
+                    'status',
+                    ...(showDeleteCol ? ['actions'] : []),
+                  ];
+                  return (
+                    <Fragment key={action.id}>
+                      <tr className="border-t border-[var(--border-light)] align-top">
+                        {cells.map((cell) => (
+                          <td key={cell} className="px-3 py-3">
+                            {cell === 'employee' && <EmployeeCell action={action} />}
+                            {cell === 'team' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.team || 'Unassigned'}</span>}
+                            {cell === 'type' && <span className="text-xs font-bold text-[var(--text-primary)]">{action.action_type}</span>}
+                            {cell === 'action' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</span>}
+                            {cell === 'owner' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.owner?.name || 'Unassigned'}</span>}
+                            {cell === 'due' && (canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.due_date || 'No due date'}</span>)}
+                            {cell === 'badge' && <DueBadge action={action} />}
+                            {cell === 'status' && (
+                              <ActionStatusMenu
+                                status={action.status || 'Open'}
+                                canEdit={canEdit}
+                                ariaLabel={`Status for ${action.action_text}`}
+                                onChange={(update) => onStatusChange(action.id, update)}
+                              />
+                            )}
+                            {cell === 'actions' && canDeleteRow && (
+                              <button
+                                type="button"
+                                data-testid={`delete-follow-up-action-${action.id}`}
+                                aria-label={`Delete action for ${action.employee_name || action.employee_id}`}
+                                onClick={() => {
+                                  setDeleteError('');
+                                  setConfirmTarget({ id: action.id, surface: 'table' });
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+                              >
+                                <Trash2 size={13} aria-hidden="true" />
+                                Delete
+                              </button>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                      {isConfirmingTable && (
+                        <tr>
+                          <td colSpan={cells.length} className="px-3 pb-3 pt-0">
+                            {renderDeleteDialog(action)}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="grid gap-3 md:hidden">
-            {visible.map((action) => (
-              <article key={action.id} className="glass-card space-y-2 rounded-2xl p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <EmployeeCell action={action} />
-                  <StatusPill status={action.status || 'Open'} />
-                </div>
-                <p className="text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned'} · {action.action_type}</p>
-                <p className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</p>
-                <p className="text-xs font-semibold text-[var(--text-muted)]">Owner {action.owner?.name || 'Unassigned'}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <DueBadge action={action} />
-                  {canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold">{action.due_date || 'No due date'}</span>}
-                </div>
-                <ActionStatusMenu
-                  status={action.status || 'Open'}
-                  canEdit={canEdit}
-                  ariaLabel={`Status for ${action.action_text}`}
-                  onChange={(update) => onStatusChange(action.id, update)}
-                />
-              </article>
-            ))}
+            {visible.map((action) => {
+              const canDeleteCard = showDeleteCol && Boolean(action.employee_id);
+              const isConfirmingCard = confirmTarget?.id === action.id && confirmTarget.surface === 'card';
+              return (
+                <article key={action.id} className="glass-card space-y-2 rounded-2xl p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <EmployeeCell action={action} />
+                    <StatusPill status={action.status || 'Open'} />
+                  </div>
+                  <p className="text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned'} · {action.action_type}</p>
+                  <p className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</p>
+                  <p className="text-xs font-semibold text-[var(--text-muted)]">Owner {action.owner?.name || 'Unassigned'}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DueBadge action={action} />
+                    {canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold">{action.due_date || 'No due date'}</span>}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <ActionStatusMenu
+                      status={action.status || 'Open'}
+                      canEdit={canEdit}
+                      ariaLabel={`Status for ${action.action_text}`}
+                      onChange={(update) => onStatusChange(action.id, update)}
+                    />
+                    {canDeleteCard && (
+                      <button
+                        type="button"
+                        data-testid={`delete-follow-up-card-action-${action.id}`}
+                        aria-label={`Delete action for ${action.employee_name || action.employee_id}`}
+                        onClick={() => {
+                          setDeleteError('');
+                          setConfirmTarget({ id: action.id, surface: 'card' });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  {isConfirmingCard && renderDeleteDialog(action)}
+                </article>
+              );
+            })}
           </div>
         </>
       )}
@@ -249,6 +402,10 @@ function ConnectedFollowUp({
   const active = filters.state || filters.team || filters.owner || filters.month ? filtered : baseline;
   const owners = useActionOwners();
   const updateStatus = useUpdateActionStatus();
+  const { role } = useUserRole();
+  const actionStore = useActionStore();
+  const deleteAction = actionStore?.deleteAction;
+  const canDelete = canDeleteCorrectiveAction(role) && typeof deleteAction === 'function';
   const inFunction = (action: PMSAction) => !scopeFunction || executiveFunctionForTeam(action.team) === scopeFunction;
   const source = (baseline.data?.actions ?? []).filter(inFunction);
   const scopedSummaryActions = source.filter((action) => (!filters.team || action.team === filters.team)
@@ -280,6 +437,12 @@ function ConnectedFollowUp({
       filters={filters}
       onFiltersChange={onFiltersChange}
       onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })}
+      canDelete={canDelete}
+      onDeleteAction={
+        canDelete && deleteAction
+          ? (action) => deleteAction(action.id, action.employee_id)
+          : undefined
+      }
     />
   );
 }

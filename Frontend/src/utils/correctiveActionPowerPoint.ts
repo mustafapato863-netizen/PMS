@@ -14,6 +14,7 @@
  */
 import JSZip from 'jszip';
 import type { PMSAction } from '../types';
+import { formatActionRootCauseNote } from './actionNoteFormatter';
 import { THEME_XML } from './pptxTheme';
 
 export const CORRECTIVE_ACTION_TEMPLATE_URL = '/templates/Corrective_Action_Report.pptx';
@@ -267,7 +268,8 @@ function buildCard(action: PMSAction, cardX: number, cardY: number, baseId: numb
 
   // Action text box
   const actionY  = cardY + 0.78;
-  const hasRc    = Boolean(action.root_cause_note && action.root_cause_note.trim());
+  const formattedRc = formatActionRootCauseNote(action.root_cause_note);
+  const hasRc    = Boolean(formattedRc && formattedRc.trim());
   const actionH  = hasRc ? 2.45 : 3.25;
 
   // Root-cause note box (amber)
@@ -309,7 +311,7 @@ function buildCard(action: PMSAction, cardX: number, cardY: number, baseId: numb
       sp(baseId + 5, `rc-box-${baseId}`, iX, RC_Y, iW, RC_H,
         multiRunPara([
           { text: 'Root-cause note: ', bold: true, szPt: 8, color: 'B45309' },
-          { text: trunc(action.root_cause_note, 220), bold: false, szPt: 8, color: '92400E' },
+          { text: trunc(formattedRc, 220), bold: false, szPt: 8, color: '92400E' },
         ]),
         { fill: 'FFFBEB', borderHex: 'FDE68A', roundAdj: 3500, tInsIn: 0.08, bInsIn: 0.08, lInsIn: 0.12, rInsIn: 0.12 })
     );

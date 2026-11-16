@@ -357,6 +357,7 @@ export interface ActionStoreResult {
 export function useActionStore() {
   const { role } = useUserRole();
   const { currentUser } = useAuth();
+  const queryClient = useQueryClient();
   const [actions, setActions] = useState<PMSAction[]>(cachedActions || []);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -405,6 +406,7 @@ export function useActionStore() {
 
       // Reload actions list from backend
       await fetchActions();
+      await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
 
       setIsSaving(false);
 
@@ -416,7 +418,7 @@ export function useActionStore() {
           : 'Saved locally. Will sync when online.',
       };
     },
-    [currentUser]
+    [currentUser, queryClient]
   );
 
   const updateStatus = useUpdateActionStatus();
@@ -464,6 +466,7 @@ export function useActionStore() {
 
         // Reload actions list from backend
         await fetchActions();
+        await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
 
         setIsSaving(false);
         return {
@@ -499,6 +502,7 @@ export function useActionStore() {
 
         // Reload actions list from backend
         await fetchActions();
+        await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
 
         setIsSaving(false);
         return {
@@ -515,7 +519,7 @@ export function useActionStore() {
         message: 'Action not found.',
       };
     },
-    [currentUser]
+    [currentUser, queryClient]
   );
 
   const deleteAction = useCallback(async (actionId: string, employeeId?: string): Promise<boolean> => {
@@ -551,8 +555,9 @@ export function useActionStore() {
       await fetchActions();
     }
 
+    await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
     return true;
-  }, []);
+  }, [queryClient]);
 
   const getActionsForEmployee = useCallback((employeeId: string): PMSAction[] => {
     const deletedIds = loadDeletedActionIds();

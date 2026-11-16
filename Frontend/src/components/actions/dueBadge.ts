@@ -6,6 +6,10 @@ export function canEditActionFollowUp(role: string | null | undefined): boolean 
   return role === 'Admin' || role === 'General Manager' || role === 'Manager';
 }
 
+export function canDeleteCorrectiveAction(role: string | null | undefined): boolean {
+  return role === 'Admin' || role === 'General Manager' || role === 'Manager' || role === 'Performance Team';
+}
+
 export function daysUntilDue(dueDate: string, today = new Date()): number {
   const due = new Date(`${dueDate.slice(0, 10)}T00:00:00`);
   const start = new Date(today);

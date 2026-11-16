@@ -1,5 +1,5 @@
 import './PageEnhancements.css';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -11,6 +11,7 @@ import {
   Mail,
   RefreshCw,
   Search,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { useActionStore, useFollowUp, useUpdateActionStatus } from '../hooks/useActionStore';
@@ -21,9 +22,10 @@ import { useUserRole } from '../context/RoleContext';
 import CustomDropdown from '../components/common/CustomDropdown';
 import ResponsiveFilters from '../components/common/ResponsiveFilters';
 import { ActionFollowUpPanel } from '../components/actions/ActionFollowUpBoard';
-import { canEditActionFollowUp, dueBadgeLabel } from '../components/actions/dueBadge';
+import { canDeleteCorrectiveAction, canEditActionFollowUp, dueBadgeLabel } from '../components/actions/dueBadge';
 import { StatusPill } from '../components/actions/ActionStatusMenu';
 import type { ActionType, PMSAction } from '../types';
+import { formatActionRootCauseNote } from '../utils/actionNoteFormatter';
 import { downloadCorrectiveActionsPowerPoint } from '../utils/correctiveActionPowerPoint';
 
 const ACTION_TYPES: ActionType[] = ['Training', 'Reward', 'PIP', 'Monitor', 'Coaching'];
@@ -56,7 +58,7 @@ function buildOutlookComposeUrl(action: PMSAction): string {
     action.action_text || 'No action details provided.',
     '',
     'Root-cause note:',
-    action.root_cause_note || 'No note recorded.',
+    formatActionRootCauseNote(action.root_cause_note) || 'No note recorded.',
   ].join('\n');
 
   // Use encodeURIComponent instead of URLSearchParams — URLSearchParams encodes
@@ -65,8 +67,52 @@ function buildOutlookComposeUrl(action: PMSAction): string {
   return `https://outlook.office.com/mail/deeplink/compose?to=${enc(action.employee_id)}&subject=${enc(subject)}&body=${enc(body)}`;
 }
 
-function ActionCard({ action }: { action: PMSAction }) {
+function ActionCard({
+  action,
+  canDelete = false,
+  onDelete,
+}: {
+  action: PMSAction;
+  canDelete?: boolean;
+  onDelete?: (action: PMSAction) => Promise<boolean> | boolean;
+}) {
   const style = ACTION_STYLES[action.action_type] || ACTION_STYLES.Coaching;
+  const formattedRootCause = formatActionRootCauseNote(action.root_cause_note);
+  const showDelete = canDelete && typeof onDelete === 'function' && Boolean(action.employee_id);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    if (!confirmingDelete || isDeleting) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setConfirmingDelete(false);
+        setDeleteError('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [confirmingDelete, isDeleting]);
+
+  const handleConfirmDelete = async () => {
+    if (!onDelete) return;
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      const ok = await onDelete(action);
+      if (ok === false) {
+        setDeleteError('Failed to delete corrective action.');
+        return;
+      }
+      setConfirmingDelete(false);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete corrective action.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <article className="rf-action-card rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
@@ -90,37 +136,92 @@ function ActionCard({ action }: { action: PMSAction }) {
       <p className="mt-4 whitespace-pre-line text-xs font-semibold leading-5 text-[var(--text-secondary)]">{action.action_text || 'No action details provided.'}</p>
       <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2.5 text-xs leading-4 text-[var(--text-secondary)]">
         <span className="font-black text-amber-700 dark:text-amber-300">Root-cause note: </span>
-        {action.root_cause_note || 'No note recorded.'}
+        {formattedRootCause || 'No note recorded.'}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
         <span className="inline-flex items-center gap-1.5"><CalendarDays size={13} />{action.month} · {formatDate(action.created_at)}</span>
         <span className="inline-flex items-center gap-1.5"><Users size={13} />By {action.created_by || 'Unknown'}</span>
       </div>
-      <Link
-        to={`/employee/${encodeURIComponent(action.employee_id)}?month=${encodeURIComponent(action.month)}`}
-        className="mt-3 inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:underline dark:text-blue-400"
-      >
-        Open profile <span aria-hidden="true">↗</span>
-      </Link>
-      <a
-        href={buildOutlookComposeUrl(action)}
-        target="_blank"
-        rel="noreferrer"
-        className="ml-4 mt-3 inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-xs font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
-        aria-label={`Forward corrective action for ${action.employee_name || action.employee_id} in Outlook`}
-      >
-        <Mail size={13} aria-hidden="true" />
-        Forward in Outlook
-      </a>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Link
+          to={`/employee/${encodeURIComponent(action.employee_id)}?month=${encodeURIComponent(action.month)}`}
+          className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:underline dark:text-blue-400"
+        >
+          Open profile <span aria-hidden="true">↗</span>
+        </Link>
+        <a
+          href={buildOutlookComposeUrl(action)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-xs font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+          aria-label={`Forward corrective action for ${action.employee_name || action.employee_id} in Outlook`}
+        >
+          <Mail size={13} aria-hidden="true" />
+          Forward in Outlook
+        </a>
+        {showDelete && (
+          <button
+            type="button"
+            data-testid={`delete-corrective-action-${action.id}`}
+            aria-label={`Delete corrective action for ${action.employee_name || action.employee_id}`}
+            onClick={() => {
+              setDeleteError('');
+              setConfirmingDelete(true);
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-black text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+          >
+            <Trash2 size={13} aria-hidden="true" />
+            Delete
+          </button>
+        )}
+      </div>
+      {confirmingDelete && (
+        <div
+          role="alertdialog"
+          aria-label={`Confirm delete corrective action for ${action.employee_name || action.employee_id}`}
+          className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/5 p-3"
+        >
+          <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+            Delete corrective action for {action.employee_name || action.employee_id}?
+          </p>
+          {deleteError && (
+            <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+              {deleteError}
+            </p>
+          )}
+          <div className="mt-2.5 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => {
+                setConfirmingDelete(false);
+                setDeleteError('');
+              }}
+              className="rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => void handleConfirmDelete()}
+              className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-black text-white hover:bg-rose-700 disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting…' : 'Delete Action'}
+            </button>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
 
 export default function CorrectiveActionsView() {
-  const { getAllActions } = useActionStore();
+  const { getAllActions, deleteAction } = useActionStore();
   const updateStatus = useUpdateActionStatus();
   const [params] = useSearchParams();
   const { role } = useUserRole();
+  const allowDelete = canDeleteCorrectiveAction(role) && typeof deleteAction === 'function';
   const followUp = useFollowUp({});
   const overdueCount = followUp.data?.summary.overdue ?? 0;
   const [pageTab, setPageTab] = useState<'all' | 'follow-up'>('all');
@@ -226,7 +327,14 @@ export default function CorrectiveActionsView() {
 
       {pageTab === 'all' && filteredActions.length > 0 ? (
         <section className="grid gap-4 md:grid-cols-2" aria-label="Corrective action records">
-          {filteredActions.map((action) => <ActionCard key={action.id} action={action} />)}
+          {filteredActions.map((action) => (
+            <ActionCard
+              key={action.id}
+              action={action}
+              canDelete={allowDelete}
+              onDelete={allowDelete ? (item) => deleteAction(item.id, item.employee_id) : undefined}
+            />
+          ))}
         </section>
       ) : pageTab === 'all' ? (
         <section className="glass-panel rf-empty-state rounded-2xl p-12 text-center shadow-sm">

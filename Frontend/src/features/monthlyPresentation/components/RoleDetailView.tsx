@@ -171,6 +171,14 @@ export default function RoleDetailView({
   const [confirmDeleteRoleId, setConfirmDeleteRoleId] = useState<string | null>(null);
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [roleDeleteError, setRoleDeleteError] = useState<Record<string, string>>({});
+  const [savingIndividualId, setSavingIndividualId] = useState<string | null>(null);
+  const [indSaveFeedback, setIndSaveFeedback] = useState<
+    Record<string, { type: 'success' | 'error'; message: string }>
+  >({});
+  const [savingRoleActionId, setSavingRoleActionId] = useState<string | null>(null);
+  const [roleSaveFeedback, setRoleSaveFeedback] = useState<
+    Record<string, { type: 'success' | 'error'; message: string }>
+  >({});
 
   const [aiStateByTarget, setAiStateByTarget] = useState<Record<string, RoleAiState>>({});
   const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
@@ -193,7 +201,26 @@ export default function RoleDetailView({
     setConfirmDeleteRoleId(null);
     setDeletingRoleId(null);
     setRoleDeleteError({});
+    setSavingIndividualId(null);
+    setIndSaveFeedback({});
+    setSavingRoleActionId(null);
+    setRoleSaveFeedback({});
   }
+
+  useEffect(() => {
+    if (!confirmDeleteIndId && !confirmDeleteRoleId) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (confirmDeleteIndId && deletingIndId !== confirmDeleteIndId) {
+        setConfirmDeleteIndId(null);
+      }
+      if (confirmDeleteRoleId && deletingRoleId !== confirmDeleteRoleId) {
+        setConfirmDeleteRoleId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [confirmDeleteIndId, confirmDeleteRoleId, deletingIndId, deletingRoleId]);
 
   useEffect(() => {
     const controllers = abortControllersRef.current;
@@ -330,6 +357,52 @@ export default function RoleDetailView({
     });
   };
 
+  const quickSaveRoleIndividual = async (card: RoleIndividualActionPlan) => {
+    setSavingIndividualId(card.id);
+    try {
+      await onSaveAction({
+        actionId: card.actionId,
+        employeeId: card.employeeId,
+        personName: card.personName,
+        team: data.roleTitle,
+        month: activeMonthName,
+        description: card.actionText,
+        mainIssue: card.mainIssue,
+        owner: card.owner,
+        dueDate: '',
+        status: 'Open',
+        expectedImpact: card.expectedImpact,
+        linkedKpiKey: card.linkedKpiKey,
+      });
+      setIndividualOverrides((prev) => ({
+        ...prev,
+        [card.id]: {
+          ...(prev[card.id] ?? {}),
+          suggested: false,
+        },
+      }));
+      setDismissedIndIds((prev) => {
+        const next = prev.filter((id) => id.toLowerCase() !== card.employeeId.toLowerCase());
+        if (next.length !== prev.length) {
+          writeRoleDismissedIds(DISMISSED_ROLE_IND_STORAGE_KEY, viewScopeKey, next);
+        }
+        return next;
+      });
+      setIndSaveFeedback((prev) => ({
+        ...prev,
+        [card.id]: { type: 'success', message: 'Saved action plan' },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed';
+      setIndSaveFeedback((prev) => ({
+        ...prev,
+        [card.id]: { type: 'error', message: msg },
+      }));
+    } finally {
+      setSavingIndividualId(null);
+    }
+  };
+
   const confirmDeleteIndividual = async (card: RoleIndividualActionPlan) => {
     setDeletingIndId(card.employeeId);
     setIndDeleteError((prev) => {
@@ -451,6 +524,51 @@ export default function RoleDetailView({
       delete next[`role-act:${action.id}`];
       return next;
     });
+  };
+
+  const quickSaveRoleAction = async (action: RoleAssignedAction) => {
+    setSavingRoleActionId(action.id);
+    try {
+      await onSaveAction({
+        actionId: action.id,
+        employeeId: action.employeeId || data.employeeId,
+        personName: data.personName,
+        team: data.roleTitle,
+        month: activeMonthName,
+        description: action.description,
+        owner: action.owner,
+        dueDate: action.dueDate ?? '',
+        status: action.status === 'Cancelled' ? 'Open' : action.status,
+        expectedImpact: action.expectedImpact,
+        linkedKpiKey: action.linkedKpiKey ?? selected?.kpiKey ?? null,
+      });
+      setRoleActionOverrides((prev) => ({
+        ...prev,
+        [action.id]: {
+          ...(prev[action.id] ?? {}),
+          suggested: false,
+        },
+      }));
+      setDismissedRoleActionIds((prev) => {
+        const next = prev.filter((id) => id !== action.id);
+        if (next.length !== prev.length) {
+          writeRoleDismissedIds(DISMISSED_ROLE_COHORT_STORAGE_KEY, viewScopeKey, next);
+        }
+        return next;
+      });
+      setRoleSaveFeedback((prev) => ({
+        ...prev,
+        [action.id]: { type: 'success', message: 'Saved role action' },
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed';
+      setRoleSaveFeedback((prev) => ({
+        ...prev,
+        [action.id]: { type: 'error', message: msg },
+      }));
+    } finally {
+      setSavingRoleActionId(null);
+    }
   };
 
   const confirmDeleteRoleAction = async (action: RoleAssignedAction) => {
@@ -1623,6 +1741,7 @@ export default function RoleDetailView({
               const cardGradeStyle = GRADE_STYLES[card.grade];
               const indAiTargetKey = `ind:${card.id}`;
               const indAiState = aiStateByTarget[indAiTargetKey];
+              const indFeedback = indSaveFeedback[card.id];
 
               const isEvidenceOpen = Boolean(expandedEvidenceIds[card.id]);
               const evidencePanelId = `role-ind-evidence-panel-${card.id}`;
@@ -1686,6 +1805,17 @@ export default function RoleDetailView({
                       </span>
                       {card.mainIssue}
                     </div>
+
+                    {indFeedback && !isEditing && (
+                      <p
+                        role="status"
+                        className={`mt-2 text-xs font-medium ${
+                          indFeedback.type === 'error' ? 'text-rose-700' : 'text-emerald-700'
+                        }`}
+                      >
+                        {indFeedback.message}
+                      </p>
+                    )}
 
                     {/* 3. Next step (remains visible & editable during AI loading and errors) */}
                     {isEditing ? (
@@ -1760,9 +1890,13 @@ export default function RoleDetailView({
                           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                             Next step
                           </span>
-                          {card.suggested && (
+                          {card.suggested ? (
                             <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-600">
                               Suggested — not saved
+                            </span>
+                          ) : (
+                            <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                              Saved
                             </span>
                           )}
                         </div>
@@ -1826,6 +1960,19 @@ export default function RoleDetailView({
                             />
                             {!isEditing && (
                               <>
+                                {card.suggested && (
+                                  <button
+                                    type="button"
+                                    disabled={savingIndividualId === card.id}
+                                    data-testid={`quick-save-role-individual-action-${card.employeeId}`}
+                                    aria-label={`Save action plan for ${card.personName}`}
+                                    onClick={() => void quickSaveRoleIndividual(card)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                                  >
+                                    <Check className="size-3" aria-hidden />
+                                    <span>{savingIndividualId === card.id ? 'Saving…' : 'Save'}</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => startEditIndividual(card)}
@@ -2015,6 +2162,7 @@ export default function RoleDetailView({
               const cardRoleDeleteError = roleDeleteError[action.id];
               const roleActAiKey = `role-act:${action.id}`;
               const roleActAiState = aiStateByTarget[roleActAiKey];
+              const roleSaveFb = roleSaveFeedback[action.id];
 
               return (
                 <li
@@ -2023,96 +2171,25 @@ export default function RoleDetailView({
                   className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 transition-all hover:bg-white hover:shadow-xs"
                 >
                   <div>
-                    {/* Card Top: Whole-Role Action Badge + Status Pill + AI & Edit Buttons */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    {/* Card Top: Whole-Role Action Badge + Status Pill */}
+                    <div className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700">
                         <Layers className="size-3" aria-hidden />
                         {action.suggested ? 'Suggested action — not saved' : 'Whole-Role Action'}
                       </span>
 
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                            action.status === 'In Progress'
-                              ? 'bg-amber-100 text-amber-800'
-                              : action.status === 'Completed'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {action.suggested ? 'Suggestion' : action.status}
-                        </span>
-                        {showPresentationControl(presentationMode) && (
-                          <>
-                            <AiRecommendIconButton
-                              compact
-                              loading={roleActAiState?.loading}
-                              presentationMode={presentationMode}
-                              ariaLabel={`Generate AI recommendation for ${action.title || action.description}`}
-                              onClick={() => triggerRoleActionAi(action)}
-                            />
-                            {!isEditingRoleAct && (
-                              <>
-                                <button
-                                  type="button"
-                                  data-testid={`edit-role-action-${action.id}`}
-                                  onClick={() => startEditRoleAction(action)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
-                                >
-                                  <Edit3 className="size-3" aria-hidden />
-                                  <span>Edit</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  data-testid={`delete-role-action-${action.id}`}
-                                  onClick={() => setConfirmDeleteRoleId(action.id)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50"
-                                >
-                                  <Trash2 className="size-3" aria-hidden />
-                                  <span>Delete</span>
-                                </button>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {isConfirmingRoleDelete && (
-                      <div
-                        role="alertdialog"
-                        aria-label={`Confirm delete role action ${action.title || action.description}`}
-                        className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                          action.status === 'In Progress'
+                            ? 'bg-amber-100 text-amber-800'
+                            : action.status === 'Completed'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
                       >
-                        <p className="text-xs font-semibold text-rose-900">
-                          Delete this role-level action?
-                        </p>
-                        {cardRoleDeleteError && (
-                          <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
-                            {cardRoleDeleteError}
-                          </p>
-                        )}
-                        <div className="mt-2 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={isDeletingRole}
-                            onClick={() => setConfirmDeleteRoleId(null)}
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isDeletingRole}
-                            data-testid={`confirm-delete-role-action-${action.id}`}
-                            onClick={() => confirmDeleteRoleAction(action)}
-                            className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
-                          >
-                            {isDeletingRole ? 'Deleting…' : 'Delete Action'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                        {action.suggested ? 'Suggestion' : action.status}
+                      </span>
+                    </div>
 
                     {showPresentationControl(presentationMode) && (
                       <AiRecommendationBanner
@@ -2253,6 +2330,17 @@ export default function RoleDetailView({
                         </div>
                       </>
                     )}
+
+                    {roleSaveFb && !isEditingRoleAct && (
+                      <p
+                        role="status"
+                        className={`mt-2 text-xs font-medium ${
+                          roleSaveFb.type === 'error' ? 'text-rose-700' : 'text-emerald-700'
+                        }`}
+                      >
+                        {roleSaveFb.message}
+                      </p>
+                    )}
                   </div>
 
                   {/* Metadata Footer: Owner & Expected Impact */}
@@ -2275,6 +2363,88 @@ export default function RoleDetailView({
                       </dd>
                     </div>
                   </dl>
+
+                  {isConfirmingRoleDelete && (
+                    <div
+                      role="alertdialog"
+                      aria-label={`Confirm delete role action ${action.title || action.description}`}
+                      className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3"
+                    >
+                      <p className="text-xs font-semibold text-rose-900">
+                        Delete this role-level action?
+                      </p>
+                      {cardRoleDeleteError && (
+                        <p role="alert" className="mt-1 text-xs font-medium text-rose-700">
+                          {cardRoleDeleteError}
+                        </p>
+                      )}
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          disabled={isDeletingRole}
+                          onClick={() => setConfirmDeleteRoleId(null)}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isDeletingRole}
+                          data-testid={`confirm-delete-role-action-${action.id}`}
+                          onClick={() => confirmDeleteRoleAction(action)}
+                          className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                        >
+                          {isDeletingRole ? 'Deleting…' : 'Delete Action'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {showPresentationControl(presentationMode) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-200/70 pt-3">
+                      <AiRecommendIconButton
+                        compact
+                        loading={roleActAiState?.loading}
+                        presentationMode={presentationMode}
+                        ariaLabel={`Generate AI recommendation for ${action.title || action.description}`}
+                        onClick={() => triggerRoleActionAi(action)}
+                      />
+                      {!isEditingRoleAct && (
+                        <>
+                          {action.suggested && (
+                            <button
+                              type="button"
+                              disabled={savingRoleActionId === action.id}
+                              data-testid={`quick-save-role-action-${action.id}`}
+                              onClick={() => void quickSaveRoleAction(action)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              <Check className="size-3" aria-hidden />
+                              <span>{savingRoleActionId === action.id ? 'Saving…' : 'Save'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-testid={`edit-role-action-${action.id}`}
+                            onClick={() => startEditRoleAction(action)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600"
+                          >
+                            <Edit3 className="size-3" aria-hidden />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`delete-role-action-${action.id}`}
+                            onClick={() => setConfirmDeleteRoleId(action.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50"
+                          >
+                            <Trash2 className="size-3" aria-hidden />
+                            <span>Delete</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}

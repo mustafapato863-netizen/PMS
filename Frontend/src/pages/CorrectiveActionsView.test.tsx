@@ -3,21 +3,23 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PMSAction } from '../types';
 
-const { getAllActions, downloadCorrectiveActionsPowerPoint, followUpState } = vi.hoisted(() => ({
+const { getAllActions, deleteAction, roleState, downloadCorrectiveActionsPowerPoint, followUpState } = vi.hoisted(() => ({
   getAllActions: vi.fn(),
+  deleteAction: vi.fn(),
+  roleState: { role: 'Admin' },
   downloadCorrectiveActionsPowerPoint: vi.fn(() => Promise.resolve()),
   followUpState: { overdue: 0, actions: [] as PMSAction[] },
 }));
 
 vi.mock('../hooks/useActionStore', () => ({
-  useActionStore: () => ({ getAllActions }),
+  useActionStore: () => ({ getAllActions, deleteAction }),
   useFollowUp: () => ({ data: { summary: { overdue: followUpState.overdue, due_soon: 0, open: 0, in_progress: 0, completed_this_month: 0, completion_rate: 0 }, actions: followUpState.actions }, isLoading: false, isError: false, refetch: vi.fn() }),
   useActionOwners: () => ({ data: [] }),
   useUpdateActionStatus: () => ({ mutateAsync: vi.fn() }),
 }));
 
 vi.mock('../context/RoleContext', () => ({
-  useUserRole: () => ({ role: 'Admin' }),
+  useUserRole: () => ({ role: roleState.role }),
 }));
 
 vi.mock('../utils/correctiveActionPowerPoint', () => ({
@@ -43,6 +45,9 @@ describe('CorrectiveActionsView', () => {
   beforeEach(() => {
     getAllActions.mockReset();
     getAllActions.mockReturnValue(actions);
+    deleteAction.mockReset();
+    deleteAction.mockResolvedValue(true);
+    roleState.role = 'Admin';
     followUpState.overdue = 0;
     followUpState.actions = [];
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:actions') });
@@ -110,5 +115,60 @@ describe('CorrectiveActionsView', () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
     expect(screen.getByRole('tab', { name: /Follow-up/ })).toHaveTextContent('4');
     expect(screen.getByLabelText('4 overdue')).toBeInTheDocument();
+  });
+
+  it('decodes __pms_meta__: root-cause notes in cards and Outlook deep-links', () => {
+    getAllActions.mockReturnValue([
+      {
+        ...actions[0],
+        root_cause_note:
+          '__pms_meta__:{"main_issue":"AHT at 3.12 min vs 2.50 min","owner":"Inbound Lead","expected_impact":"+3.0 pts"}',
+      },
+    ]);
+    render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+
+    expect(
+      screen.getAllByText(/AHT at 3\.12 min vs 2\.50 min · Owner: Inbound Lead · Expected impact: \+3\.0 pts/),
+    ).toHaveLength(2);
+    expect(screen.queryByText(/__pms_meta__:/)).not.toBeInTheDocument();
+
+    const forwardLink = screen.getByRole('link', { name: 'Forward corrective action for Agent One in Outlook' });
+    const outlookUrl = new URL(forwardLink.getAttribute('href') || '');
+    expect(outlookUrl.searchParams.get('body')).toContain(
+      'AHT at 3.12 min vs 2.50 min · Owner: Inbound Lead · Expected impact: +3.0 pts',
+    );
+  });
+
+  it('supports inline Delete confirmation, Escape dismiss, error state, and role gating', async () => {
+    roleState.role = 'Viewer';
+    const { rerender } = render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+    expect(screen.queryByTestId('delete-corrective-action-a1')).not.toBeInTheDocument();
+
+    roleState.role = 'Performance Team';
+    rerender(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+    expect(screen.getByTestId('delete-corrective-action-a1')).toBeInTheDocument();
+
+    // Open and close via Escape
+    fireEvent.click(screen.getByTestId('delete-corrective-action-a1'));
+    expect(screen.getByRole('alertdialog', { name: /Confirm delete corrective action for Agent One/i })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(deleteAction).not.toHaveBeenCalled();
+
+    // Failed delete displays inline error banner
+    deleteAction.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByTestId('delete-corrective-action-a1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Action' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/Failed to delete corrective action/i);
+    });
+
+    // Successful delete calls deleteAction(id, employee_id) and closes confirmation
+    deleteAction.mockResolvedValueOnce(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Action' }));
+    await waitFor(() => {
+      expect(deleteAction).toHaveBeenLastCalledWith('a1', 'EMP-1');
+    });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });

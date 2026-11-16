@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useActionStore } from './useActionStore';
+import { actionQueryKeys, useActionStore } from './useActionStore';
 
 const { apiFetch } = vi.hoisted(() => ({
   apiFetch: vi.fn<(url: string, init?: { method?: string; body?: string }) => Promise<{ success: boolean; data: unknown[] }>>(async () => ({ success: true, data: [] })),
@@ -168,5 +168,45 @@ describe('useActionStore deleteAction', () => {
     );
     expect(deleteCalls).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem('pms_deleted_actions_v2') || '[]')).toContain(localId);
+  });
+
+  it('invalidates actionQueryKeys.all after saveAction, updateAction, and deleteAction', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const customWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useActionStore(), { wrapper: customWrapper });
+
+    await act(async () => {
+      await result.current.saveAction({
+        employee_id: 'EMP-1',
+        employee_name: 'Test Agent',
+        team: 'Inbound',
+        month: 'June',
+        action_type: 'Coaching',
+        action_text: 'Coach script',
+        root_cause_note: 'AHT gap',
+      });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: actionQueryKeys.all });
+
+    invalidateSpy.mockClear();
+    await act(async () => {
+      await result.current.updateAction(
+        'act-sync-1',
+        { action_text: 'Updated coaching' },
+        { id: 'EMP-1', name: 'Test Agent', team: 'Inbound' },
+        'June',
+      );
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: actionQueryKeys.all });
+
+    invalidateSpy.mockClear();
+    await act(async () => {
+      await result.current.deleteAction('act-sync-1', 'EMP-1');
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: actionQueryKeys.all });
   });
 });

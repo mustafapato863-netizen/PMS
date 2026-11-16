@@ -1021,9 +1021,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByText('Add Corrective Action')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit(?:Delete)?/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)(?:Save)?Edit(?:Delete)?/g, ''),
     );
 
     const expectPresenting = () => {
@@ -1067,10 +1068,11 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate AI recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByText('No corrective actions recorded for this role yet.')).not.toBeInTheDocument();
     expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(
-      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)Edit(?:Delete)?/g, ''),
+      savedRoleAction.replace(/(?:Suggest\s*action|Suggest|AI\s*Draft|AI)(?:Save)?Edit(?:Delete)?/g, ''),
     );
 
     fireEvent.click(modeSwitch());
