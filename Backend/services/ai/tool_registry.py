@@ -843,16 +843,12 @@ class DeterministicToolRegistry:
                     count_field, count_label, count_title = "bookings", "bookings", "Booking Counts"
                 elif _count_def.kpi_key == "AttendedPatients":
                     count_field, count_label, count_title = "attended", "attended", "Attended Counts"
+            elif is_comparing_branches and kpi == "bookings_count" and resolved["function"] == "Call Center":
+                count_field, count_label, count_title = "bookings", "bookings", "Booking Counts"
 
         branch_comparison_digest: list[dict[str, Any]] = []
         if is_comparing_branches:
-            branches_to_compare = list(BRANCH_KEYS)
-            if len(requested_branches) >= 2:
-                ordered = list(requested_branches)
-                for bk in BRANCH_KEYS:
-                    if bk not in ordered:
-                        ordered.append(bk)
-                branches_to_compare = ordered
+            branches_to_compare = requested_branches if len(requested_branches) >= 2 else list(BRANCH_KEYS)
             branches_to_compare = [b for b in branches_to_compare if user_can_access_branch(self.ctx.scope, b)]
 
             bars: list[AiBarItem] = []

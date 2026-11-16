@@ -231,14 +231,19 @@ class PageContextV1(BaseModel):
 
 
 ContextualCapabilityMode = Literal[
+    "greeting",
+    "capabilities_help",
     "page_help",
     "navigation",
     "performance_query",
     "clarification",
+    "off_topic",
     "proposal",
-    "greeting",
     "unsupported",
 ]
+
+ConversationOriginType = Literal["workspace", "page_assistant", "legacy"]
+ConversationOriginInputType = Literal["workspace", "page_assistant"]
 
 FeedbackCategoryType = Literal[
     "helpful",
@@ -450,17 +455,21 @@ class AiCorrectiveActionSuggestionPriorAction(BaseModel):
 
 
 class AiCorrectiveActionSuggestionDraft(BaseModel):
-    """Unapproved draft. Facts and uncertainty come from PMS evidence; only the
-    steps are written by the model, and only after closed-vocabulary validation."""
+    """Unapproved draft. Facts and uncertainty come from PMS evidence; wording is built
+    from validated structured action choices or closed-vocabulary steps."""
 
     title: str
     focus_kpi_key: str
     focus_kpi_name: str
     action_type: CorrectiveActionDraftType
+    action_choice: str | None = None
+    follow_up_interval: str | None = None
+    official_target_label: str | None = None
+    action_milestone_note: str | None = None
     # Built in code from the evidence ledger; the model cannot alter it.
     measured_issue: str
     measured_issue_source: Literal["pms_evidence"] = "pms_evidence"
-    # Model-written, validated: imperative, no numbers, closed vocabulary.
+    # Validated steps (built from validated structured choice or closed-vocabulary validation).
     recommended_steps: list[str] = Field(default_factory=list, min_length=1, max_length=3)
     recommended_steps_source: Literal["cloudflare", "gemini"] = "cloudflare"
     # Built in code: what the evidence does not show.
@@ -480,8 +489,16 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     model_version: str | None = None
     fallback_reason: str | None = None
     validation_errors: list[str] = Field(default_factory=list)
+    repair_attempted: bool = False
     context: AiCorrectiveActionSuggestionContext
     focus_kpi_key: str | None = None
+    cohort_in_scope_count: int | None = None
+    cohort_measured_count: int | None = None
+    cohort_unmeasured_count: int | None = None
+    cohort_below_target_count: int | None = None
+    cohort_coverage_label: str | None = None
+    official_target_label: str | None = None
+    measured_actual_label: str | None = None
     # Deterministic statements built from the evidence ledger, never by the model.
     measured_facts: list[str] = Field(default_factory=list)
     # Deterministic evidence caveats (always includes that the cause is not established).
@@ -492,6 +509,14 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     trend_summary: AiCorrectiveActionSuggestionTrendSummary | None = None
     insufficient_evidence_reasons: list[str] = Field(default_factory=list)
     draft: AiCorrectiveActionSuggestionDraft | None = None
+    # When evidence is sufficient but the AI provider failed/was rejected, PMS supplies
+    # an explicit evidence-based next step without asserting AI approval.
+    evidence_next_step: str | None = None
+    evidence_next_step_label: str | None = None
+    evidence_next_step_role: str | None = None
+    evidence_next_step_follow_up: str | None = None
+    evidence_next_step_action_type: CorrectiveActionDraftType | None = None
+    evidence_next_step_source: Literal["pms_evidence"] | None = None
     model_latency_ms: float | None = None
     read_only: Literal[True] = True
     requires_human_confirmation: Literal[True] = True
@@ -550,6 +575,7 @@ class AiChatRequest(BaseModel):
     context_version: int | None = Field(default=None, ge=0)
     clarification_choice_id: str | None = Field(default=None, max_length=120)
     variation_seed: int | None = Field(default=None, ge=0, le=50)
+    origin: ConversationOriginInputType | None = None
 
 
 class AiBarItem(BaseModel):
@@ -794,6 +820,7 @@ class AiEligibleTeamItem(BaseModel):
     label: str
     function: str
     badge: str | None = None
+    regions: list[str] = Field(default_factory=list)
 
 
 class AiWatchingPayload(BaseModel):
@@ -853,11 +880,13 @@ class AiDistillationExportResponse(BaseModel):
 
 class AiConversationCreateRequest(BaseModel):
     session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
+    origin: ConversationOriginInputType = "workspace"
 
 
 class AiConversationContextPayload(BaseModel):
     conversation_id: str
     owner_user_id: str
+    origin: ConversationOriginType = "workspace"
     status: Literal["active", "archived", "deleted"] = "active"
     context_version: int = 0
     confirmed_context: ConfirmedQueryContext = Field(default_factory=ConfirmedQueryContext)
@@ -878,6 +907,7 @@ class AiConversationResponse(BaseModel):
 class AiConversationSummaryItem(BaseModel):
     conversation_id: str
     title: str | None = None
+    origin: ConversationOriginType = "workspace"
     created_at: str | None = None
     updated_at: str | None = None
     turn_count: int = 0
@@ -894,9 +924,18 @@ class AiConversationListResponse(BaseModel):
     conversations: list[AiConversationSummaryItem] = Field(default_factory=list)
 
 
+class AiConversationRetrySettings(BaseModel):
+    session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
+    clarification_choice_id: str | None = None
+    answer_detail: Literal["auto", "brief", "details"] | None = None
+    variation_seed: int | None = None
+
+
 class AiConversationTurnDetail(BaseModel):
     turn_id: str
     turn_index: int
+    client_request_id: str | None = None
+    retry_settings: AiConversationRetrySettings | None = None
     status: Literal["pending", "completed", "failed", "restricted", "superseded"]
     user_prompt: str
     error_message: str | None = None
@@ -911,6 +950,7 @@ class AiConversationDetailPayload(BaseModel):
     conversation_id: str
     owner_user_id: str
     title: str | None = None
+    origin: ConversationOriginType = "workspace"
     status: Literal["active", "archived", "deleted"] = "active"
     context_version: int = 0
     confirmed_context: ConfirmedQueryContext = Field(default_factory=ConfirmedQueryContext)
@@ -976,6 +1016,7 @@ class AiCatalogMetricItem(BaseModel):
 class AiCatalogPayload(BaseModel):
     eligible_teams: list[AiEligibleTeamItem] = Field(default_factory=list)
     eligible_functions: list[str] = Field(default_factory=list)
+    eligible_regions: list[str] = Field(default_factory=list)
     eligible_branches: list[str] = Field(default_factory=list)
     eligible_levels: list[str] = Field(default_factory=list)
     metrics: list[AiCatalogMetricItem] = Field(default_factory=list)

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { ContextualAssistantPanel } from './ContextualAssistantPanel';
 import type { PageContextV1 } from '../../features/ai/types';
@@ -427,5 +427,197 @@ describe('ContextualAssistantPanel', () => {
     await user.click(screen.getByTestId('contextual-assistant-new-chat'));
     expect(screen.queryByTestId('contextual-assistant-turn')).not.toBeInTheDocument();
     expect(screen.getByTestId('contextual-assistant-starters')).toBeInTheDocument();
+  }, 15000);
+
+  it('sends origin=page_assistant, loads Recent history only when toggled, supports resume & accessible delete, and promotes Continue in PMS AI', async () => {
+    const user = userEvent.setup();
+    let listCallCount = 0;
+
+    function LocationProbe() {
+      const loc = useLocation();
+      return <div data-testid="location-probe">{`${loc.pathname}${loc.search}`}</div>;
+    }
+
+    mockApiFetch.mockImplementation(async (endpoint: string, init?: { method?: string }) => {
+      if (endpoint === '/api/ai/chat') {
+        return {
+          success: true,
+          data: {
+            trace_id: 'trace-pa-1',
+            conversation_id: 'conv-pa-1',
+            turn_id: 'turn-pa-1',
+            outcome: 'answer',
+            capability_mode: 'page_help',
+            headline: 'Page assistant answer.',
+            narrative_bullets: [],
+            visual_cards: [],
+            citations: [],
+            deep_links: [],
+            suggested_followups: [],
+            resolved_session_state: {},
+            domain_guardrail_notes: [],
+            tool_calls: [],
+            provider_used: 'deterministic',
+            model_used: 'pms-deterministic-v1',
+            latency_ms: 4,
+          },
+        };
+      }
+      if (endpoint === '/api/ai/conversations?origin=page_assistant') {
+        listCallCount += 1;
+        if (listCallCount === 1) {
+          throw new Error('Temporary load error');
+        }
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: [
+            {
+              conversation_id: 'conv-pa-1',
+              origin: 'page_assistant',
+              title: 'Monthly presentation help',
+              turn_count: 1,
+              has_restricted_turns: false,
+              context_version: 1,
+            },
+            {
+              conversation_id: 'conv-pa-2',
+              origin: 'page_assistant',
+              title: 'Booking rate drilldown',
+              turn_count: 2,
+              has_restricted_turns: false,
+              context_version: 2,
+            },
+          ],
+        };
+      }
+      if (
+        (endpoint === '/api/ai/conversations/conv-pa-2?origin=page_assistant' ||
+          endpoint === '/api/ai/conversations/conv-pa-2') &&
+        !init?.method
+      ) {
+        return {
+          success: true,
+          message: 'Loaded',
+          data: {
+            conversation_id: 'conv-pa-2',
+            origin: 'page_assistant',
+            owner_user_id: 'user-admin-1',
+            title: 'Booking rate drilldown',
+            status: 'active',
+            context_version: 2,
+            confirmed_context: {},
+            has_restricted_turns: false,
+            turns: [
+              {
+                turn_id: 't-pa-2',
+                turn_index: 1,
+                status: 'completed',
+                user_prompt: 'Why is Booking Rate below target?',
+                response: {
+                  trace_id: 'trace-pa-2',
+                  outcome: 'answer',
+                  capability_mode: 'performance_query',
+                  headline: 'Booking Rate is 42.1% vs 45.0% target.',
+                  narrative_bullets: [],
+                  visual_cards: [],
+                  citations: [],
+                  deep_links: [],
+                  suggested_followups: [],
+                  resolved_session_state: {},
+                  domain_guardrail_notes: [],
+                  tool_calls: [],
+                  provider_used: 'deterministic',
+                  model_used: 'pms-deterministic-v1',
+                  latency_ms: 5,
+                },
+              },
+            ],
+          },
+        };
+      }
+      if (endpoint === '/api/ai/conversations/conv-pa-1' && init?.method === 'DELETE') {
+        return { success: true, message: 'Deleted' };
+      }
+      if (endpoint === '/api/ai/conversations/conv-pa-2/promote' && init?.method === 'POST') {
+        return { success: true, message: 'Promoted' };
+      }
+      return { success: true };
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <LocationProbe />
+        <ContextualAssistantPanel pageContext={basePageContext} />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByTestId('contextual-assistant-launcher'));
+
+    // Opening panel does NOT fetch page_assistant history until Recent is toggled
+    expect(
+      mockApiFetch.mock.calls.filter((c) => c[0] === '/api/ai/conversations?origin=page_assistant'),
+    ).toHaveLength(0);
+
+    // Send a chat prompt and verify origin='page_assistant'
+    await user.click(screen.getByText('Explain this page'));
+    await waitFor(() => {
+      expect(screen.getByText('Page assistant answer.')).toBeInTheDocument();
+    });
+    const chatCall = mockApiFetch.mock.calls.find((c) => c[0] === '/api/ai/chat');
+    expect(JSON.parse(String(chatCall?.[1]?.body || '{}')).origin).toBe('page_assistant');
+
+    // Toggle Recent -> first load fails with Retry button
+    await user.click(screen.getByTestId('contextual-assistant-history-toggle'));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Could not load recent page-assistant conversations.',
+      );
+    });
+
+    // Retry succeeds and lists page-assistant conversations
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('contextual-assistant-history-item-conv-pa-1')).toBeInTheDocument();
+      expect(screen.getByTestId('contextual-assistant-history-item-conv-pa-2')).toBeInTheDocument();
+    });
+
+    // Delete conv-pa-1 via accessible dialog; Escape closes only dialog, Delete chat calls DELETE
+    await user.click(screen.getByLabelText('Delete conversation Monthly presentation help'));
+    const deleteDialog = screen.getByTestId('contextual-assistant-delete-dialog');
+    expect(deleteDialog).toHaveAttribute('role', 'dialog');
+    expect(deleteDialog).toHaveAttribute('aria-modal', 'true');
+    expect(deleteDialog).toHaveTextContent('Delete "Monthly presentation help"?');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('contextual-assistant-delete-dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('contextual-assistant-panel')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Delete conversation Monthly presentation help'));
+    await user.click(screen.getByRole('button', { name: 'Delete chat' }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/ai/conversations/conv-pa-1',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+      expect(screen.queryByTestId('contextual-assistant-history-item-conv-pa-1')).not.toBeInTheDocument();
+    });
+
+    // Resume conv-pa-2
+    await user.click(screen.getByText('Booking rate drilldown'));
+    await waitFor(() => {
+      expect(screen.getByText('Booking Rate is 42.1% vs 45.0% target.')).toBeInTheDocument();
+    });
+
+    // Click Continue in PMS AI -> calls POST /promote and navigates to /ai?conversation=conv-pa-2
+    await user.click(screen.getByTestId('contextual-assistant-continue-workspace'));
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/ai/conversations/conv-pa-2/promote',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/ai?conversation=conv-pa-2');
+    });
   }, 15000);
 });

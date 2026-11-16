@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from models.ai_schemas import AiGuardrailItem, AiStarterPrompt, SessionFilterContext
 
@@ -690,3 +690,196 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
         spotlight_prompt,
         cc_kpi_prompt,
     ]
+
+
+_GREETING_PROMPT_RE = re.compile(
+    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*$",
+    re.I,
+)
+_THANKS_PROMPT_RE = re.compile(
+    r"^\s*(?:thanks|thank you|thx|ty|many thanks|thanks a lot|thank you so much|"
+    r"got it,?\s*thanks|ok\s*thanks|okay\s*thanks|appreciate it|great,?\s*thanks|"
+    r"thanks,?\s*that was helpful|thank you,?\s*that was helpful)[\s!.,?]*$",
+    re.I,
+)
+
+_CAPABILITIES_HELP_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*(?:hi[,!]?\s*)?help(?:\s+me)?(?:\s+please)?[\s?!.]*$", re.I),
+    re.compile(
+        r"^\s*(?:hi[,!]?\s*)?(?:how\s+can\s+(?:you|u|this\s+assistant|pms\s+ai)\s+(?:help|assist)(?:\s+me)?)"
+        r"(?:\s+(?:with\s+(?:pms|this)|here))?[\s?!.]*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+can\s+(?:you|u|this\s+assistant|pms\s+ai)\s+(?:do|help(?:\s+me)?\s+with|assist\s+with|answer))"
+        r"(?:\s+(?:for\s+me|here|in\s+pms))?[\s?!.]*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:questions\s+|things\s+)?can\s+i\s+ask(?:\s+you)?)(?:\s+(?:about|here))?[\s?!.]*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:do\s+you\s+do|are\s+your\s+capabilities)|capabilities)[\s?!.]*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:hi[,!]?\s*)?(?:can|could)\s+(?:you|u)\s+help(?:\s+me)?[\s?!.]*$",
+        re.I,
+    ),
+)
+
+_OFF_TOPIC_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:weather|forecast|temperature|rain(?:ing)?|sunny|poem|poetry|haiku|"
+        r"football|soccer|basketball|tennis|cricket|world\s+cup|recipe|recipes|cook(?:ing)?|"
+        r"pasta|pizza|joke|jokes|funny|horoscope|zodiac|movie|movies|film|netflix|"
+        r"song|songs|music|lyrics|capital\s+of|president|prime\s+minister|bitcoin|crypto|"
+        r"stock\s+price|celebrity|astronomy|planet|dinner|lunch|breakfast)\b",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:tell\s+me\s+(?:a\s+)?(?:joke|story|fun\s+fact)|"
+        r"write\s+(?:a\s+)?(?:poem|story|song|code)|"
+        r"who\s+won\s+the\s+(?:game|match|cup))\b",
+        re.I,
+    ),
+)
+
+_BROAD_OVERVIEW_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\bhow\s+(?:are|is|were|did)\s+(?:we|the\s+company|things|everything|performance|it)\s+(?:doing|performing|going|looking)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bhow\s+(?:am\s+i|is\s+my\s+team|did\s+we)\s+(?:doing|performing|perform)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:overall|executive|company|organization)\s+(?:performance|score|summary|overview|standing|results?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:give\s+me|show(?:\s+me)?)\s+(?:an?\s+)?(?:overall|executive|performance)\s+(?:overview|summary|score|report|status)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bwhat\s+is\s+(?:our|the|my)\s+(?:overall\s+)?(?:score|performance|standing)\b",
+        re.I,
+    ),
+    re.compile(r"\b(?:all\s+authorized\s+departments?|authorized\s+scope)\b", re.I),
+    re.compile(r"^\s*show\s+(?:my\s+)?performance\s+summary\b", re.I),
+)
+
+_VAGUE_DATALESS_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"^\s*(?:check|look\s+at|show(?:\s+me)?|give\s+me|tell\s+me|analyze|review|inspect|see)\s+"
+        r"(?:the\s+)?(?:numbers?|data|stats|figures|metrics|it|this|that|everything|something)\s*[?.!]*$",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:show\s+me|anything|anything\s+new|tell\s+me\s+more|more|details|info|status|update|updates|check)\s*[?.!]*$",
+        re.I,
+    ),
+)
+
+_SECURITY_OR_MUTATION_RE = re.compile(
+    r"\b(?:delete|update|recalculate|approve|modify|drop)\b.*\b(?:evaluation|target|scores?|table)\b"
+    r"|\b(?:ignore|disregard|forget)\b.*\b(?:instructions?|policy|policies|rules|guidelines|permissions?|access\s+rules|previous)\b"
+    r"|\b(?:system\s+prompt|developer\s+mode|jailbreak|system\s+override|unrestricted|list\s+every\s+employee\s+score|salar(?:y|ies)|other\s+country)\b",
+    re.I,
+)
+
+# Core PMS entities, KPIs, and analytical words (excludes bare branch cities so "weather in Dubai" stays off-topic).
+_PMS_ENTITY_OR_KPI_RE = re.compile(
+    r"\b(?:score|scores|scored|scoring|kpi|kpis|metric|metrics|target|targets|booking|bookings|"
+    r"attended|attendance|abandon|abandoned|reachability|aht|fcr|qa|quality|sla|compliance|"
+    r"resubmission|re-submission|submission|coding|pre-approvals?|collections|denial|"
+    r"revenue|sales|marketing|pharmacy|csr|finance|human\s+resources|crm|nursing|pmo|rcm|"
+    r"inbound|outbound|call\s+center|support\s+positions?|support\s+team|scorecard|scorecards|bsc|balanced\s+scorecard|"
+    r"corrective\s+actions?|action\s+plan|pip|sip|grade|grades|ranking|rank|ranks|"
+    r"top\s+performers?|top\s+agents?|best\s+agents?|worst\s+agents?|lowest|highest|weakest|strongest|"
+    r"bottom\s+agents?|leader|leaders|leading|leads|driver|drivers|gap|gaps|trend|trends|trajectory|"
+    r"progression|over\s+time|6-month|compare|comparison|versus|vs|diagnose|root\s+cause|dragging|"
+    r"pulling|below\s+target|dropped|drop|dropping|decline|declined|fell|fall|improve|improved|"
+    r"improvement|underperform|overdue|joiner|joiners|joined|joining|hire\s+date|tenure|evaluation|"
+    r"evaluations|managerial|corporate|sghd\d+|emp[-_ ]?\d+|e[-_]\d+|"
+    r"employee|employees|agent|agents|team|teams|department|departments)\b",
+    re.I,
+)
+
+_PMS_BRANCH_OR_PERIOD_RE = re.compile(
+    r"\b(?:dubai|sharjah|ajman|clinics|dxb|shj|ajm|shjajm|egy|egypt|uae|emirates|"
+    r"january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|"
+    r"august|aug|september|sep|sept|october|oct|november|nov|december|dec|202\d)\b",
+    re.I,
+)
+
+_ARABIC_PMS_KEYWORDS: tuple[str, ...] = (
+    "أداء", "اداء", "نتيجة", "مؤشر", "مؤشرات", "تقييم", "حضور", "الحضور", "حجز", "حجوزات",
+    "جودة", "انباوند", "إنباوند", "اوتباوند", "أوتباوند", "ماركتنج", "التسويق", "دبي",
+    "الشارقة", "عجمان", "موظف", "الموظف", "تيم", "فريق", "كول سنتر", "ايراد", "إيراد",
+    "خطة", "ملخص", "تارجت", "واقع", "السبب",
+)
+
+
+def is_greeting_or_thanks_prompt(prompt: str) -> Literal["greeting", "thanks"] | None:
+    text = (prompt or "").strip()
+    if _GREETING_PROMPT_RE.fullmatch(text):
+        return "greeting"
+    if _THANKS_PROMPT_RE.fullmatch(text):
+        return "thanks"
+    return None
+
+
+def is_capabilities_help_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    if _PMS_ENTITY_OR_KPI_RE.search(text) or _PMS_BRANCH_OR_PERIOD_RE.search(text):
+        return False
+    return any(pat.match(text) for pat in _CAPABILITIES_HELP_PATTERNS)
+
+
+def is_off_topic_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    if _PMS_ENTITY_OR_KPI_RE.search(text):
+        return False
+    return any(pat.search(text) for pat in _OFF_TOPIC_PATTERNS)
+
+
+def is_broad_overview_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    return any(pat.search(text) for pat in _BROAD_OVERVIEW_PATTERNS)
+
+
+def is_vague_dataless_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    return any(pat.match(text) for pat in _VAGUE_DATALESS_PATTERNS)
+
+
+def has_pms_performance_signal(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text or is_off_topic_prompt(text):
+        return False
+    if is_broad_overview_prompt(text) or _SECURITY_OR_MUTATION_RE.search(text):
+        return True
+    if _PMS_ENTITY_OR_KPI_RE.search(text) or _PMS_BRANCH_OR_PERIOD_RE.search(text):
+        return True
+    if re.search(r"\bwho\s+(?:is|are|was|were)\s+[A-Z][a-z]+", text):
+        return True
+    if re.search(
+        r"\b[A-Za-z]+(?:'s|’s)\s+(?:score|performance|position|role|trend|best|worst|highest|lowest)\b",
+        text,
+        re.I,
+    ):
+        return True
+    if is_arabic_text(text) and any(kw in text for kw in _ARABIC_PMS_KEYWORDS):
+        return True
+    return False

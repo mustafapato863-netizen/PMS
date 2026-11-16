@@ -27,6 +27,11 @@ __all__ = ["ALLOWED_INTENTS", "LocalIntentResult", "build_intent_json_schema", "
 
 ALLOWED_INTENTS = frozenset(
     {
+        "greeting",
+        "capabilities_help",
+        "off_topic",
+        "clarification",
+        "performance_query",
         "current_value",
         "actual_vs_target",
         "trend",
@@ -98,8 +103,13 @@ def suggest_intent(question: str) -> LocalIntentResult:
     if not question or not question.strip() or len(question) > 600:
         return result(None, "invalid_question")
     instruction = (
-        "Classify the user's PMS question into one intent. Return JSON with only an intent field. "
+        "Classify the user's message into one intent. Return JSON with only an intent field. "
         "Allowed intents: "
+        "greeting (salutations or thanks like hi, hello, thanks), "
+        "capabilities_help (asking what the assistant can do or how it can help), "
+        "off_topic (non-PMS topics like weather, recipes, jokes, movies, sports, general trivia), "
+        "clarification (vague data-less request missing team, KPI, person, or overview scope), "
+        "performance_query (broad PMS performance overview request), "
         "page_help (what does this page show, explain this view or metric definition), "
         "navigation (where can I find a page, scorecard, or feature), "
         "proposal (suggest or create a corrective action or improvement plan), "
@@ -109,7 +119,7 @@ def suggest_intent(question: str) -> LocalIntentResult:
         "ranking (best, top, worst, or lowest performer), "
         "score_drivers (why a score or metric is low/high, root causes, KPI gaps), "
         "clarify (ambiguous or missing scope). "
-        "Do not answer, calculate, or invent data."
+        "Do not answer, calculate, invent filters, or invent data."
     )
     req = ProviderRequest(
         messages=[

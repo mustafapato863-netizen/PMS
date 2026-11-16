@@ -31,6 +31,10 @@ class ConversationDeletedError(ConversationOwnershipError):
     """Raised when a caller sends a request for a conversation that was already deleted/reset."""
 
 
+class ConversationOriginMismatchError(ConversationRepositoryError):
+    """Raised when a conversation is accessed from a different assistant surface."""
+
+
 class ConversationStaleContextError(ConversationRepositoryError):
     """Raised when a turn carries a stale context_version or superseded claim token."""
 
@@ -48,6 +52,16 @@ class TurnAlreadyInFlightError(ConversationRepositoryError):
 
 class ConversationMigrationUnavailableError(ConversationRepositoryError):
     """Raised when conversation persistence tables are not yet migrated in production/staging."""
+
+
+VALID_CONVERSATION_ORIGINS: tuple[str, str, str] = ("workspace", "page_assistant", "legacy")
+
+
+def _normalize_origin(origin: str | None) -> str:
+    val = str(origin or "legacy").strip()
+    if val not in VALID_CONVERSATION_ORIGINS:
+        raise ValueError(f"Unsupported conversation origin: {val!r}")
+    return val
 
 
 def _norm_str(val: Any, default: str = "") -> str:
@@ -153,7 +167,14 @@ class AiConversationRepository:
             bind = self.db.get_bind()
             insp = sa_inspect(bind)
             tables = set(insp.get_table_names())
-            ready = "ai_conversations" in tables and "ai_turns" in tables
+            required_columns = {
+                "ai_conversations": {column.name for column in AiConversation.__table__.columns},
+                "ai_turns": {column.name for column in AiTurn.__table__.columns},
+            }
+            ready = all(
+                table in tables and columns <= {column["name"] for column in insp.get_columns(table)}
+                for table, columns in required_columns.items()
+            )
             self._schema_ready_cache = ready
             return ready
         except Exception:
@@ -163,7 +184,7 @@ class AiConversationRepository:
         if not self.is_schema_ready():
             self.db.rollback()
             raise ConversationMigrationUnavailableError(
-                "AI conversation persistence schema is not yet migrated. Run Alembic upgrade c9e1a2b3d4f5."
+                "AI conversation persistence schema is not yet migrated. Run Alembic upgrade e2b4c8d9f0a1."
             )
 
     def create_conversation(
@@ -173,14 +194,17 @@ class AiConversationRepository:
         owner_role: str,
         initial_confirmed_context: dict[str, Any] | None = None,
         conversation_id: str | None = None,
+        origin: str = "workspace",
     ) -> AiConversation:
         self._require_schema_ready()
         conv_id = str(conversation_id or uuid.uuid4())
+        norm_origin = _normalize_origin(origin)
         now_dt = datetime.now(timezone.utc)
         row = AiConversation(
             id=conv_id,
             owner_user_id=str(owner_user_id or "anonymous"),
             owner_role=str(owner_role or "Manager"),
+            origin=norm_origin,
             status="active",
             context_version=1,
             confirmed_context=dict(initial_confirmed_context or {}),
@@ -196,6 +220,20 @@ class AiConversationRepository:
             self.db.commit()
             self.db.refresh(row)
             return row
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.get_owned_conversation(
+                conversation_id=conv_id, owner_user_id=owner_user_id, include_deleted=True
+            )
+            if existing is None:
+                raise
+            if existing.status == "deleted":
+                raise ConversationDeletedError("Conversation has been reset or deleted.")
+            if _normalize_origin(existing.origin) != norm_origin:
+                raise ConversationOriginMismatchError(
+                    "This conversation belongs to a different assistant surface. Promote it before continuing here."
+                )
+            return existing
         except (OperationalError, ProgrammingError) as exc:
             self.db.rollback()
             raise ConversationMigrationUnavailableError(
@@ -230,6 +268,7 @@ class AiConversationRepository:
         owner_user_id: str,
         owner_role: str,
         initial_confirmed_context: dict[str, Any] | None = None,
+        origin: str = "workspace",
     ) -> AiConversation:
         self._require_schema_ready()
         if conversation_id:
@@ -241,12 +280,18 @@ class AiConversationRepository:
             if existing is not None:
                 if existing.status == "deleted":
                     raise ConversationDeletedError("Conversation has been reset or deleted.")
+                expected_origin = _normalize_origin(origin)
+                if _normalize_origin(existing.origin) != expected_origin:
+                    raise ConversationOriginMismatchError(
+                        "This conversation belongs to a different assistant surface. Promote it before continuing here."
+                    )
                 return existing
         return self.create_conversation(
             owner_user_id=owner_user_id,
             owner_role=owner_role,
             initial_confirmed_context=initial_confirmed_context,
             conversation_id=conversation_id,
+            origin=origin,
         )
 
     def list_owned_conversations(
@@ -254,20 +299,46 @@ class AiConversationRepository:
         *,
         owner_user_id: str,
         limit: int = 30,
+        origin: str | None = "workspace",
     ) -> list[AiConversation]:
         self._require_schema_ready()
         safe_limit = max(1, min(int(limit or 30), 50))
+        query = self.db.query(AiConversation).filter(
+            AiConversation.owner_user_id == str(owner_user_id or "anonymous"),
+            AiConversation.status != "deleted",
+            AiConversation.deleted_at.is_(None),
+        )
+        if origin not in (None, "all"):
+            query = query.filter(AiConversation.origin == _normalize_origin(origin))
         return (
-            self.db.query(AiConversation)
-            .filter(
-                AiConversation.owner_user_id == str(owner_user_id or "anonymous"),
-                AiConversation.status != "deleted",
-                AiConversation.deleted_at.is_(None),
-            )
-            .order_by(AiConversation.updated_at.desc(), AiConversation.created_at.desc())
+            query.order_by(AiConversation.updated_at.desc(), AiConversation.created_at.desc())
             .limit(safe_limit)
             .all()
         )
+
+    def promote_conversation(
+        self,
+        *,
+        conversation_id: str,
+        owner_user_id: str,
+    ) -> AiConversation:
+        """Explicitly move a non-workspace conversation into workspace history without changing turns."""
+        self._require_schema_ready()
+        row = self.get_owned_conversation(
+            conversation_id=conversation_id,
+            owner_user_id=owner_user_id,
+            include_deleted=True,
+        )
+        if row is None:
+            raise ConversationOwnershipError("Conversation not found.")
+        if row.status == "deleted":
+            raise ConversationDeletedError("Conversation has been reset or deleted.")
+        if row.origin != "workspace":
+            row.origin = "workspace"
+            row.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(row)
+        return row
 
     def list_turns_for_conversation(self, *, conversation_id: str) -> list[AiTurn]:
         self._require_schema_ready()
@@ -381,6 +452,7 @@ class AiConversationRepository:
         expected_context_version: int | None = None,
         current_context_version: int | None = None,
         session_filters: dict[str, Any] | None = None,
+        retry_settings: dict[str, Any] | None = None,
         deadline_seconds: int = 15,
     ) -> tuple[AiTurn, bool]:
         """Claim an idempotent turn slot using compare-and-swap semantics.
@@ -506,6 +578,7 @@ class AiConversationRepository:
                 "request_fingerprint": request_fingerprint,
                 "scope_fingerprint": scope_fingerprint,
                 "eval_id": eval_id,
+                "retry_settings": retry_settings,
             },
             response_payload={},
             outcome="answer",
@@ -622,7 +695,7 @@ class AiConversationRepository:
         }
         if error_message is not None:
             update_fields[AiTurn.error_message] = str(error_message)[:500]
-        self.db.query(AiTurn).filter(
+        updated = self.db.query(AiTurn).filter(
             AiTurn.id == str(turn_id),
             AiTurn.claim_token == str(claim_token),
             AiTurn.status == "pending",
@@ -630,7 +703,7 @@ class AiConversationRepository:
             update_fields,
             synchronize_session=False,
         )
-        if conversation_id:
+        if updated and conversation_id:
             conv_updates: dict[Any, Any] = {AiConversation.updated_at: now_dt}
             if title_candidate:
                 conv_row = (

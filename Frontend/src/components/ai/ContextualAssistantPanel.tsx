@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
@@ -7,6 +7,8 @@ import {
   ClipboardCheck,
   Compass,
   HelpCircle,
+  History,
+  Loader2,
   MessageSquare,
   RefreshCw,
   RotateCcw,
@@ -14,6 +16,7 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
@@ -24,6 +27,9 @@ import { useUserRole } from '../../context/RoleContext';
 import type {
   AiChatMessage,
   AiChatResponsePayload,
+  AiConversationDetailResponse,
+  AiConversationListResponse,
+  AiConversationSummaryItem,
   AiCorrectiveActionConfirmRequest,
   AiCorrectiveActionConfirmResponse,
   AiCorrectiveActionProposal,
@@ -183,6 +189,7 @@ export function ContextualAssistantPanel({
   const { role } = useUserRole();
   const { currentUser } = useAuth();
   const { enabled: aiEnabled } = useAiAvailability();
+  const navigate = useNavigate();
   const pilotVisible = aiEnabled && isAdminRole(role);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState('');
@@ -192,6 +199,16 @@ export function ContextualAssistantPanel({
   const [reviewDraft, setReviewDraft] = useState<ActionReviewDraft | null>(null);
   const [savingAction, setSavingAction] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<AiConversationSummaryItem[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [promotingConvId, setPromotingConvId] = useState<string | null>(null);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
 
   const canCreateAction = useMemo(
     () => ['Admin', 'General Manager', 'Manager', 'Performance Team'].includes(role || ''),
@@ -223,6 +240,53 @@ export function ContextualAssistantPanel({
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
   const prevFingerprintRef = useRef(contextFingerprint);
+  const historyFetchSeqRef = useRef(0);
+  const deletedConvIdsRef = useRef<Set<string>>(new Set());
+  const confirmDeleteIdRef = useRef<string | null>(null);
+  confirmDeleteIdRef.current = confirmDeleteId;
+  const cancelDeleteBtnRef = useRef<HTMLButtonElement>(null);
+
+  const confirmDeleteConv = confirmDeleteId
+    ? historyItems.find((c) => c.conversation_id === confirmDeleteId) ?? {
+        conversation_id: confirmDeleteId,
+        title: null,
+      }
+    : null;
+
+  useEffect(() => {
+    if (!isOpen || !confirmDeleteId) return;
+    cancelDeleteBtnRef.current?.focus();
+  }, [isOpen, confirmDeleteId]);
+
+  const refreshPageAssistantHistory = useCallback(async () => {
+    const seq = ++historyFetchSeqRef.current;
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const res = await apiFetch<AiConversationListResponse>(
+        '/api/ai/conversations?origin=page_assistant',
+      );
+      if (seq !== historyFetchSeqRef.current) return;
+      const items = (Array.isArray(res?.conversations) ? res.conversations : []).filter(
+        (conv) => !deletedConvIdsRef.current.has(conv.conversation_id),
+      );
+      setHistoryItems(items);
+    } catch {
+      if (seq === historyFetchSeqRef.current) {
+        setHistoryError('Could not load recent page-assistant conversations.');
+      }
+    } finally {
+      if (seq === historyFetchSeqRef.current) {
+        setIsLoadingHistory(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && showHistory) {
+      void refreshPageAssistantHistory();
+    }
+  }, [isOpen, showHistory, refreshPageAssistantHistory]);
 
   // Cancel any in-flight request and reset active proposal review when context or user changes
   useEffect(() => {
@@ -251,6 +315,9 @@ export function ContextualAssistantPanel({
   );
 
   const handleNewChat = useCallback(() => {
+    if (confirmDeleteIdRef.current !== null) {
+      return;
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -261,8 +328,99 @@ export function ContextualAssistantPanel({
     setActiveProposalTurnId(null);
     setReviewDraft(null);
     setSaveError(null);
+    setPromoteError(null);
+    setDeleteError(null);
+    setShowHistory(false);
     setInput('');
   }, []);
+
+  const handleResumeConversation = useCallback(async (targetConvId: string) => {
+    if (confirmDeleteIdRef.current !== null) return;
+    setIsLoadingConversation(true);
+    setHistoryError(null);
+    setPromoteError(null);
+    try {
+      const res = await apiFetch<AiConversationDetailResponse>(
+        `/api/ai/conversations/${encodeURIComponent(targetConvId)}?origin=page_assistant`,
+      );
+      const detail = res?.data;
+      if (!detail?.conversation_id || detail.origin !== 'page_assistant') {
+        throw new Error('Conversation not found');
+      }
+      const hydrated: AssistantTurn[] = (detail.turns || []).map((t) => ({
+        id: t.turn_id,
+        prompt: t.user_prompt,
+        variationSeed: t.retry_settings?.variation_seed ?? 0,
+        response: t.response ?? null,
+        error:
+          t.status === 'failed' || t.status === 'pending'
+            ? t.error_message || 'Unable to complete the assistant request right now.'
+            : null,
+        loading: false,
+      }));
+      setConversationId(detail.conversation_id);
+      setTurns(hydrated);
+      setActiveProposalTurnId(null);
+      setReviewDraft(null);
+      setSaveError(null);
+      setShowHistory(false);
+    } catch {
+      setHistoryError('Could not load this conversation. Please try again.');
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  }, []);
+
+  const handleDeletePageAssistantConversation = useCallback(
+    async (targetConvId: string) => {
+      setDeletingConvId(targetConvId);
+      setDeleteError(null);
+      try {
+        await apiFetch(`/api/ai/conversations/${encodeURIComponent(targetConvId)}`, {
+          method: 'DELETE',
+        });
+        deletedConvIdsRef.current.add(targetConvId);
+        historyFetchSeqRef.current += 1;
+        setIsLoadingHistory(false);
+        setConfirmDeleteId(null);
+        setHistoryItems((prev) =>
+          prev.filter((conv) => conv.conversation_id !== targetConvId),
+        );
+        if (conversationId === targetConvId) {
+          setConversationId(null);
+          setTurns([]);
+          setActiveProposalTurnId(null);
+          setReviewDraft(null);
+        }
+      } catch {
+        setConfirmDeleteId(null);
+        setDeleteError('Could not delete this conversation. Please try again.');
+      } finally {
+        setDeletingConvId(null);
+      }
+    },
+    [conversationId],
+  );
+
+  const handleContinueInWorkspace = useCallback(
+    async (targetConvId: string) => {
+      if (!targetConvId || promotingConvId) return;
+      setPromotingConvId(targetConvId);
+      setPromoteError(null);
+      try {
+        await apiFetch(`/api/ai/conversations/${encodeURIComponent(targetConvId)}/promote`, {
+          method: 'POST',
+        });
+        setIsOpen(false);
+        navigate(`/ai?conversation=${encodeURIComponent(targetConvId)}`);
+      } catch {
+        setPromoteError('Could not open this conversation in PMS AI. Please try again.');
+      } finally {
+        setPromotingConvId(null);
+      }
+    },
+    [navigate, promotingConvId],
+  );
 
   const sendPrompt = useCallback(
     async (promptText: string, opts?: { variationSeed?: number }) => {
@@ -311,6 +469,7 @@ export function ContextualAssistantPanel({
             signal: controller.signal,
             body: JSON.stringify({
               prompt: trimmed,
+              origin: 'page_assistant',
               conversation_id: conversationId,
               client_request_id: turnId,
               answer_detail: 'brief',
@@ -487,13 +646,20 @@ export function ContextualAssistantPanel({
     [],
   );
 
-  // Keyboard Escape closes panel
+  // Keyboard Escape closes active sub-dialog first, then panel
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (activeProposalTurnId) {
+        if (confirmDeleteId) {
+          e.preventDefault();
+          if (deletingConvId !== confirmDeleteId) {
+            setConfirmDeleteId(null);
+          }
+        } else if (activeProposalTurnId) {
           cancelProposalReview();
+        } else if (showHistory) {
+          setShowHistory(false);
         } else {
           setIsOpen(false);
         }
@@ -501,7 +667,7 @@ export function ContextualAssistantPanel({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeProposalTurnId, cancelProposalReview, isOpen]);
+  }, [activeProposalTurnId, cancelProposalReview, confirmDeleteId, deletingConvId, isOpen, showHistory]);
 
   if (!pilotVisible) return null;
 
@@ -535,19 +701,37 @@ export function ContextualAssistantPanel({
         >
           {/* Header & Scope Banner */}
           <header className="border-b border-slate-200 bg-slate-900 px-4 py-3 text-white dark:border-slate-800">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 shrink-0 text-blue-400" aria-hidden="true" />
                 <h2 className="text-sm font-bold tracking-tight">PMS Contextual Assistant</h2>
               </div>
-              <div className="flex items-center gap-1.5">
-                {turns.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirmDeleteIdRef.current !== null) return;
+                    setShowHistory((prev) => !prev);
+                  }}
+                  aria-expanded={showHistory}
+                  aria-label={showHistory ? 'Hide recent assistant chats' : 'Show recent assistant chats'}
+                  data-testid="contextual-assistant-history-toggle"
+                  className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
+                    showHistory
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  }`}
+                >
+                  <History className="size-3" />
+                  <span>Recent</span>
+                </button>
+                {(turns.length > 0 || conversationId !== null) && (
                   <button
                     type="button"
                     onClick={handleNewChat}
                     data-testid="contextual-assistant-new-chat"
                     aria-label="Start new chat"
-                    className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
                   >
                     <RotateCcw className="size-3" />
                     <span>New chat</span>
@@ -577,6 +761,32 @@ export function ContextualAssistantPanel({
             >
               {effectiveContextLabel}
             </p>
+            {conversationId && !showHistory && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white/10 px-2.5 py-1.5">
+                <span className="text-xs font-medium text-slate-200">
+                  Saved in page assistant
+                </span>
+                <button
+                  type="button"
+                  disabled={promotingConvId === conversationId}
+                  data-testid="contextual-assistant-continue-workspace"
+                  onClick={() => void handleContinueInWorkspace(conversationId)}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {promotingConvId === conversationId ? (
+                    <>
+                      <Loader2 className="size-3 animate-spin" />
+                      <span>Opening…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Continue in PMS AI</span>
+                      <ArrowRight className="size-3" />
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </header>
 
           {/* Fallback Sample Data Warning */}
@@ -594,8 +804,174 @@ export function ContextualAssistantPanel({
             </div>
           )}
 
-          {/* Conversation Body */}
+          {promoteError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-800"
+            >
+              <span>{promoteError}</span>
+              <button
+                type="button"
+                aria-label="Dismiss error"
+                onClick={() => setPromoteError(null)}
+                className="rounded p-0.5 text-rose-700 hover:bg-rose-100"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Conversation / Recent History Body */}
           <div className="flex-1 space-y-3 overflow-y-auto p-3.5">
+            {showHistory ? (
+              <div data-testid="contextual-assistant-history-view" className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                      Recent page-assistant chats ({historyItems.length})
+                    </h3>
+                    <p className="text-xs font-medium text-slate-500">
+                      Resume here or promote to Full PMS AI
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory(false)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  >
+                    Back to chat
+                  </button>
+                </div>
+
+                {deleteError && (
+                  <div
+                    role="alert"
+                    data-testid="contextual-assistant-delete-error"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+                  >
+                    <span>{deleteError}</span>
+                    <button
+                      type="button"
+                      aria-label="Dismiss delete error"
+                      onClick={() => setDeleteError(null)}
+                      className="rounded p-0.5 text-rose-700 hover:bg-rose-100"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                )}
+
+                {isLoadingHistory && historyItems.length === 0 ? (
+                  <div className="space-y-2" aria-label="Loading recent page-assistant chats">
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                  </div>
+                ) : historyError && historyItems.length === 0 ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-center text-xs text-rose-800"
+                  >
+                    <p className="font-semibold">{historyError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void refreshPageAssistantHistory()}
+                      className="mt-2 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-white px-3 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                    >
+                      <RotateCcw className="size-3" />
+                      <span>Retry</span>
+                    </button>
+                  </div>
+                ) : historyItems.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                    No saved page-assistant conversations yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {historyError && (
+                      <div
+                        role="alert"
+                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+                      >
+                        {historyError}
+                      </div>
+                    )}
+                    {historyItems.map((conv) => {
+                      const isActive = conversationId === conv.conversation_id;
+                      const isPromoting = promotingConvId === conv.conversation_id;
+                      return (
+                        <div
+                          key={conv.conversation_id}
+                          data-testid={`contextual-assistant-history-item-${conv.conversation_id}`}
+                          className={`space-y-2 rounded-xl border p-2.5 transition-colors ${
+                            isActive
+                              ? 'border-blue-300 bg-blue-50/70'
+                              : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <button
+                              type="button"
+                              disabled={isLoadingConversation}
+                              onClick={() => void handleResumeConversation(conv.conversation_id)}
+                              className="min-w-0 flex-1 cursor-pointer text-left disabled:opacity-60"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <p className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
+                                  {conv.title || 'New conversation'}
+                                </p>
+                                {isActive && (
+                                  <span className="shrink-0 rounded-full border border-blue-200 bg-blue-100 px-1.5 py-0.5 text-xs font-bold text-blue-700">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 truncate text-xs text-slate-500">
+                                {conv.turn_count} {conv.turn_count === 1 ? 'turn' : 'turns'}
+                                {conv.last_scope_banner ? ` · ${conv.last_scope_banner}` : ''}
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Delete conversation ${conv.title || conv.conversation_id}`}
+                              onClick={() => {
+                                setDeleteError(null);
+                                setConfirmDeleteId(conv.conversation_id);
+                              }}
+                              className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-end">
+                            <button
+                              type="button"
+                              disabled={isPromoting}
+                              data-testid={`contextual-assistant-promote-${conv.conversation_id}`}
+                              onClick={() => void handleContinueInWorkspace(conv.conversation_id)}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 transition hover:bg-blue-600 hover:text-white disabled:opacity-50"
+                            >
+                              {isPromoting ? (
+                                <>
+                                  <Loader2 className="size-3 animate-spin" />
+                                  <span>Opening…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>Continue in PMS AI</span>
+                                  <ArrowRight className="size-3" />
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
             {turns.length === 0 && (
               <div className="space-y-2.5">
                 <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -1070,35 +1446,103 @@ export function ContextualAssistantPanel({
                 </div>
               );
             })}
+              </>
+            )}
           </div>
 
           {/* Input Footer */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              sendPrompt(input);
-            }}
-            className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900"
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about this page, KPIs, or next steps…"
-              aria-label="Ask PMS Contextual Assistant"
-              data-testid="contextual-assistant-input"
-              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              aria-label="Send question"
-              data-testid="contextual-assistant-send"
-              className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          {!showHistory && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendPrompt(input);
+              }}
+              className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900"
             >
-              <Send className="size-3.5" />
-            </button>
-          </form>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about this page, KPIs, or next steps…"
+                aria-label="Ask PMS Contextual Assistant"
+                data-testid="contextual-assistant-input"
+                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                aria-label="Send question"
+                data-testid="contextual-assistant-send"
+                className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Send className="size-3.5" />
+              </button>
+            </form>
+          )}
+
+          {confirmDeleteConv && (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[1px]"
+              onClick={(e) => {
+                if (
+                  e.target === e.currentTarget &&
+                  deletingConvId !== confirmDeleteConv.conversation_id
+                ) {
+                  setConfirmDeleteId(null);
+                }
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ctx-delete-conv-dialog-title"
+                aria-describedby="ctx-delete-conv-dialog-desc"
+                data-testid="contextual-assistant-delete-dialog"
+                className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+              >
+                <h3
+                  id="ctx-delete-conv-dialog-title"
+                  className="text-sm font-extrabold text-slate-900 dark:text-slate-100"
+                >
+                  Delete "{confirmDeleteConv.title || 'New conversation'}"?
+                </h3>
+                <p
+                  id="ctx-delete-conv-dialog-desc"
+                  className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300"
+                >
+                  This permanently removes this saved page-assistant conversation.
+                </p>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    ref={cancelDeleteBtnRef}
+                    type="button"
+                    disabled={deletingConvId === confirmDeleteConv.conversation_id}
+                    onClick={() => setConfirmDeleteId(null)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletingConvId === confirmDeleteConv.conversation_id}
+                    onClick={() =>
+                      void handleDeletePageAssistantConversation(confirmDeleteConv.conversation_id)
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    {deletingConvId === confirmDeleteConv.conversation_id ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" />
+                        <span>Deleting…</span>
+                      </>
+                    ) : (
+                      <span>Delete chat</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
     </div>

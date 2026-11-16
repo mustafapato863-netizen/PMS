@@ -33,12 +33,15 @@ export type TurnOutcomeType =
   | 'unsupported_request';
 
 export type ContextualCapabilityMode =
+  | 'greeting'
+  | 'capabilities_help'
   | 'page_help'
   | 'navigation'
   | 'performance_query'
   | 'clarification'
   | 'proposal'
-  | 'unsupported';
+  | 'unsupported'
+  | 'off_topic';
 
 export type FeedbackCategoryType =
   | 'wrong_data'
@@ -257,6 +260,7 @@ export interface AiChatMessage {
 
 export interface AiChatRequestPayload {
   prompt: string;
+  origin?: 'workspace' | 'page_assistant';
   session_state?: SessionFilterContext;
   page_context?: PageContextV1 | null;
   capability_hint?: 'auto' | 'page_help' | 'navigation' | 'performance_query' | 'proposal';
@@ -269,6 +273,8 @@ export interface AiChatRequestPayload {
   clarification_choice_id?: string | null;
   variation_seed?: number;
 }
+
+export type AiConversationOrigin = 'workspace' | 'page_assistant' | 'legacy';
 
 export interface AiBarItem {
   label: string;
@@ -472,6 +478,7 @@ export interface AiStarterPrompt {
 }
 
 export interface AiEligibleTeamItem {
+  regions?: string[];
   value: string;
   label: string;
   function: string;
@@ -585,6 +592,10 @@ export interface AiCorrectiveActionSuggestionDraft {
   focus_kpi_key: string;
   focus_kpi_name: string;
   action_type: CorrectiveActionDraftType;
+  action_choice?: string | null;
+  follow_up_interval?: string | null;
+  official_target_label?: string | null;
+  action_milestone_note?: string | null;
   measured_issue: string;
   measured_issue_source: 'pms_evidence';
   recommended_steps: string[];
@@ -605,8 +616,16 @@ export interface AiCorrectiveActionSuggestionPayload {
   model_version?: string | null;
   fallback_reason?: string | null;
   validation_errors?: string[];
+  repair_attempted?: boolean;
   context: AiCorrectiveActionSuggestionContext;
   focus_kpi_key?: string | null;
+  cohort_in_scope_count?: number | null;
+  cohort_measured_count?: number | null;
+  cohort_unmeasured_count?: number | null;
+  cohort_below_target_count?: number | null;
+  cohort_coverage_label?: string | null;
+  official_target_label?: string | null;
+  measured_actual_label?: string | null;
   measured_facts?: string[];
   evidence_limitations?: string[];
   supporting_kpis?: AiCorrectiveActionSuggestionKpiEvidence[];
@@ -615,6 +634,12 @@ export interface AiCorrectiveActionSuggestionPayload {
   trend_summary?: AiCorrectiveActionSuggestionTrendSummary | null;
   insufficient_evidence_reasons?: string[];
   draft?: AiCorrectiveActionSuggestionDraft | null;
+  evidence_next_step?: string | null;
+  evidence_next_step_label?: string | null;
+  evidence_next_step_role?: string | null;
+  evidence_next_step_follow_up?: string | null;
+  evidence_next_step_action_type?: CorrectiveActionDraftType | null;
+  evidence_next_step_source?: 'pms_evidence' | null;
   model_latency_ms?: number | null;
   read_only: true;
   requires_human_confirmation: true;
@@ -628,6 +653,7 @@ export interface AiCorrectiveActionSuggestionResponse {
 
 export interface AiConversationSummaryItem {
   conversation_id: string;
+  origin?: AiConversationOrigin;
   title?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -652,8 +678,17 @@ export type AiConversationTurnStatus =
   | 'restricted'
   | 'superseded';
 
+export interface AiConversationRetrySettings {
+  session_state: SessionFilterContext;
+  clarification_choice_id?: string | null;
+  answer_detail?: 'auto' | 'brief' | 'details' | null;
+  variation_seed?: number | null;
+}
+
 export interface AiConversationTurnDetail {
   turn_id: string;
+  client_request_id?: string | null;
+  retry_settings?: AiConversationRetrySettings | null;
   turn_index: number;
   status: AiConversationTurnStatus;
   user_prompt: string;
@@ -667,6 +702,7 @@ export interface AiConversationTurnDetail {
 
 export interface AiConversationDetailPayload {
   conversation_id: string;
+  origin?: AiConversationOrigin;
   owner_user_id: string;
   title?: string | null;
   status: 'active' | 'archived' | 'deleted';

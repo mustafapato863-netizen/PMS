@@ -219,7 +219,7 @@ describe('PmsAiWorkspaceView', () => {
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
       }
-      if (path === '/api/ai/conversations') {
+      if (path.startsWith('/api/ai/conversations?')) {
         return { success: true, message: 'Loaded', conversations: [] };
       }
       if (path === '/api/ai/chat') {
@@ -668,7 +668,7 @@ describe('PmsAiWorkspaceView', () => {
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
       }
-      if (path === '/api/ai/conversations/conv-stale/context') {
+      if (path.startsWith('/api/ai/conversations/conv-stale/context')) {
         return {
           success: true,
           data: {
@@ -801,8 +801,8 @@ describe('PmsAiWorkspaceView', () => {
     const deptBtn = await screen.findByLabelText('Filter Department');
     expect(deptBtn).toBeInTheDocument();
 
-    // Both department and team filter dropdowns default to neutral "All authorized departments"
-    expect(screen.getAllByText('All authorized departments').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('All authorized departments')).toBeInTheDocument();
+    expect(screen.getByText('All authorized teams')).toBeInTheDocument();
 
     // Select Department: Operations
     fireEvent.click(deptBtn);
@@ -918,7 +918,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.queryByText(/Dubai|Sharjah|UAE|Ajman|Clinics/i)).not.toBeInTheDocument();
   });
 
-  it('lists Recent chats, cancels delete cleanly, and confirms delete with DELETE API', async () => {
+  it('lists Recent chats with accessible delete dialog, preserves pending delete on New click, handles failed delete, and confirms delete with DELETE API', async () => {
     const conversations = [
       {
         conversation_id: 'conv-a',
@@ -933,17 +933,41 @@ describe('PmsAiWorkspaceView', () => {
         context_version: 2,
       },
     ];
+    let shouldFailDelete = false;
     mockedApiFetch.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path === '/api/ai/conversations') {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return { success: true, message: 'Loaded', conversations: [] };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
         return { success: true, message: 'Loaded', conversations };
       }
       if (path === '/api/ai/conversations/conv-a' && init?.method === 'DELETE') {
+        if (shouldFailDelete) {
+          throw new Error('HTTP 500: Failed to delete');
+        }
         return { success: true, message: 'Deleted' };
+      }
+      if (path.startsWith('/api/ai/conversations/conv-a') && (!init?.method || init.method === 'GET')) {
+        return {
+          success: true,
+          message: 'Loaded',
+          data: {
+            conversation_id: 'conv-a',
+            owner_user_id: 'mgr-1',
+            title: 'Inbound bookings leader',
+            status: 'active',
+            context_version: 2,
+            confirmed_context: {},
+            pending_clarification: null,
+            has_restricted_turns: false,
+            turns: [],
+          },
+        };
       }
       return { success: true };
     });
 
-    renderWorkspace('/ai');
+    renderWorkspace('/ai?conversation=conv-a');
 
     const toggleBtn = screen.getByTestId('ai-history-toggle');
     fireEvent.click(toggleBtn);
@@ -951,22 +975,49 @@ describe('PmsAiWorkspaceView', () => {
     await waitFor(() => {
       expect(screen.getByTestId('ai-recent-chat-conv-a')).toBeInTheDocument();
     });
-    expect(screen.getByText('Inbound bookings leader')).toBeInTheDocument();
+    expect(screen.getByText('Recent chats (1)')).toBeInTheDocument();
+    expect(screen.getByText('Only the selected chat is active')).toBeInTheDocument();
+    expect(screen.getByTestId('ai-recent-chat-active-conv-a')).toHaveTextContent('Active');
 
-    // Cancel delete does not call DELETE
+    // Open accessible confirmation dialog; Cancel preserves chat and does not call DELETE
     fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
-    expect(screen.getByLabelText('Confirm delete conversation')).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Cancel delete conversation'));
-    expect(screen.queryByLabelText('Confirm delete conversation')).not.toBeInTheDocument();
+    const dialog = screen.getByTestId('ai-delete-confirm-dialog');
+    expect(dialog).toHaveAttribute('role', 'dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveTextContent('Delete "Inbound bookings leader"?');
+
+    // Clicking New while delete confirmation dialog is open MUST NOT dismiss confirmation
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(screen.getByTestId('ai-delete-confirm-dialog')).toBeInTheDocument();
+
+    // Pressing Escape closes ONLY the delete dialog, keeping the Recent chats drawer open
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('ai-delete-confirm-dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ai-recent-chats-panel')).toBeInTheDocument();
+
+    // Cancel button also closes cleanly without calling DELETE
+    fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('ai-delete-confirm-dialog')).not.toBeInTheDocument();
     expect(
       mockedApiFetch.mock.calls.filter(
         (c) => c[0] === '/api/ai/conversations/conv-a' && (c[1] as { method?: string })?.method === 'DELETE',
       ),
     ).toHaveLength(0);
 
-    // Confirm delete calls DELETE and removes row
+    // Failed delete retains item and shows accessible alert
+    shouldFailDelete = true;
     fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
-    fireEvent.click(screen.getByLabelText('Confirm delete conversation'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not delete this conversation');
+    });
+    expect(screen.getByTestId('ai-recent-chat-conv-a')).toBeInTheDocument();
+
+    // Confirm delete calls DELETE, removes row, and resets active chat to fresh draft
+    shouldFailDelete = false;
+    fireEvent.click(screen.getByLabelText('Delete conversation Inbound bookings leader'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
 
     await waitFor(() => {
       expect(mockedApiFetch).toHaveBeenCalledWith(
@@ -977,6 +1028,7 @@ describe('PmsAiWorkspaceView', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('ai-recent-chat-conv-a')).not.toBeInTheDocument();
     });
+    expect(screen.getByTestId('ai-session-draft-badge')).toHaveTextContent('New draft · fresh context');
   });
 
   it('resumes saved conversation from URL & sessionStorage, renders failed-turn Retry, and handles 404 safely', async () => {
@@ -1009,6 +1061,11 @@ describe('PmsAiWorkspaceView', () => {
           },
           {
             turn_id: 'turn-2',
+            client_request_id: 'original-retry-id',
+            retry_settings: {
+              session_state: { team: 'Inbound', month: 'August', year: 2026 },
+              answer_detail: 'details',
+            },
             turn_index: 2,
             status: 'failed',
             user_prompt: 'Why did it drop?',
@@ -1024,13 +1081,17 @@ describe('PmsAiWorkspaceView', () => {
     };
 
     mockedApiFetch.mockImplementation(async (path: string) => {
-      if (path === '/api/ai/conversations') {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return { success: true, message: 'Loaded', conversations: [] };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
         return {
           success: true,
           message: 'Loaded',
           conversations: [
             {
               conversation_id: 'conv-resume',
+              origin: 'workspace',
               title: 'Inbound score check',
               created_at: '2026-09-01T10:00:00Z',
               updated_at: '2026-09-01T10:02:00Z',
@@ -1044,11 +1105,14 @@ describe('PmsAiWorkspaceView', () => {
           ],
         };
       }
-      if (path === '/api/ai/conversations/conv-resume') {
+      if (path.startsWith('/api/ai/conversations/conv-resume')) {
         return convDetail;
       }
-      if (path === '/api/ai/conversations/conv-missing') {
+      if (path.startsWith('/api/ai/conversations/conv-missing')) {
         throw new Error('HTTP 404: Conversation not found.');
+      }
+      if (path === '/api/ai/chat') {
+        return { ...CHAT_RESPONSE, data: { ...CHAT_RESPONSE.data, conversation_id: 'conv-resume' } };
       }
       return { success: true };
     });
@@ -1069,6 +1133,16 @@ describe('PmsAiWorkspaceView', () => {
     await waitFor(() => {
       expect(screen.getByText('What is Inbound score in August?')).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      const retry = mockedApiFetch.mock.calls.find(([route]) => route === '/api/ai/chat');
+      expect(JSON.parse(String(retry?.[1]?.body))).toMatchObject({
+        client_request_id: 'original-retry-id',
+        conversation_id: 'conv-resume',
+        session_state: { team: 'Inbound', month: 'August', year: 2026 },
+        answer_detail: 'details',
+      });
+    });
     secondRender.unmount();
 
     // 3. Missing / unauthorized conversation -> non-leaking notice & fallback to empty draft
@@ -1076,7 +1150,7 @@ describe('PmsAiWorkspaceView', () => {
     renderWorkspace('/ai?conversation=conv-missing');
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveTextContent(
-        'That conversation is no longer available or outside your current permissions. Started a new chat.',
+        'This chat is not available in PMS AI. Open it from its original assistant or select it under Older chats.',
       );
     });
     expect(screen.getByText(/Hi Salma, how can I help\?/i)).toBeInTheDocument();
@@ -1084,13 +1158,17 @@ describe('PmsAiWorkspaceView', () => {
 
   it('renders restricted historical turns without leaking revoked scope or citations', async () => {
     mockedApiFetch.mockImplementation(async (path: string) => {
-      if (path === '/api/ai/conversations') {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return { success: true, message: 'Loaded', conversations: [] };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
         return {
           success: true,
           message: 'Loaded',
           conversations: [
             {
               conversation_id: 'conv-revoked',
+              origin: 'workspace',
               title: 'Restricted conversation',
               created_at: '2026-09-01T10:00:00Z',
               updated_at: '2026-09-01T10:05:00Z',
@@ -1104,7 +1182,7 @@ describe('PmsAiWorkspaceView', () => {
           ],
         };
       }
-      if (path === '/api/ai/conversations/conv-revoked') {
+      if (path.startsWith('/api/ai/conversations/conv-revoked')) {
         return {
           success: true,
           message: 'Loaded',
@@ -1168,14 +1246,14 @@ describe('PmsAiWorkspaceView', () => {
     let resolveChatA!: (value: unknown) => void;
     let chatASignal: AbortSignal | undefined;
 
-    mockedApiFetch.mockImplementation((path: string, init?: { body?: string; signal?: AbortSignal }) => {
-      if (path === '/api/ai/conversations') {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/ai/conversations?')) {
         return Promise.resolve({ success: true, message: 'Loaded', conversations: [] });
       }
       if (path === '/api/ai/chat') {
         const parsed = JSON.parse(String(init?.body || '{}'));
         if (parsed.prompt === 'Slow question in Chat A') {
-          chatASignal = init?.signal;
+          chatASignal = init?.signal ?? undefined;
           return new Promise((resolve) => {
             resolveChatA = resolve;
           });
@@ -1232,9 +1310,9 @@ describe('PmsAiWorkspaceView', () => {
 
     await waitFor(() => {
       const convListCalls = mockedApiFetch.mock.calls.filter(
-        (c) => c[0] === '/api/ai/conversations',
+        (c) => String(c[0]).startsWith('/api/ai/conversations?origin=workspace'),
       );
-      expect(convListCalls.length).toBeGreaterThanOrEqual(4);
+      expect(convListCalls.length).toBe(3);
     });
     expect(screen.getByText('Chat B completed cleanly.')).toBeInTheDocument();
     expect(screen.queryByText('Chat A resolved in background.')).not.toBeInTheDocument();
@@ -1242,7 +1320,10 @@ describe('PmsAiWorkspaceView', () => {
 
   it('renders conversation-first new-chat screen with <= 3 starters, Guardrails Info popover, mobile Filters toggle, and Escape-dismissible history drawer', async () => {
     mockedApiFetch.mockImplementation(async (path: string) => {
-      if (path === '/api/ai/conversations') {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return { success: true, message: 'OK', conversations: [] };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
         return {
           success: true,
           message: 'OK',
@@ -1303,6 +1384,282 @@ describe('PmsAiWorkspaceView', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByTestId('ai-recent-chats-panel')).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not inherit previous conversation confirmed context in New chat, sends origin=workspace, and clears Active badge on saved chats', async () => {
+    let chatTurn = 0;
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return { success: true, message: 'Loaded', conversations: [] };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: [
+            {
+              conversation_id: 'conv-prev',
+              origin: 'workspace',
+              title: 'Previous Inbound check',
+              turn_count: 1,
+              has_restricted_turns: false,
+              context_version: 2,
+            },
+          ],
+        };
+      }
+      if (path.startsWith('/api/ai/conversations/conv-prev')) {
+        return {
+          success: true,
+          message: 'Loaded',
+          data: {
+            conversation_id: 'conv-prev',
+            origin: 'workspace',
+            owner_user_id: 'mgr-1',
+            title: 'Previous Inbound check',
+            status: 'active',
+            context_version: 2,
+            confirmed_context: {
+              intent: 'ranking',
+              function: 'Call Center',
+              team: 'Inbound',
+              metric_id: 'inbound:booking_cr',
+              periods: ['2026-08'],
+            },
+            has_restricted_turns: false,
+            turns: [
+              {
+                turn_id: 't1',
+                turn_index: 1,
+                status: 'completed',
+                user_prompt: 'Who is top in Inbound?',
+                response: CHAT_RESPONSE.data,
+              },
+            ],
+          },
+        };
+      }
+      if (path === '/api/ai/chat') {
+        chatTurn += 1;
+        return {
+          ...CHAT_RESPONSE,
+          data: {
+            ...CHAT_RESPONSE.data,
+            conversation_id: `conv-new-${chatTurn}`,
+            headline: 'Fresh new chat response.',
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai?conversation=conv-prev');
+
+    await waitFor(() => {
+      expect(screen.getByText('Who is top in Inbound?')).toBeInTheDocument();
+    });
+
+    // Open Recent chats to verify Active badge is on conv-prev
+    fireEvent.click(screen.getByTestId('ai-history-toggle'));
+    expect(screen.getByTestId('ai-recent-chat-active-conv-prev')).toBeInTheDocument();
+
+    // Start New chat -> clears Active badge on saved items and resets lastConfirmedQuery to null
+    fireEvent.click(screen.getByTestId('ai-new-chat-btn'));
+    expect(screen.queryByTestId('ai-recent-chat-active-conv-prev')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ai-session-draft-badge')).toHaveTextContent('New draft · fresh context');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'What is Outbound score?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fresh new chat response.')).toBeInTheDocument();
+    });
+
+    const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+    expect(chatCalls).toHaveLength(1);
+    const body = JSON.parse(String(chatCalls[0][1]?.body || '{}'));
+    expect(body.origin).toBe('workspace');
+    expect(body.session_state.last_confirmed_query).toBeNull();
+  });
+
+  it('prevents a slow in-flight conversation list fetch started before DELETE from reinserting a deleted conversation', async () => {
+    let listCallCount = 0;
+    let resolveSlowRefresh!: (val: unknown) => void;
+    const convA = {
+      conversation_id: 'conv-a',
+      title: 'Slow race chat A',
+      turn_count: 1,
+      has_restricted_turns: false,
+      context_version: 1,
+    };
+    const convB = {
+      conversation_id: 'conv-b',
+      title: 'Retained chat B',
+      turn_count: 1,
+      has_restricted_turns: false,
+      context_version: 1,
+    };
+
+    mockedApiFetch.mockImplementation((path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return Promise.resolve({ success: true, message: 'Loaded', conversations: [] });
+      }
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
+        listCallCount += 1;
+        if (listCallCount === 1) {
+          return Promise.resolve({ success: true, message: 'Loaded', conversations: [convA, convB] });
+        }
+        // Second refresh (triggered by sending a chat turn) stays in flight while DELETE runs
+        return new Promise((resolve) => {
+          resolveSlowRefresh = resolve;
+        });
+      }
+      if (path === '/api/ai/conversations/conv-a' && init?.method === 'DELETE') {
+        return Promise.resolve({ success: true, message: 'Deleted' });
+      }
+      if (path === '/api/ai/chat') {
+        return Promise.resolve({
+          ...CHAT_RESPONSE,
+          data: {
+            ...CHAT_RESPONSE.data,
+            conversation_id: 'conv-b',
+            headline: 'Turn completed in conv-b.',
+          },
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    renderWorkspace('/ai');
+
+    fireEvent.click(screen.getByTestId('ai-history-toggle'));
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-recent-chat-conv-a')).toBeInTheDocument();
+    });
+
+    // Trigger a chat turn so refreshRecentConversations() starts a slow in-flight GET (call #2)
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'Check Outbound' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(listCallCount).toBe(2);
+    });
+
+    // While GET #2 is still in flight, delete conv-a
+    fireEvent.click(screen.getByLabelText('Delete conversation Slow race chat A'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete chat' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('ai-recent-chat-conv-a')).not.toBeInTheDocument();
+    });
+
+    // Now the stale in-flight GET #2 resolves with [convA, convB] -> convA must NOT reappear
+    resolveSlowRefresh({
+      success: true,
+      message: 'Loaded',
+      conversations: [convA, convB],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-recent-chat-conv-b')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('ai-recent-chat-conv-a')).not.toBeInTheDocument();
+  });
+
+  it('lists legacy chats in Older section and promotes on select or URL resume', async () => {
+    let promoted = false;
+    mockedApiFetch.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path.startsWith('/api/ai/conversations?origin=workspace')) {
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: promoted
+            ? [
+                {
+                  conversation_id: 'conv-legacy-1',
+                  origin: 'workspace',
+                  title: 'Pre-origin chat',
+                  turn_count: 1,
+                  has_restricted_turns: false,
+                  context_version: 1,
+                },
+              ]
+            : [],
+        };
+      }
+      if (path.startsWith('/api/ai/conversations?origin=legacy')) {
+        return {
+          success: true,
+          message: 'Loaded',
+          conversations: promoted
+            ? []
+            : [
+                {
+                  conversation_id: 'conv-legacy-1',
+                  origin: 'legacy',
+                  title: 'Pre-origin chat',
+                  turn_count: 1,
+                  has_restricted_turns: false,
+                  context_version: 1,
+                },
+              ],
+        };
+      }
+      if (path === '/api/ai/conversations/conv-legacy-1/promote' && init?.method === 'POST') {
+        promoted = true;
+        return {
+          success: true,
+          message: 'Promoted',
+          data: { conversation_id: 'conv-legacy-1', origin: 'workspace' },
+        };
+      }
+      if (path === '/api/ai/conversations/conv-legacy-1?origin=legacy') {
+        return {
+          success: true,
+          message: 'Loaded',
+          data: {
+            conversation_id: 'conv-legacy-1',
+            origin: 'legacy',
+            owner_user_id: 'mgr-1',
+            title: 'Pre-origin chat',
+            status: 'active',
+            context_version: 1,
+            confirmed_context: {},
+            has_restricted_turns: false,
+            turns: [
+              {
+                turn_id: 't-leg-1',
+                turn_index: 1,
+                status: 'completed',
+                user_prompt: 'Old workspace prompt',
+                response: CHAT_RESPONSE.data,
+              },
+            ],
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    fireEvent.click(screen.getByTestId('ai-history-toggle'));
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-legacy-chat-section')).toBeInTheDocument();
+      expect(screen.getByTestId('ai-recent-chat-conv-legacy-1')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Pre-origin chat'));
+    await waitFor(() => {
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        '/api/ai/conversations/conv-legacy-1/promote',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(screen.getByText('Old workspace prompt')).toBeInTheDocument();
+      expect(screen.queryByTestId('ai-legacy-chat-section')).not.toBeInTheDocument();
     });
   });
 });

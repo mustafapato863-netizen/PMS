@@ -667,6 +667,22 @@ export default function AiResponseCard({
 
   const isLiveSynthesis =
     response.provider_used === 'cloudflare' || response.provider_used === 'gemini';
+  const capabilityMode = response.capability_mode ?? 'performance_query';
+  const isPerformanceAnswer =
+    capabilityMode === 'performance_query' && response.outcome === 'answer';
+  const showScopeBanner = Boolean(
+    response.scope_banner && capabilityMode !== 'greeting' && capabilityMode !== 'off_topic',
+  );
+  const showCopyButton =
+    response.outcome === 'answer' &&
+    capabilityMode !== 'greeting' &&
+    capabilityMode !== 'off_topic';
+  const showHeaderMetaRow =
+    isPerformanceAnswer ||
+    showScopeBanner ||
+    Boolean(primarySourceLink) ||
+    showCopyButton ||
+    hasExpandableDetails;
 
   return (
     <div className="flex items-start gap-2.5">
@@ -686,95 +702,97 @@ export default function AiResponseCard({
         </p>
 
         {/* Compact Executive Scope Banner + Provenance + Primary Source Link + Actions */}
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {response.outcome === 'answer' && (
-              <span
-                data-testid="ai-provenance-badge"
-                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold ${
-                  isLiveSynthesis
-                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                }`}
-              >
-                {isLiveSynthesis ? 'Verified PMS · Live Synthesis' : 'Verified PMS · Deterministic'}
-              </span>
-            )}
-            {response.scope_banner && (
-              <span
-                data-testid="ai-scope-banner"
-                className="inline-flex items-center rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
-              >
-                {response.scope_banner}
-              </span>
-            )}
-            {primarySourceLink && (
-              <Link
-                to={primarySourceLink.route}
-                data-testid="ai-primary-source-link"
-                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/90 px-2.5 py-0.5 text-xs font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
-              >
-                <span>{primarySourceLink.label}</span>
-              </Link>
-            )}
-            {response.outcome === 'answer' && response.suggested_followups.length > 0 && (
-              <button
-                type="button"
-                data-testid="ai-primary-drilldown"
-                onClick={() => onSelectPrompt?.(response.suggested_followups[0])}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-              >
-                <span>Drill down: {response.suggested_followups[0]}</span>
-                <ArrowRight size={12} />
-              </button>
-            )}
-          </div>
+        {showHeaderMetaRow && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {isPerformanceAnswer && (
+                <span
+                  data-testid="ai-provenance-badge"
+                  className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold ${
+                    isLiveSynthesis
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {isLiveSynthesis ? 'Verified PMS · Live Synthesis' : 'Verified PMS · Deterministic'}
+                </span>
+              )}
+              {showScopeBanner && (
+                <span
+                  data-testid="ai-scope-banner"
+                  className="inline-flex items-center rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
+                >
+                  {response.scope_banner}
+                </span>
+              )}
+              {primarySourceLink && (
+                <Link
+                  to={primarySourceLink.route}
+                  data-testid="ai-primary-source-link"
+                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/90 px-2.5 py-0.5 text-xs font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+                >
+                  <span>{primarySourceLink.label}</span>
+                </Link>
+              )}
+              {isPerformanceAnswer && response.suggested_followups.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="ai-primary-drilldown"
+                  onClick={() => onSelectPrompt?.(response.suggested_followups[0])}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+                >
+                  <span>Drill down: {response.suggested_followups[0]}</span>
+                  <ArrowRight size={12} />
+                </button>
+              )}
+            </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {response.outcome === 'answer' && onRegenerateAngle && (
-              <button
-                type="button"
-                data-testid="ai-regenerate-angle-btn"
-                aria-label="Get a different reply angle"
-                disabled={isSending}
-                onClick={() => onRegenerateAngle((variationSeed ?? 0) + 1)}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
-              >
-                <RefreshCw size={12} />
-                <span>Different angle</span>
-              </button>
-            )}
-            {response.outcome === 'answer' && (
-              <button
-                type="button"
-                data-testid="ai-copy-summary-btn"
-                aria-label="Copy summary"
-                onClick={() => void handleCopySummary()}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-              >
-                {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                <span>{copied ? 'Copied' : 'Copy'}</span>
-              </button>
-            )}
-            {hasExpandableDetails && (
-              <button
-                type="button"
-                aria-expanded={detailsExpanded}
-                onClick={() =>
-                  setDetailsOverride({
-                    traceId: response.trace_id ?? '',
-                    answerDetail: response.answer_detail,
-                    expanded: !detailsExpanded,
-                  })
-                }
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-              >
-                <span>{detailsExpanded ? 'Hide details' : 'View details'}</span>
-                {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {isPerformanceAnswer && onRegenerateAngle && (
+                <button
+                  type="button"
+                  data-testid="ai-regenerate-angle-btn"
+                  aria-label="Get a different reply angle"
+                  disabled={isSending}
+                  onClick={() => onRegenerateAngle((variationSeed ?? 0) + 1)}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
+                >
+                  <RefreshCw size={12} />
+                  <span>Different angle</span>
+                </button>
+              )}
+              {showCopyButton && (
+                <button
+                  type="button"
+                  data-testid="ai-copy-summary-btn"
+                  aria-label="Copy summary"
+                  onClick={() => void handleCopySummary()}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+                >
+                  {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                </button>
+              )}
+              {hasExpandableDetails && (
+                <button
+                  type="button"
+                  aria-expanded={detailsExpanded}
+                  onClick={() =>
+                    setDetailsOverride({
+                      traceId: response.trace_id ?? '',
+                      answerDetail: response.answer_detail,
+                      expanded: !detailsExpanded,
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+                >
+                  <span>{detailsExpanded ? 'Hide details' : 'View details'}</span>
+                  {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
         {visibleBullets.length > 0 && (
@@ -876,8 +894,32 @@ export default function AiResponseCard({
           </>
         )}
 
+        {/* Helpful Next-Step Chips for non-performance capability modes (greeting, help, navigation, off-topic) */}
+        {!isPerformanceAnswer &&
+          response.outcome !== 'clarification' &&
+          response.suggested_followups.length > 0 && (
+            <div
+              data-testid="ai-next-step-chips"
+              className="mt-2.5 flex flex-wrap items-center gap-1.5"
+            >
+              {response.suggested_followups.map((followup) => (
+                <button
+                  key={followup}
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => onSelectPrompt?.(followup)}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-slate-50/70 px-3 py-1 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+                >
+                  <span>{followup}</span>
+                  <ArrowRight size={12} className="shrink-0 text-blue-600" />
+                </button>
+              ))}
+            </div>
+          )}
+
         {/* Bottom Footer: Source Citation Pills + ✓/✕ Distillation Feedback */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+        {(response.citations.length > 0 || Boolean(response.trace_id)) && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
           <div className="flex flex-wrap items-center gap-1">
             {response.citations.map((pill) => (
               <span
@@ -943,6 +985,7 @@ export default function AiResponseCard({
             </div>
           )}
         </div>
+        )}
 
         {response.trace_id && showFlagForm && (
           <div

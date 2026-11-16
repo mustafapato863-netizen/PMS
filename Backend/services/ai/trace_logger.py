@@ -602,6 +602,12 @@ def _ensure_conversation_v2_columns(bind: Any) -> None:
                 conv_cols = {c["name"] for c in insp.get_columns("ai_conversations")}
                 if "title" not in conv_cols:
                     conn.execute(sa_text("ALTER TABLE ai_conversations ADD COLUMN title VARCHAR(200)"))
+                if "origin" not in conv_cols:
+                    conn.execute(
+                        sa_text(
+                            "ALTER TABLE ai_conversations ADD COLUMN origin VARCHAR(32) NOT NULL DEFAULT 'legacy'"
+                        )
+                    )
             if "ai_turns" in tables:
                 turn_cols = {c["name"] for c in insp.get_columns("ai_turns")}
                 if "user_prompt" not in turn_cols:
@@ -655,12 +661,19 @@ class TrainingTraceLogger:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def _collect_known_employee_names(self, extra_names: list[str] | None = None) -> list[str]:
+    def _collect_known_employee_names(
+        self,
+        extra_names: list[str] | None = None,
+        *,
+        skip_record_lookup: bool = False,
+    ) -> list[str]:
         names: set[str] = set()
         if extra_names:
             for n in extra_names:
                 if n and str(n).strip():
                     names.add(str(n).strip())
+        if skip_record_lookup:
+            return sorted(names, key=len, reverse=True)
         try:
             emp_rows = self.db.query(Employee.name).limit(2000).all()
             for (fn,) in emp_rows:
@@ -696,10 +709,13 @@ class TrainingTraceLogger:
         guardrail_triggered: bool,
         known_employee_names: list[str] | None = None,
         turn_id: str | None = None,
+        skip_record_lookup: bool = False,
     ) -> str:
         trace_uuid = uuid.uuid4()
         cfg = get_ai_runtime_config()
-        all_names = self._collect_known_employee_names(known_employee_names)
+        all_names = self._collect_known_employee_names(
+            known_employee_names, skip_record_lookup=skip_record_lookup
+        )
         name_tokens = _build_name_token_set(all_names)
 
         # Also harvest any employee names inside tool_digest or structured_response before sanitizing prompt

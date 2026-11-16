@@ -10,6 +10,7 @@ from config.database import release_read_transaction
 from models.ai_schemas import (
     AiChatRequest,
     AiChatResponsePayload,
+    AiClarificationPrompt,
     AiProviderUsageMetrics,
     AiToolCallRecord,
     AiTurnTimingBreakdown,
@@ -30,17 +31,22 @@ from services.ai.catalog import (
     ai_evidence_cache,
     check_scope_data_availability,
     evaluation_cache_identity,
+    function_for_team,
     get_ai_catalog,
 )
 from services.ai.claim_validator import ClaimFact, build_claim_ledger, validate_claims
 from services.ai.config import get_ai_runtime_config
 from services.ai.contextual_assistant import (
     apply_page_context_to_request,
+    build_capabilities_help_payload,
+    build_clarification_gate_payload,
     build_corrective_action_proposal_from_evidence,
     build_effective_context_label,
     build_navigation_payload,
+    build_off_topic_gate_payload,
     build_page_help_payload,
     detect_contextual_capability,
+    is_self_only,
     validate_page_context_scope,
 )
 from services.ai.conversation_service import AiConversationService
@@ -48,6 +54,7 @@ from services.ai.domain_policies import (
     build_call_center_guardrails,
     build_call_center_starter_prompts,
     extract_prompt_signals,
+    is_greeting_or_thanks_prompt,
     sanitize_untrusted_text,
 )
 from services.ai.entity_resolver import (
@@ -106,12 +113,151 @@ def _period_key_to_month_year(period_key: str) -> tuple[str | None, int | None]:
         return None, None
 
 
+def _extract_evidence_teams_and_functions(
+    *,
+    typed_evidence: list[TypedMetricEvidence] | None = None,
+    tool_digests: list[dict[str, Any]] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Collect distinct teams and functions actually present in executed evidence."""
+    teams: list[str] = []
+    functions: list[str] = []
+
+    def _add_team(raw_t: Any) -> None:
+        if not raw_t:
+            return
+        t = str(raw_t).strip()
+        if not t or t.casefold() in {"all", "all teams", "all authorized departments"}:
+            return
+        if t not in teams:
+            teams.append(t)
+        fn = function_for_team(t)
+        if fn and fn not in functions:
+            functions.append(fn)
+
+    def _add_fn(raw_f: Any) -> None:
+        if not raw_f:
+            return
+        f = str(raw_f).strip()
+        if not f or f.casefold() in {"all", "all functions", "all authorized departments"}:
+            return
+        if f not in functions:
+            functions.append(f)
+
+    for ev in typed_evidence or []:
+        _add_team(getattr(ev, "team", None))
+
+    for td in tool_digests or []:
+        if not isinstance(td, dict):
+            continue
+        _add_team(td.get("team"))
+        _add_fn(td.get("function"))
+        for t_item in td.get("teams") or []:
+            if isinstance(t_item, dict):
+                _add_team(t_item.get("team"))
+        sp = td.get("spotlight") or td.get("agent_spotlight")
+        if isinstance(sp, dict):
+            _add_team(sp.get("team"))
+        for list_key in ("ranked_employees", "top_agents", "bottom_agents"):
+            for emp in td.get(list_key) or []:
+                if isinstance(emp, dict):
+                    _add_team(emp.get("team"))
+
+    return teams, functions
+
+
 class PmsAiOrchestrator:
     """Coordinates zero-token 'AI is watching' alerts and multi-tool analytical chat turns."""
 
     def __init__(self, db: Session, scope: dict[str, Any]) -> None:
         self.db = db
         self.scope = scope
+
+    def _resolve_scope_banner_and_function(
+        self,
+        *,
+        session_state: SessionFilterContext,
+        typed_evidence: list[TypedMetricEvidence] | None = None,
+        tool_digests: list[dict[str, Any]] | None = None,
+        region: str | None = None,
+        branch_override: str | None = None,
+        month: str | None = None,
+        year: int | None = None,
+    ) -> tuple[str, str | None]:
+        """Compute accurate scope_banner and resolved function from live scope and evidence."""
+        ev_teams, ev_functions = _extract_evidence_teams_and_functions(
+            typed_evidence=typed_evidence,
+            tool_digests=tool_digests,
+        )
+        eff_team = (
+            session_state.team.strip()
+            if session_state.team and session_state.team.strip().casefold() not in {"all", ""}
+            else None
+        )
+        eff_fn = (
+            session_state.function.strip()
+            if session_state.function and session_state.function.strip().casefold() not in {"all", ""}
+            else None
+        )
+        if eff_team and not eff_fn:
+            eff_fn = function_for_team(eff_team)
+        elif not eff_fn and len(ev_functions) == 1:
+            eff_fn = ev_functions[0]
+
+        if eff_team:
+            scope_team_or_fn = eff_team
+        elif len(ev_teams) == 1:
+            scope_team_or_fn = ev_teams[0]
+        elif eff_fn:
+            scope_team_or_fn = eff_fn
+        elif len(ev_functions) == 1:
+            scope_team_or_fn = ev_functions[0]
+        elif is_self_only(self.scope):
+            scope_team_or_fn = "My Scope"
+        else:
+            role = str(self.scope.get("role") or "").strip()
+            is_unrestricted = bool(self.scope.get("has_unrestricted_team_access")) or role in {
+                "Admin",
+                "General Manager",
+                "Performance Team",
+                "Viewer",
+            }
+            acc_teams = [str(t).strip() for t in (self.scope.get("accessible_teams") or []) if str(t).strip()]
+            acc_fns = [str(f).strip() for f in (self.scope.get("accessible_functions") or []) if str(f).strip()]
+            if not is_unrestricted and len(acc_teams) == 1:
+                scope_team_or_fn = acc_teams[0]
+                if not eff_fn:
+                    eff_fn = function_for_team(acc_teams[0])
+            elif not is_unrestricted and len(acc_fns) == 1:
+                scope_team_or_fn = acc_fns[0]
+                if not eff_fn:
+                    eff_fn = acc_fns[0]
+            else:
+                scope_team_or_fn = "All Authorized Departments"
+
+        if session_state.position and session_state.position.strip().casefold() not in {"all", ""}:
+            scope_team_or_fn = f"{scope_team_or_fn} ({session_state.position.strip()})"
+
+        if branch_override:
+            scope_branch = branch_override
+        else:
+            scope_branch = (
+                session_state.branch.capitalize()
+                if session_state.branch and session_state.branch.casefold() != "all"
+                else "All Branches"
+            )
+            eff_region = region or session_state.region
+            if eff_region and eff_region.strip().casefold() not in {"all", ""} and scope_branch == "All Branches":
+                scope_branch = f"All Branches ({eff_region.strip().upper()})"
+
+        scope_level = session_state.performance_level or "Employee"
+        eff_month = month if month is not None else session_state.month
+        eff_year = year if year is not None else session_state.year
+        scope_period = (
+            f"{eff_month} {eff_year}"
+            if eff_month and eff_year
+            else (eff_month or "Latest Period")
+        )
+        return f"{scope_branch} · {scope_team_or_fn} · {scope_level} · {scope_period}", eff_fn
 
     def _get_published_periods_and_candidates(self) -> tuple[set[str], list[EmployeeHistoryCandidate]]:
         try:
@@ -152,7 +298,7 @@ class PmsAiOrchestrator:
                     branches_list.append(b)
         perf_lvl = p.performance_level if p.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
         scope_v2 = QueryScopeV2(
-            function=p.function or "Call Center",
+            function=p.function,
             team=p.team,
             position_group="Support Positions" if p.team == "Support Positions" else None,
             position=p.position,
@@ -257,7 +403,7 @@ class PmsAiOrchestrator:
                     operation_id=f"op_{idx}",
                     outcome="ok",
                     scope=QueryScopeV2(
-                        function=getattr(cat_def, "function", "Call Center") if cat_def else "Call Center",
+                        function=getattr(cat_def, "function", None) if cat_def else function_for_team(ev.team),
                         team=ev.team,
                         position=ev.position,
                         performance_level=perf_lvl,  # type: ignore[arg-type]
@@ -282,15 +428,15 @@ class PmsAiOrchestrator:
         for d in tool_digests:
             sp = d.get("spotlight") or d.get("agent_spotlight")
             if isinstance(sp, dict) and sp.get("entity_id"):
-                emp_team = str(sp.get("team") or "Call Center")
+                emp_team = str(sp.get("team") or "")
                 src_route = str(sp.get("source_route") or "")
                 envelope.append(
                     EvidenceItemV2(
                         operation_id="op_spotlight",
                         outcome="ok",
                         scope=QueryScopeV2(
-                            function="Call Center",
-                            team=emp_team,
+                            function=function_for_team(emp_team) if emp_team else None,
+                            team=emp_team or None,
                             position=sp.get("position"),
                             periods=[str(sp.get("period") or d.get("period") or "Latest Period")],
                             employee_id=str(sp.get("entity_id")),
@@ -533,11 +679,33 @@ class PmsAiOrchestrator:
                 conversation_id=req.conversation_id,
                 scope=self.scope,
                 initial_state=req.session_state,
+                origin=req.origin or "workspace",
             )
             active_conversation_id = conv_ctx.conversation_id
             claimed_context_version = int(conv_ctx.context_version)
             if req.session_state.last_confirmed_query is None and conv_ctx.confirmed_context is not None:
                 req.session_state.last_confirmed_query = conv_ctx.confirmed_context
+            elif req.session_state.last_confirmed_query is not None:
+                client_context = req.session_state.last_confirmed_query
+                saved_context = conv_ctx.confirmed_context
+                client_context.candidate_employees = (
+                    saved_context.candidate_employees
+                    if client_context.intent and all(
+                        getattr(client_context, field) == getattr(saved_context, field)
+                        for field in ("function", "team", "position", "region", "branch", "performance_level")
+                    )
+                    else []
+                )
+            release_read_transaction(self.db)
+            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(req)
+            is_gate_non_perf = capability_mode in (
+                "greeting",
+                "capabilities_help",
+                "page_help",
+                "navigation",
+                "clarification",
+                "off_topic",
+            )
             claimed_turn, replayed_payload = conv_service.claim_or_replay_turn(
                 conversation_id=active_conversation_id,
                 scope=self.scope,
@@ -548,6 +716,8 @@ class PmsAiOrchestrator:
                 answer_detail=req.answer_detail,
                 session_state=req.session_state,
                 variation_seed=req.variation_seed,
+                origin=req.origin or "workspace",
+                skip_record_lookup=is_gate_non_perf,
             )
             if replayed_payload is not None:
                 return AiChatResponsePayload.model_validate(replayed_payload)
@@ -558,20 +728,12 @@ class PmsAiOrchestrator:
                 _claim_state["claimed_turn"] = claimed_turn
                 _claim_state["claimed_token"] = claimed_token
                 _claim_state["active_conversation_id"] = active_conversation_id
+        else:
+            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(req)
 
-        is_greeting = bool(
-            re.fullmatch(
-                r"(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*",
-                lower_prompt.strip(),
-            )
-        )
-        is_social_thanks = bool(
-            re.fullmatch(
-                r"(?:thanks|thank you|thx|ty|many thanks|thanks a lot|thank you so much|got it,?\s*thanks|ok\s*thanks|okay\s*thanks|appreciate it|great,?\s*thanks|thanks,?\s*that was helpful|thank you,?\s*that was helpful)[\s!.,?]*",
-                lower_prompt.strip(),
-            )
-        )
-        if is_greeting or is_social_thanks:
+        social_kind = is_greeting_or_thanks_prompt(req.prompt)
+        if social_kind is not None or capability_mode == "greeting":
+            is_greeting = social_kind != "thanks"
             social_variant = resolve_variation_index(req.prompt, req.history, req.variation_seed)
             if is_greeting:
                 social_headline = (
@@ -585,11 +747,19 @@ class PmsAiOrchestrator:
                     "You're very welcome! Feel free to ask if you'd like to drill into another KPI or team.",
                     "You're welcome! Happy to help whenever you want to review another metric or branch.",
                 )[social_variant]
+            social_scope_banner, social_fn = self._resolve_scope_banner_and_function(
+                session_state=req.session_state,
+            )
+            social_session_state = (
+                req.session_state.model_copy(update={"function": social_fn})
+                if social_fn != req.session_state.function
+                else req.session_state
+            )
             social_plan_v2 = ValidatedQueryPlanV2(
                 turn_kind="social",
                 scope=QueryScopeV2(
-                    function=req.session_state.function or "Call Center",
-                    team=req.session_state.team,
+                    function=social_fn,
+                    team=social_session_state.team,
                 ),
                 operations=[
                     QueryOperationV2(
@@ -597,18 +767,30 @@ class PmsAiOrchestrator:
                         kind="greeting" if is_greeting else "thanks",
                     )
                 ],
+                resolution_source="local_model_router" if cap_source == "local_model_router" else "local_rules",
             )
             social_resp = AiChatResponsePayload(
                 trace_id="",
                 conversation_id=active_conversation_id,
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
                 context_version=active_context_version,
+                outcome="answer",
                 answer_detail="brief",
                 headline=social_headline,
                 suggested_followups=[],
-                resolved_session_state=req.session_state,
+                resolved_session_state=social_session_state,
+                scope_banner=social_scope_banner,
                 validated_plan_v2=social_plan_v2,
                 evidence_envelope_v2=[],
+                tool_calls=[],
+                capability_mode="greeting",
+                provider_used=active_provider_name() if cap_source == "local_model_router" else "deterministic",
+                model_used=configured_model_name() if cap_source == "local_model_router" else "pms-deterministic-v1",
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used=cap_source if cap_source == "local_model_router" else "local_rules",
+                    provider_calls=1 if cap_source == "local_model_router" else 0,
+                ),
             )
             if conv_service and active_conversation_id and claimed_turn:
                 payload_for_store = social_resp.model_dump()
@@ -622,13 +804,13 @@ class PmsAiOrchestrator:
                     scope=self.scope,
                     outcome="answer",
                     turn_kind="social",
-                    route_used="local_rules",
+                    route_used=cap_source if cap_source == "local_model_router" else "local_rules",
                     validated_plan=social_plan_v2.model_dump(),
                     evidence_envelope=[],
                     response_payload=payload_for_store,
-                    session_state=req.session_state,
+                    session_state=social_session_state,
                     confirmed_context=req.session_state.last_confirmed_query,
-                    provider_calls=0,
+                    provider_calls=1 if cap_source == "local_model_router" else 0,
                     total_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                 )
                 social_resp.context_version = new_ver
@@ -637,6 +819,9 @@ class PmsAiOrchestrator:
             page_context=req.page_context,
             session_state=req.session_state,
             selected_metric_display=selected_metric_display,
+        )
+        initial_scope_banner, initial_fn = self._resolve_scope_banner_and_function(
+            session_state=req.session_state,
         )
         if not page_ctx_ok:
             restr_resp = AiChatResponsePayload(
@@ -650,7 +835,7 @@ class PmsAiOrchestrator:
                 narrative_bullets=[page_restr_b] if page_restr_b else [],
                 suggested_followups=["Show performance summary for my authorized scope"],
                 resolved_session_state=req.session_state,
-                scope_banner=eff_ctx_label_initial,
+                scope_banner=initial_scope_banner,
                 effective_context_label=eff_ctx_label_initial,
                 capability_mode="performance_query",
             )
@@ -678,7 +863,125 @@ class PmsAiOrchestrator:
                 restr_resp.context_version = new_ver
             return restr_resp
 
-        capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(req)
+        if capability_mode in ("capabilities_help", "clarification", "off_topic"):
+            gate_session_state = (
+                req.session_state.model_copy(update={"function": initial_fn})
+                if initial_fn != req.session_state.function
+                else req.session_state
+            )
+            if capability_mode == "capabilities_help":
+                g_head, g_bullets, g_followups = build_capabilities_help_payload(
+                    scope=self.scope,
+                    session_state=gate_session_state,
+                )
+                g_outcome = "answer"
+                g_turn_kind = "social"
+                g_clar = None
+            elif capability_mode == "clarification":
+                g_head, g_bullets, g_followups = build_clarification_gate_payload(
+                    scope=self.scope,
+                    session_state=gate_session_state,
+                )
+                g_outcome = "clarification"
+                g_turn_kind = "clarification"
+                g_clar = AiClarificationPrompt(
+                    code="AMBIGUOUS_TEAM_SCOPE",
+                    question=g_head,
+                    choices=[],
+                )
+            else:
+                g_head, g_bullets, g_followups = build_off_topic_gate_payload(
+                    scope=self.scope,
+                    session_state=gate_session_state,
+                )
+                g_outcome = "unsupported_request"
+                g_turn_kind = "unsupported"
+                g_clar = None
+
+            gate_plan_v2 = ValidatedQueryPlanV2(
+                turn_kind=g_turn_kind,  # type: ignore[arg-type]
+                scope=QueryScopeV2(
+                    function=gate_session_state.function,
+                    team=gate_session_state.team,
+                ),
+                operations=[],
+                clarification_code="AMBIGUOUS_TEAM_SCOPE" if capability_mode == "clarification" else "NONE",
+                resolution_source="local_model_router" if cap_source == "local_model_router" else "local_rules",
+            )
+            trace_id_gate = TrainingTraceLogger(self.db).record_turn(
+                user_id=str(self.scope.get("user_id") or ""),
+                role=role,
+                prompt=req.prompt,
+                session_state=gate_session_state,
+                tool_calls=[],
+                tool_digest={"capability_mode": capability_mode, "outcome": g_outcome},
+                structured_response={"headline": g_head, "narrative_bullets": g_bullets, "outcome": g_outcome},
+                provider_name=active_provider_name() if cap_source == "local_model_router" else "local",
+                model_name=configured_model_name() if cap_source == "local_model_router" else "intent-gate-v1",
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                non_empty_evidence=False,
+                guardrail_triggered=capability_mode == "off_topic",
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                skip_record_lookup=True,
+            )
+            tot_gate_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            gate_resp = AiChatResponsePayload(
+                trace_id=trace_id_gate,
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome=g_outcome,  # type: ignore[arg-type]
+                answer_detail="brief",
+                headline=g_head,
+                narrative_bullets=g_bullets,
+                suggested_followups=g_followups[:3],
+                resolved_session_state=gate_session_state,
+                scope_banner=initial_scope_banner,
+                effective_context_label=eff_ctx_label_initial,
+                clarification=g_clar,
+                validated_plan_v2=gate_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                tool_calls=[],
+                capability_mode=capability_mode,
+                provider_used=active_provider_name() if cap_source == "local_model_router" else "deterministic",
+                model_used=configured_model_name() if cap_source == "local_model_router" else "intent-gate-v1",
+                latency_ms=max(0, int(round(tot_gate_ms))),
+                timings=AiTurnTimingBreakdown(
+                    resolution_ms=round(cap_provider_ms, 2),
+                    provider_ms=round(cap_provider_ms, 2),
+                    total_ms=tot_gate_ms,
+                ),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used=cap_source,  # type: ignore[arg-type]
+                    provider_calls=1 if cap_source == "local_model_router" else 0,
+                ),
+            )
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = gate_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
+                new_ver = conv_service.complete_turn(
+                    conversation_id=active_conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
+                    scope=self.scope,
+                    outcome=g_outcome,
+                    turn_kind=g_turn_kind,
+                    route_used=cap_source,
+                    validated_plan=gate_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=payload_for_store,
+                    session_state=gate_session_state,
+                    confirmed_context=req.session_state.last_confirmed_query,
+                    provider_calls=1 if cap_source == "local_model_router" else 0,
+                    total_ms=tot_gate_ms,
+                )
+                gate_resp.context_version = new_ver
+            return gate_resp
+
         if capability_mode in ("page_help", "navigation"):
             if capability_mode == "page_help":
                 h_head, h_bullets, help_sec, nav_targets, h_followups, fb_warn = build_page_help_payload(
@@ -721,6 +1024,7 @@ class PmsAiOrchestrator:
                 non_empty_evidence=True,
                 guardrail_triggered=False,
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
+                skip_record_lookup=True,
             )
             tot_help_ms = round((time.perf_counter() - t0) * 1000.0, 2)
             help_resp = AiChatResponsePayload(
@@ -736,7 +1040,7 @@ class PmsAiOrchestrator:
                 primary_source_link=nav_links[0] if nav_links else None,
                 suggested_followups=h_followups,
                 resolved_session_state=req.session_state,
-                scope_banner=eff_ctx_label_initial,
+                scope_banner=initial_scope_banner,
                 effective_context_label=eff_ctx_label_initial,
                 capability_mode=capability_mode,
                 page_help=help_sec,
@@ -957,6 +1261,13 @@ class PmsAiOrchestrator:
                     session_state=res_state_exp,
                     selected_metric_display=selected_metric_display,
                 )
+                exp_scope_banner, exp_fn = self._resolve_scope_banner_and_function(
+                    session_state=res_state_exp,
+                    typed_evidence=explored.typed_evidence,
+                    tool_digests=explored.tool_digests,
+                )
+                if exp_fn != res_state_exp.function:
+                    res_state_exp = res_state_exp.model_copy(update={"function": exp_fn})
                 exp_resp = AiChatResponsePayload(
                     trace_id=trace_id_exp,
                     conversation_id=active_conversation_id,
@@ -972,7 +1283,7 @@ class PmsAiOrchestrator:
                     primary_source_link=explored.primary_source_link,
                     suggested_followups=explored.suggested_followups,
                     resolved_session_state=res_state_exp,
-                    scope_banner=eff_ctx_exp,
+                    scope_banner=exp_scope_banner,
                     effective_context_label=eff_ctx_exp,
                     clarification=explored.clarification,
                     structured_query=explored.structured_query,
@@ -1199,7 +1510,7 @@ class PmsAiOrchestrator:
                 else (req.session_state.month, req.session_state.year)
             )
             resolved_state = SessionFilterContext(
-                function=routed.plan.function or req.session_state.function or "Call Center",
+                function=routed.plan.function or req.session_state.function,
                 team=routed.plan.team or req.session_state.team,
                 position=routed.plan.position or req.session_state.position,
                 branch=routed.plan.branch or req.session_state.branch,
@@ -1210,21 +1521,12 @@ class PmsAiOrchestrator:
                 employee_id=routed.plan.employee_id or req.session_state.employee_id,
                 last_confirmed_query=routed.confirmed_context,
             )
-            scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
-            if resolved_state.position:
-                scope_team_or_fn = f"{scope_team_or_fn} ({resolved_state.position})"
-            scope_branch = (
-                resolved_state.branch.capitalize()
-                if resolved_state.branch and resolved_state.branch.casefold() != "all"
-                else "All Branches"
+            scope_banner, short_fn = self._resolve_scope_banner_and_function(
+                session_state=resolved_state,
+                region=routed.confirmed_context.region,
             )
-            scope_level = resolved_state.performance_level or "Employee"
-            scope_period = (
-                f"{resolved_state.month} {resolved_state.year}"
-                if resolved_state.month and resolved_state.year
-                else (resolved_state.month or "Latest Period")
-            )
-            scope_banner = f"{scope_branch} · {scope_team_or_fn} · {scope_level} · {scope_period}"
+            if short_fn != resolved_state.function:
+                resolved_state.function = short_fn
 
             t_trace_start = time.perf_counter()
             pre_trace_ms = int((t_trace_start - t0) * 1000)
@@ -1853,7 +2155,7 @@ class PmsAiOrchestrator:
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(
-            function=routed.plan.function or req.session_state.function or "Call Center",
+            function=routed.plan.function or req.session_state.function,
             team=signals.detected_team or req.session_state.team,
             position=routed.plan.position or req.session_state.position,
             branch=None if signals.asks_branch_comparison else (signals.detected_branch or req.session_state.branch),
@@ -1865,25 +2167,22 @@ class PmsAiOrchestrator:
             last_confirmed_query=routed.confirmed_context,
         )
 
-        scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
-        if resolved_state.position:
-            scope_team_or_fn = f"{scope_team_or_fn} ({resolved_state.position})"
-        scope_branch = (
-            resolved_state.branch.capitalize()
-            if resolved_state.branch and resolved_state.branch.casefold() != "all"
-            else "All Branches"
+        branch_override = (
+            " vs ".join(name for name, _ in booking_comparison_facts.counts)
+            if booking_comparison_facts is not None
+            else None
         )
-        if routed.confirmed_context.region and scope_branch == "All Branches":
-            scope_branch = f"All Branches ({routed.confirmed_context.region})"
-        if booking_comparison_facts is not None:
-            scope_branch = " vs ".join(name for name, _ in booking_comparison_facts.counts)
-        scope_level = resolved_state.performance_level or "Employee"
-        scope_period = (
-            f"{res_month} {res_year}"
-            if res_month and res_year
-            else (res_month or "Latest Period")
+        scope_banner, resolved_fn = self._resolve_scope_banner_and_function(
+            session_state=resolved_state,
+            typed_evidence=typed_evidence,
+            tool_digests=tool_digests,
+            region=routed.confirmed_context.region,
+            branch_override=branch_override,
+            month=res_month,
+            year=res_year,
         )
-        scope_banner = f"{scope_branch} · {scope_team_or_fn} · {scope_level} · {scope_period}"
+        if resolved_fn != resolved_state.function:
+            resolved_state.function = resolved_fn
 
         # Prefer a direct team/employee/BSC scorecard link as primary_source_link when available
         primary_link = None

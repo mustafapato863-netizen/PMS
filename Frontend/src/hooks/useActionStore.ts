@@ -21,6 +21,7 @@ interface BackendActionItem {
   employee_name?: string | null;
   team?: string | null;
   month?: string;
+  year?: number | null;
   manager_action?: string;
   manager_notes?: string;
   timestamp?: string;
@@ -154,6 +155,7 @@ export function mapBackendAction(item: BackendActionItem): PMSAction {
     employee_name: rawName.trim().toLowerCase() === 'nan' ? '' : rawName,
     team: item.team || '',
     month: item.month || '',
+    year: item.year,
     action_type: actionType,
     action_text: actionText,
     root_cause_note: item.manager_notes || '',

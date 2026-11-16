@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
@@ -11,10 +11,12 @@ from models.ai_schemas import (
     AiClarificationPrompt,
     AiConversationContextPayload,
     AiConversationDetailPayload,
+    AiConversationRetrySettings,
     AiConversationSummaryItem,
     AiConversationTurnDetail,
     ClarificationChoice,
     ConfirmedQueryContext,
+    ConversationOriginType,
     SessionFilterContext,
 )
 from models.models import AiConversation, AiTurn, User
@@ -23,6 +25,7 @@ from repositories.ai_conversation_repository import (
     ConversationAccessError,
     ConversationDeletedError,
     ConversationMigrationUnavailableError,
+    ConversationOriginMismatchError,
     ConversationOwnershipError,
     ConversationStaleContextError,
     ConversationVersionConflictError,
@@ -41,7 +44,6 @@ from utils.report_scope import (
     FUNCTION_SCOPED_ROLES,
     SELF_SCOPED_ROLES,
     filter_records_by_scope,
-    user_can_access_region,
     user_can_access_team,
     user_can_access_team_level,
 )
@@ -51,6 +53,7 @@ __all__ = [
     "ConversationAccessError",
     "ConversationDeletedError",
     "ConversationMigrationUnavailableError",
+    "ConversationOriginMismatchError",
     "ConversationOwnershipError",
     "ConversationStaleContextError",
     "ConversationVersionConflictError",
@@ -70,6 +73,9 @@ class AiConversationService:
         self.repo = AiConversationRepository(db)
         self.owner_user_id = str(self.scope.get("user_id") or "anonymous")
         self.owner_role = str(self.scope.get("role") or "Manager")
+        self._all_records_cache: list[Any] | None = None
+        self._all_emp_index_cache: tuple[set[str], set[str]] | None = None
+        self._scoped_emp_index_cache: dict[str, tuple[set[str], set[str]]] = {}
 
     def is_schema_ready(self) -> bool:
         return self.repo.is_schema_ready()
@@ -162,12 +168,16 @@ class AiConversationService:
         return True
 
     def _is_region_authorized(self, region_name: str | None, eff_scope: dict[str, Any]) -> bool:
-        if not region_name:
+        if not region_name or region_name.strip().casefold() == "all":
             return True
-        role = str(eff_scope.get("role") or "")
-        if role == "Regional Manager":
-            return user_can_access_region(eff_scope, str(region_name))
-        return True
+        allowed = {
+            str(region).strip().casefold()
+            for region in (eff_scope.get("accessible_regions") or eff_scope.get("allowed_regions") or [])
+            if str(region).strip()
+        }
+        if allowed:
+            return "all" in allowed or region_name.strip().casefold() in allowed
+        return eff_scope.get("role") != "Regional Manager"
 
     def _is_team_and_level_authorized(
         self,
@@ -208,6 +218,40 @@ class AiConversationService:
                         return False
         return True
 
+    @staticmethod
+    def _build_employee_index(records: list[Any]) -> tuple[set[str], set[str]]:
+        emp_ids: set[str] = set()
+        emp_names: set[str] = set()
+        for r in records:
+            rid = str(getattr(r, "employee_id", "") or "").strip().casefold()
+            if rid:
+                emp_ids.add(rid)
+            rname = str(getattr(r, "employee_name", "") or "").strip().casefold()
+            if rname:
+                emp_names.add(rname)
+        return emp_ids, emp_names
+
+    def _get_employee_auth_indexes(
+        self,
+        eff_scope: dict[str, Any],
+    ) -> tuple[set[str], set[str], set[str], set[str]]:
+        """Load and index employee IDs/names across full and scoped datasets at most once per request/scope."""
+        if self._all_records_cache is None or self._all_emp_index_cache is None:
+            all_recs = DashboardRecordService(self.db).list_analysis_records() or []
+            self._all_records_cache = all_recs
+            self._all_emp_index_cache = self._build_employee_index(all_recs)
+
+        scope_fp = compute_scope_fingerprint(eff_scope)
+        scoped_index = self._scoped_emp_index_cache.get(scope_fp)
+        if scoped_index is None:
+            scoped_recs = filter_records_by_scope(self._all_records_cache, eff_scope)
+            scoped_index = self._build_employee_index(scoped_recs)
+            self._scoped_emp_index_cache[scope_fp] = scoped_index
+
+        all_ids, all_names = self._all_emp_index_cache
+        scoped_ids, scoped_names = scoped_index
+        return all_ids, all_names, scoped_ids, scoped_names
+
     def _is_employee_authorized_for_scope(
         self,
         employee_id: str | None,
@@ -226,30 +270,32 @@ class AiConversationService:
             if employee_id and str(employee_id).strip().casefold() != caller_emp_id.casefold():
                 return False
 
+        # Unrestricted global roles and unrestricted Managers see all employee records in filter_records_by_scope,
+        # so employee-level scoping is always satisfied without reloading the entire performance table.
+        if not is_self_only and (
+            role in {"Admin", "General Manager", "Performance Team", "Viewer"}
+            or (role == "Manager" and bool(eff_scope.get("has_unrestricted_team_access")))
+            or bool(eff_scope.get("legacy_unscoped"))
+        ):
+            return True
+
         try:
-            all_recs = DashboardRecordService(self.db).list_analysis_records() or []
+            all_ids, all_names, scoped_ids, scoped_names = self._get_employee_auth_indexes(eff_scope)
         except Exception:
             return False
 
         emp_id_norm = str(employee_id or "").strip().casefold()
         emp_name_norm = str(employee_name or "").strip().casefold()
 
-        matching_all = [
-            r
-            for r in all_recs
-            if (emp_id_norm and str(getattr(r, "employee_id", "") or "").strip().casefold() == emp_id_norm)
-            or (emp_name_norm and str(getattr(r, "employee_name", "") or "").strip().casefold() == emp_name_norm)
-        ]
-        scoped_recs = filter_records_by_scope(all_recs, eff_scope)
-        matching_scoped = [
-            r
-            for r in scoped_recs
-            if (emp_id_norm and str(getattr(r, "employee_id", "") or "").strip().casefold() == emp_id_norm)
-            or (emp_name_norm and str(getattr(r, "employee_name", "") or "").strip().casefold() == emp_name_norm)
-        ]
-
-        if matching_all:
-            return len(matching_scoped) > 0
+        has_any_match = bool(
+            (emp_id_norm and emp_id_norm in all_ids)
+            or (emp_name_norm and emp_name_norm in all_names)
+        )
+        if has_any_match:
+            return bool(
+                (emp_id_norm and emp_id_norm in scoped_ids)
+                or (emp_name_norm and emp_name_norm in scoped_names)
+            )
 
         # If no records exist in the dataset for this employee at all:
         if is_self_only:
@@ -451,6 +497,26 @@ class AiConversationService:
         ):
             return False
 
+        clarification = resp.get("clarification")
+        choices = (clarification.get("choices") or []) if isinstance(clarification, dict) else []
+        for person in [
+            *(lcq.get("candidate_employees") or []),
+            *(lcq.get("pending_clarification_choices") or []),
+            *choices,
+        ]:
+            if not isinstance(person, dict):
+                continue
+            person_id = person.get("employee_id")
+            if not self.is_plan_and_context_authorized(
+                scope=eff_scope,
+                team=person.get("team"),
+                performance_level=person.get("performance_level"),
+                branch=person.get("branch"),
+                region=eff_region,
+                employee_id=str(person_id) if person_id else None,
+            ):
+                return False
+
         # Also validate every evidence item in evidence_summary and response_payload
         ev_sum = turn_row.evidence_summary if isinstance(turn_row.evidence_summary, dict) else {}
         ev_items = list(ev_sum.get("items") or []) + list(resp.get("evidence_envelope_v2") or [])
@@ -504,6 +570,18 @@ class AiConversationService:
         payload = self._row_to_payload(row)
         mutated = False
         cc = payload.confirmed_context
+        candidate_scope_allowed = (
+            self._is_region_authorized(cc.region, eff_scope)
+            and self.is_plan_and_context_authorized(
+                scope=eff_scope,
+                function=cc.function,
+                team=cc.team,
+                region=cc.region,
+                performance_level=cc.performance_level,
+                branch=cc.branch,
+                branches=cc.branches,
+            )
+        )
 
         # 1. Reauthorize confirmed function, team, performance_level, branch, branches
         if cc.function and not self._is_function_authorized(cc.function, eff_scope):
@@ -536,6 +614,10 @@ class AiConversationService:
                 cc.branches = auth_branches
                 mutated = True
 
+        if cc.region and not self._is_region_authorized(cc.region, eff_scope):
+            cc.region = None
+            mutated = True
+
         # 2. Reauthorize saved person (last_subject_employee_id / last_subject_employee_name)
         emp_id = payload.last_subject_employee_id or cc.last_subject_employee_id
         emp_name = payload.last_subject_employee_name or cc.last_subject_employee_name
@@ -551,7 +633,25 @@ class AiConversationService:
                     cc.last_operation_kind = None
                 mutated = True
 
-        # 3. Reauthorize pending clarification choices &confirmed_context pending_clarification_choices
+        if cc.candidate_employees:
+            authorized_candidates = [
+                candidate for candidate in cc.candidate_employees
+                if candidate_scope_allowed and candidate.get("employee_id")
+                and self._is_team_and_level_authorized(
+                    candidate.get("team") or cc.team,
+                    candidate.get("performance_level") or cc.performance_level,
+                    eff_scope,
+                    region=cc.region,
+                )
+                and self._is_employee_authorized_for_scope(
+                    candidate["employee_id"], None, eff_scope
+                )
+            ]
+            if len(authorized_candidates) != len(cc.candidate_employees):
+                cc.candidate_employees = authorized_candidates
+                mutated = True
+
+        # Reauthorize pending clarification choices.
         def _choice_authorized(ch: ClarificationChoice) -> bool:
             if ch.team and not self._is_team_and_level_authorized(ch.team, ch.performance_level, eff_scope, region=cc.region):
                 return False
@@ -611,7 +711,14 @@ class AiConversationService:
         return payload
 
     @staticmethod
-    def _row_to_payload(row: AiConversation) -> AiConversationContextPayload:
+    def _normalize_row_origin(row: AiConversation) -> ConversationOriginType:
+        raw_origin = str(getattr(row, "origin", None) or "legacy").strip()
+        if raw_origin in ("workspace", "page_assistant", "legacy"):
+            return raw_origin  # type: ignore[return-value]
+        return "legacy"
+
+    @classmethod
+    def _row_to_payload(cls, row: AiConversation) -> AiConversationContextPayload:
         confirmed_dict = dict(row.confirmed_context or {})
         try:
             confirmed = ConfirmedQueryContext(**confirmed_dict) if confirmed_dict else ConfirmedQueryContext()
@@ -625,9 +732,11 @@ class AiConversationService:
             except Exception:
                 pending_clar = None
 
+        safe_origin = cls._normalize_row_origin(row)
         return AiConversationContextPayload(
             conversation_id=str(row.id),
             owner_user_id=str(row.owner_user_id),
+            origin=safe_origin,
             status=str(row.status or "active"),  # type: ignore[arg-type]
             context_version=int(row.context_version or 1),
             confirmed_context=confirmed,
@@ -645,6 +754,7 @@ class AiConversationService:
         scope: dict[str, Any] | None = None,
         session_state: SessionFilterContext | None = None,
         initial_state: SessionFilterContext | None = None,
+        origin: ConversationOriginType = "workspace",
     ) -> AiConversationContextPayload:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, owner_role = self._resolve_owner(eff_scope)
@@ -665,6 +775,7 @@ class AiConversationService:
             owner_user_id=owner_id,
             owner_role=owner_role,
             initial_confirmed_context=initial_ctx,
+            origin=origin,
         )
         return self.sanitize_context_for_scope(row, eff_scope)
 
@@ -673,6 +784,7 @@ class AiConversationService:
         conversation_id: str,
         *,
         scope: dict[str, Any] | None = None,
+        expected_origin: ConversationOriginType | None = None,
     ) -> AiConversationContextPayload | None:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, _ = self._resolve_owner(eff_scope)
@@ -683,6 +795,10 @@ class AiConversationService:
         )
         if row is None:
             return None
+        if expected_origin is not None and self._normalize_row_origin(row) != expected_origin:
+            raise ConversationOriginMismatchError(
+                "This conversation belongs to a different assistant surface."
+            )
         return self.sanitize_context_for_scope(row, eff_scope)
 
     def get_context(
@@ -691,6 +807,7 @@ class AiConversationService:
         conversation_id: str | None = None,
         scope: dict[str, Any] | None = None,
         initial_state: SessionFilterContext | None = None,
+        origin: ConversationOriginType = "workspace",
     ) -> AiConversationContextPayload:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, owner_role = self._resolve_owner(eff_scope)
@@ -711,6 +828,7 @@ class AiConversationService:
             owner_user_id=owner_id,
             owner_role=owner_role,
             initial_confirmed_context=initial_ctx,
+            origin=origin,
         )
         return self.sanitize_context_for_scope(row, eff_scope)
 
@@ -728,6 +846,8 @@ class AiConversationService:
         known_employee_names: list[str] | None = None,
         eval_id: str | None = None,
         variation_seed: int | None = None,
+        origin: ConversationOriginType = "workspace",
+        skip_record_lookup: bool = False,
     ) -> tuple[AiTurn, dict[str, Any] | None]:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, owner_role = self._resolve_owner(eff_scope)
@@ -735,6 +855,7 @@ class AiConversationService:
             conversation_id=conversation_id,
             owner_user_id=owner_id,
             owner_role=owner_role,
+            origin=origin,
         )
         eff_req_id = str(client_request_id or uuid.uuid4())
         session_filters = session_state.model_dump() if session_state is not None else {}
@@ -756,7 +877,9 @@ class AiConversationService:
             )
         )
         redacted_prompt = sanitize_prompt_for_router_training(
-            prompt, known_employee_names=known_employee_names, db=self.db
+            prompt,
+            known_employee_names=known_employee_names,
+            db=None if skip_record_lookup else self.db,
         )
         clean_user_prompt = redact_secrets(prompt)
 
@@ -771,6 +894,12 @@ class AiConversationService:
             expected_context_version=expected_context_version,
             current_context_version=int(conv.context_version),
             session_filters=session_filters,
+            retry_settings={
+                "session_state": {key: value for key, value in session_filters.items() if key != "last_confirmed_query"},
+                "clarification_choice_id": clarification_choice_id,
+                "answer_detail": answer_detail,
+                "variation_seed": variation_seed,
+            },
         )
         if is_completed and turn_row.response_payload:
             if self._is_turn_evidence_authorized(turn_row, eff_scope):
@@ -884,10 +1013,11 @@ class AiConversationService:
         *,
         scope: dict[str, Any] | None = None,
         limit: int = 30,
+        origin: Literal["workspace", "page_assistant", "legacy", "all"] | None = "workspace",
     ) -> list[AiConversationSummaryItem]:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, _ = self._resolve_owner(eff_scope)
-        rows = self.repo.list_owned_conversations(owner_user_id=owner_id, limit=limit)
+        rows = self.repo.list_owned_conversations(owner_user_id=owner_id, limit=limit, origin=origin)
         turns_by_conv = self.repo.list_turns_for_conversations(
             conversation_ids=[str(r.id) for r in rows]
         )
@@ -896,19 +1026,17 @@ class AiConversationService:
             conv_id = str(row.id)
             turns = turns_by_conv.get(conv_id, [])
             has_restricted = False
-            authorized_turns: list[AiTurn] = []
-            for t in turns:
-                if t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope):
+            last_turn_restricted = False
+            for idx, t in enumerate(turns):
+                is_restricted_turn = (
+                    t.status == "completed" and not self._is_turn_evidence_authorized(t, eff_scope)
+                )
+                if is_restricted_turn:
                     has_restricted = True
-                else:
-                    authorized_turns.append(t)
+                if idx == len(turns) - 1:
+                    last_turn_restricted = is_restricted_turn
 
             last_turn = turns[-1] if turns else None
-            last_turn_restricted = bool(
-                last_turn is not None
-                and last_turn.status == "completed"
-                and not self._is_turn_evidence_authorized(last_turn, eff_scope)
-            )
             if has_restricted:
                 title = "Restricted conversation"
             else:
@@ -947,10 +1075,12 @@ class AiConversationService:
                             last_scope_banner = None
                             last_period = None
 
+            safe_origin = self._normalize_row_origin(row)
             summaries.append(
                 AiConversationSummaryItem(
                     conversation_id=conv_id,
                     title=title,
+                    origin=safe_origin,
                     created_at=row.created_at.isoformat() if row.created_at else None,
                     updated_at=row.updated_at.isoformat() if row.updated_at else None,
                     turn_count=len(turns),
@@ -968,6 +1098,7 @@ class AiConversationService:
         conversation_id: str,
         *,
         scope: dict[str, Any] | None = None,
+        expected_origin: ConversationOriginType | None = None,
     ) -> AiConversationDetailPayload | None:
         eff_scope = self.validate_live_account_and_scope(scope)
         owner_id, _ = self._resolve_owner(eff_scope)
@@ -978,6 +1109,10 @@ class AiConversationService:
         )
         if row is None:
             return None
+        if expected_origin is not None and self._normalize_row_origin(row) != expected_origin:
+            raise ConversationOriginMismatchError(
+                "This conversation belongs to a different assistant surface."
+            )
         sanitized_ctx = self.sanitize_context_for_scope(row, eff_scope)
         turns = self.repo.list_turns_for_conversation(conversation_id=str(row.id))
 
@@ -1032,11 +1167,30 @@ class AiConversationService:
             if turn_status not in ("pending", "completed", "failed", "superseded"):
                 turn_status = "completed" if parsed_resp else "failed"
 
+            retry_settings = None
+            if turn_status in ("pending", "failed"):
+                stored_retry = (t.evidence_summary or {}).get("retry_settings")
+                if stored_retry:
+                    settings = AiConversationRetrySettings.model_validate(stored_retry)
+                    filters = settings.session_state
+                    if self._is_region_authorized(filters.region, eff_scope) and self.is_plan_and_context_authorized(
+                        scope=eff_scope,
+                        team=filters.team,
+                        function=filters.function,
+                        branch=filters.branch,
+                        region=filters.region,
+                        performance_level=filters.performance_level,
+                        employee_id=filters.employee_id,
+                    ):
+                        retry_settings = settings
+
             turn_details.append(
                 AiConversationTurnDetail(
                     turn_id=str(t.id),
                     turn_index=int(t.turn_index),
                     status=turn_status,  # type: ignore[arg-type]
+                    client_request_id=t.client_request_id,
+                    retry_settings=retry_settings,
                     user_prompt=t.user_prompt or t.user_prompt_redacted or "",
                     error_message=t.error_message,
                     scope_used=parsed_resp.scope_banner if parsed_resp else None,
@@ -1059,10 +1213,12 @@ class AiConversationService:
                 )
             )
 
+        safe_origin = self._normalize_row_origin(row)
         return AiConversationDetailPayload(
             conversation_id=str(row.id),
             owner_user_id=str(row.owner_user_id),
             title=title,
+            origin=safe_origin,
             status=str(row.status or "active"),  # type: ignore[arg-type]
             context_version=int(sanitized_ctx.context_version),
             confirmed_context=sanitized_ctx.confirmed_context,
@@ -1072,6 +1228,20 @@ class AiConversationService:
             updated_at=row.updated_at.isoformat() if row.updated_at else None,
             turns=turn_details,
         )
+
+    def promote_conversation(
+        self,
+        conversation_id: str,
+        *,
+        scope: dict[str, Any] | None = None,
+    ) -> AiConversationContextPayload:
+        eff_scope = self.validate_live_account_and_scope(scope)
+        owner_id, _ = self._resolve_owner(eff_scope)
+        row = self.repo.promote_conversation(
+            conversation_id=conversation_id,
+            owner_user_id=owner_id,
+        )
+        return self.sanitize_context_for_scope(row, eff_scope)
 
     def archive_conversation(
         self,

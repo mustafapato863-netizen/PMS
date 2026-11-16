@@ -43,6 +43,13 @@ from models.ai_schemas import (
 from models.models import Employee, Team
 from services.ai.catalog import evaluation_cache_identity, function_for_team, get_ai_catalog
 from services.ai.conversation_service import AiConversationService
+from services.ai.domain_policies import (
+    has_pms_performance_signal,
+    is_capabilities_help_prompt,
+    is_greeting_or_thanks_prompt,
+    is_off_topic_prompt,
+    is_vague_dataless_prompt,
+)
 from services.ai.local_model_router import local_intent_enabled, suggest_intent
 from services.ai.providers import resolve_variation_index
 from services.cache_invalidation_service import CacheInvalidationService
@@ -243,7 +250,7 @@ def build_effective_context_label(
     }.get(page_id, "PMS Assistant")
 
     parts: list[str] = [page_label]
-    scope_name = session_state.team or session_state.function or "All Authorized Scopes"
+    scope_name = session_state.team or session_state.function or "All Authorized Departments"
     if session_state.position and session_state.position.casefold() not in {"all", ""}:
         scope_name = f"{scope_name} ({session_state.position})"
     parts.append(scope_name)
@@ -541,18 +548,61 @@ _PROPOSAL_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+_AMBIGUOUS_DATA_WORD_RE = re.compile(
+    r"\b(?:check|look|show|data|numbers?|stats|figures|analyze|review|summary|overview|anything|update|status|this|that|it)\b",
+    re.I,
+)
+
+
+def _has_specific_entity_context(req: AiChatRequest) -> bool:
+    """True when the request already points to a specific team, entity, metric, or prior turn."""
+    lcq = req.session_state.last_confirmed_query
+    if lcq is not None and lcq.intent not in ("clarify", "unsupported") and any(
+        (
+            lcq.team,
+            lcq.function,
+            lcq.metric_id,
+            lcq.last_subject_employee_id,
+            lcq.branch,
+            lcq.branches,
+        )
+    ):
+        return True
+    pc = req.page_context
+    if pc is not None and any((pc.selected_metric_id, pc.selected_entity_id, pc.team_id, pc.employee_id)):
+        return True
+    return False
+
+
+def _has_grounded_followup_context(req: AiChatRequest) -> bool:
+    """True when a short or deictic prompt can inherit a confirmed query or page scope."""
+    if _has_specific_entity_context(req):
+        return True
+    if req.session_state.team and req.session_state.team.strip().casefold() not in {"all", ""}:
+        return True
+    lcq = req.session_state.last_confirmed_query
+    if lcq is not None and lcq.intent not in (None, "clarify", "unsupported"):
+        return True
+    return False
+
+
 def detect_contextual_capability(
     req: AiChatRequest,
 ) -> tuple[ContextualCapabilityMode, str, float]:
-    """Classify whether the turn is page_help, navigation, proposal, or performance_query.
+    """Classify a turn safely BEFORE any performance DB read or exploration.
 
     Returns (capability_mode, resolution_source, provider_ms).
     """
     if req.capability_hint in ("page_help", "navigation", "proposal", "performance_query"):
         return req.capability_hint, "local_rules", 0.0
+    if req.clarification_choice_id:
+        return "performance_query", "local_rules", 0.0
 
     prompt = (req.prompt or "").strip()
     lower = prompt.casefold()
+
+    if is_greeting_or_thanks_prompt(prompt) is not None:
+        return "greeting", "local_rules", 0.0
 
     for pat in _PAGE_HELP_PATTERNS:
         if pat.search(lower):
@@ -562,6 +612,12 @@ def detect_contextual_capability(
         if pat.search(lower):
             return "navigation", "local_rules", 0.0
 
+    if is_capabilities_help_prompt(prompt):
+        return "capabilities_help", "local_rules", 0.0
+
+    if is_off_topic_prompt(prompt):
+        return "off_topic", "local_rules", 0.0
+
     # If prompt asks to list/show existing overdue/open corrective actions, it is a performance_query, not a new proposal
     if re.search(r"\b(?:show|list|view|check|count|how\s+many|overdue)\b.*\bcorrective\s+actions?\b", lower):
         return "performance_query", "local_rules", 0.0
@@ -569,6 +625,14 @@ def detect_contextual_capability(
     for pat in _PROPOSAL_PATTERNS:
         if pat.search(lower):
             return "proposal", "local_rules", 0.0
+
+    # Vague data-less requests without grounded follow-up context -> clarification (0 DB reads)
+    if is_vague_dataless_prompt(prompt):
+        if _has_specific_entity_context(req) and any(
+            w in lower for w in ("this", "that", "it", "analyze", "review", "inspect")
+        ):
+            return "performance_query", "local_rules", 0.0
+        return "clarification", "local_rules", 0.0
 
     # If model router is enabled and prompt contains contextual help/navigation/proposal cues without
     # explicit analytical data query keywords, allow the configured AI model to classify page_help / navigation / proposal intents.
@@ -634,13 +698,167 @@ def detect_contextual_capability(
         and local_intent_enabled()
         and has_contextual_cue
         and not has_analytical_kw
-        and not req.clarification_choice_id
     ):
         local_res = suggest_intent(prompt)
-        if local_res.reason == "ok" and local_res.intent in ("page_help", "navigation", "proposal"):
+        if local_res.reason == "ok" and local_res.intent in (
+            "page_help",
+            "navigation",
+            "proposal",
+            "capabilities_help",
+            "off_topic",
+            "clarification",
+        ):
             return local_res.intent, "local_model_router", local_res.elapsed_ms  # type: ignore[return-value]
 
-    return "performance_query", "local_rules", 0.0
+    if has_pms_performance_signal(prompt):
+        return "performance_query", "local_rules", 0.0
+
+    if _has_grounded_followup_context(req):
+        return "performance_query", "local_rules", 0.0
+
+    # Unrecognized prompt with zero PMS signals and zero grounded context:
+    # optional model disambiguation (intent JSON only), never defaulting to current_value.
+    if (req.provider_override or "auto") == "auto" and local_intent_enabled():
+        local_res = suggest_intent(prompt)
+        if local_res.reason == "ok" and local_res.intent is not None:
+            mapped: dict[str, ContextualCapabilityMode] = {
+                "greeting": "greeting",
+                "capabilities_help": "capabilities_help",
+                "page_help": "page_help",
+                "navigation": "navigation",
+                "off_topic": "off_topic",
+                "clarification": "clarification",
+                "clarify": "clarification",
+                "proposal": "proposal",
+                "performance_query": "performance_query",
+            }
+            if local_res.intent in mapped:
+                return mapped[local_res.intent], "local_model_router", local_res.elapsed_ms
+
+    if _AMBIGUOUS_DATA_WORD_RE.search(lower):
+        return "clarification", "local_rules", 0.0
+
+    return "off_topic", "local_rules", 0.0
+
+
+def _describe_authorized_scope(scope: dict[str, Any], session_state: SessionFilterContext) -> str:
+    if is_self_only(scope):
+        return "your own Employee Scorecard"
+    if session_state.team and session_state.team.strip().casefold() not in {"all", ""}:
+        return session_state.team.strip()
+    if session_state.function and session_state.function.strip().casefold() not in {"all", ""}:
+        return session_state.function.strip()
+    is_unrestricted = bool(scope.get("has_unrestricted_team_access")) or str(scope.get("role") or "").strip() in {
+        "Admin",
+        "General Manager",
+        "Performance Team",
+        "Viewer",
+    }
+    if not is_unrestricted:
+        teams = [str(t).strip() for t in (scope.get("accessible_teams") or []) if str(t).strip()]
+        if len(teams) == 1:
+            return teams[0]
+        fns = [str(f).strip() for f in (scope.get("accessible_functions") or []) if str(f).strip()]
+        if len(fns) == 1:
+            return f"{fns[0]} teams"
+    return "your authorized teams and departments"
+
+
+def _build_role_aware_starter_followups(scope: dict[str, Any], session_state: SessionFilterContext) -> list[str]:
+    if is_self_only(scope):
+        return [
+            "Show my performance summary",
+            "How did my score trend over recent months?",
+            "How do I find my scorecard?",
+        ]
+    active_team = session_state.team if session_state.team and session_state.team.strip().casefold() not in {"all", ""} else None
+    if not active_team and not scope.get("has_unrestricted_team_access"):
+        teams = [str(t).strip() for t in (scope.get("accessible_teams") or []) if str(t).strip()]
+        if len(teams) == 1:
+            active_team = teams[0]
+    if active_team:
+        return [
+            f"What is {active_team} score vs target?",
+            f"Why did {active_team} have KPI gaps?",
+            "How are we doing overall?",
+        ]
+    return [
+        "How are we doing overall?",
+        "Which teams or KPIs need attention?",
+        "Compare performance across my authorized teams",
+    ]
+
+
+def build_capabilities_help_payload(
+    *,
+    scope: dict[str, Any],
+    session_state: SessionFilterContext,
+) -> tuple[str, list[str], list[str]]:
+    """Return concise, role-aware capabilities help without fake numbers or DB queries."""
+    scope_desc = _describe_authorized_scope(scope, session_state)
+    followups = _build_role_aware_starter_followups(scope, session_state)[:3]
+    if is_self_only(scope):
+        headline = "I can help you review your own PMS scorecard, KPI targets, monthly trends, and assigned actions."
+        bullets = [
+            "Ask about your latest weighted score, KPI gaps, or how your metrics moved across published months.",
+            "Ask for page explanations or direct navigation to your Employee Scorecard.",
+        ]
+        return headline, bullets, followups
+
+    can_write = can_user_write_corrective_action(
+        scope,
+        team=session_state.team,
+        performance_level=session_state.performance_level,
+        branch=session_state.branch,
+    )
+    headline = (
+        f"I can analyze verified PMS performance for {scope_desc}—scores, KPI targets, trends, comparisons, and root causes."
+    )
+    bullets = [
+        "Ask for an overall overview, KPI actuals vs. targets, team or branch comparisons, or top/lowest contributors.",
+        (
+            "Ask me to diagnose KPI drops or draft an Open corrective action proposal for review."
+            if can_write
+            else "Inspect KPI drivers and corrective action follow-up status within your authorized scope (read-only)."
+        ),
+    ]
+    return headline, bullets, followups
+
+
+def build_clarification_gate_payload(
+    *,
+    scope: dict[str, Any],
+    session_state: SessionFilterContext,
+) -> tuple[str, list[str], list[str]]:
+    """Return a concise clarification prompt for vague data-less requests (0 DB reads)."""
+    followups = _build_role_aware_starter_followups(scope, session_state)[:3]
+    if is_self_only(scope):
+        headline = "Which part of your scorecard or which KPI or month would you like me to inspect?"
+        bullets = [
+            "Specify a KPI, a published month, or ask for your overall performance summary.",
+        ]
+        return headline, bullets, followups
+    headline = "Which team, KPI, person, or performance overview would you like me to inspect?"
+    bullets = [
+        "Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.",
+    ]
+    return headline, bullets, followups
+
+
+def build_off_topic_gate_payload(
+    *,
+    scope: dict[str, Any],
+    session_state: SessionFilterContext,
+) -> tuple[str, list[str], list[str]]:
+    """Return a concise domain-boundary response for non-PMS prompts (0 DB reads)."""
+    followups = _build_role_aware_starter_followups(scope, session_state)[:3]
+    headline = (
+        "I can only help with PMS performance scorecards, KPIs, trends, comparisons, and corrective actions."
+    )
+    bullets = [
+        "Try asking about overall performance, a team or KPI target, branch comparisons, or how I can help.",
+    ]
+    return headline, bullets, followups
 
 
 def get_authorized_navigation_targets(
@@ -686,7 +904,11 @@ def get_authorized_navigation_targets(
     targets.append(
         AiNavigationTarget(
             id="nav-monthly-presentation",
-            label=f"Open Monthly Presentation ({session_state.function or 'Call Center'}) →",
+            label=(
+                f"Open Monthly Presentation ({session_state.function}) →"
+                if session_state.function
+                else "Open Monthly Presentation →"
+            ),
             route=f"/monthly-presentation{period_qs}",
             description=(
                 "Executive deck showing monthly KPI achievement, UAE 4-branch conversion, and top/bottom contributors."

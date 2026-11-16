@@ -3443,6 +3443,7 @@ def test_ai_conversations_list_detail_ownership_and_failed_turn_retry(monkeypatc
     turns_failed = res_detail_failed.json()["data"]["turns"]
     assert len(turns_failed) == 2
     assert turns_failed[1]["status"] == "failed"
+    assert turns_failed[1]["client_request_id"] == "req-phase1-t2-retryable"
     assert turns_failed[1]["user_prompt"] == "Who is leading bookings in Dubai?"
     assert "Cloudflare 503 simulated outage" in (turns_failed[1]["error_message"] or "")
 
@@ -3455,7 +3456,7 @@ def test_ai_conversations_list_detail_ownership_and_failed_turn_retry(monkeypatc
             "prompt": "Who is leading bookings in Dubai?",
             "conversation_id": conv_id,
             "context_version": ctx_ver,
-            "client_request_id": "req-phase1-t2-retryable",
+            "client_request_id": turns_failed[1]["client_request_id"],
             "session_state": {"function": "Call Center", "month": "August", "year": 2026},
         },
     )
@@ -3605,6 +3606,15 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
             year=2026,
             last_subject_employee_id="EMP102",
             last_subject_employee_name="Nour Samir",
+            candidate_employees=[
+                {
+                    "employee_id": "EMP101",
+                    "employee_name": "Layla Hassan",
+                    "team": "Outbound",
+                    "performance_level": "Managerial",
+                },
+                {"employee_id": "EMP102", "employee_name": "Nour Samir", "team": "Inbound"},
+            ],
         )
         resp2 = AiChatResponsePayload(
             trace_id="tr-2",
@@ -3623,7 +3633,7 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
                 performance_level="Operational",
                 month="August",
                 year=2026,
-                last_confirmed_query=cc2,
+                last_confirmed_query=cc2.model_copy(update={"candidate_employees": []}),
             ),
             scope_banner="Call Center · Inbound · Dubai · August 2026",
         )
@@ -3673,6 +3683,7 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
         detail_full = svc.get_conversation_detail(conv_id, scope=full_scope)
         assert detail_full is not None
         assert detail_full.has_restricted_turns is False
+        assert len(detail_full.confirmed_context.candidate_employees) == 2
         assert [t.status for t in detail_full.turns] == ["completed", "completed"]
 
         # Test all 5 revocation dimensions: team, branch, region, level, employee
@@ -3706,8 +3717,37 @@ def test_ai_conversations_live_rbac_redaction(monkeypatch):
             assert t1.response.citations == []
             assert t1.response.visual_cards == []
             assert t2.status == "completed"
+            if rev_scope["accessible_teams"] == ["Inbound"]:
+                assert [person["employee_id"] for person in detail.confirmed_context.candidate_employees] == ["EMP102"]
     finally:
         db.close()
+
+
+def test_month_only_followup_preserves_bottom_ranking():
+    from models.ai_schemas import ConfirmedQueryContext, SessionFilterContext
+    from services.ai.router import HybridQueryRouter
+
+    result = HybridQueryRouter(scope={"role": "Admin"}).resolve_and_validate(
+        prompt="What about August?",
+        session_state=SessionFilterContext(
+            function="Call Center",
+            year=2026,
+            last_confirmed_query=ConfirmedQueryContext(
+                intent="ranking",
+                function="Call Center",
+                team="Outbound",
+                periods=["2026-09"],
+                ranking_direction="worst",
+                single_person=True,
+            ),
+        ),
+        provider_override="deterministic",
+    )
+
+    assert result.plan.intent == "ranking"
+    assert result.plan.team == "Outbound"
+    assert result.plan.ranking_direction == "worst"
+    assert result.plan.periods == ["2026-08"]
 
 
 def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
@@ -3717,6 +3757,7 @@ def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from sqlalchemy import create_engine, inspect, text
+    import pytest
 
     mig_dir = Path(__file__).resolve().parent.parent / "migrations" / "versions"
     mig_file = next(mig_dir.glob("*e2b4c8d9f0a1*.py"))
@@ -3775,6 +3816,13 @@ def test_migration_e2b4c8d9f0a1_upgrade_and_downgrade():
         orig_op = mig_mod.op
         mig_mod.op = Operations(ctx)
         try:
+            conn.execute(text(
+                "INSERT INTO ai_conversations (id, owner_user_id, status, title) "
+                "VALUES ('test', 'owner', 'active', 'Saved conversation')"
+            ))
+            with pytest.raises(RuntimeError, match="Downgrade would discard saved AI data"):
+                mig_mod.downgrade()
+            conn.execute(text("DELETE FROM ai_conversations WHERE id = 'test'"))
             mig_mod.downgrade()
         finally:
             mig_mod.op = orig_op
@@ -3962,6 +4010,137 @@ def test_phase2_ambiguous_vs_unambiguous_his_position_followup(monkeypatch):
         assert p2.outcome == "clarification"
         assert p2.clarification is not None
         assert len(p2.clarification.choices) >= 2
+    finally:
+        db.close()
+
+
+def test_list_conversations_avoids_repeated_full_dataset_reloads(monkeypatch):
+    """Listing many conversations/turns must not repeatedly reload all performance records per turn."""
+    from models.ai_schemas import (
+        AiChatResponsePayload,
+        ConfirmedQueryContext,
+        SessionFilterContext,
+    )
+    from services.ai.conversation_service import AiConversationService
+    from services.dashboard_record_service import DashboardRecordService
+
+    records = [
+        _make_call_center_record("EMP201", "Alice Inbound", "Inbound", 91.0, 40, 50, 100, 120, month="August"),
+        _make_call_center_record("EMP202", "Bob Outbound", "Outbound", 78.0, 20, 40, 80, 100, month="August"),
+    ]
+    load_calls = 0
+
+    def _counting_list_records(self, *args, **kwargs):
+        nonlocal load_calls
+        load_calls += 1
+        return list(records)
+
+    monkeypatch.setattr(DashboardRecordService, "list_analysis_records", _counting_list_records)
+
+    db = _build_in_memory_db()
+    try:
+        mgr_scope = {
+            "user_id": "mgr-cache-1",
+            "role": "Manager",
+            "accessible_teams": ["Inbound"],
+            "accessible_team_levels": [("Inbound", "Employee")],
+            "has_unrestricted_team_access": False,
+        }
+        svc = AiConversationService(db, mgr_scope)
+        for idx in range(5):
+            conv = svc.create_conversation(scope=mgr_scope)
+            turn, _ = svc.claim_or_replay_turn(
+                conversation_id=conv.conversation_id,
+                expected_context_version=1,
+                client_request_id=f"cache-req-{idx}",
+                prompt="How did Alice Inbound perform?",
+                scope=mgr_scope,
+            )
+            svc.complete_turn(
+                conversation_id=conv.conversation_id,
+                turn_id=str(turn.id),
+                expected_context_version=1,
+                claim_token=str(turn.claim_token),
+                scope=mgr_scope,
+                outcome="answer",
+                turn_kind="analytical",
+                route_used="deterministic",
+                validated_plan={"scope": {"team": "Inbound", "employee_id": "EMP201", "employee_name": "Alice Inbound"}},
+                evidence_envelope=[],
+                session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+                confirmed_context=ConfirmedQueryContext(
+                    function="Call Center",
+                    team="Inbound",
+                    last_subject_employee_id="EMP201",
+                    last_subject_employee_name="Alice Inbound",
+                ),
+                response_payload=AiChatResponsePayload(
+                    trace_id=f"tr-cache-{idx}",
+                    conversation_id=conv.conversation_id,
+                    turn_id=str(turn.id),
+                    context_version=2,
+                    outcome="answer",
+                    answer_detail="brief",
+                    headline="Alice Inbound scored 91.0%.",
+                    resolved_session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+                ).model_dump(),
+                provider_calls=0,
+                total_ms=1.0,
+            )
+
+        # Fresh per-request service instance for scoped manager: loads dataset at most once.
+        load_calls = 0
+        scoped_items = AiConversationService(db, mgr_scope).list_conversations(scope=mgr_scope, limit=30)
+        assert len(scoped_items) == 5
+        assert all(not item.has_restricted_turns for item in scoped_items)
+        assert load_calls <= 1
+
+        # Fresh per-request service instance for unrestricted Admin: skips dataset reload completely.
+        admin_scope = {"user_id": "admin-cache-1", "role": "Admin", "has_unrestricted_team_access": True}
+        admin_svc = AiConversationService(db, admin_scope)
+        admin_conv = admin_svc.create_conversation(scope=admin_scope)
+        admin_turn, _ = admin_svc.claim_or_replay_turn(
+            conversation_id=admin_conv.conversation_id,
+            expected_context_version=1,
+            client_request_id="admin-cache-req-0",
+            prompt="How did Bob Outbound perform?",
+            scope=admin_scope,
+        )
+        admin_svc.complete_turn(
+            conversation_id=admin_conv.conversation_id,
+            turn_id=str(admin_turn.id),
+            expected_context_version=1,
+            claim_token=str(admin_turn.claim_token),
+            scope=admin_scope,
+            outcome="answer",
+            turn_kind="analytical",
+            route_used="deterministic",
+            validated_plan={"scope": {"team": "Outbound", "employee_id": "EMP202", "employee_name": "Bob Outbound"}},
+            evidence_envelope=[],
+            session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            confirmed_context=ConfirmedQueryContext(
+                function="Call Center",
+                team="Outbound",
+                last_subject_employee_id="EMP202",
+                last_subject_employee_name="Bob Outbound",
+            ),
+            response_payload=AiChatResponsePayload(
+                trace_id="tr-admin-cache-0",
+                conversation_id=admin_conv.conversation_id,
+                turn_id=str(admin_turn.id),
+                context_version=2,
+                outcome="answer",
+                answer_detail="brief",
+                headline="Bob Outbound scored 78.0%.",
+                resolved_session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            ).model_dump(),
+            provider_calls=0,
+            total_ms=1.0,
+        )
+        load_calls = 0
+        admin_items = AiConversationService(db, admin_scope).list_conversations(scope=admin_scope, limit=30)
+        assert len(admin_items) == 1
+        assert load_calls == 0
     finally:
         db.close()
 

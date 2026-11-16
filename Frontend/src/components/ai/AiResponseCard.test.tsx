@@ -167,4 +167,46 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
       expect(screen.getByText('Feedback saved')).toBeInTheDocument();
     });
   });
+
+  it('hides Verified PMS provenance, Different angle, and Drill down for help, greeting, navigation, and off_topic modes while rendering clean next-step chips', () => {
+    const onSelectPrompt = vi.fn();
+    const onRegenerateAngle = vi.fn();
+
+    for (const mode of ['greeting', 'capabilities_help', 'page_help', 'navigation', 'off_topic'] as const) {
+      const resp: AiChatResponsePayload = {
+        ...responseWithBarCard(),
+        visual_cards: [],
+        outcome: 'answer',
+        capability_mode: mode,
+        provider_used: 'deterministic',
+        scope_banner: mode === 'page_help' ? 'Monthly Presentation' : null,
+        headline: `Helpful ${mode} reply.`,
+        narrative_bullets: ['Use PMS AI to inspect authorized metrics.'],
+        suggested_followups: ['Which team dropped the most?', 'Compare branch performance'],
+      };
+
+      const view = render(
+        <MemoryRouter>
+          <AiResponseCard
+            response={resp}
+            onSelectPrompt={onSelectPrompt}
+            onRegenerateAngle={onRegenerateAngle}
+          />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByTestId('ai-provenance-badge')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Verified PMS/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('ai-regenerate-angle-btn')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('ai-primary-drilldown')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Drill down:/i)).not.toBeInTheDocument();
+
+      const chipsContainer = screen.getByTestId('ai-next-step-chips');
+      expect(chipsContainer).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Which team dropped the most?' }));
+      expect(onSelectPrompt).toHaveBeenCalledWith('Which team dropped the most?');
+
+      view.unmount();
+    }
+  });
 });

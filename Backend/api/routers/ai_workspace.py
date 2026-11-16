@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ from services.ai.conversation_service import (
     AiConversationService,
     ConversationDeletedError,
     ConversationMigrationUnavailableError,
+    ConversationOriginMismatchError,
     ConversationOwnershipError,
     ConversationStaleContextError,
     RequestIdReuseConflictError,
@@ -233,6 +235,7 @@ def get_ai_watching_workspace(
     db: Session = Depends(get_db),
     function: str | None = Query(default=None),
     team: str | None = Query(default=None),
+    position: str | None = Query(default=None),
     branch: str | None = Query(default=None),
     region: str | None = Query(default=None),
     performance_level: str | None = Query(default=None),
@@ -244,6 +247,7 @@ def get_ai_watching_workspace(
     session_state = SessionFilterContext(
         function=function,
         team=team,
+        position=position,
         branch=branch,
         region=region,
         performance_level=performance_level,
@@ -274,7 +278,12 @@ def post_ai_chat_turn(
     except (ConversationOwnershipError, ConversationDeletedError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (ConversationStaleContextError, RequestIdReuseConflictError, TurnAlreadyInFlightError) as exc:
+    except (
+        ConversationStaleContextError,
+        ConversationOriginMismatchError,
+        RequestIdReuseConflictError,
+        TurnAlreadyInFlightError,
+    ) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ProviderUnavailableError, AiProviderUnavailableError, ConversationMigrationUnavailableError) as exc:
@@ -324,7 +333,8 @@ def create_ai_conversation(
     svc = AiConversationService(db, scope)
     try:
         data = svc.create_conversation(
-            session_state=body.session_state if body is not None else None
+            session_state=body.session_state if body is not None else None,
+            origin=body.origin if body is not None else "workspace",
         )
     except ConversationMigrationUnavailableError as exc:
         release_read_transaction(db)
@@ -344,13 +354,14 @@ def create_ai_conversation(
 def list_ai_conversations(
     request: Request,
     limit: int = Query(default=30, ge=1, le=50),
+    origin: Literal["workspace", "page_assistant", "legacy", "all"] = Query(default="workspace"),
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiConversationListResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
     try:
-        conversations = svc.list_conversations(limit=limit)
+        conversations = svc.list_conversations(limit=limit, origin=origin)
     except ConversationMigrationUnavailableError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -369,14 +380,18 @@ def list_ai_conversations(
 def get_ai_conversation_detail(
     conversation_id: str,
     request: Request,
+    origin: Literal["workspace", "page_assistant", "legacy"] = Query(default="workspace"),
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiConversationDetailResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
     try:
-        data = svc.get_conversation_detail(conversation_id)
+        data = svc.get_conversation_detail(conversation_id, expected_origin=origin)
     except (ConversationOwnershipError, ConversationDeletedError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationOriginMismatchError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ConversationMigrationUnavailableError as exc:
@@ -399,14 +414,18 @@ def get_ai_conversation_detail(
 def get_ai_conversation_context(
     conversation_id: str,
     request: Request,
+    origin: Literal["workspace", "page_assistant", "legacy"] = Query(default="workspace"),
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiConversationResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
     try:
-        data = svc.get_conversation_context(conversation_id)
+        data = svc.get_conversation_context(conversation_id, expected_origin=origin)
     except (ConversationOwnershipError, ConversationDeletedError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationOriginMismatchError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ConversationMigrationUnavailableError as exc:
@@ -421,6 +440,34 @@ def get_ai_conversation_context(
     return AiConversationResponse(
         success=True,
         message="Conversation context loaded",
+        data=data,
+    )
+
+
+@router.post("/conversations/{conversation_id}/promote", response_model=AiConversationResponse)
+def promote_ai_conversation(
+    conversation_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiConversationResponse:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    try:
+        data = svc.promote_conversation(conversation_id)
+    except (ConversationOwnershipError, ConversationDeletedError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    release_read_transaction(db)
+    return AiConversationResponse(
+        success=True,
+        message="Conversation promoted to workspace",
         data=data,
     )
 

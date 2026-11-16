@@ -4,8 +4,10 @@ import { ApiError } from '../../../lib/apiClient';
 import {
   AiRecommendationBanner,
   AiRecommendIconButton,
+  AiStatusInline,
   formatScoreChangeLabel,
   IndividualEvidenceDrawer,
+  TeamEvidenceDrawer,
   ViewEvidenceToggleButton,
 } from './ActionPlanAiAssistant';
 import {
@@ -22,7 +24,6 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -34,7 +35,6 @@ import {
   Sparkles,
   Target,
   Trash2,
-  TrendingUp,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -867,6 +867,20 @@ function TeamDeepDiveViewContent({
     [editingIndividualId],
   );
 
+  const applyIndividualEvidenceFallback = useCallback(
+    (card: IndividualActionPlanCard, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.evidence_next_step) return;
+      setEditingIndividualId(card.id);
+      setDraftActionText(payload.evidence_next_step);
+      setDraftMainIssue(payload.measured_facts?.[0] || card.mainIssue);
+      setDraftOwner(payload.evidence_next_step_role || card.owner);
+      setDraftImpact(card.expectedImpact);
+      setDraftFollowUpLabel(payload.evidence_next_step_follow_up || card.followUpLabel || '');
+      setDraftObservationStatus(card.observationStatus);
+    },
+    [],
+  );
+
   const applyTeamAiDraft = useCallback(
     (card: TeamLevelActionPlanCard, payload: AiCorrectiveActionSuggestionPayload) => {
       if (!payload.draft) return;
@@ -875,7 +889,7 @@ function TeamDeepDiveViewContent({
       setDraftTeamTargetKpi(payload.draft.focus_kpi_name || card.targetKpi);
       setDraftTeamScope(payload.draft.measured_issue || card.scopeDescription);
       if (editingTeamId !== card.id) {
-        setDraftTeamOwner(card.owner);
+        setDraftTeamOwner(payload.draft.responsible_role || card.owner);
         setDraftTeamStatus(card.status);
         setDraftTeamDueDate(card.dueDate ?? '');
         setDraftTeamImpact(card.expectedTeamImpact);
@@ -892,6 +906,21 @@ function TeamDeepDiveViewContent({
       }));
     },
     [editingTeamId],
+  );
+
+  const applyTeamEvidenceFallback = useCallback(
+    (card: TeamLevelActionPlanCard, payload: AiCorrectiveActionSuggestionPayload) => {
+      if (!payload.evidence_next_step) return;
+      setEditingTeamId(card.id);
+      setDraftTeamTitle(payload.evidence_next_step);
+      setDraftTeamTargetKpi(card.targetKpi);
+      setDraftTeamScope(payload.cohort_coverage_label || card.scopeDescription);
+      setDraftTeamOwner(payload.evidence_next_step_role || card.owner);
+      setDraftTeamStatus(card.status);
+      setDraftTeamDueDate(card.dueDate ?? '');
+      setDraftTeamImpact(card.expectedTeamImpact);
+    },
+    [],
   );
 
   const applyNewTeamAiDraft = useCallback(
@@ -1005,13 +1034,7 @@ function TeamDeepDiveViewContent({
     (card: IndividualActionPlanCard) => {
       const targetKey = `ind:${card.id}`;
       const scopeTeam = card.recordTeam || data.canonicalTeam;
-      const scopeKey = buildAiScopeKey({
-        team: scopeTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: card.employeeId,
-        focusKpiKey: card.linkedKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(scopeTeam, data.periodKey, card.employeeId, card.linkedKpiKey);
       const isEditingThis = editingIndividualId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -1054,13 +1077,7 @@ function TeamDeepDiveViewContent({
     (card: TeamLevelActionPlanCard) => {
       const targetKey = `team:${card.id}`;
       const focusKpiKey = resolveTeamCardFocusKpiKey(card, data.kpis, activeExplorerKpi?.kpiKey);
-      const scopeKey = buildAiScopeKey({
-        team: data.canonicalTeam,
-        month: activeMonthName,
-        year: activeYearNum,
-        employeeId: null,
-        focusKpiKey,
-      });
+      const scopeKey = buildAiScopeKey(data.canonicalTeam, data.periodKey, null, focusKpiKey);
       const isEditingThis = editingTeamId === card.id;
       const hasUnsaved =
         isEditingThis &&
@@ -1111,13 +1128,7 @@ function TeamDeepDiveViewContent({
       activeExplorerKpi && activeExplorerKpi.verdictBadge !== 'Target Met'
         ? activeExplorerKpi.kpiKey
         : null;
-    const scopeKey = buildAiScopeKey({
-      team: data.canonicalTeam,
-      month: activeMonthName,
-      year: activeYearNum,
-      employeeId: null,
-      focusKpiKey,
-    });
+    const scopeKey = buildAiScopeKey(data.canonicalTeam, data.periodKey, null, focusKpiKey);
     const hasUnsaved =
       newTeamTitle.trim().length > 0 || newTeamTargetKpi.trim().length > 0;
     void runAiRequest(
@@ -1786,7 +1797,7 @@ function TeamDeepDiveViewContent({
             )}
           </div>
         ) : (
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 items-start gap-4 md:grid-cols-2">
           {displayedIndividualCards.map((card) => {
             const isEditing = showPresentationControl(presentationMode) && editingIndividualId === card.id;
             const isConfirmingDelete =
@@ -1972,6 +1983,7 @@ function TeamDeepDiveViewContent({
                   {/* AI Draft Banner (Hidden in Presentation Mode; stays separate so Next step stays visible) */}
                   {showPresentationControl(presentationMode) && (
                     <AiRecommendationBanner
+                      inlineStatusHandled
                       loading={indAiState?.loading}
                       payload={indAiState?.payload}
                       error={indAiState?.error}
@@ -1981,6 +1993,11 @@ function TeamDeepDiveViewContent({
                       onApplyDraft={() => {
                         if (indAiState?.payload) {
                           applyIndividualAiDraft(card, indAiState.payload);
+                        }
+                      }}
+                      onApplyEvidenceStep={() => {
+                        if (indAiState?.payload) {
+                          applyIndividualEvidenceFallback(card, indAiState.payload);
                         }
                       }}
                       onDiscard={() =>
@@ -2010,6 +2027,15 @@ function TeamDeepDiveViewContent({
                             presentationMode={presentationMode}
                             ariaLabel={`Generate AI recommendation for ${card.agentName}`}
                             onClick={() => triggerIndividualAi(card)}
+                          />
+                          <AiStatusInline
+                            loading={indAiState?.loading}
+                            payload={indAiState?.payload}
+                            error={indAiState?.error}
+                            draftApplied={indAiState?.draftApplied}
+                            presentationMode={presentationMode}
+                            onRetry={() => triggerIndividualAi(card)}
+                            onDismiss={() => discardAiTarget(indAiTargetKey)}
                           />
                           {!isEditing && (
                             <>
@@ -2111,6 +2137,7 @@ function TeamDeepDiveViewContent({
                     allKpiEvidence={card.allKpiEvidence}
                     priorActions={card.priorActions}
                     expectedImpact={card.expectedImpact}
+                    projectedAgentScoreLift={linkedEvidence?.projectedAgentScoreLift}
                     linkedKpiLabel={linkedEvidence?.label}
                     linkedKpiTarget={linkedEvidence?.targetFormatted}
                   />
@@ -2342,7 +2369,7 @@ function TeamDeepDiveViewContent({
             )}
           </div>
         ) : (
-        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
           {teamCards.map((card) => {
             const isEditingTeam =
               editingTeamId === card.id && showPresentationControl(presentationMode);
@@ -2353,6 +2380,18 @@ function TeamDeepDiveViewContent({
             const teamAiKey = `team:${card.id}`;
             const teamAiState = aiStateByTarget[teamAiKey];
             const saveFb = teamSaveFeedback[card.id];
+            const teamEvidenceId = `team-evidence-panel-${card.id}`;
+            const isTeamEvidenceOpen = Boolean(expandedEvidenceIds[teamEvidenceId]);
+            const resolvedFocusKey = resolveTeamCardFocusKpiKey(
+              card,
+              data.kpis,
+              activeExplorerKpi?.kpiKey,
+            );
+            const matchedKpi = resolvedFocusKey
+              ? data.kpis.find(
+                  (k) => k.kpiKey.trim().toLowerCase() === resolvedFocusKey.trim().toLowerCase(),
+                )
+              : undefined;
 
             return (
               <article
@@ -2381,30 +2420,6 @@ function TeamDeepDiveViewContent({
                       {card.status}
                     </span>
                   </div>
-
-                  {showPresentationControl(presentationMode) && (
-                    <AiRecommendationBanner
-                      loading={teamAiState?.loading}
-                      payload={teamAiState?.payload}
-                      error={teamAiState?.error}
-                      needsOverwriteConfirm={teamAiState?.needsOverwriteConfirm}
-                      draftApplied={teamAiState?.draftApplied}
-                      presentationMode={presentationMode}
-                      onApplyDraft={() => {
-                        if (teamAiState?.payload) {
-                          applyTeamAiDraft(card, teamAiState.payload);
-                        }
-                      }}
-                      onDiscard={() =>
-                        discardAiTarget(teamAiKey, () => {
-                          setDraftTeamTitle(card.title);
-                          setDraftTeamTargetKpi(card.targetKpi);
-                          setDraftTeamScope(card.scopeDescription);
-                        })
-                      }
-                      onRetry={() => triggerTeamAi(card)}
-                    />
-                  )}
 
                   {isEditingTeam ? (
                     <div className="mt-3 space-y-2.5 rounded-xl border border-blue-200 bg-white p-3">
@@ -2517,18 +2532,47 @@ function TeamDeepDiveViewContent({
                     </div>
                   ) : (
                     <>
+                      {/* 1. KPI gap */}
+                      <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-800">
+                        <Target className="mr-1 inline size-3.5 text-blue-600" aria-hidden="true" />
+                        <span>{card.targetKpi}</span>
+                      </div>
+
+                      {/* 2. Next step */}
                       <h3 className="mt-3 text-sm font-bold leading-snug text-slate-900">
                         {card.title}
                       </h3>
-
-                      <div className="mt-3 space-y-1.5 rounded-xl border border-slate-200/80 bg-white p-3 text-xs">
-                        <div className="font-semibold text-slate-800">
-                          <Target className="mr-1 inline size-3.5 text-blue-600" />
-                          {card.targetKpi}
-                        </div>
-                        <div className="text-slate-500">{card.scopeDescription}</div>
-                      </div>
                     </>
+                  )}
+
+                  {showPresentationControl(presentationMode) && (
+                    <AiRecommendationBanner
+                      inlineStatusHandled
+                      loading={teamAiState?.loading}
+                      payload={teamAiState?.payload}
+                      error={teamAiState?.error}
+                      needsOverwriteConfirm={teamAiState?.needsOverwriteConfirm}
+                      draftApplied={teamAiState?.draftApplied}
+                      presentationMode={presentationMode}
+                      onApplyDraft={() => {
+                        if (teamAiState?.payload) {
+                          applyTeamAiDraft(card, teamAiState.payload);
+                        }
+                      }}
+                      onApplyEvidenceStep={() => {
+                        if (teamAiState?.payload) {
+                          applyTeamEvidenceFallback(card, teamAiState.payload);
+                        }
+                      }}
+                      onDiscard={() =>
+                        discardAiTarget(teamAiKey, () => {
+                          setDraftTeamTitle(card.title);
+                          setDraftTeamTargetKpi(card.targetKpi);
+                          setDraftTeamScope(card.scopeDescription);
+                        })
+                      }
+                      onRetry={() => triggerTeamAi(card)}
+                    />
                   )}
 
                   {saveFb && !isEditingTeam && (
@@ -2543,7 +2587,8 @@ function TeamDeepDiveViewContent({
                   )}
                 </div>
 
-                <div className="mt-4 flex flex-col gap-2 border-t border-slate-200/70 pt-3 text-xs">
+                {/* 3. Owner and review date */}
+                <div className="mt-4 flex flex-col gap-1.5 border-t border-slate-200/70 pt-3 text-xs">
                   <div className="flex items-center justify-between text-slate-700">
                     <span className="font-medium text-slate-400">Owner</span>
                     <span data-testid={`team-action-owner-${card.id}`} className="font-bold text-slate-800">
@@ -2552,19 +2597,12 @@ function TeamDeepDiveViewContent({
                   </div>
                   {showStoredPlaceholder(teamActionDueLabel(card.dueDate), presentationMode) && (
                     <div className="flex items-center justify-between text-slate-700">
-                      <span className="font-medium text-slate-400">Due</span>
+                      <span className="font-medium text-slate-400">Review date</span>
                       <span data-testid={`team-action-due-${card.id}`} className="font-semibold text-slate-800">
                         {teamActionDueLabel(card.dueDate)}
                       </span>
                     </div>
                   )}
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-400">Expected Impact</span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-extrabold text-emerald-700">
-                      <CheckCircle2 className="size-3" />
-                      {card.expectedTeamImpact}
-                    </span>
-                  </div>
                 </div>
 
                 {isConfirmingTeamDelete && (
@@ -2603,39 +2641,77 @@ function TeamDeepDiveViewContent({
                   </div>
                 )}
 
-                {showPresentationControl(presentationMode) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-200/70 pt-3">
-                    <AiRecommendIconButton
-                      compact
-                      loading={teamAiState?.loading}
-                      presentationMode={presentationMode}
-                      ariaLabel={`Generate AI recommendation for ${card.title}`}
-                      onClick={() => triggerTeamAi(card)}
+                <div className="mt-3 border-t border-slate-200/70 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {showPresentationControl(presentationMode) && (
+                        <>
+                          <AiRecommendIconButton
+                            compact
+                            loading={teamAiState?.loading}
+                            presentationMode={presentationMode}
+                            ariaLabel={`Generate AI recommendation for ${card.title}`}
+                            onClick={() => triggerTeamAi(card)}
+                          />
+                          <AiStatusInline
+                            loading={teamAiState?.loading}
+                            payload={teamAiState?.payload}
+                            error={teamAiState?.error}
+                            draftApplied={teamAiState?.draftApplied}
+                            presentationMode={presentationMode}
+                            onRetry={() => triggerTeamAi(card)}
+                            onDismiss={() => discardAiTarget(teamAiKey)}
+                          />
+                          {!isEditingTeam && (
+                            <>
+                              <button
+                                type="button"
+                                data-testid={`edit-team-action-${card.id}`}
+                                onClick={() => startEditTeam(card)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
+                              >
+                                <Edit3 className="size-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`delete-team-action-${card.id}`}
+                                onClick={() => setConfirmDeleteTeamId(card.id)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                              >
+                                <Trash2 className="size-3" aria-hidden="true" />
+                                <span>Delete</span>
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <ViewEvidenceToggleButton
+                      isOpen={isTeamEvidenceOpen}
+                      panelId={teamEvidenceId}
+                      onToggle={() =>
+                        setExpandedEvidenceIds((prev) => ({
+                          ...prev,
+                          [teamEvidenceId]: !prev[teamEvidenceId],
+                        }))
+                      }
                     />
-                    {!isEditingTeam && (
-                      <>
-                        <button
-                          type="button"
-                          data-testid={`edit-team-action-${card.id}`}
-                          onClick={() => startEditTeam(card)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600"
-                        >
-                          <Edit3 className="size-3" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          type="button"
-                          data-testid={`delete-team-action-${card.id}`}
-                          onClick={() => setConfirmDeleteTeamId(card.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                        >
-                          <Trash2 className="size-3" aria-hidden="true" />
-                          <span>Delete</span>
-                        </button>
-                      </>
-                    )}
                   </div>
-                )}
+
+                  <TeamEvidenceDrawer
+                    panelId={teamEvidenceId}
+                    isOpen={isTeamEvidenceOpen}
+                    cardId={card.id}
+                    scopeDescription={card.scopeDescription}
+                    expectedTeamImpact={card.expectedTeamImpact}
+                    targetKpiLabel={matchedKpi?.label || card.targetKpi}
+                    linkedKpiActualLabel={matchedKpi?.actualFormatted}
+                    linkedKpiTargetLabel={matchedKpi?.targetFormatted}
+                    teamTrendLabel={matchedKpi?.trendLabel || null}
+                    aiPayload={teamAiState?.payload}
+                  />
+                </div>
               </article>
             );
           })}

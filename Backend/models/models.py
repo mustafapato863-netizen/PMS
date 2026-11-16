@@ -1511,6 +1511,8 @@ class AiConversation(Base):
     owner_user_id = Column(String(100), nullable=False, index=True)
     owner_role = Column(String(64), nullable=False, default="Manager")
     title = Column(String(200), nullable=True)
+    # Older clients that omit origin are unclassified; current application writes pass it explicitly.
+    origin = Column(String(32), nullable=False, server_default=text("'legacy'"), default="legacy")
     status = Column(String(24), nullable=False, default="active")
     context_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
     confirmed_context = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
@@ -1527,7 +1529,12 @@ class AiConversation(Base):
             "status IN ('active', 'archived', 'deleted')",
             name="ck_ai_conversations_status",
         ),
+        CheckConstraint(
+            "origin IN ('workspace', 'page_assistant', 'legacy')",
+            name="ck_ai_conversations_origin",
+        ),
         Index("idx_ai_conversations_owner_updated", "owner_user_id", "updated_at"),
+        Index("idx_ai_conversations_owner_origin_updated", "owner_user_id", "origin", "updated_at"),
     )
 
 

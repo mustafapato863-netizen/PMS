@@ -1,7 +1,10 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { LineChart } from './LineChart';
-import { percentageScoreAxisMax } from './lineChartUtils';
+import {
+  percentageScoreAxisMax,
+  percentageScoreAxisTicks,
+} from './lineChartUtils';
 
 const axisLabels = (svg: HTMLElement) =>
   [...svg.querySelectorAll('text')].map((node) => node.textContent ?? '');
@@ -21,6 +24,12 @@ describe('percentageScoreAxisMax', () => {
   });
 });
 
+describe('percentageScoreAxisTicks', () => {
+  it('uses 25, 50, 75, 100 on a 100% scale', () => {
+    expect(percentageScoreAxisTicks(100)).toEqual([25, 50, 75, 100]);
+  });
+});
+
 describe('LineChart percentage axis', () => {
   const history = [
     { month: '4', year: 2026, score: 75.8 },
@@ -31,12 +40,12 @@ describe('LineChart percentage axis', () => {
     { month: '9', year: 2026, score: 86.6 },
   ];
 
-  it('labels the top of a 100% target chart at 100, not above it', () => {
+  it('renders 25%, 50%, 75%, 100% on the Y-axis when scores are at or below 100', () => {
     const view = render(<LineChart history={history} targetValue={100} />);
     const chart = view.getByRole('img', { name: /trend/i });
     const labels = axisLabels(chart);
 
-    expect(labels).toContain('100%');
+    expect(labels).toEqual(expect.arrayContaining(['25%', '50%', '75%', '100%']));
     expect(labels.some((label) => /^10[1-9]%$/.test(label) || /^1[1-9]\d%$/.test(label))).toBe(false);
     expect(chart.textContent).toMatch(/Target\s+100%/);
   });
