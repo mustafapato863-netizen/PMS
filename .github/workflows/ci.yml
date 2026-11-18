@@ -37,7 +37,7 @@ jobs:
             Backend/requirements-dev.txt
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements-dev.txt
-      - run: python -m pytest -q -x -s --tb=short
+      - run: python -m pytest -q
 
   coverage-manifest:
     runs-on: ubuntu-latest
