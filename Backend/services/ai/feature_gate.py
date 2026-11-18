@@ -199,6 +199,9 @@ def require_ai_access(request: Request, db: Session = Depends(get_db)) -> str:
         )
     # all_authenticated_users → any authenticated user passes
     return role
+
+
+def require_ai_diagnostic_session(request: Request) -> None:
     """Reject callers with no session (or legacy test header when permitted).
 
     The Admin decision itself stays in ``require_ai_admin``. This only separates
