@@ -766,6 +766,7 @@ class AiChatResponsePayload(BaseModel):
     headline: str
     narrative_bullets: list[str] = Field(default_factory=list)
     detail_bullets: list[str] = Field(default_factory=list)
+    summary_tiles: list[AiSpotlightMetricTile] = Field(default_factory=list)
     visual_cards: list[StructuredVisualCard] = Field(default_factory=list)
     citations: list[SourceCitationPill] = Field(default_factory=list)
     deep_links: list[DeepLinkCta] = Field(default_factory=list)

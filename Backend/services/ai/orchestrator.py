@@ -14,6 +14,7 @@ from models.ai_schemas import (
     AiChatResponsePayload,
     AiClarificationPrompt,
     AiProviderUsageMetrics,
+    AiSpotlightMetricTile,
     AiToolCallRecord,
     AiTurnTimingBreakdown,
     AiWatchingAlertItem,
@@ -170,6 +171,213 @@ def _build_aggregated_usage(
         cost_status=cost_status,
         fallback_outcome=fallback_outcome,
     )
+
+
+def _score_tone(score_val: float) -> str:
+    if score_val >= 85.0:
+        return "good"
+    if score_val >= 75.0:
+        return "warning"
+    return "critical"
+
+
+def build_response_summary_tiles(
+    *,
+    merged: dict[str, Any] | None,
+    visual_cards: list[StructuredVisualCard] | None = None,
+    typed_evidence: list[TypedMetricEvidence] | None = None,
+) -> list[AiSpotlightMetricTile]:
+    """Derive 2-4 concise, zero-hallucination KPI summary tiles from verified tool output."""
+    cards = visual_cards or []
+    if any(c.card_type == "trend_spotlight" for c in cards):
+        return []
+
+    data = merged if isinstance(merged, dict) else {}
+    evidence_rows = typed_evidence or []
+    tiles: list[AiSpotlightMetricTile] = []
+
+    avg_score = data.get("average_score")
+    score_change = data.get("score_change")
+    tot_rec = int(data.get("total_records") or 0)
+    below_cnt = int(data.get("employees_below_target") or 0)
+    teams_list = data.get("teams") or []
+    total_teams = int(data.get("total_teams") or len(teams_list))
+    worst_team = data.get("worst_team") if isinstance(data.get("worst_team"), dict) else None
+    best_team = data.get("best_team") if isinstance(data.get("best_team"), dict) else None
+    requested_kpi = data.get("requested_kpi") if isinstance(data.get("requested_kpi"), dict) else None
+
+    # 1. Multi-team executive pulse
+    if isinstance(avg_score, (int, float)) and (total_teams > 1 or (worst_team and tot_rec > int(worst_team.get("total_employees") or 0) > 0)):
+        delta_part = f"{float(score_change):+.1f} pts vs prior" if isinstance(score_change, (int, float)) else None
+        eval_part = f"{tot_rec} evaluated" if tot_rec > 0 else "Active scope"
+        sub = f"{delta_part} · {eval_part}" if delta_part else eval_part
+        tiles.append(
+            AiSpotlightMetricTile(
+                label="Overall Score",
+                value=f"{float(avg_score):.1f}%",
+                sublabel=sub,
+                tone=_score_tone(float(avg_score)),  # type: ignore[arg-type]
+            )
+        )
+
+        on_track_raw = data.get("teams_on_track")
+        if on_track_raw is None and teams_list:
+            on_track_raw = sum(1 for t in teams_list if float(t.get("score") or 0.0) >= 85.0)
+        if isinstance(on_track_raw, int) and total_teams > 0:
+            ratio_ok = on_track_raw == total_teams
+            tone = "good" if ratio_ok else ("warning" if on_track_raw >= max(1, total_teams // 2) else "critical")
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Teams On Track",
+                    value=f"{on_track_raw} of {total_teams}",
+                    sublabel="≥ 85% benchmark",
+                    tone=tone,  # type: ignore[arg-type]
+                )
+            )
+
+        if worst_team and worst_team.get("team"):
+            w_score = float(worst_team.get("current_score") or 0.0)
+            w_chg = worst_team.get("score_change")
+            w_sub = str(worst_team["team"])
+            if isinstance(w_chg, (int, float)):
+                w_sub = f"{w_sub} ({float(w_chg):+.1f} pts)"
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Needs Attention",
+                    value=f"{w_score:.1f}%",
+                    sublabel=w_sub,
+                    tone="critical" if w_score < 75.0 else "warning",
+                )
+            )
+
+        if not best_team and len(teams_list) > 1:
+            top_row = max(teams_list, key=lambda r: float(r.get("score") or 0.0))
+            best_team = {"team": top_row.get("team"), "current_score": top_row.get("score")}
+        if best_team and best_team.get("team") and (not worst_team or best_team.get("team") != worst_team.get("team")):
+            b_score = float(best_team.get("current_score") or 0.0)
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Top Performing",
+                    value=f"{b_score:.1f}%",
+                    sublabel=f"{best_team['team']} · Highest score",
+                    tone="good",
+                )
+            )
+        return tiles[:4]
+
+    # 2. Focused KPI diagnosis
+    if requested_kpi and requested_kpi.get("actual_display"):
+        ach = requested_kpi.get("achievement_percent")
+        ach_tone = _score_tone(float(ach)) if isinstance(ach, (int, float)) else "neutral"
+        tiles.append(
+            AiSpotlightMetricTile(
+                label="Actual",
+                value=str(requested_kpi["actual_display"]),
+                sublabel=str(requested_kpi.get("kpi_label") or "Selected KPI"),
+                tone=ach_tone,  # type: ignore[arg-type]
+            )
+        )
+        tgt_disp = str(requested_kpi.get("target_display") or "").strip()
+        if tgt_disp and tgt_disp not in ("—", "N/A", "-"):
+            wt = float(requested_kpi.get("weight_percent") or 0.0)
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Target",
+                    value=tgt_disp,
+                    sublabel=f"Weight {wt:.0f}%" if requested_kpi.get("contributes_to_score") is not False and wt > 0 else "Tracking indicator",
+                    tone="neutral",
+                )
+            )
+        if isinstance(ach, (int, float)):
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Achievement",
+                    value=f"{float(ach):.1f}%",
+                    sublabel="vs KPI target",
+                    tone=ach_tone,  # type: ignore[arg-type]
+                )
+            )
+        kpi_below = requested_kpi.get("people_below_target")
+        if isinstance(kpi_below, int) and tot_rec > 0:
+            on_tgt = max(0, tot_rec - kpi_below)
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Agents On Target",
+                    value=f"{on_tgt} of {tot_rec}",
+                    sublabel=f"{kpi_below} need coaching" if kpi_below > 0 else "All meeting target",
+                    tone="warning" if kpi_below > 0 else "good",
+                )
+            )
+        return tiles[:4]
+
+    # 3. Single-team overview
+    if isinstance(avg_score, (int, float)):
+        delta_sub = f"{float(score_change):+.1f} pts vs prior" if isinstance(score_change, (int, float)) else str(data.get("period") or "Selected period")
+        tiles.append(
+            AiSpotlightMetricTile(
+                label="Team Score",
+                value=f"{float(avg_score):.1f}%",
+                sublabel=delta_sub,
+                tone=_score_tone(float(avg_score)),  # type: ignore[arg-type]
+            )
+        )
+        if tot_rec > 0:
+            on_tgt = max(0, tot_rec - below_cnt)
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Evaluated Staff",
+                    value=f"{tot_rec}",
+                    sublabel=f"{below_cnt} below target" if below_cnt > 0 else f"All {on_tgt} on target",
+                    tone="warning" if below_cnt > 0 else "good",
+                )
+            )
+        lowest_kpi = data.get("lowest_kpi") if isinstance(data.get("lowest_kpi"), dict) else None
+        if lowest_kpi and lowest_kpi.get("kpi_label"):
+            l_ach = lowest_kpi.get("achievement_percent")
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label="Primary KPI Focus",
+                    value=f"{float(l_ach):.1f}%" if isinstance(l_ach, (int, float)) else str(lowest_kpi.get("actual_display") or "—"),
+                    sublabel=str(lowest_kpi["kpi_label"]),
+                    tone="warning" if (float(l_ach or 0.0) < 90.0) else "neutral",
+                )
+            )
+        return tiles[:4]
+
+    # 4. Typed evidence fallback (model-led single metric / comparison)
+    if 1 <= len(evidence_rows) <= 3 and not cards:
+        ev = evidence_rows[0]
+        if ev.actual_display:
+            ev_tone = _score_tone(float(ev.achievement_percent)) if ev.achievement_percent is not None else "neutral"
+            tiles.append(
+                AiSpotlightMetricTile(
+                    label=ev.display_name,
+                    value=ev.actual_display,
+                    sublabel=f"{ev.team} · {ev.period}",
+                    tone=ev_tone,  # type: ignore[arg-type]
+                )
+            )
+            if ev.target_display and ev.target_display not in ("—", "N/A", "-"):
+                tiles.append(
+                    AiSpotlightMetricTile(
+                        label="Target",
+                        value=ev.target_display,
+                        sublabel=f"Weight {ev.weight_percent:.0f}%" if ev.contributes_to_score and ev.weight_percent > 0 else "Reference target",
+                        tone="neutral",
+                    )
+                )
+            if ev.achievement_percent is not None:
+                tiles.append(
+                    AiSpotlightMetricTile(
+                        label="Achievement",
+                        value=f"{ev.achievement_percent:.1f}%",
+                        sublabel="Score attainment",
+                        tone=ev_tone,  # type: ignore[arg-type]
+                    )
+                )
+        return tiles[:4]
+
+    return []
 
 
 def _build_bounded_intent_context(session_state: SessionFilterContext) -> BoundedIntentContext:
@@ -2710,6 +2918,11 @@ class PmsAiOrchestrator:
         tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
         primary_link = tool_result.deep_links[0] if tool_result.deep_links else None
 
+        model_led_tiles = build_response_summary_tiles(
+            merged=tool_result.digest if isinstance(tool_result.digest, dict) else {},
+            visual_cards=tool_result.visual_cards,
+            typed_evidence=tool_result.typed_evidence,
+        )
         resp_payload = AiChatResponsePayload(
             trace_id=trace_id,
             conversation_id=active_conversation_id,
@@ -2719,6 +2932,7 @@ class PmsAiOrchestrator:
             answer_detail=effective_detail,  # type: ignore[arg-type]
             headline=final_headline,
             narrative_bullets=final_bullets,
+            summary_tiles=model_led_tiles,
             visual_cards=tool_result.visual_cards,
             citations=tool_result.citations,
             deep_links=tool_result.deep_links,
@@ -4737,6 +4951,19 @@ class PmsAiOrchestrator:
                 else "deterministic"
             )
         )
+        combined_digest: dict[str, Any] = {}
+        for td in tool_digests:
+            if isinstance(td, dict):
+                combined_digest.update(td)
+        summary_tiles = (
+            build_response_summary_tiles(
+                merged=combined_digest,
+                visual_cards=final_cards,
+                typed_evidence=typed_evidence,
+            )
+            if routed.outcome == "answer"
+            else []
+        )
         final_resp = AiChatResponsePayload(
             trace_id=trace_id,
             conversation_id=active_conversation_id,
@@ -4746,6 +4973,7 @@ class PmsAiOrchestrator:
             answer_detail=effective_detail,  # type: ignore[arg-type]
             headline=synthesis.headline,
             narrative_bullets=synthesis.narrative_bullets,
+            summary_tiles=summary_tiles,
             visual_cards=final_cards,
             citations=citations,
             deep_links=deep_links[:3],

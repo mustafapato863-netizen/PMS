@@ -96,7 +96,11 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByTestId('ai-provenance-badge')).toHaveTextContent('Verified PMS · Live Synthesis');
+    const provBadge = screen.getByTestId('ai-provenance-badge');
+    expect(provBadge).toHaveTextContent('Verified PMS Data');
+    expect(provBadge).toHaveAttribute('data-provenance-mode', 'live-synthesis');
+    fireEvent.click(provBadge);
+    expect(screen.getByTestId('ai-provenance-popover')).toHaveTextContent('Live AI Synthesis');
 
     fireEvent.click(screen.getByTestId('ai-regenerate-angle-btn'));
     expect(onRegenerateAngle).toHaveBeenCalledWith(2);
@@ -309,7 +313,7 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     expect(screen.getByText(/Scope basis: Call Center support cohort/)).toBeInTheDocument();
   });
 
-  it('renders Verified PMS · Deterministic when answer_source is fallback or deterministic even if provider_used is cloudflare', () => {
+  it('reports rule-verified provenance (never Live Synthesis) when answer_source is fallback or deterministic even if provider_used is cloudflare', () => {
     for (const source of ['fallback', 'deterministic'] as const) {
       const resp: AiChatResponsePayload = {
         ...responseWithBarCard(),
@@ -322,9 +326,56 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
           <AiResponseCard response={resp} />
         </MemoryRouter>,
       );
-      expect(screen.getByTestId('ai-provenance-badge')).toHaveTextContent('Verified PMS · Deterministic');
-      expect(screen.queryByText(/Live Synthesis/i)).not.toBeInTheDocument();
+      const badge = screen.getByTestId('ai-provenance-badge');
+      expect(badge).toHaveTextContent('Verified PMS Data');
+      expect(badge).toHaveAttribute('data-provenance-mode', 'rule-verified');
+      fireEvent.click(badge);
+      expect(screen.getByTestId('ai-provenance-popover')).toHaveTextContent('Rule-Verified Calculation');
+      expect(screen.queryByText(/Live AI Synthesis/i)).not.toBeInTheDocument();
       view.unmount();
     }
+  });
+
+  it('renders Executive KPI Strip above the fold, keeps primary visual visible in Brief mode, and humanizes technical jargon', () => {
+    const resp: AiChatResponsePayload = {
+      ...responseWithBarCard(),
+      outcome: 'answer',
+      answer_detail: 'brief',
+      headline:
+        'Overall performance in October 2026 averages 86.4% (+1.8 pp vs prior month) across 71 evaluated employees.',
+      summary_tiles: [
+        { label: 'Overall Score', value: '86.4%', sublabel: '+1.8 pts vs prior', tone: 'good' },
+        { label: 'Teams On Track', value: '7 of 8', sublabel: '≥ 85% benchmark', tone: 'good' },
+        { label: 'Needs Attention', value: '75.1%', sublabel: 'Resubmission', tone: 'warning' },
+      ],
+      basis_warning: 'Month-over-month scoring basis changed',
+      citations: [
+        { label: 'Period · October 2026', category: 'period' },
+        { label: 'Evaluated · 71', category: 'metric' },
+        { label: 'Basis Shift Note', category: 'basis', warning: true },
+      ],
+    };
+
+    render(
+      <MemoryRouter>
+        <AiResponseCard response={resp} />
+      </MemoryRouter>,
+    );
+
+    // 1. KPI strip & primary bar chart are immediately visible above the fold even in Brief mode
+    expect(screen.getByTestId('ai-executive-kpi-strip')).toBeInTheDocument();
+    expect(screen.getByText('Overall Score')).toBeInTheDocument();
+    expect(screen.getByText('86.4%')).toBeInTheDocument();
+    expect(screen.getByText('200 bookings')).toBeInTheDocument();
+
+    // 2. Technical "pp" and bare "Month-over-month scoring basis changed" are humanized
+    expect(screen.getByText(/\+1\.8 pts vs prior month/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/KPI weights or scoring rules changed compared to last month/i),
+    ).toBeInTheDocument();
+
+    // 3. Duplicate bottom citation pills are hidden until details are expanded, and Basis Shift Note is deduplicated
+    expect(screen.queryByText('Basis Shift Note')).not.toBeInTheDocument();
+    expect(screen.queryByText('Period · October 2026')).not.toBeInTheDocument();
   });
 });

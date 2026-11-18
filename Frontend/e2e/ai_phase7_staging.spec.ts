@@ -113,12 +113,11 @@ test.describe.serial('Phase 7 Live-Provider Staging E2E Journeys', () => {
     sharedAdminAConvId = String(data.conversation_id || '');
     expect(sharedAdminAConvId.length).toBeGreaterThan(0);
 
-    // Badge must truthfully reflect the answer source
-    const expectedBadge = isLive ? 'Verified PMS · Live Synthesis' : 'Verified PMS · Deterministic';
-    await expect(page.getByTestId('ai-provenance-badge').last()).toHaveText(
-      expectedBadge,
-      { timeout: 15_000 },
-    );
+    // Badge must truthfully reflect the answer source without exposing cryptic jargon inline
+    const expectedMode = isLive ? 'live-synthesis' : 'rule-verified';
+    const badge = page.getByTestId('ai-provenance-badge').last();
+    await expect(badge).toHaveText('Verified PMS Data', { timeout: 15_000 });
+    await expect(badge).toHaveAttribute('data-provenance-mode', expectedMode);
 
     const usefulBtn = page.getByLabel('Mark response as useful').last();
     await expect(usefulBtn).toBeVisible();
@@ -166,15 +165,18 @@ test.describe.serial('Phase 7 Live-Provider Staging E2E Journeys', () => {
     const answerSource = body.data.answer_source;
     const providerUsed = body.data.provider_used;
 
-    // Core invariant: badge text MUST match the actual answer_source
+    // Core invariant: provenance mode & verification popover MUST truthfully match answer_source
     const isLive = answerSource === 'model_synthesis';
-    const expectedBadge = isLive ? 'Verified PMS · Live Synthesis' : 'Verified PMS · Deterministic';
-    const unexpectedBadge = isLive ? 'Verified PMS · Deterministic' : 'Verified PMS · Live Synthesis';
+    const expectedMode = isLive ? 'live-synthesis' : 'rule-verified';
+    const expectedPopoverTitle = isLive ? 'Live AI Synthesis' : 'Rule-Verified Calculation';
+    const unexpectedPopoverTitle = isLive ? 'Rule-Verified Calculation' : 'Live AI Synthesis';
 
     const badge = page.getByTestId('ai-provenance-badge').last();
-    await expect(badge).toHaveText(expectedBadge, { timeout: 15_000 });
-    // The opposite badge must NOT appear on this response
-    await expect(page.getByText(unexpectedBadge)).toHaveCount(0);
+    await expect(badge).toHaveText('Verified PMS Data', { timeout: 15_000 });
+    await expect(badge).toHaveAttribute('data-provenance-mode', expectedMode);
+    await badge.click();
+    await expect(page.getByTestId('ai-provenance-popover').last()).toContainText(expectedPopoverTitle);
+    await expect(page.getByText(unexpectedPopoverTitle)).toHaveCount(0);
 
     scenarioResults.push({
       scenario: '2_truthful_provenance_badge',
@@ -182,7 +184,7 @@ test.describe.serial('Phase 7 Live-Provider Staging E2E Journeys', () => {
       details: {
         provider_used: providerUsed,
         answer_source: answerSource,
-        expected_badge: expectedBadge,
+        expected_badge: expectedPopoverTitle,
         message: body.message,
       },
     });

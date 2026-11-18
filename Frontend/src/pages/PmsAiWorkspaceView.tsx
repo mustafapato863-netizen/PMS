@@ -2,16 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowRight,
+  Bell,
   Calendar,
   ChevronDown,
-  ChevronUp,
-  Compass,
   History,
   Info,
-  LayoutGrid,
   RotateCcw,
-  Send,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -25,6 +21,9 @@ import AiResponseCard from '../components/ai/AiResponseCard';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
 import ConversationHistoryPanel from '../components/ai/ConversationHistoryPanel';
 import ScopeFilterBar from '../components/ai/ScopeFilterBar';
+import AiComposerDock from '../components/ai/workspace/AiComposerDock';
+import AiMorningBriefingHome from '../components/ai/workspace/AiMorningBriefingHome';
+import AiThinkingProgressCard from '../components/ai/workspace/AiThinkingProgressCard';
 import { buildFallbackStarterPrompts, mergeStarterScenarios } from '../features/ai/starterPrompts';
 import type {
   AiChatMessage,
@@ -153,7 +152,6 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [showGuardrailsInfo, setShowGuardrailsInfo] = useState<boolean>(false);
-  const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
   const [showMidChatScenarios, setShowMidChatScenarios] = useState<boolean>(false);
   const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(false);
 
@@ -1061,7 +1059,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     return fallbackStarterPrompts;
   }, [serverStarterPrompts, fallbackStarterPrompts]);
 
-  const topThreeStarters: AiStarterPrompt[] = useMemo(() => {
+  const homeStarters: AiStarterPrompt[] = useMemo(() => {
     const region = (
       sessionState.region ||
       watchingData?.resolved_session_state?.region ||
@@ -1076,6 +1074,69 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     }
     return starterPrompts.slice(0, 3);
   }, [starterPrompts, sessionState.region, watchingData?.resolved_session_state?.region]);
+
+  const activeScopeSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (regionParam && regionParam !== 'All') {
+      parts.push(regionParam === 'EGY' ? 'Egypt' : regionParam);
+    }
+    if (selectedTeam && selectedTeam !== 'All') {
+      parts.push(selectedTeam);
+    } else if (sessionState.function) {
+      parts.push(sessionState.function);
+    } else {
+      parts.push('All Departments');
+    }
+    if (selectedBranch && selectedBranch !== 'all') {
+      parts.push(selectedBranch.charAt(0).toUpperCase() + selectedBranch.slice(1));
+    }
+    if (selectedLevel && selectedLevel !== 'All') {
+      parts.push(selectedLevel);
+    }
+    return parts.join(' · ');
+  }, [regionParam, selectedTeam, sessionState.function, selectedBranch, selectedLevel]);
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{
+      key: 'region' | 'function' | 'team' | 'position' | 'branch' | 'performance_level';
+      label: string;
+      resetValue: string;
+    }> = [];
+    if (regionParam && regionParam !== 'All') {
+      chips.push({
+        key: 'region',
+        label: regionParam === 'EGY' ? 'Egypt' : regionParam,
+        resetValue: 'All',
+      });
+    }
+    if (sessionState.function) {
+      chips.push({ key: 'function', label: sessionState.function, resetValue: 'All' });
+    }
+    if (selectedTeam && selectedTeam !== 'All') {
+      chips.push({ key: 'team', label: selectedTeam, resetValue: 'All' });
+    }
+    if (positionParam && positionParam !== 'All') {
+      chips.push({ key: 'position', label: positionParam, resetValue: 'All' });
+    }
+    if (selectedBranch && selectedBranch !== 'all') {
+      chips.push({
+        key: 'branch',
+        label: selectedBranch.charAt(0).toUpperCase() + selectedBranch.slice(1),
+        resetValue: 'all',
+      });
+    }
+    if (selectedLevel && selectedLevel !== 'All') {
+      chips.push({ key: 'performance_level', label: selectedLevel, resetValue: 'All' });
+    }
+    return chips;
+  }, [
+    regionParam,
+    sessionState.function,
+    selectedTeam,
+    positionParam,
+    selectedBranch,
+    selectedLevel,
+  ]);
 
   const sendingByConvId = useMemo<Record<string, boolean>>(() => {
     const out: Record<string, boolean> = {};
@@ -1108,20 +1169,16 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     [watchingData],
   );
 
-  const latestSuggestedChips: string[] = useMemo(() => {
-    const lastCompleted = [...turns].reverse().find((t) => t.response?.suggested_followups?.length);
-    if (lastCompleted?.response?.suggested_followups) {
-      return lastCompleted.response.suggested_followups;
-    }
-    return starterPrompts.map((p) => p.prompt);
-  }, [turns, starterPrompts]);
-
   const resolvedMonthLabel =
     watchingData?.resolved_session_state?.month || sessionState.month || 'Latest';
   const resolvedYearLabel =
     watchingData?.resolved_session_state?.month || sessionState.month
       ? watchingData?.resolved_session_state?.year || sessionState.year || ''
       : 'Period';
+  const fullPeriodLabel = resolvedYearLabel
+    ? `${resolvedMonthLabel} ${resolvedYearLabel}`
+    : resolvedMonthLabel;
+  const watchingAlertCount = watchingData?.alerts?.length ?? 0;
 
   return (
     <div className="min-h-full bg-gradient-to-br from-[#EDF4FC] via-[#F5F9FD] to-[#EBF3FA] px-3 py-3 sm:px-5">
@@ -1178,151 +1235,164 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               aria-hidden="true"
             />
 
-            {/* Compact Top Header Bar */}
-            <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100/90 bg-white/90 px-4 py-2.5 backdrop-blur-md sm:px-5">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-sm shadow-blue-500/30">
-                  <Sparkles size={16} />
-                </div>
-                <div className="min-w-0">
+            {/* Clean 3-Zone Top Header Bar */}
+            <div className="relative z-30 border-b border-slate-100/90 bg-white/95 px-4 py-2.5 backdrop-blur-md sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-xs">
+                    <Sparkles size={16} />
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-sm font-extrabold tracking-tight text-slate-900">
+                    <h1 className="text-base font-extrabold tracking-tight text-slate-900">
                       PMS AI
                     </h1>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700">
-                      <Calendar size={12} className="text-sky-600" />
-                      {resolvedYearLabel ? `${resolvedMonthLabel} ${resolvedYearLabel}` : resolvedMonthLabel}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                      <Calendar size={12} className="text-blue-600" />
+                      {fullPeriodLabel}
                     </span>
                     {conversationId === null ? (
-                      <span
-                        data-testid="ai-session-draft-badge"
-                        className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600"
-                      >
+                      <span data-testid="ai-session-draft-badge" className="sr-only">
                         New draft · fresh context
                       </span>
                     ) : (
-                      <span
-                        data-testid="ai-session-active-badge"
-                        className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700"
-                      >
+                      <span data-testid="ai-session-active-badge" className="sr-only">
                         Active chat
                       </span>
                     )}
                   </div>
-                  <p className="hidden items-center gap-1.5 text-xs font-medium text-slate-500 sm:flex">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-                    <span className="truncate">
-                      Verified PMS metrics within your authorized scope
-                    </span>
-                  </p>
                 </div>
-              </div>
 
-              {/* Scope Controls + Compact Workspace Actions */}
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  aria-expanded={showFilters}
-                  aria-label={showFilters ? 'Hide scope filters' : 'Show scope filters'}
-                  onClick={() => setShowFilters((prev) => !prev)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors lg:hidden ${
-                    showFilters
-                      ? 'border-blue-200 bg-blue-50 text-blue-700'
-                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
-                  }`}
-                >
-                  <SlidersHorizontal size={12} />
-                  <span>Filters</span>
-                </button>
+                {/* Unified Scope Popover Trigger + Active Filter Chips + Actions */}
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-expanded={showFilters}
+                    aria-label={showFilters ? 'Hide scope filters' : 'Show scope filters'}
+                    onClick={() => setShowFilters((prev) => !prev)}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      showFilters || activeFilterChips.length > 0
+                        ? 'border-blue-200 bg-blue-50/80 text-blue-800'
+                        : 'border-slate-200/90 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700'
+                    }`}
+                  >
+                    <SlidersHorizontal size={13} className="text-blue-600" />
+                    <span className="max-w-[200px] truncate">Scope: {activeScopeSummary}</span>
+                    <ChevronDown
+                      size={13}
+                      className={`transition-transform ${showFilters ? 'rotate-180' : ''}`}
+                    />
+                  </button>
 
-                <button
-                  type="button"
-                  data-testid="ai-history-toggle"
-                  aria-expanded={showHistoryPanel}
-                  aria-label={showHistoryPanel ? 'Hide recent chats' : 'Show recent chats'}
-                  onClick={() => setShowHistoryPanel((prev) => !prev)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
-                    showHistoryPanel
-                      ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300'
-                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
-                  }`}
-                >
-                  <History size={12} />
-                  <span>Recent chats</span>
-                  {recentConversations.length > 0 && (
-                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs font-extrabold tabular-nums text-slate-700">
-                      {recentConversations.length}
-                    </span>
-                  )}
-                </button>
+                  {activeFilterChips.map((chip) => (
+                    <button
+                      key={`${chip.key}-${chip.label}`}
+                      type="button"
+                      title={`Remove ${chip.label} filter`}
+                      onClick={() => handleFilterChange(chip.key, chip.resetValue)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-blue-200/80 bg-blue-50/50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100/70"
+                    >
+                      <span>{chip.label}</span>
+                      <X size={11} />
+                    </button>
+                  ))}
 
-                <div className="relative">
+                  <button
+                    type="button"
+                    data-testid="ai-history-toggle"
+                    aria-expanded={showHistoryPanel}
+                    aria-label={showHistoryPanel ? 'Hide recent chats' : 'Show recent chats'}
+                    onClick={() => setShowHistoryPanel((prev) => !prev)}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      showHistoryPanel
+                        ? 'border-blue-200 bg-blue-50 text-blue-700'
+                        : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700'
+                    }`}
+                  >
+                    <History size={13} />
+                    <span>Recent chats</span>
+                    {recentConversations.length > 0 && (
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold tabular-nums text-slate-700">
+                        {recentConversations.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-expanded={showWatchingPanel}
+                    aria-label={
+                      showWatchingPanel
+                        ? 'Hide AI is watching panel'
+                        : 'Show AI is watching panel'
+                    }
+                    onClick={() => setShowWatchingPanel((prev) => !prev)}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      showWatchingPanel
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700'
+                    }`}
+                  >
+                    <Bell size={13} className={watchingAlertCount > 0 ? 'text-amber-600' : ''} />
+                    <span>Needs Attention</span>
+                    {watchingAlertCount > 0 && (
+                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-bold tabular-nums text-amber-800">
+                        {watchingAlertCount}
+                      </span>
+                    )}
+                  </button>
+
                   <button
                     type="button"
                     aria-expanded={showGuardrailsInfo}
                     aria-label="How PMS AI protects data"
                     onClick={() => setShowGuardrailsInfo((prev) => !prev)}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
+                    className={`inline-flex cursor-pointer items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                       showGuardrailsInfo
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200/90 bg-white text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
+                        : 'border-slate-200/90 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700'
                     }`}
                   >
-                    <Info size={12} />
-                    <span>Info</span>
+                    <Info size={13} />
+                    <span className="hidden sm:inline">Privacy</span>
                   </button>
+
+                  {(turns.length > 0 || conversationId !== null) && (
+                    <button
+                      type="button"
+                      data-testid="ai-new-chat-btn"
+                      onClick={startNewChat}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+                    >
+                      <RotateCcw size={12} />
+                      <span>New chat</span>
+                    </button>
+                  )}
                 </div>
-
-                <button
-                  type="button"
-                  aria-expanded={showWatchingPanel}
-                  aria-label={showWatchingPanel ? 'Hide AI is watching panel' : 'Show AI is watching panel'}
-                  onClick={() => setShowWatchingPanel((prev) => !prev)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-bold shadow-2xs transition-colors ${
-                    showWatchingPanel
-                      ? 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300'
-                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
-                  }`}
-                >
-                  <ShieldCheck size={12} />
-                  <span>{showWatchingPanel ? 'Hide rail' : 'Show rail'}</span>
-                </button>
-
-                {(turns.length > 0 || conversationId !== null) && (
-                  <button
-                    type="button"
-                    data-testid="ai-new-chat-btn"
-                    onClick={startNewChat}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
-                  >
-                    <RotateCcw size={12} />
-                    <span>New chat</span>
-                  </button>
-                )}
-
-                <ScopeFilterBar
-                  availableRegions={catalogData?.eligible_regions ?? []}
-                  selectedRegion={regionParam}
-                  availablePositions={availablePositions}
-                  selectedPosition={positionParam}
-                  availableFunctions={availableFunctions}
-                  selectedFunction={sessionState.function}
-                  availableTeams={availableTeams}
-                  selectedTeam={selectedTeam}
-                  availableBranches={availableBranches}
-                  selectedBranch={selectedBranch}
-                  availableLevels={availableLevels}
-                  selectedLevel={selectedLevel}
-                  answerDetail={answerDetail}
-                  onFilterChange={handleFilterChange}
-                  onChangeAnswerDetail={(mode) => setAnswerDetail(mode)}
-                  className={
-                    showFilters
-                      ? 'mt-1.5 flex w-full border-t border-slate-100 pt-2 lg:mt-0 lg:w-auto lg:border-t-0 lg:pt-0'
-                      : 'hidden lg:flex'
-                  }
-                />
               </div>
+
+              {/* Collapsible Scope Filter Tray */}
+              <ScopeFilterBar
+                availableRegions={catalogData?.eligible_regions ?? []}
+                selectedRegion={regionParam}
+                availablePositions={availablePositions}
+                selectedPosition={positionParam}
+                availableFunctions={availableFunctions}
+                selectedFunction={sessionState.function}
+                availableTeams={availableTeams}
+                selectedTeam={selectedTeam}
+                availableBranches={availableBranches}
+                selectedBranch={selectedBranch}
+                availableLevels={availableLevels}
+                selectedLevel={selectedLevel}
+                answerDetail={answerDetail}
+                onFilterChange={handleFilterChange}
+                onChangeAnswerDetail={(mode) => setAnswerDetail(mode)}
+                className={
+                  showFilters
+                    ? 'mt-2.5 flex w-full rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5'
+                    : 'hidden'
+                }
+              />
 
               {showGuardrailsInfo && (
                 <>
@@ -1390,102 +1460,57 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   <div className="h-28 w-full animate-pulse rounded-2xl bg-slate-100" />
                 </div>
               ) : turns.length === 0 ? (
-                <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-6 text-center">
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-[0_10px_24px_-4px_rgba(37,99,235,0.45)] ring-4 ring-white">
-                    <Sparkles size={22} />
-                  </div>
-
-                  <h2 className="bg-gradient-to-r from-slate-900 via-blue-700 to-slate-900 bg-clip-text text-xl font-extrabold tracking-tight text-transparent sm:text-2xl">
-                    Hi {firstName}, how can I help?
-                  </h2>
-                  <p className="mt-1.5 max-w-md text-xs font-medium leading-relaxed text-slate-500">
-                    Ask a question about team scores, branch bookings, KPI drivers, or agent performance within your scope.
-                  </p>
-
-                  {topThreeStarters.length > 0 && (
-                    <div
-                      data-testid="ai-starter-suggestions"
-                      className="mt-6 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-3"
-                    >
-                      {topThreeStarters.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => void sendPrompt(item.prompt)}
-                          className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white/95 p-3.5 text-left shadow-2xs transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
-                                {item.badge || 'Insight'}
-                              </span>
-                              <ArrowRight
-                                size={13}
-                                className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600"
-                              />
-                            </div>
-                            <p className="mt-2 line-clamp-2 text-xs font-extrabold text-slate-900">
-                              {item.label}
-                            </p>
-                          </div>
-                          {item.subtitle && (
-                            <p
-                              dir="auto"
-                              className="mt-1 line-clamp-2 text-xs leading-snug text-slate-500"
-                            >
-                              {item.subtitle}
-                            </p>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <AiMorningBriefingHome
+                  firstName={firstName}
+                  periodLabel={fullPeriodLabel}
+                  scopeSummaryLabel={activeScopeSummary}
+                  summaryScore={watchingData?.summary_score}
+                  summaryScoreChange={watchingData?.summary_score_change}
+                  measuredRecords={watchingData?.measured_records}
+                  alerts={showWatchingPanel ? [] : (watchingData?.alerts ?? [])}
+                  starterCards={homeStarters}
+                  onSelectPrompt={(prompt) => void sendPrompt(prompt)}
+                />
               ) : (
-                <div className="space-y-4">
+                <div className="mx-auto max-w-4xl space-y-5">
                   {turns.map((turn) => (
-                    <div key={turn.id} className="space-y-3">
+                    <div key={turn.id} className="space-y-3.5">
                       {/* Right-aligned User Prompt Bubble */}
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2.5">
                         <div
                           dir="auto"
-                          className="max-w-xl rounded-2xl rounded-br-xs bg-gradient-to-r from-blue-600 to-sky-500 px-3.5 py-2 text-xs font-bold text-white shadow-sm shadow-blue-500/20"
+                          className="max-w-xl rounded-2xl rounded-br-xs bg-blue-600 px-4 py-2.5 text-sm font-medium leading-relaxed text-white shadow-xs"
                         >
                           {turn.userPrompt}
                         </div>
                         <div
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-extrabold text-white shadow-2xs"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white"
                           aria-hidden="true"
                         >
                           {userInitials}
                         </div>
                       </div>
 
-                      {/* Left-aligned Assistant Structured Skeleton */}
+                      {/* Left-aligned Live Step-by-Step Progress Card */}
                       {turn.isPending && (
-                        <div className="flex items-start gap-2.5" aria-label="Analyzing workspace data">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-blue-600 to-indigo-700 text-white shadow-2xs">
-                            <Sparkles size={15} className="animate-pulse" />
-                          </div>
-                          <div className="flex-1 space-y-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
-                            <div className="flex items-center gap-2">
-                              <div className="h-5 w-32 animate-pulse rounded-md bg-slate-100" />
-                              <div className="h-5 w-40 animate-pulse rounded-md bg-slate-100" />
-                            </div>
-                            <div className="h-4 w-3/4 animate-pulse rounded bg-slate-100" />
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              <div className="h-14 animate-pulse rounded-xl bg-slate-50" />
-                              <div className="h-14 animate-pulse rounded-xl bg-slate-50" />
-                            </div>
-                          </div>
-                        </div>
+                        <AiThinkingProgressCard
+                          onStop={() => {
+                            activeSession.abortController?.abort();
+                            updateSession(activeChatKey, (prev) => ({
+                              ...prev,
+                              isSending: false,
+                              abortController: null,
+                              turns: prev.turns.filter((t) => t.id !== turn.id),
+                            }));
+                          }}
+                        />
                       )}
 
                       {turn.error && (
-                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-800">
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-900">
                           <div>
                             <p className="font-bold">Unable to complete analysis</p>
-                            <p className="mt-1">{turn.error}</p>
+                            <p className="mt-1 text-xs text-rose-800">{turn.error}</p>
                           </div>
                           <button
                             type="button"
@@ -1497,9 +1522,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                                 variationSeed: turn.variationSeed,
                               })
                             }
-                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-rose-300 bg-white px-3.5 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100"
                           >
-                            <RotateCcw size={12} />
+                            <RotateCcw size={13} />
                             <span>Retry</span>
                           </button>
                         </div>
@@ -1525,121 +1550,17 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               )}
             </div>
 
-            {/* Bottom Dock: Compact Follow-Up Chips + Pill Composer */}
-            <div className="relative z-20 border-t border-slate-100 bg-white/95 px-4 pb-3 pt-2.5 sm:px-6">
-              {turns.length > 0 && (
-                <div className="mb-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-2.5 py-1.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowScenarioTray((v) => !v)}
-                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-slate-700 hover:text-blue-600"
-                      >
-                        <Compass size={13} className="text-blue-600" />
-                        <span>Quick Follow-Ups</span>
-                        {showScenarioTray ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="ai-midchat-scenarios-toggle"
-                        aria-expanded={showMidChatScenarios}
-                        onClick={() => setShowMidChatScenarios((v) => !v)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold transition-colors ${
-                          showMidChatScenarios
-                            ? 'border-blue-300 bg-blue-50 text-blue-700'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-600'
-                        }`}
-                      >
-                        <LayoutGrid size={12} />
-                        <span>Scenarios</span>
-                      </button>
-                    </div>
-                    <span className="text-xs font-semibold text-slate-400">
-                      Click to run
-                    </span>
-                  </div>
-
-                  {showMidChatScenarios && (
-                    <div
-                      data-testid="ai-midchat-scenarios-panel"
-                      className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200/70 pt-2"
-                    >
-                      {starterPrompts.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          disabled={isSending}
-                          onClick={() => {
-                            setShowMidChatScenarios(false);
-                            void sendPrompt(item.prompt);
-                          }}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-50"
-                        >
-                          <span>{item.label}</span>
-                          <ArrowRight size={11} className="shrink-0 text-blue-600" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {showScenarioTray && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {latestSuggestedChips.slice(0, 1).map((chipPrompt) => (
-                        <button
-                          key={chipPrompt}
-                          type="button"
-                          disabled={isSending}
-                          onClick={() => void sendPrompt(chipPrompt)}
-                          dir="auto"
-                          className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2.5 py-1 text-left text-xs font-bold text-slate-700 shadow-2xs transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-50"
-                        >
-                          <span className="max-w-[260px] truncate">{chipPrompt}</span>
-                          <ArrowRight
-                            size={11}
-                            className="shrink-0 text-blue-600 transition-transform group-hover:translate-x-0.5"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void sendPrompt(promptInput);
-                }}
-                className="flex items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3.5 py-1 shadow-xs transition-all focus-within:border-blue-500 focus-within:ring-3 focus-within:ring-blue-500/10"
-              >
-                <input
-                  type="text"
-                  dir="auto"
-                  value={promptInput}
-                  onChange={(e) => setPromptInput(e.target.value)}
-                  disabled={isSending}
-                  placeholder="Ask anything about performance, agents, 6-month trends, branches, or request decisions..."
-                  aria-label="Ask PMS AI a question"
-                  className="min-w-0 flex-1 bg-transparent py-1 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={isSending || !promptInput.trim()}
-                  aria-label="Send prompt"
-                  className="flex h-8 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow-sm shadow-blue-500/30 transition-all hover:opacity-95 disabled:opacity-40"
-                >
-                  <Send size={14} />
-                </button>
-              </form>
-
-              <p className="mt-1.5 flex items-center justify-center gap-1 text-center text-xs font-medium text-slate-400">
-                <Info size={11} className="shrink-0" />
-                <span>
-                  Performance figures come from PMS data within your authorized scope.
-                </span>
-              </p>
-            </div>
+            {/* Clean Multi-line Composer Dock + On-Demand Guided Prompts */}
+            <AiComposerDock
+              promptInput={promptInput}
+              onChangePromptInput={setPromptInput}
+              onSubmitPrompt={(prompt) => void sendPrompt(prompt)}
+              isSending={isSending}
+              hasTurns={turns.length > 0}
+              showPromptLibrary={showMidChatScenarios}
+              onTogglePromptLibrary={() => setShowMidChatScenarios((prev) => !prev)}
+              starterPrompts={starterPrompts}
+            />
           </section>
 
           {/* Compact Right Rail: AI is watching + Guardrails */}

@@ -19,11 +19,14 @@ export default function AiWatchingRail({
       {/* Compact AI is watching Card */}
       <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_8px_28px_rgb(15,23,42,0.05)]">
         <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={15} className="text-blue-600" />
-            <h2 className="text-xs font-extrabold tracking-tight text-slate-900">
-              AI is watching
+          <div>
+            <h2 className="text-sm font-bold tracking-tight text-slate-900">
+              Needs Attention
             </h2>
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+              <Sparkles size={11} className="text-blue-600" />
+              <span>AI is watching</span>
+            </span>
           </div>
           <span
             className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"

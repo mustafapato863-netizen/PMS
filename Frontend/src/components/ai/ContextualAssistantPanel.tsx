@@ -24,6 +24,12 @@ import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 import { isAdminRole } from '../../lib/access';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
+import ExecutiveKpiStrip from './response/ExecutiveKpiStrip';
+import VisualEvidenceCard from './response/VisualEvidenceCard';
+import {
+  formatBasisWarning,
+  formatManagerReadableText,
+} from './response/responseFormatting';
 import type {
   AiChatMessage,
   AiChatResponsePayload,
@@ -1059,31 +1065,44 @@ export function ContextualAssistantPanel({
                       {/* 1-2 sentence direct answer */}
                       <p
                         data-testid="contextual-assistant-direct-answer"
-                        className="font-semibold leading-relaxed text-slate-900 dark:text-slate-100"
+                        className="text-sm font-bold leading-relaxed text-slate-900 dark:text-slate-100"
                       >
-                        {res.headline}
+                        {formatManagerReadableText(res.headline)}
                       </p>
+
+                      {/* Compact Executive KPI Summary Tiles */}
+                      <ExecutiveKpiStrip tiles={res.summary_tiles ?? []} compact />
 
                       {/* Supporting Narrative Bullets (up to 3) */}
                       {res.narrative_bullets && res.narrative_bullets.length > 0 && (
                         <ul
                           data-testid="contextual-assistant-bullets"
-                          className="space-y-1 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
+                          className="space-y-1.5 rounded-xl border border-slate-200/80 bg-white/95 px-3 py-2.5 text-sm leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
                         >
                           {res.narrative_bullets.slice(0, 3).map((bullet, bIdx) => (
-                            <li key={bIdx} className="flex items-start gap-1.5">
-                              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-                              <span>{bullet}</span>
+                            <li key={bIdx} className="flex items-start gap-2">
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                              <span>{formatManagerReadableText(bullet)}</span>
                             </li>
                           ))}
                         </ul>
                       )}
 
+                      {/* Primary Inline Visual Evidence (Chart / Bars / Table) */}
+                      {res.visual_cards &&
+                        res.visual_cards.filter((c) => c.card_type !== 'decision_playbook')[0] && (
+                          <VisualEvidenceCard
+                            card={
+                              res.visual_cards.filter((c) => c.card_type !== 'decision_playbook')[0]
+                            }
+                          />
+                        )}
+
                       {/* Material basis warning */}
                       {res.basis_warning && (
-                        <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 text-xs font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                          <AlertTriangle className="mt-0.5 size-3 shrink-0 text-amber-600" />
-                          <span>{res.basis_warning}</span>
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                          <span>{formatBasisWarning(res.basis_warning)}</span>
                         </div>
                       )}
 

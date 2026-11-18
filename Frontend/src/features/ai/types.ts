@@ -428,6 +428,7 @@ export interface AiChatResponsePayload {
   headline: string;
   narrative_bullets: string[];
   detail_bullets?: string[];
+  summary_tiles?: AiSpotlightMetricTile[];
   visual_cards: StructuredVisualCard[];
   citations: SourceCitationPill[];
   deep_links: DeepLinkCta[];

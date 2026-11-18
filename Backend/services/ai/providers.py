@@ -1650,22 +1650,58 @@ class DeterministicLocalProviderAdapter:
             elif worst and avg_score is not None:
                 w_score = worst.get("current_score") or 0.0
                 w_change = worst.get("score_change")
-                change_txt_en = f" ({w_change:+.1f} pp vs prior month)" if w_change is not None else ""
-                if variant_idx == 1:
-                    headline = (
-                        f"Primary risk area in {period} ({branch}): {worst['team']} trails at {w_score:.1f}%{change_txt_en}, with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
-                    )
-                elif variant_idx == 2:
-                    headline = (
-                        f"Coaching attention in {period} ({branch}) centers on {worst['team']} at {w_score:.1f}%{change_txt_en} across {worst.get('impacted_employees', below_cnt)}/{worst.get('total_employees', tot_rec)} below-target agents."
-                    )
+                change_txt_en = f" ({w_change:+.1f} pts vs prior month)" if w_change is not None else ""
+                w_impacted = int(worst.get("impacted_employees", below_cnt) or 0)
+                w_total = int(worst.get("total_employees", tot_rec) or 0)
+                teams_list = merged.get("teams") or []
+                is_multi_team = int(merged.get("total_teams") or len(teams_list)) > 1 or (
+                    tot_rec > w_total and w_total > 0
+                )
+                if w_impacted > 0 and w_total > 0:
+                    agent_impact_clause = f", with {w_impacted} of {w_total} agents below target"
+                elif w_total > 0:
+                    agent_unit = "agent" if w_total == 1 else "agents"
+                    agent_impact_clause = f" ({w_total} evaluated {agent_unit})"
                 else:
-                    headline = (
-                        f"In {period} ({branch}), {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}, "
-                        f"with {worst.get('impacted_employees', below_cnt)} of {worst.get('total_employees', tot_rec)} agents below target."
+                    agent_impact_clause = ""
+
+                if is_multi_team:
+                    overall_delta = (
+                        f" ({score_change:+.1f} pts vs prior month)"
+                        if score_change is not None
+                        else ""
                     )
+                    emp_unit = "employee" if tot_rec == 1 else "employees"
+                    if variant_idx == 1:
+                        headline = (
+                            f"Overall performance in {period} ({branch}) stands at {avg_score:.1f}%{overall_delta} across {tot_rec} evaluated {emp_unit}; "
+                            f"primary attention area is {worst['team']} trailing at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Executive pulse for {period} ({branch}): {avg_score:.1f}%{overall_delta} average across {tot_rec} {emp_unit}, "
+                            f"while {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                    else:
+                        headline = (
+                            f"Overall performance in {period} ({branch}) averages {avg_score:.1f}%{overall_delta} across {tot_rec} evaluated {emp_unit}; "
+                            f"{worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                else:
+                    if variant_idx == 1:
+                        headline = (
+                            f"Primary risk area in {period} ({branch}): {worst['team']} trails at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                    elif variant_idx == 2:
+                        headline = (
+                            f"Coaching attention in {period} ({branch}) centers on {worst['team']} at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                    else:
+                        headline = (
+                            f"In {period} ({branch}), {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
                 if worst.get("main_cause"):
-                    bullets.append(f"Top contributing factor: {worst['main_cause']}.")
+                    bullets.append(f"Primary score driver in {worst['team']}: {worst['main_cause']}.")
             elif lowest_kpi:
                 below_low_cnt = int(lowest_kpi.get("people_below_target") or 0)
                 below_low_note = f", {below_low_cnt} agents below target" if below_low_cnt > 0 else ""

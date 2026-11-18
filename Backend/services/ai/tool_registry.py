@@ -998,6 +998,22 @@ class DeterministicToolRegistry:
                 )
             )
 
+        best_team = None
+        if len(scoped_summaries) > 1:
+            best_team_obj = max(
+                scoped_summaries,
+                key=lambda t: (t.current_score if t.current_score is not None else -1.0),
+            )
+            best_team = {
+                "team": _display_team_name(best_team_obj.team),
+                "current_score": min(100.0, round(float(best_team_obj.current_score or 0.0), 1)),
+                "score_change": best_team_obj.score_change,
+                "total_employees": best_team_obj.total_employees,
+            }
+        teams_on_track = sum(
+            1 for t in scoped_summaries if float(t.current_score or 0.0) >= 85.0
+        )
+
         digest = {
             "period": period_label,
             "scope": scope_label,
@@ -1006,9 +1022,12 @@ class DeterministicToolRegistry:
             "score_change": ws.executive_story.score_change if ws.executive_story else None,
             "total_records": total_employees,
             "employees_below_target": impacted_employees,
+            "total_teams": len(scoped_summaries),
+            "teams_on_track": teams_on_track,
             "primary_driver": ws.executive_story.primary_driver if ws.executive_story else None,
             "recommended_focus": ws.executive_story.recommended_focus if ws.executive_story else None,
             "worst_team": worst_team,
+            "best_team": best_team,
             "teams": [
                 {
                     "team": _display_team_name(t.team),
