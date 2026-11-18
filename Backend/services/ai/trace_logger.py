@@ -490,6 +490,9 @@ def redact_nested_payload(
             if key_lower in (
                 "employee_id",
                 "emp_id",
+                "employee_code",
+                "employee_pk",
+                "username",
                 "last_subject_employee_id",
                 "subject_employee_id",
                 "entity_id",

@@ -1623,6 +1623,7 @@ class AiApprovedPattern(Base):
     tool_choice = Column(String(80), nullable=True)
     metric_hint = Column(String(120), nullable=True)
     failure_category = Column(String(64), nullable=True)
+    persona_tier = Column(String(20), nullable=True)  # NULL = universal; else PersonaTier.value only
     verified_against_pms = Column(Boolean, nullable=False, default=False, server_default=false())
     approved_by_user_id = Column(String(100), nullable=True)
     review_notes = Column(Text, nullable=True)
