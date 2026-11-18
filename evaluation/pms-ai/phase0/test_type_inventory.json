@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 55,
-  "case_count": 763,
+  "file_count": 56,
+  "case_count": 768,
   "files_by_label": {
     "synthetic": 16,
-    "mocked": 36,
+    "mocked": 37,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -158,6 +158,16 @@
         "mocked"
       ],
       "cases": 20,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_executive_pulse_formatting.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 4,
       "evidence_status": "partial",
       "note": ""
     },
@@ -509,7 +519,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 9,
+      "cases": 10,
       "evidence_status": "partial",
       "note": ""
     },
