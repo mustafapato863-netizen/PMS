@@ -4,10 +4,10 @@ import {
   AiRecommendationBanner,
   AiRecommendIconButton,
   AiStatusInline,
-  formatScoreChangeLabel,
   IndividualEvidenceDrawer,
   ViewEvidenceToggleButton,
 } from './ActionPlanAiAssistant';
+import { formatScoreChangeLabel } from './scoreChangeLabel';
 import {
   buildAiScopeKey,
   parseMonthYearFromLabel,

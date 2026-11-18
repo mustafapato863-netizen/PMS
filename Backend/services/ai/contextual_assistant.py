@@ -625,6 +625,7 @@ def detect_contextual_capability(
     *,
     intent_context: BoundedIntentContext | None = None,
     out_intent_result: list[LocalIntentResult] | None = None,
+    scope: dict[str, Any] | None = None,
 ) -> tuple[ContextualCapabilityMode, str, float]:
     """Classify a turn safely BEFORE any performance DB read or exploration.
 
@@ -755,8 +756,8 @@ def detect_contextual_capability(
             suggest_intent,
             prompt,
             context=intent_context,
-            user_id=str(scope.get("user_id") or "") or None,
-            user_role=str(scope.get("role") or "") or None,
+            user_id=str((scope or {}).get("user_id") or "") or None,
+            user_role=str((scope or {}).get("role") or "") or None,
         )
         if out_intent_result is not None:
             out_intent_result.append(local_res)
@@ -784,8 +785,8 @@ def detect_contextual_capability(
             suggest_intent,
             prompt,
             context=intent_context,
-            user_id=str(scope.get("user_id") or "") or None,
-            user_role=str(scope.get("role") or "") or None,
+            user_id=str((scope or {}).get("user_id") or "") or None,
+            user_role=str((scope or {}).get("role") or "") or None,
         )
         if out_intent_result is not None:
             out_intent_result.append(local_res)
@@ -1321,8 +1322,8 @@ def build_explain_previous_payload(
             json_schema=schema,
             timeout_seconds=synthesis_timeout_seconds(),
             purpose="explain_previous",
-            user_id=str(scope.get("user_id") or "") or None,
-            user_role=str(scope.get("role") or "") or None,
+            user_id=str((scope or {}).get("user_id") or "") or None,
+            user_role=str((scope or {}).get("role") or "") or None,
         )
         p_resp = get_unified_provider_engine().generate(p_req)
         meta["provider_calls"] = 1
