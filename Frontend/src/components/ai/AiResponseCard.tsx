@@ -264,7 +264,7 @@ export default function AiResponseCard({
           </div>
         )}
 
-        {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */
+        {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
         {visibleBullets.length > 0 && (
           <ul
             dir="auto"
