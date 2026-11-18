@@ -1528,6 +1528,9 @@ class AiUserMemory(Base):
         Index("idx_ai_user_memory_user_id", "user_id"),
         Index("idx_ai_user_memory_last_accessed", "last_accessed_at"),
     )
+
+
+class AiConversation(Base):
     """Server-owned conversation state for PMS AI multi-turn dialogue."""
 
     __tablename__ = "ai_conversations"
