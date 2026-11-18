@@ -614,6 +614,20 @@ class PmsAiOrchestrator:
         self.user_rules_spec = build_user_rules_spec(scope)
         self.scope["user_rules_spec"] = self.user_rules_spec
         self.scope["user_rules_spec_text"] = self.user_rules_spec.get("summary_text", "")
+        # Load user memory
+        try:
+            from services.ai.user_memory_service import UserMemoryService
+            self.user_memory_service = UserMemoryService(db)
+            self.user_memory = self.user_memory_service.load_memory(str(scope.get("user_id") or ""))
+        except Exception:
+            self.user_memory_service = None
+            self.user_memory = None
+        self.scope["user_memory"] = self.user_memory
+        self.scope["user_memory_text"] = (
+            self.user_memory_service.get_memory_text(self.user_memory)
+            if self.user_memory_service
+            else ""
+        )
 
     def _resolve_scope_banner_and_function(
         self,
@@ -2571,7 +2585,8 @@ class PmsAiOrchestrator:
                     "target_status": tgt_clause,
                 }
                 instruction = (
-                    f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n\n"
+                    f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n"
+                    f"{self.scope.get('user_memory_text', '')}\n\n"
                     "You are the PMS AI Assistant. State the verified performance answer directly and concisely in 1-2 sentences. "
                     "Use ONLY the exact employee name, metric name, period, value, and unit in `verified_facts`. "
                     "For single-period questions, report only the requested period's value and target (if present). "
@@ -3032,6 +3047,20 @@ class PmsAiOrchestrator:
         self.user_rules_spec = build_user_rules_spec(self.scope)
         self.scope["user_rules_spec"] = self.user_rules_spec
         self.scope["user_rules_spec_text"] = self.user_rules_spec.get("summary_text", "")
+        # Reload user memory after scope validation
+        try:
+            if self.user_memory_service is None:
+                from services.ai.user_memory_service import UserMemoryService
+                self.user_memory_service = UserMemoryService(self.db)
+            self.user_memory = self.user_memory_service.load_memory(str(self.scope.get("user_id") or ""))
+        except Exception:
+            self.user_memory = None
+        self.scope["user_memory"] = self.user_memory
+        self.scope["user_memory_text"] = (
+            self.user_memory_service.get_memory_text(self.user_memory)
+            if self.user_memory_service
+            else ""
+        )
         page_ctx_ok, page_restr_h, page_restr_b = validate_page_context_scope(req, self.scope, live_auth_service)
         req, selected_metric_display = apply_page_context_to_request(req)
         prompt_region = _prompt_region_hint(req.prompt)

@@ -2,10 +2,12 @@
 
 import pytest
 
+from services.ai.domain_policies import is_self_service_prompt
 from services.ai.user_rules_spec import (
     build_user_rules_spec,
     get_user_rules_spec_text,
     is_self_service_query,
+    resolve_self_employee_id,
 )
 
 
@@ -92,21 +94,23 @@ def test_get_user_rules_spec_text():
     assert "ALL teams (unrestricted)" in text
 
 
-def test_is_self_service_query():
-    scope_employee = {
-        "is_self_only": True,
-        "employee_id": "EMP-101",
-    }
-    assert is_self_service_query(scope_employee) is True
+def test_is_self_service_prompt():
+    assert is_self_service_prompt("How am I doing?") is True
+    assert is_self_service_prompt("What's my score?") is True
+    assert is_self_service_prompt("Show me my KPIs") is True
+    assert is_self_service_prompt("My trend over recent months") is True
+    assert is_self_service_prompt("Am I doing well?") is True
+    assert is_self_service_prompt("Show overall performance") is False
+    assert is_self_service_prompt("How is Inbound doing?") is False
+    assert is_self_service_prompt("") is False
 
-    scope_admin = {
-        "is_self_only": False,
-        "employee_id": None,
-    }
-    assert is_self_service_query(scope_admin) is False
 
-    scope_no_employee = {
-        "is_self_only": True,
-        "employee_id": None,
-    }
-    assert is_self_service_query(scope_no_employee) is False
+def test_resolve_self_employee_id():
+    scope = {"is_self_only": True, "employee_id": "EMP-101"}
+    assert resolve_self_employee_id(scope) == "EMP-101"
+
+    scope_no_emp = {"is_self_only": True, "employee_id": None}
+    assert resolve_self_employee_id(scope_no_emp) is None
+
+    scope_admin = {"is_self_only": False, "employee_id": "EMP-101"}
+    assert resolve_self_employee_id(scope_admin) is None

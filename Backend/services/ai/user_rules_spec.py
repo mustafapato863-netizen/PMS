@@ -92,3 +92,15 @@ def get_user_rules_spec_text(scope: dict[str, Any]) -> str:
 def is_self_service_query(scope: dict[str, Any]) -> bool:
     """Check if the user is an employee/agent who can only access their own data."""
     return bool(scope.get("is_self_only")) and bool(scope.get("employee_id"))
+
+
+def resolve_self_employee_id(scope: dict[str, Any]) -> str | None:
+    """Resolve the employee_id for a self-service query from the user's scope.
+
+    Returns the employee_id if the user is self-only and has an employee_id,
+    None otherwise.
+    """
+    if not is_self_service_query(scope):
+        return None
+    eid = str(scope.get("employee_id") or "").strip()
+    return eid if eid else None
