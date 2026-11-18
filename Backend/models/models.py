@@ -1502,7 +1502,32 @@ class AiInteractionTrace(Base):
     )
 
 
-class AiConversation(Base):
+class AiUserMemory(Base):
+    """Persistent per-user memory for AI assistant personalization.
+
+    One row per user. Stores preferences, query patterns, interaction
+    summaries, and feedback signals that enhance model engine quality
+    over time.
+    """
+
+    __tablename__ = "ai_user_memory"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    preferences = Column(JSON_COMPAT_TYPE, nullable=False, default=dict, server_default=text("'{}'"))
+    query_patterns = Column(JSON_COMPAT_TYPE, nullable=False, default=dict, server_default=text("'{}'"))
+    interaction_summary = Column(Text, nullable=True)
+    feedback_signals = Column(JSON_COMPAT_TYPE, nullable=False, default=dict, server_default=text("'{}'"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_accessed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", backref="ai_memory", passive_deletes=True)
+
+    __table_args__ = (
+        Index("idx_ai_user_memory_user_id", "user_id"),
+        Index("idx_ai_user_memory_last_accessed", "last_accessed_at"),
+    )
     """Server-owned conversation state for PMS AI multi-turn dialogue."""
 
     __tablename__ = "ai_conversations"
