@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from config.database import get_db
 from utils.db_errors import DatabaseUnavailableError, is_db_unavailable, retry_after_headers
+from services.ai.feature_gate import read_ai_access_tier
 from api.middleware.rbac_middleware import require_permission
 from models.schemas import (
     JWTToken,
@@ -349,6 +350,7 @@ def me(request: Request, db: Session = Depends(get_db)):
                 "total_team_count": active_team_count,
                 "has_unrestricted_team_access": has_unrestricted_team_access,
                 "is_self_only": user.role in {"Agent", "Employee"},
+                "ai_access_tier": read_ai_access_tier(db),
             },
         )
     except HTTPException:

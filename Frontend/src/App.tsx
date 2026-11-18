@@ -17,6 +17,8 @@ import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
 import { ROUTE_ROLES } from './lib/access';
+import { hasAiAccess } from './utils/aiAccess';
+import { AiRouteGuard } from './components/common/AiRouteGuard';
 import { AiAvailabilityProvider } from './features/ai/aiAvailability';
 import { useAiAvailability } from './features/ai/aiAvailabilityContext';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
@@ -54,6 +56,7 @@ function AnimatedRoutes() {
   const { currentUser } = useAuth();
 
   if (currentUser?.role === 'Agent' || currentUser?.role === 'Employee') {
+    const aiAllowed = hasAiAccess(currentUser.role, currentUser.ai_access_tier);
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
@@ -63,6 +66,9 @@ function AnimatedRoutes() {
             path="/employee/:employeeId"
             element={<Suspense fallback={<RouteLoadingFallback />}><EmployeeProfileView /></Suspense>}
           />
+          {aiAllowed && (
+            <Route path="/ai" element={<Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>} />
+          )}
           <Route path="*" element={<Suspense fallback={<RouteLoadingFallback />}><NotFound /></Suspense>} />
         </Routes>
       </AnimatePresence>
@@ -152,9 +158,9 @@ function AnimatedRoutes() {
         <Route
           path="/ai"
           element={
-            <RouteGuard allowedRoles={ROUTE_ROLES.pmsAi}>
+            <AiRouteGuard>
               <AiWorkspaceRoute />
-            </RouteGuard>
+            </AiRouteGuard>
           }
         />
         <Route path="/planning" element={<RouteGuard allowedRoles={ROUTE_ROLES.planning}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />

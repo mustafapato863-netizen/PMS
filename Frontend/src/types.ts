@@ -734,6 +734,27 @@ export interface User {
   /** @deprecated Backend PR #9 renamed to has_unrestricted_team_access. Kept for read fallback. */
   is_general_manager?: boolean;
   is_self_only?: boolean;
+  ai_access_tier?: AiAccessTier;
+}
+
+export type AiAccessTier = 'admin_only' | 'managers_and_admins' | 'all_authenticated_users';
+
+export interface Agent360Profile {
+  employee_code: string;
+  employee_name: string;
+  current_period: string | null;
+  overall_score: number | null;
+  overall_grade: string | null;
+  score_trend: Array<{ month: string; year: number; score: number | null }>;
+  kpi_scores: Array<{ name: string; score: number | null; grade: string | null; status: string | null; target: number | null; weight: number | null }>;
+  top_strength: string | null;
+  top_opportunity: string | null;
+  active_corrective_actions: number;
+  corrective_action_summary: string | null;
+  performance_classification: string;
+  cohort: { cohort_size: number; cohort_avg_score: number; percentile_band: string } | null;
+  what_if_suggestions: Array<{ kpi_name: string; current_value: number; suggestion: string }>;
+  message?: string;
 }
 
 export interface KPIConfig {

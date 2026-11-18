@@ -1,4 +1,5 @@
-import type { User } from '../types';
+import type { User, AiAccessTier } from '../types';
+import { hasAiAccess as hasAiAccessForTier } from '../utils/aiAccess';
 
 /**
  * Frontend access helpers for the role model, including the General Manager role.
@@ -123,7 +124,7 @@ export const ROUTE_ROLES = {
   planning: ['Admin', 'General Manager', 'Manager', 'Performance Team'],
   correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
   functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
-  /** Admin-only pilot. The backend `require_ai_admin` dependency is the source of truth. */
+  /** PMS AI pilot gate. The backend `require_ai_access` dependency is the source of truth. */
   pmsAi: ['Admin'],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
   /**
@@ -142,9 +143,13 @@ export const ROUTE_ROLES = {
 export const canAccessMonthlyPresentation = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.monthlyPresentation });
 
-/** PMS AI pilot is Admin-only. The administrator switch must also be on; a role check alone does not show AI. */
-export const canAccessPmsAi = (role: RoleInput): boolean =>
-  canAccessRoute({ role, allowedRoles: ROUTE_ROLES.pmsAi });
+/** PMS AI access is tier-aware; the backend `require_ai_access` dependency is the source of truth. */
+export const canAccessPmsAi = (role: RoleInput, aiTier?: AiAccessTier): boolean => {
+  if (aiTier && aiTier !== 'admin_only') {
+    return hasAiAccessForTier(role, aiTier);
+  }
+  return canAccessRoute({ role, allowedRoles: ROUTE_ROLES.pmsAi });
+};
 
 /** Function roles do not stay on Executive Summary or Monthly Review; both send them to Function Summary. */
 export const redirectsToFunctionSummary = (role: RoleInput): boolean =>

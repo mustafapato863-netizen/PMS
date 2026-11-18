@@ -71,6 +71,25 @@ def daily_user_request_limit() -> int:
     return _read_non_negative_int(("PMS_AI_DAILY_USER_REQUEST_LIMIT",), 0, minimum=0)
 
 
+# Persona-tier budgets from USER_AWARE_360_SPEC §4.7. Used when the access tier
+# is widened beyond admin_only, so non-Admin users get progressively smaller caps.
+TIER_BUDGETS: dict[str, dict[str, int]] = {
+    "global_exec": {"daily_turns": 100, "daily_tokens": 50_000},
+    "scoped_manager": {"daily_turns": 50, "daily_tokens": 25_000},
+    "self_only": {"daily_turns": 20, "daily_tokens": 10_000},
+}
+
+
+def tier_budget_for_role(role: str | None) -> dict[str, int]:
+    """Return the default daily turn/token budget for a role's persona tier."""
+    from services.ai.identity_service import PersonaTier, build_passport
+
+    scope = {"role": role or "", "employee_id": None, "has_unrestricted_team_access": role in {"Admin", "General Manager", "Performance Team"}}
+    passport = build_passport(scope)
+    tier = passport.persona_tier.value
+    return TIER_BUDGETS.get(tier, TIER_BUDGETS["self_only"])
+
+
 def daily_user_token_limit() -> int:
     """UTC-day per-user token cap. Default 0 = unconfigured / unlimited."""
     return _read_non_negative_int(("PMS_AI_DAILY_USER_TOKEN_LIMIT",), 0, minimum=0)

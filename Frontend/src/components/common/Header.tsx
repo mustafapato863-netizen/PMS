@@ -364,7 +364,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
         {/* ── Right: controls ── */}
         <div className="app-header-actions flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
-          {aiEnabled && canAccessPmsAi(role) && pathname !== '/ai' && (
+          {aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier) && pathname !== '/ai' && (
             <button
               type="button"
               onClick={handleOpenAskAi}

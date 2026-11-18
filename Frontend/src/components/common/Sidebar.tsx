@@ -342,7 +342,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
-        ...(aiEnabled && canAccessPmsAi(role) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
+        ...(aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
