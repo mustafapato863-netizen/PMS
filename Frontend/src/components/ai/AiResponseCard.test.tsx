@@ -110,6 +110,62 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     });
   });
 
+  it('reports clipboard permission denial instead of claiming the summary was copied', async () => {
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(
+        <MemoryRouter>
+          <AiResponseCard response={{ ...responseWithBarCard(), outcome: 'answer' }} />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByTestId('ai-copy-summary-btn'));
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('status')).toHaveTextContent(
+          'Copy unavailable. Select the text to copy manually.',
+        );
+      });
+      expect(screen.getByTestId('ai-copy-summary-btn')).toHaveTextContent('Copy');
+      expect(screen.getByTestId('ai-copy-summary-btn')).not.toHaveTextContent('Copied');
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: originalClipboard,
+      });
+    }
+  });
+
+  it('reports when the browser has no clipboard API', async () => {
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    try {
+      render(
+        <MemoryRouter>
+          <AiResponseCard response={{ ...responseWithBarCard(), outcome: 'answer' }} />
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByTestId('ai-copy-summary-btn'));
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('Copy unavailable.'),
+      );
+      expect(screen.getByTestId('ai-copy-summary-btn')).not.toHaveTextContent('Copied');
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: originalClipboard,
+      });
+    }
+  });
+
   it('toggles View details and Hide details cleanly in Brief mode', () => {
     const briefResp: AiChatResponsePayload = {
       ...responseWithBarCard(),
