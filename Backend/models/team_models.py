@@ -3,7 +3,7 @@ Team Data Models
 Pydantic models for team configuration and management.
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Dict, List, Optional, Literal
 from datetime import datetime
 
@@ -33,7 +33,8 @@ class TeamConfig(BaseModel):
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = Field(default_factory=datetime.now)
     
-    @validator('kpi_weights')
+    @field_validator('kpi_weights')
+    @classmethod
     def weights_sum_to_one(cls, v):
         """Validate that KPI weights sum to 1.0."""
         if v:
@@ -42,8 +43,8 @@ class TeamConfig(BaseModel):
                 raise ValueError(f"KPI weights must sum to 1.0, got {total}")
         return v
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "inbound",
                 "display_name": "Inbound Team",
@@ -57,6 +58,7 @@ class TeamConfig(BaseModel):
                 "is_active": True,
             }
         }
+    )
 
 
 class TeamCreateRequest(BaseModel):
@@ -75,7 +77,8 @@ class TeamCreateRequest(BaseModel):
     team_lead: Optional[str] = None
     team_lead_email: Optional[str] = None
     
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def name_lowercase_no_spaces(cls, v):
         """Team name must be lowercase, no spaces."""
         v = v.lower().replace(' ', '_')
@@ -94,7 +97,8 @@ class TeamUpdateRequest(BaseModel):
     team_lead_email: Optional[str] = None
     is_active: Optional[bool] = None
     
-    @validator('kpi_weights')
+    @field_validator('kpi_weights')
+    @classmethod
     def weights_sum_to_one(cls, v):
         """Validate that KPI weights sum to 1.0."""
         if v:
@@ -122,8 +126,7 @@ class TeamResponse(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamListResponse(BaseModel):
@@ -144,8 +147,8 @@ class TeamValidationResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     message: str
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "valid": True,
                 "team_name": "inbound",
@@ -154,6 +157,7 @@ class TeamValidationResponse(BaseModel):
                 "message": "Team configuration is valid with warnings"
             }
         }
+    )
 
 
 class TeamOnboardingStep(BaseModel):
