@@ -610,6 +610,10 @@ class PmsAiOrchestrator:
     def __init__(self, db: Session, scope: dict[str, Any]) -> None:
         self.db = db
         self.scope = scope
+        from services.ai.user_rules_spec import build_user_rules_spec
+        self.user_rules_spec = build_user_rules_spec(scope)
+        self.scope["user_rules_spec"] = self.user_rules_spec
+        self.scope["user_rules_spec_text"] = self.user_rules_spec.get("summary_text", "")
 
     def _resolve_scope_banner_and_function(
         self,
@@ -2567,6 +2571,7 @@ class PmsAiOrchestrator:
                     "target_status": tgt_clause,
                 }
                 instruction = (
+                    f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n\n"
                     "You are the PMS AI Assistant. State the verified performance answer directly and concisely in 1-2 sentences. "
                     "Use ONLY the exact employee name, metric name, period, value, and unit in `verified_facts`. "
                     "For single-period questions, report only the requested period's value and target (if present). "
@@ -3023,6 +3028,10 @@ class PmsAiOrchestrator:
         live_auth_service = conv_service or AiConversationService(self.db, self.scope)
         self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
         role = str(self.scope.get("role") or "Manager")
+        from services.ai.user_rules_spec import build_user_rules_spec
+        self.user_rules_spec = build_user_rules_spec(self.scope)
+        self.scope["user_rules_spec"] = self.user_rules_spec
+        self.scope["user_rules_spec_text"] = self.user_rules_spec.get("summary_text", "")
         page_ctx_ok, page_restr_h, page_restr_b = validate_page_context_scope(req, self.scope, live_auth_service)
         req, selected_metric_display = apply_page_context_to_request(req)
         prompt_region = _prompt_region_hint(req.prompt)
