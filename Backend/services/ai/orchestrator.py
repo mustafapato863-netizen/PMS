@@ -610,6 +610,10 @@ class PmsAiOrchestrator:
     def __init__(self, db: Session, scope: dict[str, Any]) -> None:
         self.db = db
         self.scope = scope
+        from services.ai.identity_service import build_passport
+        self.passport = build_passport(scope)
+        self.scope["passport"] = self.passport
+        self.scope["passport_xml"] = self.passport.to_xml()
         from services.ai.user_rules_spec import build_user_rules_spec
         self.user_rules_spec = build_user_rules_spec(scope)
         self.scope["user_rules_spec"] = self.user_rules_spec
@@ -3043,6 +3047,10 @@ class PmsAiOrchestrator:
         live_auth_service = conv_service or AiConversationService(self.db, self.scope)
         self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
         role = str(self.scope.get("role") or "Manager")
+        from services.ai.identity_service import build_passport
+        self.passport = build_passport(self.scope)
+        self.scope["passport"] = self.passport
+        self.scope["passport_xml"] = self.passport.to_xml()
         from services.ai.user_rules_spec import build_user_rules_spec
         self.user_rules_spec = build_user_rules_spec(self.scope)
         self.scope["user_rules_spec"] = self.user_rules_spec
