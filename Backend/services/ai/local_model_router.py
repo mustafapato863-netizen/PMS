@@ -19,6 +19,7 @@ from services.ai.llm_client import (
     record_fallback_reason,
     routing_timeout_seconds,
 )
+from services.ai.prompt_versions import INTENT_CLASSIFIER_PROMPT_VERSION
 from services.ai.provider_engine import (
     ProviderMessage,
     ProviderRequest,
@@ -175,6 +176,7 @@ def suggest_intent(
     if not question or not question.strip() or len(question) > 600:
         return result(None, "invalid_question")
     instruction = (
+        f"[PromptVersion: {INTENT_CLASSIFIER_PROMPT_VERSION}]\n"
         "Classify the user's message into one intent. Return JSON with only an intent field. "
         "Allowed intents: "
         "greeting (salutations or thanks like hi, hello, thanks), "

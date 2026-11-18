@@ -67,10 +67,14 @@ def test_services_ai_does_not_mutate_database_url_at_import_time():
 def test_obsolete_legacy_eval_scripts_deleted_and_retained_modules_intact():
     assert not (BACKEND_DIR / "services" / "ai" / "evaluate_full_coverage_holdout.py").exists()
     assert not (BACKEND_DIR / "scripts" / "evaluate_call_center_dialogue.py").exists()
+    assert not (BACKEND_DIR / "services" / "ai" / "classifier.py").exists()
+    assert not (BACKEND_DIR / "scripts" / "evaluate_ai_classifier.py").exists()
+    assert not (BACKEND_DIR / "scripts" / "evaluate_pms_ai_improvements.py").exists()
+    assert not (BACKEND_DIR / "requirements-ai-eval.txt").exists()
 
     assert (BACKEND_DIR / "services" / "ai" / "provider_engine.py").exists()
     assert (BACKEND_DIR / "services" / "ai" / "providers.py").exists()
-    assert (BACKEND_DIR / "scripts" / "evaluate_ai_classifier.py").exists()
+    assert (BACKEND_DIR / "scripts" / "run_unseen_eval.py").exists()
     assert (BACKEND_DIR / "scripts" / "certify_scopes_and_benchmark.py").exists()
 
     from services.ai.provider_engine import OpenAIProviderAdapter, ProviderClientError, ProviderRequest, UnifiedProviderConfig
@@ -94,6 +98,10 @@ def test_phase8_decision_and_cleanup_inventory_documents_present():
     assert "OpenAIProviderAdapter" in inventory
     assert "providers.py" in inventory
     assert "evaluate_ai_classifier.py" in inventory
+    assert "evaluate_pms_ai_improvements.py" in inventory
+    assert "classifier.py" in inventory
+    assert "requirements-ai-eval.txt" in inventory
+    assert "run_unseen_eval.py" in inventory
     assert "certify_scopes_and_benchmark.py" in inventory
 
 

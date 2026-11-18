@@ -35,7 +35,6 @@ Backend/tests
 Backend/conftest.py
 Backend/pytest.ini
 Backend/requirements-dev.txt
-Backend/requirements-ai-eval.txt
 Backend/scripts/phase5_*
 Backend/scripts/run_phase5_*
 Backend/scripts/rescore_phase5_*

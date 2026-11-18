@@ -135,13 +135,12 @@ def test_openai_is_never_a_usable_provider(clean_env):
     assert provider_status()["primary_provider"] == "cloudflare"
 
 
-def test_exploration_is_opt_in_and_never_in_production(clean_env):
+def test_exploration_is_permanently_disabled(clean_env):
     assert local_exploration_enabled() is False
     clean_env.setenv("PMS_AI_EXPLORATION_ENABLED", "true")
-    assert local_exploration_enabled() is True
-    clean_env.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "false")
-    assert local_exploration_enabled() is False
+    clean_env.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
     clean_env.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "true")
+    assert local_exploration_enabled() is False
     clean_env.setenv("APP_ENV", "production")
     assert local_exploration_enabled() is False
 

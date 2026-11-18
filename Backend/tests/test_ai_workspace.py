@@ -913,18 +913,21 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
     assert bench["categories"]["standard_comparison"]["warm_p95_ms"] < 5000.0
 
 
-def test_pr6_classifier_evaluation_and_promotion_gate_decision():
-    """PR 6: Evaluate local intent classifier on paraphrase-grouped splits and verify promotion gate decision."""
-    from scripts.evaluate_ai_classifier import run_classifier_evaluation
+def test_pr6_classifier_retired_and_mode_pinned_off(monkeypatch):
+    """Phase 6: Retired TF-IDF classifier and evaluator scripts stay removed with classifier_mode pinned off."""
+    from pathlib import Path
 
-    report = run_classifier_evaluation()
-    assert report["paraphrase_split_zero_leakage"] is True
-    assert report["splits"]["test"]["hybrid_router_exact_match_pct"] == 100.0
-    assert report["gates"]["accepted_local_exact_match_measured_pct"] >= 99.0
-    assert report["gates"]["overall_test_exact_match_measured_pct"] >= 95.0
-    assert report["gates"]["passes_cost_gate"] is False
-    assert report["promotion_decision"] == "DO_NOT_PROMOTE_KEEP_HYBRID_RULES"
-    assert report["runtime_dependency_added"] is False
+    from services.ai.config import get_ai_runtime_config
+
+    backend_dir = Path(__file__).resolve().parents[1]
+    assert not (backend_dir / "services" / "ai" / "classifier.py").exists()
+    assert not (backend_dir / "scripts" / "evaluate_ai_classifier.py").exists()
+    assert not (backend_dir / "scripts" / "evaluate_pms_ai_improvements.py").exists()
+    assert not (backend_dir / "requirements-ai-eval.txt").exists()
+
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("PMS_AI_CLASSIFIER_MODE", "enabled")
+    assert get_ai_runtime_config().classifier_mode == "off"
 
 
 def test_goldfish_review_enhancements_and_security_hardening(monkeypatch):
@@ -2394,7 +2397,6 @@ def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
         compute_request_fingerprint,
         compute_scope_fingerprint,
     )
-    from scripts.evaluate_ai_classifier import verify_semantic_answer_correctness
     from services.ai.catalog import ai_evidence_cache
     from services.ai.conversation_service import AiConversationService
     from services.ai.orchestrator import PmsAiOrchestrator
@@ -3151,6 +3153,40 @@ def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
     # -------------------------------------------------------------------------
     # Issue 8: Evaluation proves semantic answer correctness & rejects contradictions
     # -------------------------------------------------------------------------
+    import re as _re
+
+    def _verify_semantic_answer_correctness(item: dict, res) -> tuple[bool, list[str]]:
+        failures: list[str] = []
+        headline = (res.headline or "").strip()
+        headline_cf = headline.casefold()
+        full_text_cf = f"{headline} {' '.join(res.narrative_bullets or [])}".casefold()
+        if res.outcome != item.get("expected_outcome"):
+            failures.append(f"outcome mismatch: expected {item.get('expected_outcome')}, got {res.outcome}")
+        exp_op = item.get("expected_operation_kind")
+        if exp_op:
+            if res.validated_plan_v2 is None or not res.validated_plan_v2.operations:
+                failures.append(f"missing validated_plan_v2 or operations when expecting '{exp_op}'")
+            else:
+                op_kinds = [op.kind for op in res.validated_plan_v2.operations]
+                if exp_op not in op_kinds:
+                    failures.append(f"operation_kind mismatch: expected '{exp_op}' in {op_kinds}")
+        if item.get("expected_polarity") == "open" and (headline_cf.startswith("no.") or headline_cf.startswith("yes.")):
+            failures.append(f"open-ended question must not start with Yes./No.: {headline}")
+        facts = dict(item.get("expected_facts") or {})
+        direction = facts.get("direction")
+        target_period = str(facts.get("target_period") or "").strip()
+        target_value = str(facts.get("target_value") or "").strip()
+        if direction in ("best", "worst") and target_period and target_value:
+            opposite_dir = "worst" if direction == "best" else "best"
+            if f"{opposite_dir} month" in full_text_cf:
+                failures.append(f"contradictory direction: found '{opposite_dir} month'")
+            if not _re.search(
+                rf"{_re.escape(direction + ' month')}[^.]*?\bwas\s+{_re.escape(target_period.casefold())}\s+at\s+{_re.escape(target_value.casefold())}",
+                headline_cf,
+            ):
+                failures.append("semantic binding failed")
+        return len(failures) == 0, failures
+
     scenario_item = {
         "scenario_id": "test_contradiction",
         "expected_outcome": "answer",
@@ -3171,7 +3207,7 @@ def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
             "validated_plan_v2": None,
         }
     )
-    ok_no_plan, errs_no_plan = verify_semantic_answer_correctness(scenario_item, resp_no_plan)
+    ok_no_plan, errs_no_plan = _verify_semantic_answer_correctness(scenario_item, resp_no_plan)
     assert ok_no_plan is False
     assert any("validated_plan_v2" in e for e in errs_no_plan)
 
@@ -3183,7 +3219,7 @@ def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
             ),
         }
     )
-    ok_contra, errs_contra = verify_semantic_answer_correctness(scenario_item, contradictory_resp)
+    ok_contra, errs_contra = _verify_semantic_answer_correctness(scenario_item, contradictory_resp)
     assert ok_contra is False
     assert len(errs_contra) >= 2
 

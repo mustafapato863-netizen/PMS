@@ -2,7 +2,7 @@
 
 Authoritative specification: ../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md
 
-This execution closes Phases 0–5 only. Phase 6 cleanup and Phase 7 release are out of scope.
+This execution closes Phases 0–6 (accepted through Phase 6). Phase 7 staging/rollout remains out of scope.
 
 - [x] Inspect local routing/configuration and inventory historical plan candidates.
 - [x] Write the transition plan and cleanup-first policy.
@@ -39,3 +39,13 @@ Acceptance verified on 18 November 2026 (`PHASE_5_REVIEW_REPORT.md`: `VERDICT: A
 - [x] Recheck Phase 3 status: Corporate level and KSA remain Not verified; correct the review report's broad department-coverage wording.
 - [x] Complete bounded 80-turn post-fix synthetic live run and record provider, fallback, latency, and cost-status evidence.
 - [x] Update the Phase 5 handoff with final v2 evidence and remaining acceptance blockers; stop before Phase 6.
+
+## Phase 6 — Runtime Cleanup, Evaluator Consolidation & CI Gates (2026-11-18)
+
+- [x] Ticket 01: Repair baseline non-Phase-5 test regressions (`tool_registry.py`, `contextual_assistant.py` + `domain_policies.py`, `ai_workspace.py`), regenerate Phase 0/Phase 2 manifests, verify zero secrets, and create local Phase 5 checkpoint commit `1c54e5b1d33dabbc93ed3f73a1c7ab476b7c1903` on `fix/pre-approvals-ip-single-team`.
+- [x] Ticket 02: Retire and delete `Backend/services/ai/classifier.py`, `Backend/scripts/evaluate_ai_classifier.py`, `Backend/scripts/evaluate_pms_ai_improvements.py`, and `Backend/requirements-ai-eval.txt`; clean `.dockerignore` and `Backend/.dockerignore` while preserving `!.env.example` rules; pin `AiRuntimeConfig.classifier_mode = "off"`; update `test_ai_phase7_eval_gates.py` and `evaluation/pms-ai/phase7/LEGACY_CLEANUP_INVENTORY.md`.
+- [x] Ticket 03: Extract `ValidatedExplorationToolCall`, `build_fact_ledger_from_evidence`, and `validate_grounded_synthesis` into `Backend/services/ai/claim_validator.py`; remove `run_bounded_exploration` branch from `orchestrator.py` (preserving `local_exploration_enabled` import hook); pin `local_exploration_enabled() -> False` in `llm_client.py`; delete `local_data_explorer.py`, `test_local_assistant_exploration.py`, and `test_ai_explorer_unified.py`; migrate RBAC revocation & claim-validation tests onto `PmsAiOrchestrator` and `claim_validator` seams.
+- [x] Ticket 04: Create `Backend/services/ai/prompt_versions.py` (`ACTIVE_PROMPT_VERSIONS`) and bind in `orchestrator.py`, `router.py`, `local_model_router.py`, `local_evidence_synthesis.py`, and `contextual_assistant.py`; guard `extract_overall_score_facts` under `model_led_pilot_enabled`; resolve `plan.periods[-1]` and dynamic year in `router.py`; skip redundant `suggest_intent` on Admin model-led fallback; verify via Red->Green TDD tests.
+- [x] Ticket 05: Resync deterministic manifests, pass full CI/replay/provenance/hygiene gates, update handoff docs, complete independent EGM Goldfish audit (`VERDICT: ACCEPTED`), and create final local Phase 6 commit (no `git push`).
+
+Phases 0–6 complete & accepted (`PHASE_6_REVIEW_REPORT.md`: `VERDICT: ACCEPTED`, 0 Blocker, 0 Major); halted before Phase 7.

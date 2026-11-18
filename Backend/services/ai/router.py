@@ -26,6 +26,7 @@ from services.ai.catalog import (
 )
 from services.ai.config import get_ai_runtime_config
 from services.ai.llm_client import configured_model_name
+from services.ai.prompt_versions import MODEL_LED_PLANNER_PROMPT_VERSION
 from services.ai.local_model_router import (
     BoundedIntentContext,
     LocalIntentResult,
@@ -3694,6 +3695,7 @@ class HybridQueryRouter:
 
             # Build bounded context for the model
             system_prompt = (
+                f"[PromptVersion: {MODEL_LED_PLANNER_PROMPT_VERSION}]\n"
                 "You are the PMS AI Assistant. Your role is to understand the user's question, "
                 "select the appropriate tool(s) to fetch verified PMS data, and compose a concise answer. "
                 "Available tools: " + ", ".join(tool_schemas.keys()) + ". "
@@ -3889,17 +3891,19 @@ class HybridQueryRouter:
                             )
                         )
                         if is_perf_q and (eff_emp_id or eff_emp_name):
-                            period_for_tool = None
-                            for m_kw in MONTHS:
-                                if m_kw.casefold() in lower:
-                                    period_for_tool = f"2026-{MONTHS[m_kw]:02d}"
-                                    break
+                            period_for_tool = plan.periods[-1] if plan.periods else None
+                            if not period_for_tool:
+                                fallback_year = int(session_state.year or 2026)
+                                for m_kw in MONTHS:
+                                    if m_kw.casefold() in lower:
+                                        period_for_tool = f"{fallback_year:04d}-{MONTHS[m_kw]:02d}"
+                                        break
                             plan.model_led_tool_call = {
                                 "tool_name": "read_employee_metric",
                                 "tool_arguments": {
                                     "employee_id": eff_emp_id,
                                     "employee_name": eff_emp_name,
-                                    "period": period_for_tool or eff_period or "2026-09",
+                                    "period": period_for_tool or eff_period or f"{int(session_state.year or 2026):04d}-09",
                                     "metric_id": eff_metric or "overall_score",
                                 },
                             }
@@ -4008,7 +4012,8 @@ class HybridQueryRouter:
                 plan.operation_kind_v2 = precomputed_intent.intent
                 route_used = "local_model_router"
         elif (
-            provider_override == "auto"
+            not (cfg.model_led_pilot_enabled and str(self.scope.get("role") or "").strip() == "Admin")
+            and provider_override == "auto"
             and local_intent_enabled()
             and matched_pattern is None
             and plan.intent in ("current_value", "actual_vs_target")

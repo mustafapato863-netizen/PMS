@@ -44,6 +44,7 @@ from models.ai_schemas import (
 from models.models import Employee, Team
 from services.ai.catalog import evaluation_cache_identity, function_for_team, get_ai_catalog
 from services.ai.conversation_service import AiConversationService
+from services.ai.prompt_versions import EXPLAIN_PREVIOUS_PROMPT_VERSION
 from services.ai.domain_policies import (
     has_pms_performance_signal,
     is_bare_scope_or_period_refinement,
@@ -1223,6 +1224,7 @@ def build_explain_previous_payload(
     meta: dict[str, Any] = {
         "provider_used": "deterministic",
         "model_used": "intent-gate-v1",
+        "prompt_version": EXPLAIN_PREVIOUS_PROMPT_VERSION,
         "provider_calls": 0,
         "provider_ms": 0.0,
         "fallback_outcome": "none",

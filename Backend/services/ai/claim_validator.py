@@ -3,7 +3,7 @@
 Pure Python validator with zero LLM calls and zero database mutations.
 Verifies model-authored headlines and bullets against an authoritative
 ``list[ClaimFact]`` ledger built from ``TypedMetricEvidence``,
-``EvidenceItemV2``, and/or ``local_data_explorer`` fact-ledger dicts.
+``EvidenceItemV2``, and/or fact-ledger dicts.
 """
 
 from __future__ import annotations
@@ -18,8 +18,11 @@ from models.report_schemas import MONTHS
 __all__ = [
     "ClaimFact",
     "ClaimValidationResult",
+    "ValidatedExplorationToolCall",
     "build_claim_ledger",
+    "build_fact_ledger_from_evidence",
     "validate_claims",
+    "validate_grounded_synthesis",
 ]
 
 _REVERSE_MONTHS_BY_NUM: dict[int, str] = {v: k for k, v in MONTHS.items()}
@@ -882,3 +885,198 @@ def validate_claims(
         reason_code=errors[0] if errors else "ok",
         errors=errors,
     )
+
+
+_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "inspect_authorized_concepts",
+        "find_concepts",
+        "describe_metric",
+        "list_available_periods",
+    }
+)
+
+_UNSAFE_SYNTHESIS_TEXT_RE = re.compile(
+    r"(?:[\x00-\x08\x0b\x0c\x0e-\x1f]|[;<>`]|--|/\*|\*/|\.\./|\.\.\\|"
+    r"\b(?:select|union|insert|update|delete|drop|alter|create|truncate|exec|execute|pragma|xp_|sp_|sleep|benchmark)\b|"
+    r"\bor\s+1\s*=\s*1\b)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class ValidatedExplorationToolCall:
+    """Typed tool-call descriptor consumed by `build_fact_ledger_from_evidence`."""
+
+    tool: str
+    team: str | None = None
+    function: str | None = None
+    position: str | None = None
+    metric_id: str | None = None
+    kpi_key: str | None = None
+    branch: str | None = None
+    compare_branch: str | None = None
+    branches: tuple[str, ...] = ()
+    period: str | None = None
+    month: str | None = None
+    year: int | None = None
+    performance_level: str = "Employee"
+    direction: str = "best"
+    single_person: bool = False
+    employee_query: str | None = None
+    limit: int = 3
+
+
+def build_fact_ledger_from_evidence(
+    *,
+    executed_calls: list[ValidatedExplorationToolCall],
+    tool_results: list[Any],
+    default_headline: str,
+) -> list[dict[str, Any]]:
+    """Build a verifiable fact ledger with `fact_id` handles from executed PMS tool results."""
+    ledger: list[dict[str, Any]] = []
+    fact_idx = 1
+    for call, tr in zip(executed_calls, tool_results):
+        if call.tool in _DISCOVERY_TOOL_NAMES:
+            continue
+        d = (getattr(tr, "digest", None) if not isinstance(tr, dict) else tr.get("digest")) or {}
+        if call.tool in ("rank_employees", "get_employee_summary"):
+            sp = d.get("spotlight") or d.get("agent_spotlight") or {}
+            if sp.get("entity_name"):
+                raw_sc = sp.get("score")
+                is_missing = raw_sc is None or isinstance(raw_sc, bool) or not isinstance(raw_sc, (int, float))
+                sc = None if is_missing else round(float(raw_sc), 1)
+                raw_ties = sp.get("ties") or d.get("ties") or ()
+                ties_tuple = tuple(str(t) for t in raw_ties if t) if isinstance(raw_ties, (list, tuple, set)) else ()
+                ledger.append(
+                    {
+                        "fact_id": f"F{fact_idx}",
+                        "part": "ranking",
+                        "subject": str(sp.get("entity_name")),
+                        "employee_id": str(sp.get("entity_id") or ""),
+                        "country": sp.get("region") or d.get("region"),
+                        "team": str(sp.get("team") or call.team or ""),
+                        "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
+                        "period": str(d.get("period") or call.period or ""),
+                        "ranking_direction": str(call.direction),
+                        "direction": "lower_better" if (sp.get("kpi_direction") == "lower_better" or d.get("kpi_direction") == "lower_better") else "higher_better",
+                        "ties": ties_tuple,
+                        "value": sc,
+                        "display": "Unavailable" if sc is None else f"{sc:.1f}%",
+                        "unit": "%",
+                        "is_missing": is_missing,
+                    }
+                )
+                fact_idx += 1
+                continue
+        if call.tool == "compare_branches":
+            bc = d.get("branch_comparison") or []
+            req_branches_cf = {b.casefold() for b in call.branches if b}
+            if isinstance(bc, list) and bc:
+                for b_row in bc:
+                    if isinstance(b_row, dict) and b_row.get("branch"):
+                        b_name = str(b_row.get("branch"))
+                        if req_branches_cf and b_name.casefold() not in req_branches_cf:
+                            continue
+                        is_bookings = call.kpi_key == "TotalBookings"
+                        b_val = b_row.get("bookings") if is_bookings else (
+                            b_row.get("average_score") if b_row.get("average_score") is not None else b_row.get("score")
+                        )
+                        explicitly_absent = (
+                            (is_bookings and b_row.get("booking_present") is False)
+                            or (not is_bookings and b_row.get("data_present") is False)
+                        )
+                        is_missing = explicitly_absent or b_val is None or isinstance(b_val, bool) or not isinstance(b_val, (int, float))
+                        val_norm = None if is_missing else (int(b_val) if is_bookings else round(float(b_val), 1))
+                        display_val = "Unavailable" if val_norm is None else (str(int(val_norm)) if is_bookings else f"{float(val_norm):.1f}%")
+                        ledger.append(
+                            {
+                                "fact_id": f"F{fact_idx}",
+                                "part": "compare_branches",
+                                "subject": b_name,
+                                "country": d.get("region") or b_row.get("region"),
+                                "team": str(d.get("scope") or call.team or ""),
+                                "branch": b_name,
+                                "period": str(d.get("period") or call.period or ""),
+                                "direction": "higher_better",
+                                "value": val_norm,
+                                "display": display_val,
+                                "unit": "count" if is_bookings else "%",
+                                "is_missing": is_missing,
+                            }
+                        )
+                        fact_idx += 1
+                continue
+        if call.tool == "get_trend":
+            tt = d.get("team_trend_spotlight") or d.get("spotlight") or {}
+            if isinstance(tt, dict) and (tt.get("score") is not None or tt.get("team") or d.get("scope") or call.team):
+                raw_sc = tt.get("score")
+                is_missing = raw_sc is None or isinstance(raw_sc, bool) or not isinstance(raw_sc, (int, float))
+                sc = None if is_missing else round(float(raw_sc), 1)
+                ledger.append(
+                    {
+                        "fact_id": f"F{fact_idx}",
+                        "part": "trend",
+                        "subject": str(tt.get("team") or d.get("scope") or call.team or ""),
+                        "country": d.get("region") or tt.get("region"),
+                        "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
+                        "period": str(d.get("period") or call.period or ""),
+                        "direction": "lower_better" if d.get("direction") == "lower_better" else "higher_better",
+                        "value": sc,
+                        "display": "Unavailable" if sc is None else f"{sc:.1f}%",
+                        "unit": "%",
+                        "is_missing": is_missing,
+                    }
+                )
+                fact_idx += 1
+                continue
+        avg_sc = d.get("average_score")
+        if isinstance(avg_sc, (int, float)) and not isinstance(avg_sc, bool):
+            sc = round(float(avg_sc), 1)
+            ledger.append(
+                {
+                    "fact_id": f"F{fact_idx}",
+                    "part": "score",
+                    "subject": str(d.get("scope") or call.team or ""),
+                    "country": d.get("region"),
+                    "branch": d.get("branch") if d.get("branch") not in (None, "", "All", "All Branches") else None,
+                    "period": str(d.get("period") or call.period or ""),
+                    "direction": "lower_better" if d.get("direction") == "lower_better" else "higher_better",
+                    "value": sc,
+                    "display": f"{sc:.1f}%",
+                    "unit": "%",
+                    "is_missing": False,
+                }
+            )
+            fact_idx += 1
+    if not ledger and default_headline:
+        ledger.append({"fact_id": "F1", "part": "summary", "statement": default_headline})
+    return ledger
+
+
+def validate_grounded_synthesis(
+    *,
+    draft_payload: dict[str, Any] | None,
+    fact_ledger: list[dict[str, Any]],
+) -> tuple[str | None, str]:
+    """Validate a model-authored synthesis response against the authoritative fact ledger."""
+    if not isinstance(draft_payload, dict):
+        return None, "not_dict"
+    fact_ids = draft_payload.get("fact_ids")
+    headline = draft_payload.get("headline")
+    if not isinstance(fact_ids, list) or not fact_ids or not isinstance(headline, str) or not headline.strip():
+        return None, "missing_fields"
+    text = headline.strip()
+    if len(text) > 360 or _UNSAFE_SYNTHESIS_TEXT_RE.search(text):
+        return None, "unsafe_or_too_long"
+
+    claim_ledger = build_claim_ledger(fact_ledger=fact_ledger)
+    result = validate_claims(
+        headline=text,
+        bullets=None,
+        ledger=claim_ledger,
+        cited_fact_ids=fact_ids,
+    )
+    if not result.valid:
+        return None, result.reason_code
+    return text, "ok"

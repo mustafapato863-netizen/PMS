@@ -8,6 +8,8 @@
 **Phase 1 Authenticated Revalidation:** [PHASE_1_AUTHENTICATED_REVALIDATION.md](PHASE_1_AUTHENTICATED_REVALIDATION.md)  
 **Phase 5 Evaluation and Coordinator Handoff:** [PHASE_5_EVALUATION_AND_HANDOFF.md](PHASE_5_EVALUATION_AND_HANDOFF.md)  
 **Phase 5 Review Report:** [PHASE_5_REVIEW_REPORT.md](PHASE_5_REVIEW_REPORT.md)  
+**Phase 6 Cleanup & Handoff:** [PHASE_6_CLEANUP_AND_HANDOFF.md](PHASE_6_CLEANUP_AND_HANDOFF.md)
+**Phase 6 Review Report:** [PHASE_6_REVIEW_REPORT.md](PHASE_6_REVIEW_REPORT.md)
 **Phase 3 Coverage Audit:** [PHASE_3_COVERAGE_MATRIX.md](PHASE_3_COVERAGE_MATRIX.md)  
 **Execution Ledger:** [task_plan.md](task_plan.md)  
 **Findings:** [findings.md](findings.md)  
@@ -17,8 +19,8 @@
 
 ## Current Status
 
-- **Active Phase:** Phases 0–5 Completed & Accepted (`phase5_corrected_glm_30s_v1_r2`: `80/80` = 100.0% semantic, `74/74` = 100.0% critical, `gate.passed: true`; `PHASE_5_REVIEW_REPORT.md` verdict `ACCEPTED`).
-- **Phase Boundary Rule:** Halted before Phase 6. Phase 6 cleanup and Phase 7 release remain out of scope.
+- **Active Phase:** Phases 0–6 Complete & Accepted (`PHASE_6_REVIEW_REPORT.md`: `VERDICT: ACCEPTED`, 0 Blocker, 0 Major); halted before Phase 7.
+- **Phase Boundary Rule:** Halted before Phase 7 staging/rollout. No `git push`, no production migrations, and no live rollout authorized yet.
 - **Recovery Point:** `backups/snapshot_phase0_revalidated_20261117_132614/` captures the pre-edit current WIP; the tracked patch passed reverse-apply validation.
 - **UI Availability:** No local frontend/backend listener was present during the signed-in UI check; HTTP verification uses synthetic in-memory data.
 

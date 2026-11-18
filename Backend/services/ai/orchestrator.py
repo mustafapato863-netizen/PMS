@@ -83,9 +83,9 @@ from services.ai.local_evidence_synthesis import (
     synthesize_overall_score,
     synthesize_validated_executive_variation,
 )
-from services.ai.llm_client import active_provider_name, configured_model_name
+from services.ai.llm_client import active_provider_name, configured_model_name, local_exploration_enabled
 from services.ai.local_model_router import BoundedIntentContext
-from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
+from services.ai.prompt_versions import ACTIVE_PROMPT_VERSIONS, MODEL_LED_SYNTHESIS_PROMPT_VERSION
 from services.ai.providers import DeterministicLocalProviderAdapter, ProviderUnavailableError, resolve_variation_index
 from services.ai.router import (
     AiProviderUnavailableError,
@@ -2316,7 +2316,10 @@ class PmsAiOrchestrator:
         engine = get_unified_provider_engine()
         req_synth = ProviderRequest(
             messages=[
-                ProviderMessage(role="system", content=instruction),
+                ProviderMessage(
+                    role="system",
+                    content=f"[PromptVersion: {MODEL_LED_SYNTHESIS_PROMPT_VERSION}]\n{instruction}",
+                ),
                 ProviderMessage(role="user", content=f"Question: {req.prompt}\nVerified Facts: {json.dumps(facts_payload)}"),
             ],
             response_format="json",
@@ -3178,210 +3181,6 @@ class PmsAiOrchestrator:
         published_periods, employee_candidates = self._get_published_periods_and_candidates()
         release_read_transaction(self.db)
         t_res_start = time.perf_counter()
-        explored_fallback_calls = 0
-        explored_fallback_ms = 0.0
-        explored_fallback_reason = "none"
-        if (
-            local_exploration_enabled()
-            and (req.provider_override or "auto") == "auto"
-            and not req.clarification_choice_id
-            and capability_mode == "performance_query"
-        ):
-            explored = run_bounded_exploration(
-                db=self.db,
-                scope=self.scope,
-                prompt=req.prompt,
-                session_state=req.session_state,
-                published_periods=published_periods,
-                employee_candidates=employee_candidates,
-                live_auth_service=live_auth_service,
-            )
-            if explored.handled:
-                try:
-                    self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
-                except Exception:
-                    if conv_service and claimed_turn and claimed_token:
-                        conv_service.repo.release_turn_claim(turn_id=str(claimed_turn.id), claim_token=claimed_token)
-                    raise
-                res_state_exp = explored.resolved_session_state or req.session_state
-                sq_exp = explored.structured_query
-                exp_authorized = True
-                if explored.outcome == "answer":
-                    exp_authorized = live_auth_service.is_plan_and_context_authorized(
-                        scope=self.scope,
-                        team=(sq_exp.team if sq_exp else None) or res_state_exp.team,
-                        function=(sq_exp.function if sq_exp else None) or res_state_exp.function,
-                        branch=(sq_exp.branch if sq_exp else None) or res_state_exp.branch,
-                        branches=list(sq_exp.branches) if sq_exp and sq_exp.branches else [],
-                        performance_level=(sq_exp.performance_level if sq_exp else None) or res_state_exp.performance_level,
-                        employee_id=(sq_exp.employee_id if sq_exp else None) or res_state_exp.employee_id,
-                    )
-                    if exp_authorized and hasattr(live_auth_service, "is_returned_evidence_authorized"):
-                        exp_authorized = live_auth_service.is_returned_evidence_authorized(
-                            scope=self.scope,
-                            typed_evidence=explored.typed_evidence,
-                            tool_digests=explored.tool_digests,
-                            fallback_branch=res_state_exp.branch,
-                            fallback_level=res_state_exp.performance_level,
-                        )
-                if not exp_authorized:
-                    explored.outcome = "restricted_access"
-                    explored.headline = (
-                        "Access restricted: your permissions changed during execution and no longer allow viewing this scope."
-                    )
-                    explored.narrative_bullets = [
-                        "Live permission revalidation detected that access to the requested team, level, branch, function, or employee was revoked."
-                    ]
-                    explored.suggested_followups = ["Show performance summary for my authorized scope"]
-                    explored.visual_cards = []
-                    explored.citations = []
-                    explored.deep_links = []
-                    explored.primary_source_link = None
-                    explored.typed_evidence = []
-                    explored.evidence_envelope_v2 = []
-                    explored.tool_calls = []
-                    explored.tool_digests = []
-                    explored.records_evaluated = 0
-                known_emp_names_exp = [c.employee_name for c in employee_candidates if c.employee_name]
-                t_trace_exp = time.perf_counter()
-                if exp_authorized and explored.outcome != "restricted_access":
-                    trace_id_exp = TrainingTraceLogger(self.db).record_turn(
-                        user_id=str(self.scope.get("user_id") or ""),
-                        role=role,
-                        prompt=req.prompt,
-                        session_state=res_state_exp,
-                        tool_calls=[tc.model_dump() for tc in explored.tool_calls],
-                        tool_digest={
-                            "digests": explored.tool_digests,
-                            "unknown_code": explored.unknown_code,
-                            "steps_taken": explored.steps_taken,
-                        },
-                        structured_response={
-                            "headline": explored.headline,
-                            "narrative_bullets": explored.narrative_bullets,
-                            "outcome": explored.outcome,
-                        },
-                        provider_name=(explored.provider_name if hasattr(explored, "provider_name") and explored.provider_name else (active_provider_name() if explored.provider_calls > 0 else "local")),
-                        model_name=(explored.model_name or configured_model_name()) if explored.provider_calls > 0 else "deterministic-explorer-v1",
-                        latency_ms=int((t_trace_exp - t0) * 1000),
-                        non_empty_evidence=explored.records_evaluated > 0,
-                        guardrail_triggered=explored.outcome in ("restricted_access", "unsupported_request"),
-                        turn_id=str(claimed_turn.id) if claimed_turn else None,
-                        known_employee_names=known_emp_names_exp,
-                    )
-                else:
-                    trace_id_exp = ""
-                trace_exp_ms = round((time.perf_counter() - t_trace_exp) * 1000.0, 2)
-                tot_exp_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-                eff_ctx_exp = build_effective_context_label(
-                    page_context=req.page_context,
-                    session_state=res_state_exp,
-                    selected_metric_display=selected_metric_display,
-                )
-                exp_scope_banner, exp_fn = self._resolve_scope_banner_and_function(
-                    session_state=res_state_exp,
-                    typed_evidence=explored.typed_evidence,
-                    tool_digests=explored.tool_digests,
-                )
-                if exp_fn != res_state_exp.function:
-                    res_state_exp = res_state_exp.model_copy(update={"function": exp_fn})
-                exp_resp = AiChatResponsePayload(
-                    trace_id=trace_id_exp,
-                    conversation_id=active_conversation_id,
-                    turn_id=str(claimed_turn.id) if claimed_turn else None,
-                    context_version=active_context_version,
-                    outcome=explored.outcome,
-                    answer_detail=effective_detail,  # type: ignore[arg-type]
-                    headline=explored.headline,
-                    narrative_bullets=explored.narrative_bullets,
-                    visual_cards=explored.visual_cards,
-                    citations=explored.citations,
-                    deep_links=explored.deep_links,
-                    primary_source_link=explored.primary_source_link,
-                    suggested_followups=explored.suggested_followups,
-                    resolved_session_state=res_state_exp,
-                    scope_banner=exp_scope_banner,
-                    effective_context_label=eff_ctx_exp,
-                    clarification=explored.clarification,
-                    structured_query=explored.structured_query,
-                    validated_plan_v2=explored.validated_plan_v2,
-                    typed_evidence=explored.typed_evidence,
-                    evidence_envelope_v2=explored.evidence_envelope_v2,
-                    tool_calls=explored.tool_calls,
-                    provider_used=(explored.provider_used if hasattr(explored, "provider_used") and explored.provider_used else (active_provider_name() if explored.provider_calls > 0 else "deterministic")),
-                    model_used=(explored.model_name or configured_model_name()) if explored.provider_calls > 0 else "deterministic-explorer-v1",
-                    latency_ms=max(0, int(round(tot_exp_ms))),
-                    timings=AiTurnTimingBreakdown(
-                        resolution_ms=explored.provider_ms,
-                        provider_ms=explored.provider_ms,
-                        database_ms=explored.database_ms,
-                        trace_ms=trace_exp_ms,
-                        total_ms=tot_exp_ms,
-                    ),
-                    provider_usage=AiProviderUsageMetrics(
-                        router_mode=cfg.router_mode,
-                        route_used="local_model_router",
-                        provider_calls=explored.provider_calls,
-                        fallback_outcome=explored.fallback_reason,
-                    ),
-                    basis_warning=explored.basis_warning,
-                    capability_mode=capability_mode,
-                )
-                if conv_service and active_conversation_id and claimed_turn:
-                    if not exp_authorized or explored.outcome == "restricted_access":
-                        try:
-                            payload_for_store = exp_resp.model_dump()
-                            if claimed_context_version is not None:
-                                payload_for_store["context_version"] = claimed_context_version + 1
-                            new_ver = conv_service.complete_turn(
-                                conversation_id=active_conversation_id,
-                                turn_id=str(claimed_turn.id),
-                                expected_context_version=claimed_context_version,
-                                claim_token=claimed_token,
-                                scope=self.scope,
-                                outcome=explored.outcome,
-                                turn_kind="clarification",
-                                route_used="local_model_router",
-                                validated_plan={},
-                                evidence_envelope=[],
-                                response_payload=payload_for_store,
-                                session_state=res_state_exp,
-                                confirmed_context=res_state_exp.last_confirmed_query,
-                                provider_calls=explored.provider_calls,
-                                total_ms=tot_exp_ms,
-                            )
-                            exp_resp.context_version = new_ver
-                        except Exception:
-                            if claimed_token:
-                                conv_service.repo.release_turn_claim(
-                                    turn_id=str(claimed_turn.id), claim_token=claimed_token
-                                )
-                    else:
-                        payload_for_store = exp_resp.model_dump()
-                        if claimed_context_version is not None:
-                            payload_for_store["context_version"] = claimed_context_version + 1
-                        new_ver = conv_service.complete_turn(
-                            conversation_id=active_conversation_id,
-                            turn_id=str(claimed_turn.id),
-                            expected_context_version=claimed_context_version,
-                            claim_token=claimed_token,
-                            scope=self.scope,
-                            outcome=explored.outcome,
-                            turn_kind="analytical" if explored.outcome == "answer" else "clarification",
-                            route_used="local_model_router",
-                            validated_plan=explored.validated_plan_v2.model_dump() if explored.validated_plan_v2 else {},
-                            evidence_envelope=[ev.model_dump() for ev in explored.evidence_envelope_v2],
-                            response_payload=payload_for_store,
-                            session_state=res_state_exp,
-                            confirmed_context=res_state_exp.last_confirmed_query,
-                            provider_calls=explored.provider_calls,
-                            total_ms=tot_exp_ms,
-                        )
-                        exp_resp.context_version = new_ver
-                return exp_resp
-            explored_fallback_calls = explored.provider_calls
-            explored_fallback_ms = explored.provider_ms
-            explored_fallback_reason = explored.fallback_reason
         routed = HybridQueryRouter(
             scope=self.scope,
             published_periods=published_periods,
@@ -3426,11 +3225,6 @@ class PmsAiOrchestrator:
             routed.confirmed_context.region = effective_region
         if routed.plan.team:
             routed.confirmed_context.team = routed.plan.team
-        if explored_fallback_reason not in ("none", "disabled"):
-            routed.provider_metrics.provider_calls += explored_fallback_calls
-            routed.provider_metrics.provider_ms = round(routed.provider_metrics.provider_ms + explored_fallback_ms, 2)
-            if routed.provider_metrics.fallback_outcome in ("none", ""):
-                routed.provider_metrics.fallback_outcome = explored_fallback_reason
         signals = extract_prompt_signals(req.prompt, req.session_state)
 
         # Synchronize signals with validated StructuredQueryPlan (including inherited follow-up context)
@@ -4603,6 +4397,9 @@ class PmsAiOrchestrator:
             "headline": synthesis.headline,
             "narrative_bullets": synthesis.narrative_bullets,
             "citations": [c.model_dump() for c in citations],
+            "prompt_version": MODEL_LED_SYNTHESIS_PROMPT_VERSION
+            if routed.route_used == "model_led_pilot"
+            else ACTIVE_PROMPT_VERSIONS["narrow_evidence_synthesis"],
         }
 
         t_trace_start = time.perf_counter()

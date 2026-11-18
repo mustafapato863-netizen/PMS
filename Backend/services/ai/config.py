@@ -134,13 +134,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     )
 
     app_env = os.environ.get("APP_ENV", "").strip().casefold()
-    raw_clf = os.environ.get("PMS_AI_CLASSIFIER_MODE", "off").strip().casefold()
-    if app_env == "production":
-        classifier_mode: ClassifierModeType = "off"
-    else:
-        classifier_mode = (
-            raw_clf if raw_clf in ("off", "shadow", "enabled") else "off"  # type: ignore[assignment]
-        )
+    classifier_mode: ClassifierModeType = "off"
 
     brief_default_enabled = _parse_bool(
         os.environ.get("PMS_AI_BRIEF_DEFAULT_ENABLED"), default=True

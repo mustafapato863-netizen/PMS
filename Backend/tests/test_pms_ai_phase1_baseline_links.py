@@ -52,13 +52,14 @@ def test_test_type_inventory_matches_the_script() -> None:
     assert "Backend/tests/test_pms_ai_phase0_eval_schema.py" in paths
     assert "Backend/tests/test_pms_ai_phase0_derivation.py" in paths
     assert "Backend/tests/test_ai_booking_count_parity.py" in paths
-    assert "Backend/tests/test_local_assistant_exploration.py" in paths
+    assert "Backend/tests/test_ai_conversation_claim_ledger_paired.py" in paths
+    assert "Backend/tests/test_local_assistant_exploration.py" not in paths
     by_path = {item["path"]: item for item in built["tests"]}
     assert by_path["Backend/tests/test_pms_ai_phase0_eval_schema.py"]["labels"] == ["synthetic"]
     assert by_path["Backend/tests/test_pms_ai_phase0_derivation.py"]["labels"] == ["source-parity"]
     assert "mocked" in by_path["Backend/tests/test_ai_booking_count_parity.py"]["labels"]
     assert "source-parity" not in by_path["Backend/tests/test_ai_booking_count_parity.py"]["labels"]
-    live = by_path["Backend/tests/test_local_assistant_exploration.py"]
+    live = by_path["Backend/tests/test_ai_conversation_claim_ledger_paired.py"]
     assert "live-model" in live["labels"]
     assert "mocked" in live["labels"]
     assert built["files_by_label"]["browser"] == 0

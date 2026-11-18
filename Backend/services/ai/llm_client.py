@@ -129,18 +129,8 @@ def local_synthesis_enabled() -> bool:
 
 
 def local_exploration_enabled() -> bool:
-    """Tool-planning stays off in production.
-
-    The host allowlist does not limit which authorized question the model asks
-    PMS to run, and each step can send evidence summaries to the provider.
-    Intent routing and validated synthesis do neither.
-    """
-    if os.environ.get("APP_ENV", "").strip().casefold() == "production":
-        return False
-    data_flag = os.environ.get("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "").strip().casefold()
-    if data_flag in _FALSY:
-        return False
-    return flag_enabled("PMS_AI_EXPLORATION_ENABLED") or flag_enabled("PMS_AI_LOCAL_EXPLORATION_ENABLED") or data_flag in _TRUTHY
+    """Ad-hoc multi-step local exploration is permanently retired in Phase 6."""
+    return False
 
 
 def configured_model_name() -> str:

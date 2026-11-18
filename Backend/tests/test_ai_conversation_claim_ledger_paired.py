@@ -11,11 +11,10 @@ import pytest
 from ai_provider_fakes import install_scripted_provider
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai import provider_engine
-from services.ai.claim_validator import build_claim_ledger
-from services.ai.local_data_explorer import (
+from services.ai.claim_validator import (
     ValidatedExplorationToolCall,
+    build_claim_ledger,
     build_fact_ledger_from_evidence,
-    run_bounded_exploration,
     validate_grounded_synthesis,
 )
 from services.ai.local_evidence_synthesis import (
@@ -351,89 +350,56 @@ def test_local_evidence_synthesis_branch_bookings_rejects_swapped_values_and_fal
     assert "Dubai: 112" in res.headline and "Sharjah: 70" in res.headline
 
 
-def test_explorer_cloudflare_hallucination_falls_back_to_deterministic_synthesis(
+def test_orchestrator_cloudflare_hallucination_falls_back_to_deterministic_synthesis(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     monkeypatch.setenv("APP_ENV", "development")
     _seed_call_center_records(monkeypatch)
 
-    def _hallucinating_reply(captured: dict[str, Any]) -> str:
-        if captured.get("purpose") == "exploration_synthesis":
-            return json.dumps(
-                {
-                    "headline": "Inbound averaged 99.4% in September 2026.",
-                    "fact_ids": ["F1"],
-                }
-            )
-        payload = json.loads(captured["messages"][-1]["content"])
-        if not payload.get("collected_evidence"):
-            return json.dumps(
-                {
-                    "action": "call_tools",
-                    "unknown_code": "none",
-                    "tools": [{"tool": "get_team_score_summary", "team": "Inbound", "period": "2026-09"}],
-                }
-            )
-        return json.dumps({"action": "final_answer", "unknown_code": "none", "tools": []})
-
-    install_scripted_provider(monkeypatch, [_hallucinating_reply], provider="cloudflare")
+    install_scripted_provider(
+        monkeypatch,
+        [{"answer": "Inbound averaged 99.4% in September 2026."}],
+        provider="cloudflare",
+    )
     with _build_in_memory_db() as db:
-        result = run_bounded_exploration(
-            db=db,
-            scope=ADMIN_SCOPE,
-            prompt="What is Inbound average score in September 2026?",
-            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
-            published_periods={"2026-08", "2026-09"},
-            employee_candidates=[],
+        result = PmsAiOrchestrator(db, ADMIN_SCOPE).run_chat_turn(
+            AiChatRequest(
+                prompt="What is Inbound overall score in September 2026?",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+            )
         )
-    assert result.handled is True
-    assert result.synthesis_validated is False
-    assert result.fallback_reason in ("invented_number", "missing_fact_value")
+    assert result.outcome == "answer"
+    assert result.provider_used == "deterministic"
+    assert result.provider_usage.fallback_outcome == "invalid_or_unverified_response"
     assert "99.4" not in result.headline
+    assert "85.5%" in result.headline
 
 
-def test_explorer_cloudflare_valid_synthesis_passes_claim_validator(
+def test_orchestrator_cloudflare_valid_synthesis_passes_claim_validator(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     monkeypatch.setenv("APP_ENV", "development")
     _seed_call_center_records(monkeypatch)
 
-    def _valid_reply(captured: dict[str, Any]) -> str:
-        payload = json.loads(captured["messages"][-1]["content"])
-        if captured.get("purpose") == "exploration_synthesis":
-            ledger = payload["facts"]
-            f0 = ledger[0]
-            return json.dumps(
-                {
-                    "headline": f"Inbound average score was {f0['display']} in September 2026.",
-                    "fact_ids": [f["fact_id"] for f in ledger],
-                }
-            )
-        if not payload.get("collected_evidence"):
-            return json.dumps(
-                {
-                    "action": "call_tools",
-                    "unknown_code": "none",
-                    "tools": [{"tool": "get_team_score_summary", "team": "Inbound", "period": "2026-09"}],
-                }
-            )
-        return json.dumps({"action": "final_answer", "unknown_code": "none", "tools": []})
-
-    install_scripted_provider(monkeypatch, [_valid_reply], provider="cloudflare")
+    install_scripted_provider(
+        monkeypatch,
+        [{"answer": "Inbound average score was 85.5% in September 2026."}],
+        provider="cloudflare",
+    )
     with _build_in_memory_db() as db:
-        result = run_bounded_exploration(
-            db=db,
-            scope=ADMIN_SCOPE,
-            prompt="What is Inbound average score in September 2026?",
-            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
-            published_periods={"2026-08", "2026-09"},
-            employee_candidates=[],
+        result = PmsAiOrchestrator(db, ADMIN_SCOPE).run_chat_turn(
+            AiChatRequest(
+                prompt="What is Inbound overall score in September 2026?",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+            )
         )
-    assert result.handled is True
-    assert result.synthesis_validated is True
-    assert result.fallback_reason == "none"
+    assert result.outcome == "answer"
+    assert result.provider_used == "cloudflare"
+    assert result.provider_usage.fallback_outcome == "none"
     assert "85.5%" in result.headline
 
 
@@ -535,46 +501,31 @@ def test_orchestrator_defense_in_depth_rejects_hallucinated_gemini_synthesis(
     assert "99.9" not in resp.headline
 
 
-def test_explorer_period_mismatch_in_synthesis_triggers_deterministic_fallback(
+def test_orchestrator_period_mismatch_in_synthesis_triggers_deterministic_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     monkeypatch.setenv("APP_ENV", "development")
     _seed_call_center_records(monkeypatch)
 
-    def _mismatched_period_reply(captured: dict[str, Any]) -> str:
-        if captured.get("purpose") == "exploration_synthesis":
-            return json.dumps(
-                {
-                    "headline": "Inbound average score was 85.5% in October 2026.",
-                    "fact_ids": ["F1"],
-                }
-            )
-        payload = json.loads(captured["messages"][-1]["content"])
-        if not payload.get("collected_evidence"):
-            return json.dumps(
-                {
-                    "action": "call_tools",
-                    "unknown_code": "none",
-                    "tools": [{"tool": "get_team_score_summary", "team": "Inbound", "period": "2026-09"}],
-                }
-            )
-        return json.dumps({"action": "final_answer", "unknown_code": "none", "tools": []})
-
-    install_scripted_provider(monkeypatch, [_mismatched_period_reply], provider="cloudflare")
+    install_scripted_provider(
+        monkeypatch,
+        [{"answer": "Inbound average score was 85.5% in October 2026."}],
+        provider="cloudflare",
+    )
     with _build_in_memory_db() as db:
-        result = run_bounded_exploration(
-            db=db,
-            scope=ADMIN_SCOPE,
-            prompt="What is Inbound average score in September 2026?",
-            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
-            published_periods={"2026-08", "2026-09"},
-            employee_candidates=[],
+        result = PmsAiOrchestrator(db, ADMIN_SCOPE).run_chat_turn(
+            AiChatRequest(
+                prompt="What is Inbound overall score in September 2026?",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+            )
         )
-    assert result.handled is True
-    assert result.synthesis_validated is False
-    assert result.fallback_reason == "mismatched_period"
+    assert result.outcome == "answer"
+    assert result.provider_used == "deterministic"
+    assert result.provider_usage.fallback_outcome == "invalid_or_unverified_response"
     assert "October" not in result.headline
+    assert "85.5%" in result.headline
 
 
 @pytest.mark.skipif(

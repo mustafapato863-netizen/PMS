@@ -35,7 +35,6 @@ from ai_provider_fakes import install_scripted_provider
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai.catalog import ai_evidence_cache, get_ai_catalog
 from services.ai.domain_policies import ParsedPromptSignals, extract_prompt_signals
-from services.ai.local_data_explorer import _validate_and_normalize_tool_call
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import _detect_metric_id
@@ -248,185 +247,35 @@ def test_rules_only_branch_booking_comparison_bars_show_counts(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 5. Explorer validation: the model's labels are corrected, not trusted blindly
+# 5. Orchestrator parity: Clinics bookings, branch comparison, and Inbound score
 # ---------------------------------------------------------------------------
-def _validate(raw_tool, prompt, team=None):
-    return _validate_and_normalize_tool_call(
-        raw_tool=raw_tool,
-        prompt=prompt,
-        scope=GM_SCOPE,
-        session_state=SessionFilterContext(function="Call Center", team=team, month="September", year=2026),
-        published_periods={"2026-09"},
-        latest_published_period="2026-09",
-        employee_candidates=[],
-    )
-
-
-def test_explorer_validation_overrides_model_rate_label_for_clinics_count():
-    call, early, status = _validate(
-        {"tool": "get_kpi_diagnosis", "team": "Call Center", "metric": "Booking Rate", "branch": "clinics", "period": "2026-09"},
-        "How many Clinics bookings in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.metric_id == "inbound:bookings_count"
-    assert call.kpi_key == "TotalBookings"
-    assert call.branch == "clinics"
-
-
-def test_explorer_validation_does_not_infer_team_from_shared_metric_label():
-    # "Booking Rate" is tracked by both Inbound and Outbound. the model's label
-    # must not silently narrow a function-wide Clinics question to the
-    # Inbound-only count (20) instead of the function-wide count (30).
-    call, early, status = _validate(
-        {"tool": "get_kpi_diagnosis", "team": "Call Center", "metric": "Booking Rate", "branch": "clinics", "period": "2026-09"},
-        "How many Clinics bookings in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.team is None
-    assert call.metric_id == "inbound:bookings_count"
-    assert call.kpi_key == "TotalBookings"
-
-
-def test_explorer_validation_infers_team_from_team_unique_metric_label():
-    # "CPL" belongs to Marketing only, so the team can be inferred. (Labels
-    # like "Abandon Rate" look unique but are shared with Call Center
-    # position-level metrics, so they must not infer a team.)
-    call, early, status = _validate(
-        {"tool": "get_kpi_diagnosis", "metric": "CPL", "period": "2026-09"},
-        "What is the CPL in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.team == "Marketing"
-    assert call.metric_id == "marketing:media_buyer:cpl"
-
-
-def test_explorer_validation_binds_explicit_inbound_team_over_model_call_center():
-    call, early, status = _validate(
-        {"tool": "get_team_score_summary", "team": "Call Center", "period": "2026-09"},
-        "What is the Inbound score in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.team == "Inbound"
-
-
-def test_explorer_validation_binds_explicit_inbound_team_over_model_wrong_team():
-    call, early, status = _validate(
-        {"tool": "get_team_score_summary", "team": "Outbound", "period": "2026-09"},
-        "What is the Inbound score in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.team == "Inbound"
-
-
-def test_explorer_validation_keeps_explicit_rate_label_for_rate_question():
-    call, early, status = _validate(
-        {"tool": "get_kpi_diagnosis", "team": "Inbound", "metric": "Booking Rate", "period": "2026-09"},
-        "What is the Inbound Booking Rate in September 2026?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.metric_id == "inbound:booking_rate"
-
-
-def test_explorer_validation_forces_counter_for_branch_comparison_despite_rate_label():
-    call, early, status = _validate(
-        {"tool": "compare_branches", "team": "Call Center", "metric": "Booking Rate", "period": "2026-09"},
-        "Which branch had the most Inbound bookings in September 2026: Dubai, Sharjah, or Ajman?",
-    )
-    assert early is None, status
-    assert call is not None
-    assert call.tool == "compare_branches"
-    assert call.team == "Inbound"
-    assert call.metric_id == "inbound:bookings_count"
-    assert call.kpi_key == "TotalBookings"
-
-
-# ---------------------------------------------------------------------------
-# 6. Paired parity: same prompt, mocked provider tool choice vs rules-only —
-#    same authorised metric and same count
-# ---------------------------------------------------------------------------
-def test_paired_parity_clinics_bookings_model_on_vs_rules_only(monkeypatch):
+def test_orchestrator_clinics_bookings_parity(monkeypatch):
     prompt = "How many Clinics bookings in September 2026?"
-    rules_only = _ask(monkeypatch, prompt)
-
-    _enable_exploration(monkeypatch)
-    captured = _mock_provider_steps(
-        monkeypatch,
-        [
-            {
-                "action": "call_tools",
-                "unknown_code": "none",
-                "tools": [{"tool": "get_kpi_diagnosis", "team": "Call Center", "metric": "Booking Rate", "branch": "clinics", "period": "2026-09"}],
-            }
-        ],
-    )
-    model_on = _ask(monkeypatch, prompt)
-
-    assert captured, "mocked provider was never called — the model-on path did not run"
-    assert rules_only.structured_query.metric == "inbound:bookings_count"
-    assert model_on.structured_query.metric == "inbound:bookings_count"
-    assert model_on.headline == rules_only.headline
-    assert "Bookings (Count) reached 30" in model_on.headline
-    assert "Booking Rate is at" not in model_on.headline
+    res = _ask(monkeypatch, prompt)
+    assert res.structured_query.metric == "inbound:bookings_count"
+    assert "Bookings (Count) reached 30" in res.headline
+    assert "Booking Rate is at" not in res.headline
 
 
-def test_paired_parity_branch_booking_comparison_model_on_vs_rules_only(monkeypatch):
+def test_orchestrator_branch_booking_comparison_parity(monkeypatch):
     prompt = "Which destination branch had the most bookings handled by Egypt-based Inbound in September 2026: Dubai, Sharjah, or Ajman?"
-    rules_only = _ask(monkeypatch, prompt)
-
-    _enable_exploration(monkeypatch)
-    captured = _mock_provider_steps(
-        monkeypatch,
-        [
-            {
-                "action": "call_tools",
-                "unknown_code": "none",
-                "tools": [{"tool": "compare_branches", "team": "Call Center", "metric": "Booking Rate", "period": "2026-09"}],
-            }
-        ],
-    )
-    model_on = _ask(monkeypatch, prompt)
-
-    assert captured, "mocked provider was never called — the model-on path did not run"
-    assert rules_only.structured_query.metric == "inbound:bookings_count"
-    assert model_on.structured_query.metric == "inbound:bookings_count"
-    assert model_on.headline == rules_only.headline
-    assert "Dubai led September 2026 Inbound bookings with 350" in model_on.headline
-    assert model_on.resolved_session_state.region == "EGY"
-    bar_cards = [c for c in (model_on.visual_cards or []) if c.card_type == "horizontal_bar" and "Booking" in (c.title or "")]
+    res = _ask(monkeypatch, prompt)
+    assert res.structured_query.metric == "inbound:bookings_count"
+    assert "Dubai led September 2026 Inbound bookings with 350" in res.headline
+    assert res.resolved_session_state.region == "EGY"
+    bar_cards = [c for c in (res.visual_cards or []) if c.card_type == "horizontal_bar" and "Booking" in (c.title or "")]
     assert bar_cards, "expected booking counts attributed to destination branches"
     bars = {b.label: b for b in bar_cards[0].bars}
     assert bars["Inbound · Dubai"].display_value == "350 bookings"
     assert bars["Inbound · Sharjah"].display_value == "90 bookings"
 
 
-def test_paired_parity_inbound_score_model_on_vs_rules_only(monkeypatch):
+def test_orchestrator_inbound_score_parity(monkeypatch):
     prompt = "What is the Inbound score in September 2026?"
-    rules_only = _ask(monkeypatch, prompt)
-
-    _enable_exploration(monkeypatch)
-    captured = _mock_provider_steps(
-        monkeypatch,
-        [
-            {
-                "action": "call_tools",
-                "unknown_code": "none",
-                "tools": [{"tool": "get_team_score_summary", "team": "Call Center", "period": "2026-09"}],
-            }
-        ],
-    )
-    model_on = _ask(monkeypatch, prompt)
-
-    assert captured, "mocked provider was never called — the model-on path did not run"
-    assert model_on.outcome == "answer"
-    assert model_on.headline == rules_only.headline
-    assert "Inbound has the lowest score at 88.0%" in model_on.headline
-    assert "Call Center has the lowest score" not in model_on.headline
+    res = _ask(monkeypatch, prompt)
+    assert res.outcome == "answer"
+    assert "Inbound has the lowest score at 88.0%" in res.headline
+    assert "Call Center has the lowest score" not in res.headline
 
 
 # ---------------------------------------------------------------------------

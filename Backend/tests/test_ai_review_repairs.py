@@ -38,7 +38,7 @@ from services.ai.contextual_assistant import (
     validate_page_context_scope,
 )
 from services.ai.coverage_manifest import build_coverage_manifest
-from services.ai.local_data_explorer import validate_grounded_synthesis
+from services.ai.claim_validator import validate_grounded_synthesis
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.corrective_action_service import CorrectiveActionService
 from services.dashboard_record_service import DashboardRecordService
@@ -896,38 +896,30 @@ def test_live_grant_revocation_between_steps_and_during_synthesis_with_and_witho
         user_obj = db.query(User).filter(User.id == mgr_user.id).first()
         scope = build_user_scope_from_db_user(db, user_obj)
 
-        # Revoke grant during exploration / synthesis when conversation persistence is disabled
-        import services.ai.local_data_explorer as lde
+        # Revoke grant during synthesis when conversation persistence is disabled
+        import services.ai.orchestrator as orch_mod
+        from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics
 
-        def _revoke_during_synth(**kwargs):
+        def _revoke_during_synth(question, digests):
             db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == mgr_user.id).delete()
             db.commit()
-            return ("Inbound achieved 91.5% in September 2026.", 10.0, "ok")
+            return NarrativeSynthesisResult(
+                headline="Inbound achieved 91.5% in September 2026.",
+                narrative_bullets=[],
+                suggested_followups=[],
+                provider_used="cloudflare",
+                model_used="test-synth-model",
+                metrics=ProviderCallMetrics(provider_used="cloudflare", model_used="test-synth-model"),
+            )
 
-        def _fake_planner(**kwargs):
-            step_num = kwargs.get("step", 1)
-            if step_num == 1:
-                return (
-                    {
-                        "action": "call_tools",
-                        "unknown_code": "none",
-                        "tools": [{"tool": "get_team_score_summary", "team": "Inbound", "period": "2026-09"}],
-                    },
-                    10.0,
-                    "ok",
-                )
-            return ({"action": "finish", "unknown_code": "none", "tools": []}, 10.0, "ok")
-
-        monkeypatch.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "true")
+        monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
         monkeypatch.setenv("PMS_AI_LOCAL_EVIDENCE_SYNTHESIS_ENABLED", "true")
-        monkeypatch.setattr(lde, "_compose_grounded_answer", _revoke_during_synth)
-        monkeypatch.setattr(lde, "local_exploration_enabled", lambda: True)
-        monkeypatch.setattr(lde, "_call_local_exploration_model", _fake_planner)
+        monkeypatch.setattr(orch_mod, "synthesize_overall_score", _revoke_during_synth)
 
         orch = PmsAiOrchestrator(db=db, scope=scope)
         res_no_persist = orch.run_chat_turn(
             AiChatRequest(
-                prompt="How did Inbound perform in September 2026?",
+                prompt="What is Inbound overall score in September 2026?",
                 session_state=SessionFilterContext(
                     team="Inbound",
                     month="September",
@@ -967,7 +959,7 @@ def test_live_grant_revocation_between_steps_and_during_synthesis_with_and_witho
         orch_persisted = PmsAiOrchestrator(db=db, scope=scope_persisted)
         res_persisted = orch_persisted.run_chat_turn(
             AiChatRequest(
-                prompt="How did Inbound perform in September 2026?",
+                prompt="What is Inbound overall score in September 2026?",
                 conversation_id=str(conv.id),
                 session_state=SessionFilterContext(
                     team="Inbound",

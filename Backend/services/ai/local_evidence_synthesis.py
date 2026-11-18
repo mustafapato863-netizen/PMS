@@ -20,6 +20,10 @@ from services.ai.llm_client import (
     synthesis_timeout_seconds,
 )
 from services.ai.config import get_ai_runtime_config
+from services.ai.prompt_versions import (
+    EXECUTIVE_VARIATION_PROMPT_VERSION,
+    NARROW_EVIDENCE_SYNTHESIS_PROMPT_VERSION,
+)
 from services.ai.provider_engine import (
     ProviderMessage,
     ProviderRequest,
@@ -137,6 +141,8 @@ def _validated_answer(answer: Any, facts: BranchBookingFacts) -> bool:
 
 def extract_overall_score_facts(question: str, digests: list[dict[str, Any]]) -> OverallScoreFacts | None:
     """Use only a single current overall score; never infer comparisons or people."""
+    if get_ai_runtime_config().model_led_pilot_enabled:
+        return None
     lower = question.casefold()
     if not re.search(r"\b(?:score|performance|perform)\b", lower):
         return None
@@ -216,7 +222,7 @@ def _generate_local_answer(
         messages=[
             ProviderMessage(role="user", content=user_payload_str),
         ],
-        system_instruction=instruction,
+        system_instruction=f"[PromptVersion: {NARROW_EVIDENCE_SYNTHESIS_PROMPT_VERSION}]\n{instruction}",
         response_format="json",
         json_schema=schema["schema"],
         temperature=0.0,
@@ -388,6 +394,7 @@ def synthesize_validated_executive_variation(
         "additionalProperties": False,
     }
     instruction = (
+        f"[PromptVersion: {EXECUTIVE_VARIATION_PROMPT_VERSION}]\n"
         "You are an executive performance analyst. Write a concise grounded response using ONLY "
         "the exact numbers, subjects, branches, and periods in `verified_facts`. "
         f"Framing angle: {angle_cue} "

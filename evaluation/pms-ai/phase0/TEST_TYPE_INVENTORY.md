@@ -8,14 +8,14 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 55. Test functions or `it` blocks: 767.
+Test files: 54. Test functions or `it` blocks: 749.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
 | `synthetic` | 16 | not applicable |
-| `mocked` | 36 | partial |
-| `live-model` | 6 | blocked |
+| `mocked` | 35 | partial |
+| `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
 
@@ -25,7 +25,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | --- | --- | --- | ---: | --- |
 | `Backend/tests/test_ai_admin_pilot.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_booking_comparisons.py` | test | `mocked` | 23 | partial |
-| `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
+| `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 18 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_chat_scenarios_and_variation.py` | test | `mocked` | 10 | partial |
@@ -37,7 +37,6 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
 | `Backend/tests/test_ai_data_access.py` | test | `synthetic` | 27 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 20 | partial |
-| `Backend/tests/test_ai_explorer_unified.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_feedback_learning.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
@@ -52,6 +51,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_phase5_feedback_provenance.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_phase5_postfix_rescore.py` | test | `synthetic` | 6 | not applicable |
 | `Backend/tests/test_ai_phase6_feedback_governance.py` | test | `mocked` | 19 | partial |
+| `Backend/tests/test_ai_phase6_prompt_versions_and_guards.py` | test | `mocked` | 4 | partial |
 | `Backend/tests/test_ai_phase7_eval_gates.py` | test | `live-model` | 12 | blocked |
 | `Backend/tests/test_ai_pilot_readiness_script.py` | test | `mocked` | 13 | partial |
 | `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 66 | partial |
@@ -66,7 +66,6 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_workspace.py` | test | `mocked` | 30 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
-| `Backend/tests/test_local_assistant_exploration.py` | test | `live-model`, `mocked` | 7 | partial |
 | `Backend/tests/test_local_evidence_synthesis.py` | test | `live-model`, `mocked` | 13 | partial |
 | `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 12 | partial |
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
@@ -87,7 +86,6 @@ A file can carry more than one label, so the label counts can add up to more tha
 - `Backend/tests/test_ai_corrective_action_drafter.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_ai_phase7_eval_gates.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_evaluation_outbound_productivity_golden.py`: Compares EmployeePolicy with outbound-anonymous-reference.json. That file is source_reference_only_not_activated, so the parity status is partial.
-- `Backend/tests/test_local_assistant_exploration.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_local_evidence_synthesis.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_local_model_router.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_pms_ai_phase0_derivation.py`: Recomputes v1 from team config and the employee schema. It does not call the assistant. Reviewer sign-off is still open, so the status is partial.
