@@ -1007,6 +1007,23 @@ def is_off_topic_prompt(prompt: str) -> bool:
     return any(pat.search(text) for pat in _OFF_TOPIC_PATTERNS)
 
 
+_SELF_SERVICE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:how\s+am\s+i|how\s+am\s+doing|my\s+(?:score|performance|numbers|kpi[s]?|results?))\b", re.I),
+    re.compile(r"\b(?:what(?:'s| is)\s+my\s+(?:score|performance|numbers|kpi[s]?|results?))\b", re.I),
+    re.compile(r"\b(?:show\s+me\s+my\s+(?:score|performance|numbers|kpi[s]?|results?|profile|scorecard))\b", re.I),
+    re.compile(r"\b(?:my\s+(?:trend|history|corrective\s+actions?|coaching))\b", re.I),
+    re.compile(r"\b(?:am\s+i\s+(?:doing|performing)\s+(?:well|ok|okay|good|bad))\b", re.I),
+)
+
+
+def is_self_service_prompt(prompt: str) -> bool:
+    """Check if the prompt is asking about the user's own data."""
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    return any(pat.search(text) for pat in _SELF_SERVICE_PATTERNS)
+
+
 def is_broad_overview_prompt(prompt: str) -> bool:
     text = (prompt or "").strip()
     if not text:
