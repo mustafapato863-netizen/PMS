@@ -38,6 +38,11 @@ services:
       - ${REDIS_PASSWORD}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -77,13 +82,17 @@ services:
       context: .
       dockerfile: DevOps/docker/Dockerfile.backend
     environment: *a1
+    # Traefik reaches port 7860 over dokploy-network; direct host access stays loopback-only.
     ports:
-      - 7860:7860
+      - "127.0.0.1:7860:7860"
     volumes:
       - job_data:/app/job_data
+    # Do not start the API or job worker until database migrations have succeeded.
     depends_on:
-      - redis
-      - migrate
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
@@ -122,9 +131,12 @@ services:
     environment: *a1
     volumes:
       - job_data:/app/job_data
+    # Do not start the API or job worker until database migrations have succeeded.
     depends_on:
-      - redis
-      - migrate
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD

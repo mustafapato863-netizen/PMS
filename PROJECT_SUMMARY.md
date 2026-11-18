@@ -1,6 +1,6 @@
 # PMS Project Summary
 
-**Last updated:** 2026-08-09  
+**Last updated:** 2026-11-18  
 **Repository:** `mustafapato863-netizen/PMS`  
 **Release model:** one monorepo, independently buildable services, atomic releases
 
@@ -14,7 +14,8 @@ PMS is a performance-management platform for employee, team, management, and exe
 - `Backend/`: FastAPI + SQLAlchemy + Alembic services, repositories, KPI scoring, uploads, reporting, and Socket.IO.
 - `Database/`: database scripts and migration support.
 - `DevOps/`: Dockerfiles, Nginx, compose files, deployment runbooks, monitoring, backups, and operational scripts.
-- `compose.production.yml`: production stack for the Hostinger VPS.
+- `docker-compose.yml`: live Dokploy/Traefik backend, worker, migrations, and Redis stack.
+- `compose.production.yml`: separate manual Hostinger/Caddy full-stack deployment profile.
 
 The normal request path is `Frontend -> Backend -> PostgreSQL/Supabase`. Redis is optional for caching and realtime scaling; bounded fallbacks keep local development usable when Redis is unavailable.
 
@@ -39,7 +40,8 @@ The normal request path is `Frontend -> Backend -> PostgreSQL/Supabase`. Redis i
 
 ## Production and operations
 
-- Hostinger VPS deployment is defined by `compose.production.yml` and the runbook in `DevOps/deployment/hostinger-vps.md`.
+- The active Dokploy deployment uses `docker-compose.yml`; the separate Hostinger/Caddy profile uses `compose.production.yml` and the manual runbook in `DevOps/deployment/hostinger-vps.md`.
+- CI validates both deployment profiles; the Dokploy contract requires healthy Redis, completed migrations before app startup, and no non-loopback direct backend port publishing.
 - Production secrets belong in the deployment environment only; commit `.env.example` templates, never credentials.
 - Health endpoints, request IDs, structured logs, bounded Redis fallbacks, and non-root containers are part of the production baseline.
 - Roll back application images first. Database downgrade or restore is allowed only after a validated backup, migration compatibility check, and integrity verification.
@@ -55,7 +57,7 @@ For reproducible verification, use the commands documented in `DevOps/README.md`
 - Frontend entry and routing: `Frontend/src/main.tsx`, `Frontend/src/App.tsx`.
 - Backend entry and runtime configuration: `Backend/app.py`, `Backend/config/`.
 - Database models and active migrations: `Backend/models/`, `Backend/migrations/`.
-- Deployment contract: `compose.production.yml`, `DevOps/deployment/`, `DevOps/.env.hostinger.example`.
+- Deployment contract: `docker-compose.yml` (active Dokploy), `compose.production.yml` (manual alternative), `DevOps/deployment/`, and environment-specific secret provisioning.
 - Detailed operational references remain in `DevOps/docs/`; historical planning and audit files are intentionally not kept here.
 
 New work should be tracked through GitHub issues and pull requests. This file is the single project-level summary; do not add another phase plan or status snapshot for routine changes.

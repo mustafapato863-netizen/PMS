@@ -1,4 +1,6 @@
-# Hostinger VPS Deployment
+# Hostinger VPS Deployment (Manual Caddy Alternative)
+
+> **Not the live Dokploy deployment.** The active backend/worker stack uses root `docker-compose.yml` and Dokploy-managed Traefik. This runbook documents the separate `compose.production.yml` frontend/backend/Caddy stack. Do not start it alongside Dokploy on the same VPS: two reverse proxies would compete for ports 80/443.
 
 This runbook deploys the PMS Dashboard monorepo as one Docker Compose project while keeping the frontend, backend, migration job, Redis, and TLS gateway as separate runtime services.
 
@@ -42,7 +44,7 @@ Create a protected GitHub Environment named `production`. Add:
 - `APP_DOMAIN`: production hostname without scheme.
 - `ACME_EMAIL`: email used for certificate issuance notices.
 
-Require manual approval on the `production` environment for the first deployment. The workflow uses Hostinger's official `hostinger/deploy-on-vps@v2` action and runs only after `CI` succeeds on `main`, or by an explicitly approved manual dispatch.
+Require manual approval on the `production` environment for the first deployment. The workflow uses Hostinger's official `hostinger/deploy-on-vps@v2` action and is **manual-only** (`workflow_dispatch`). Check that CI passed for the intended commit and obtain the required environment approval before dispatching. Automatic deployment of this Caddy stack is disabled.
 
 ## Local/staging verification
 

@@ -16,10 +16,10 @@ This `DevOps/` folder is the operational and architecture reference for the PMS 
 ## Start here
 
 - [`PROJECT_SUMMARY.md`](../PROJECT_SUMMARY.md): single current project and release summary
-- [`README_PROJECT_STRUCTURE.md`](D:/Projects/PMS_Dashboard/DevOps/README_PROJECT_STRUCTURE.md): where code and responsibilities live
-- [`DATABASE_SCHEMA.md`](D:/Projects/PMS_Dashboard/DevOps/DATABASE_SCHEMA.md): main database tables, relationships, and BSC persistence
-- [`docs/API_REFERENCE.md`](D:/Projects/PMS_Dashboard/DevOps/docs/API_REFERENCE.md): backend route reference
-- [`docs/Architecture.md`](D:/Projects/PMS_Dashboard/DevOps/docs/Architecture.md): higher-level system flow
+- [`README_PROJECT_STRUCTURE.md`](README_PROJECT_STRUCTURE.md): where code and responsibilities live
+- [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md): main database tables, relationships, and BSC persistence
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md): backend route reference
+- [`docs/Architecture.md`](docs/Architecture.md): higher-level system flow
 
 ## Folder map
 
@@ -39,33 +39,42 @@ DevOps/
 `-- restore/        # restore target
 ```
 
-## Local runtime
+## Deployment profiles
 
-Infrastructure services and the backend can be started from the repo root:
+- **Live Dokploy:** repository root `docker-compose.yml` manages backend, worker, migrations, and Redis behind Dokploy's Traefik. It requires the external `dokploy-network` and real deployment variables. **Do not run bare `docker compose up --build` on a developer workstation**; this is not a development Compose file.
+- **Manual Hostinger/Caddy alternative:** root `compose.production.yml` includes frontend and TLS gateway. Follow [the manual Hostinger runbook](deployment/hostinger-vps.md); do not launch this stack on the Dokploy host.
+- CI resolves both Compose files. It verifies Redis health, successful migration-before-API/worker startup, and loopback-only direct published application ports on the active Dokploy profile.
 
-```powershell
-docker compose up --build
+## Local development
+
+Run application services independently using local development configuration (do not reuse production credentials):
+
+```bash
+cd Backend
+python -m pip install -r requirements-dev.txt
+python -m uvicorn app:app --reload
 ```
 
-Frontend runs separately:
+In another terminal:
 
-```powershell
+```bash
 cd Frontend
+npm ci
 npm run dev
 ```
 
-Useful validation commands:
+Useful verification:
 
-```powershell
-cd Frontend
-npm run build
+```bash
+cd Backend
+python -m pytest -q
+
+cd ../Frontend
 npm run lint
-
-cd ..\Backend
-.\.venv\Scripts\python -m pytest tests\test_three_teams.py tests\test_submission_team.py tests\test_services.py -q
+npm run typecheck
+npm test
+npm run build:ci
 ```
-
-The canonical production definition is `compose.production.yml` at the repository root. Do not use the legacy environment-specific Compose files for production.
 
 ## Documentation policy
 
