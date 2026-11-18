@@ -74,7 +74,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: Validate operational shell scripts
         run: bash -n DevOps/scripts/*.sh
-      - name: Validate production Compose configuration
+      - name: Validate live Dokploy Compose safety contract
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_validate_deployment_compose.py'
+          docker compose --env-file DevOps/.env.hostinger.example -f docker-compose.yml config --format json > /tmp/pms-dokploy-compose.json
+          python3 scripts/validate_deployment_compose.py /tmp/pms-dokploy-compose.json
+      - name: Validate alternative Hostinger/Caddy Compose configuration
         run: docker compose --env-file DevOps/.env.hostinger.example -f compose.production.yml config --quiet
       - name: Build production images
         run: docker compose --env-file DevOps/.env.hostinger.example -f compose.production.yml build backend frontend
