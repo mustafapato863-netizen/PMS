@@ -441,11 +441,21 @@ def user_can_access_team(
         return False
 
     role = str(normalized_scope.get("role") or "").strip()
+    raw_regions = normalized_scope.get("accessible_regions") or []
+    allowed_regions = {str(r).strip().upper() for r in raw_regions if str(r).strip()}
+    requested_region = str(region or "").strip().upper()
+    if (
+        requested_region
+        and requested_region != "ALL"
+        and allowed_regions
+        and "ALL" not in allowed_regions
+        and requested_region not in allowed_regions
+    ):
+        return False
+
     if normalized_scope.get("legacy_unscoped") or role in GLOBAL_DATA_ROLES or normalized_scope.get("has_unrestricted_team_access"):
         return True
 
-    raw_regions = normalized_scope.get("accessible_regions") or []
-    allowed_regions = {str(r).strip().upper() for r in raw_regions if str(r).strip()}
     if role == "Regional Manager" or allowed_regions:
         explicit_teams = {
             str(t).strip().casefold()

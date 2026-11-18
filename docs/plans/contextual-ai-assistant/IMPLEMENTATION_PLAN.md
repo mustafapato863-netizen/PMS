@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active execution plan by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The context inheritance boundaries, surface integration patterns, and security contracts documented herein remain preserved as historical requirements and domain reference.
+
 # PMS Contextual AI Assistant and Answer Quality Plan
 
 **Status:** implementation plan; no functionality, migration or release is implied complete.  

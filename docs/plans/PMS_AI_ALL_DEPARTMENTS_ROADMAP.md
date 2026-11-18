@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active execution plan by [PMS AI Model-Led Implementation Plan](PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The scope coverage requirements, department hierarchies, and authorization boundaries documented herein remain preserved as historical requirements and domain reference.
+
 # PMS AI: all-department chat and assistant roadmap
 
 **Status (10 November 2026):** Phase -1 Qwen wiring and Admin-only pilot, plus the unsigned Phase 0 question freeze, are merged on `main`; all-department implementation and production enablement remain incomplete and unauthorized.

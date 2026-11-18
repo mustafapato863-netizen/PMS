@@ -61,6 +61,32 @@ _EVAL_WORSE_RE = re.compile(
 _SUPERLATIVE_BEST_RE = re.compile(r"\b(?:best|strongest)\b", re.IGNORECASE)
 _SUPERLATIVE_WORST_RE = re.compile(r"\b(?:worst|weakest)\b", re.IGNORECASE)
 
+# Check 5c: Temporal change comparators across periods.
+_TEMPORAL_CHANGE_RE = re.compile(
+    r"\b(?:increased|decreased|improved|improvement|worsened|worsening|rose|risen|dropped|fell|fallen|declined|growth|growing|reduction|reduced|change\s+of)\b",
+    re.IGNORECASE,
+)
+
+# Check 5d: Target status comparators.
+_TARGET_MET_RE = re.compile(
+    r"\b(?:met|meets|meeting|achieved|achieving|attained|attaining|hit|hitting|satisfied|satisfying)\s+(?:[a-z]+\s+){0,2}(?:target|goal|threshold|benchmark)\b|"
+    r"\b(?:target|goal|threshold|benchmark)\s+(?:was\s+|is\s+)?(?:met|achieved|attained|hit|satisfied)\b|"
+    r"\b(?:within|on)\s+target\b",
+    re.IGNORECASE,
+)
+_TARGET_MISSED_RE = re.compile(
+    r"\b(?:missed|missing|failed\s+to\s+meet)\s+(?:[a-z]+\s+){0,2}(?:target|goal|threshold|benchmark)\b|"
+    r"\b(?:fell\s+short|falling\s+short)(?:\s+of\s+(?:the\s+|its\s+|their\s+|her\s+|his\s+)?(?:target|goal|threshold|benchmark))?\b|"
+    r"\b(?:target|goal|threshold|benchmark)\s+(?:was\s+|is\s+)?(?:missed|unmet|not\s+met)\b|"
+    r"\bbelow\s+target\b",
+    re.IGNORECASE,
+)
+_TARGET_EXCEEDED_RE = re.compile(
+    r"\b(?:exceeded|exceeding|surpassed|surpassing)\s+(?:[a-z]+\s+){0,3}(?:target|goal|threshold|benchmark)\b|"
+    r"\b(?:above|over)\s+target\b",
+    re.IGNORECASE,
+)
+
 # Check 6: Tie disclosure.
 _EXCLUSIVE_WINNER_LOSER_RE = re.compile(
     r"\b(?:led|leads|leading|outperformed|beat|topped|sole|highest|lowest|best|worst)\b|"
@@ -230,7 +256,8 @@ def build_claim_ledger(
                 ClaimFact(
                     fact_id=f"T{idx}",
                     part="metric",
-                    subject=ev.display_name or ev.kpi_key or ev.team,
+                    subject=ev.employee_name or ev.display_name or ev.kpi_key or ev.team,
+                    employee_id=ev.employee_id,
                     function=None,
                     team=ev.team,
                     position=ev.position,
@@ -310,6 +337,11 @@ def _allowed_numbers_from_ledger(ledger: list[ClaimFact]) -> set[float]:
                 fval = float(num)
                 allowed.add(round(fval, 4))
                 allowed.add(round(fval, 1))
+        # Grounded target delta if both actual value and target exist
+        if fact.value is not None and fact.target is not None and not fact.is_missing:
+            diff = abs(float(fact.value) - float(fact.target))
+            allowed.add(round(diff, 4))
+            allowed.add(round(diff, 1))
         if fact.sample_size is not None:
             allowed.add(float(fact.sample_size))
         if fact.period:
@@ -323,6 +355,21 @@ def _allowed_numbers_from_ledger(ledger: list[ClaimFact]) -> set[float]:
             for tok in re.findall(r"\d+", fact.employee_id):
                 allowed.add(round(float(tok), 4))
                 allowed.add(round(float(tok), 1))
+
+    # Grounded pairwise deltas between comparable non-missing facts
+    for i in range(len(ledger)):
+        f_i = ledger[i]
+        if f_i.value is None or f_i.is_missing:
+            continue
+        for j in range(i + 1, len(ledger)):
+            f_j = ledger[j]
+            if f_j.value is None or f_j.is_missing:
+                continue
+            if _facts_are_comparable(f_i, f_j):
+                p_diff = abs(float(f_i.value) - float(f_j.value))
+                allowed.add(round(p_diff, 4))
+                allowed.add(round(p_diff, 1))
+
     return allowed
 
 
@@ -400,6 +447,37 @@ def _facts_are_comparable(a: ClaimFact, b: ClaimFact) -> bool:
     if a.unit and b.unit and a.unit.casefold() != b.unit.casefold():
         return False
     return True
+
+
+def _check_target_claims(fact: ClaimFact, text: str) -> str | None:
+    if fact.is_missing or fact.value is None or fact.target is None:
+        return None
+    f_val = float(fact.value)
+    f_tgt = float(fact.target)
+    f_dir = fact.direction or "higher_better"
+    text_lower = text.casefold()
+
+    if f_dir == "lower_better":
+        # For lower_better (e.g. Waiting Time), value <= target is MET, value > target is MISSED/EXCEEDED.
+        if f_val > f_tgt:
+            if _TARGET_MET_RE.search(text):
+                return "contradictory_target_comparison"
+        else:
+            if _TARGET_MISSED_RE.search(text) or _TARGET_EXCEEDED_RE.search(text):
+                return "contradictory_target_comparison"
+    else:
+        # For higher_better, value >= target is MET, value < target is MISSED/FELL SHORT.
+        if f_val < f_tgt:
+            if (
+                _TARGET_MET_RE.search(text)
+                or _TARGET_EXCEEDED_RE.search(text)
+                or re.search(r"\b(?:beat|outperformed\s+the\s+target)\b", text_lower)
+            ):
+                return "contradictory_target_comparison"
+        else:
+            if _TARGET_MISSED_RE.search(text):
+                return "contradictory_target_comparison"
+    return None
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -707,6 +785,88 @@ def validate_claims(
                         _add_error(errors, "contradictory_comparison")
                     if _SUPERLATIVE_WORST_RE.search(sent_lower) and not is_min:
                         _add_error(errors, "contradictory_comparison")
+
+    # 5c. Temporal change and trend validation
+    distinct_periods = {
+        fact.period.strip()
+        for fact in ledger
+        if fact.period and fact.value is not None and not fact.is_missing
+    }
+    if len(distinct_periods) < 2:
+        if _TEMPORAL_CHANGE_RE.search(combined_text):
+            _add_error(errors, "unsupported_temporal_comparison")
+    else:
+        # Multi-period trend validation for the same subject and metric
+        period_facts = [
+            f for f in ledger
+            if f.period and f.value is not None and not f.is_missing
+        ]
+
+        def _period_key(p: str) -> tuple[int, int]:
+            m_iso = _ISO_PERIOD_RE.match(p.strip())
+            if m_iso:
+                return (int(m_iso.group(1)), int(m_iso.group(2)))
+            yr_m = _YEAR_RE.search(p)
+            yr = int(yr_m.group(1)) if yr_m else 2026
+            for name, num in MONTHS.items():
+                if name.casefold() in p.casefold():
+                    return (yr, num)
+            return (yr, 0)
+
+        period_facts.sort(key=lambda f: _period_key(f.period))
+        for i in range(len(period_facts)):
+            f_earlier = period_facts[i]
+            for j in range(i + 1, len(period_facts)):
+                f_later = period_facts[j]
+                if not _facts_are_comparable(f_earlier, f_later):
+                    continue
+                if f_earlier.subject and f_later.subject and f_earlier.subject.casefold() != f_later.subject.casefold():
+                    continue
+                v_earlier = float(f_earlier.value)
+                v_later = float(f_later.value)
+                delta = v_later - v_earlier
+                if abs(delta) < 1e-4:
+                    continue
+                eff_dir = f_later.direction or "higher_better"
+                is_num_decrease = (delta < 0)
+                is_num_increase = (delta > 0)
+                is_improvement = (delta < 0) if eff_dir == "lower_better" else (delta > 0)
+                is_worsening = (delta > 0) if eff_dir == "lower_better" else (delta < 0)
+
+                if is_num_decrease and re.search(r"\b(?:increased|rose|risen|growth|growing)\b", combined_lower):
+                    _add_error(errors, "contradictory_comparison")
+                elif is_num_increase and re.search(r"\b(?:decreased|dropped|fell|fallen|declined|reduction|reduced)\b", combined_lower):
+                    _add_error(errors, "contradictory_comparison")
+
+                if is_improvement and re.search(r"\b(?:worsened|worsening|deteriorated|degraded)\b", combined_lower):
+                    _add_error(errors, "inverted_polarity")
+                elif is_worsening and re.search(r"\b(?:improved|improvement|better)\b", combined_lower):
+                    _add_error(errors, "inverted_polarity")
+
+    # 5d. Target status validation
+    facts_with_target = [
+        f for f in ledger
+        if not f.is_missing and f.value is not None and f.target is not None
+    ]
+    if len(facts_with_target) == 1:
+        err = _check_target_claims(facts_with_target[0], combined_text)
+        if err:
+            _add_error(errors, err)
+    elif len(facts_with_target) > 1:
+        for sent in sentences:
+            sent_lower = sent.casefold()
+            for fact in facts_with_target:
+                pos = _find_subject_pos(fact.subject, sent_lower) if fact.subject else -1
+                in_sent = (
+                    (pos >= 0)
+                    or (fact.metric_name and fact.metric_name.casefold() in sent_lower)
+                    or (str(fact.value) in sent)
+                )
+                if in_sent:
+                    err = _check_target_claims(fact, sent)
+                    if err:
+                        _add_error(errors, err)
+                        break
 
     # 8. Banned Causal Leaps & Employment/HR Hallucinations
     for sent in sentences:

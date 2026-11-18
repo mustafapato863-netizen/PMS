@@ -1,0 +1,54 @@
+{
+  "run_id": "phase5_exposed_glm_v3_r2",
+  "created_at_utc": "2026-11-17T20:52:48.678301+00:00",
+  "requested_provider": "cloudflare",
+  "timeout_seconds": 30,
+  "synthesis_max_tokens_override": 1024,
+  "application_source_sha256": "cc88446eebc2b2faeff7e65b9e84259adca8e032045efbbf5c6cd0b2cdee9c2d",
+  "runner_sha256": "bda6413edcfcba2190a4d5207710301af6e2b0641052f3a25e75b57dafd934aa",
+  "v2_runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "scoring_helper_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "reference_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "reference_freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb",
+  "scoring_version": "pms-ai-metadata-units-v1",
+  "result_sha256": "c5c4c89c5f442069574609405813cc34bca8d47e266fb3e2677b94435e50800f",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 52,
+      "model_led_synthesis": 29
+    },
+    "stage_outcomes": {
+      "model_led_router:truncated_response": 5,
+      "model_led_router:success": 52,
+      "model_led_synthesis:success": 29,
+      "model_led_router:provider_unavailable": 6,
+      "model_led_synthesis:truncated_response": 6,
+      "model_led_synthesis:provider_unavailable": 8
+    },
+    "engine_calls": 106,
+    "provider_attempts_by_status": {
+      "truncated_response": 11,
+      "success": 81,
+      "timeout": 14
+    },
+    "estimated_cost_usd_known_subtotal": 0.02251692,
+    "engine_calls_without_cost_estimate": 25,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {
+      "truncated_response": 6,
+      "claim_validation_failed:unsupported_temporal_comparison": 3,
+      "unavailable_data": 5,
+      "provider_unavailable": 8,
+      "claim_validation_failed:missing_fact_value": 2,
+      "invalid_tool_arguments": 3
+    },
+    "answer_sources": {
+      "deterministic": 37,
+      "model_synthesis": 24,
+      "fallback": 19
+    }
+  }
+}

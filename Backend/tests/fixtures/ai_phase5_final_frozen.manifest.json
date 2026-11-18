@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "frozen_at_utc": "2026-11-17T13:07:23Z",
+  "fixture": "ai_phase5_final_frozen.json",
+  "fixture_sha256": "9e939f0d393acca689c6f715589c0e8d144a9d8c354c8084c5eb1292bd46f2e8",
+  "conversation_count": 20,
+  "prompt_count": 80,
+  "synthetic_source_record_count": 34,
+  "source_data_sha256": "6bf79419ded46da9644e7bb0498a3a5da550a99bda494f8b3ac6acc977dbb68a",
+  "evaluator": "Backend/scripts/run_unseen_eval.py",
+  "runner_sha256": "3fb496f60d26e55a198f5cfad6a7d8fab3c9906acf2399a56c8a05da1a01e03e",
+  "modes": [
+    "deterministic",
+    "mocked_provider_failure",
+    "live_provider"
+  ],
+  "data_boundary": "Synthetic in-memory SQLite only; no production employee data.",
+  "tuning_policy": "Do not modify this fixture after the first evaluation run. Any later tuning requires a newly frozen fixture."
+}

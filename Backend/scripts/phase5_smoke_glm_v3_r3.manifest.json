@@ -1,0 +1,39 @@
+{
+  "run_id": "phase5_smoke_glm_v3_r3",
+  "created_at_utc": "2026-11-17T21:07:25.093896+00:00",
+  "requested_provider": "cloudflare",
+  "timeout_seconds": 30,
+  "model_led_output_cap_omitted": true,
+  "application_source_sha256": "7c9122ea3497ffed0a3bd446a0401ca74f10c77447a7bec63bf37440cbe21474",
+  "runner_sha256": "d50ec9533b33b7ab68d66fc2d828f06094b00abe9c8f5ddaed106dd87b5fddc0",
+  "v2_runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "scoring_helper_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "reference_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "reference_freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb",
+  "scoring_version": null,
+  "result_sha256": "d099f082254e0cfd2fcd0b6d3a649e8b8a451f04dd7111b96f68443c45b7b926",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 1,
+      "model_led_synthesis": 1
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 1,
+      "model_led_synthesis:success": 1
+    },
+    "engine_calls": 2,
+    "provider_attempts_by_status": {
+      "success": 2
+    },
+    "estimated_cost_usd_known_subtotal": 0.0005635,
+    "engine_calls_without_cost_estimate": 0,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {},
+    "answer_sources": {
+      "model_synthesis": 1
+    }
+  }
+}

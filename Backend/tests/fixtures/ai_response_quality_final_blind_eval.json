@@ -1,0 +1,102 @@
+{
+  "version": "1.0",
+  "description": "Brand-new sealed final held-out evaluation set created after implementation completion: 32 prompts across 8 multi-turn conversations. Never tuned against during implementation.",
+  "conversations": [
+    {
+      "id": "blind_01_support_tie_resolve_and_insufficient",
+      "split": "heldout",
+      "category": "tie_disclosure_pronoun_clarification_confirmed_followup_and_insufficient_history",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b01_t1", "prompt": "Who was the lowest scoring performer in Support Positions in September 2026?", "expected_outcome": "answer", "expected_intent": "ranking", "expected_scope": {"team": "Support Positions", "function": "Call Center"}, "validate_scope": true, "expected_periods": ["2026-09"], "required_content": ["62.0%", "tied with"]},
+        {"id": "b01_t2", "prompt": "What is their job title?", "expected_outcome": "clarification", "expected_clarification_code": "AMBIGUOUS_PERSON", "expected_choice_employee_ids": ["EMP301", "EMP302"], "max_tool_calls": 0},
+        {"id": "b01_t3", "prompt": "What is their job title?", "clarification_choice_id": "choice-person-EMP302", "expected_outcome": "answer", "expected_intent": "current_value", "expected_entities": {"employee": "Ziad Nabil"}, "required_content": ["Ziad Nabil", "Trainer"]},
+        {"id": "b01_t4", "prompt": "Summarize his score pattern across the available months.", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": null, "expected_entities": {"employee": "Ziad Nabil"}, "expected_min_trend_periods": 2, "allow_insufficient_history": true, "required_content": ["Ziad Nabil", "September 2026", ["insufficient", "only 1"]]}
+      ]
+    },
+    {
+      "id": "blind_02_bookings_to_score_and_booking_trend",
+      "split": "heldout",
+      "category": "operation_and_metric_separation_across_bookings_score_role",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b02_t1", "prompt": "Who generated the most bookings for Outbound in September 2026?", "expected_outcome": "answer", "expected_intent": "ranking", "expected_metric": "outbound:bookings_count", "expected_periods": ["2026-09"], "required_content": ["Omar Khalid", "Outbound"]},
+        {"id": "b02_t2", "prompt": "What was their booking trend?", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": "outbound:bookings_count", "expected_entities": {"employee": "Omar Khalid"}, "expected_min_trend_periods": 2, "require_trend_evidence": true, "required_content": ["Omar Khalid", "August 2026", "September 2026", "370 bookings"]},
+        {"id": "b02_t3", "prompt": "Now summarize his overall PMS score pattern across available months.", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": null, "expected_entities": {"employee": "Omar Khalid"}, "expected_min_trend_periods": 2, "require_trend_evidence": true, "required_content": ["Omar Khalid", "August 2026", "September 2026", "89.0%"], "forbidden_content": ["370 bookings"]},
+        {"id": "b02_t4", "prompt": "What position does he hold?", "expected_outcome": "answer", "expected_intent": "current_value", "expected_metric": null, "expected_entities": {"employee": "Omar Khalid"}, "required_content": ["Omar Khalid", "Outbound Specialist"]}
+      ]
+    },
+    {
+      "id": "blind_03_mariam_selection_and_4turn_followup",
+      "split": "heldout",
+      "category": "ambiguous_name_choice_preservation_and_topic_reset",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b03_t1", "prompt": "Check Mariam's score in Inbound for September 2026.", "expected_outcome": "clarification", "expected_clarification_code": "AMBIGUOUS_PERSON", "expected_choice_employee_ids": ["EMP601", "EMP602"], "max_tool_calls": 0},
+        {"id": "b03_t2", "prompt": "How did her score pattern move across available months?", "clarification_choice_id": "choice-person-EMP601", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": null, "expected_entities": {"employee": "Mariam Ali"}, "expected_min_trend_periods": 3, "require_trend_evidence": true, "required_content": ["Mariam Ali", "July 2026", "September 2026", "88.0%"]},
+        {"id": "b03_t3", "prompt": "What was her score in September 2026?", "expected_outcome": "answer", "expected_intent": "current_value", "expected_entities": {"employee": "Mariam Ali"}, "expected_periods": ["2026-09"], "required_content": ["Mariam Ali", "88.0%"]},
+        {"id": "b03_t4", "prompt": "Compare Dubai and Sharjah bookings in Inbound for September 2026.", "expected_outcome": "answer", "expected_intent": "compare_branches", "expected_scope": {"team": "Inbound", "employee_id": null}, "validate_scope": true, "expected_periods": ["2026-09"], "required_content": ["Dubai", "Sharjah"], "forbidden_content": ["Mariam Ali"]}
+      ]
+    },
+    {
+      "id": "blind_04_country_switch_and_missing_history",
+      "split": "heldout",
+      "category": "country_label_formatting_switch_and_insufficient_single_month_trend",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b04_t1", "prompt": "How did Coding perform in UAE for September 2026?", "expected_outcome": "answer", "expected_scope": {"team": "Coding", "region": "UAE"}, "validate_scope": true, "expected_periods": ["2026-09"], "required_content": ["Coding", "UAE"], "forbidden_content": ["Coding · UAE · UAE"]},
+        {"id": "b04_t2", "prompt": "Switch to Egypt instead.", "expected_outcome": "answer", "expected_scope": {"team": "Coding EGY", "region": "EGY"}, "validate_scope": true, "expected_periods": ["2026-09"], "required_content": ["Coding", "Egypt"], "forbidden_content": ["Coding EGY", "Coding · Egypt · Egypt"]},
+        {"id": "b04_t3", "prompt": "Summarize Salma Youssef's score pattern across the available months.", "expected_outcome": "answer", "expected_intent": "trend", "expected_entities": {"employee": "Salma Youssef"}, "expected_min_trend_periods": 2, "allow_insufficient_history": true, "required_content": ["Salma Youssef", "September 2026", ["insufficient", "only 1"]]},
+        {"id": "b04_t4", "prompt": "What is her score in September 2026?", "expected_outcome": "answer", "expected_intent": "current_value", "expected_entities": {"employee": "Salma Youssef"}, "required_content": ["Salma Youssef", "89.0%"]}
+      ]
+    },
+    {
+      "id": "blind_05_rcm_trend_explain_and_capabilities",
+      "split": "heldout",
+      "category": "correction_grounded_explain_and_help_gate",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b05_t1", "prompt": "What was Pre-Approvals IP Offshore score in September 2026?", "expected_outcome": "answer", "expected_scope": {"team": "Pre-Approvals IP Offshore", "function": "RCM"}, "validate_scope": true, "expected_periods": ["2026-09"], "required_content": ["Pre-Approvals IP Offshore", "86.0%"]},
+        {"id": "b05_t2", "prompt": "Actually show its rejection trend instead.", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": "pre_approvals_ip_offshore:rejection", "expected_scope": {"team": "Pre-Approvals IP Offshore", "function": "RCM"}, "validate_scope": true, "required_content": ["Controllable Rejection Rate", "12.0%"]},
+        {"id": "b05_t3", "prompt": "Explain that more simply.", "expected_outcome": "answer", "expected_capability_mode": "explain_previous", "required_content": ["Pre-Approvals IP Offshore", "12.0%"], "max_tool_calls": 0},
+        {"id": "b05_t4", "prompt": "How can you assist with Pre-Approvals IP Offshore?", "expected_outcome": "answer", "expected_capability_mode": "capabilities_help", "required_content": ["Pre-Approvals IP Offshore"], "max_tool_calls": 0}
+      ]
+    },
+    {
+      "id": "blind_06_multi_metric_ambiguous_trend_and_person_switch",
+      "split": "heldout",
+      "category": "ambiguous_trend_metric_clarification_and_person_switch",
+      "scope": {"role": "General Manager", "user_id": "u-blind-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {"id": "b06_t1", "prompt": "Check Sara Mahmoud's bookings and attendance rate in Inbound for September 2026.", "expected_outcome": "answer", "expected_entities": {"employee": "Sara Mahmoud"}, "expected_periods": ["2026-09"], "required_content": ["Sara Mahmoud"]},
+        {"id": "b06_t2", "prompt": "What was her trend?", "expected_outcome": "clarification", "expected_clarification_code": "AMBIGUOUS_KPI_SCOPE", "max_tool_calls": 0},
+        {"id": "b06_t3", "prompt": "What was her overall score trend?", "expected_outcome": "answer", "expected_intent": "trend", "expected_metric": null, "expected_entities": {"employee": "Sara Mahmoud"}, "expected_min_trend_periods": 2, "require_trend_evidence": true, "required_content": ["Sara Mahmoud", "March 2026", "September 2026", "94.0%"]},
+        {"id": "b06_t4", "prompt": "Which month was Adham Tarek's best month?", "expected_outcome": "answer", "expected_entities": {"employee": "Adham Tarek"}, "required_content": ["Adham Tarek", "August 2026", "96.5%"]}
+      ]
+    },
+    {
+      "id": "blind_07_branch_rbac_and_fresh_chat",
+      "split": "heldout",
+      "category": "branch_access_boundary_and_fresh_conversation_isolation",
+      "scope": {"role": "Branch Director", "user_id": "u-blind-dxb", "has_unrestricted_team_access": true, "accessible_branches": ["dubai"], "allowed_branches": ["dubai"]},
+      "turns": [
+        {"id": "b07_t1", "prompt": "Compare Inbound Dubai and Sharjah bookings in September 2026.", "expected_outcome": "restricted_access", "required_content": ["Access restricted"], "forbidden_content": ["Sharjah recorded"], "max_tool_calls": 0},
+        {"id": "b07_t2", "prompt": "How many Inbound bookings happened in Dubai in September 2026?", "expected_outcome": "answer", "expected_metric": "inbound:bookings_count", "expected_scope": {"team": "Inbound", "branch": "dubai"}, "validate_scope": true, "required_content": ["Dubai"]},
+        {"id": "b07_t3", "prompt": "Check the numbers.", "start_fresh_conversation": true, "expected_outcome": "clarification", "expected_capability_mode": "clarification", "forbidden_content": ["Dubai"], "max_tool_calls": 0},
+        {"id": "b07_t4", "prompt": "Hello!", "expected_outcome": "answer", "expected_capability_mode": "greeting", "max_tool_calls": 0}
+      ]
+    },
+    {
+      "id": "blind_08_role_rbac_and_pharmacy",
+      "split": "heldout",
+      "category": "team_scoped_access_denial_and_metric_precision",
+      "scope": {"role": "Manager", "user_id": "u-blind-pharm", "has_unrestricted_team_access": false, "accessible_functions": ["Pharmacy"], "accessible_teams": ["Pharmacy"]},
+      "turns": [
+        {"id": "b08_t1", "prompt": "Show Rami Adel's score in Marketing for September 2026.", "expected_outcome": "restricted_access", "required_content": ["Access restricted"], "forbidden_content": ["Rami Adel", "90.0%"], "max_tool_calls": 0},
+        {"id": "b08_t2", "prompt": "What did Nadia Fadel score in Pharmacy in September 2026?", "expected_outcome": "answer", "expected_intent": "current_value", "expected_entities": {"employee": "Nadia Fadel"}, "expected_scope": {"team": "Pharmacy"}, "validate_scope": true, "required_content": ["Nadia Fadel", "87.5%"]},
+        {"id": "b08_t3", "prompt": "What was her Waiting Time in September 2026?", "expected_outcome": "answer", "expected_metric": "pharmacy:waitingtime", "expected_entities": {"employee": "Nadia Fadel"}, "required_content": ["Nadia Fadel", "6.2"]},
+        {"id": "b08_t4", "prompt": "Thank you!", "expected_outcome": "answer", "expected_capability_mode": "greeting", "max_tool_calls": 0}
+      ]
+    }
+  ]
+}

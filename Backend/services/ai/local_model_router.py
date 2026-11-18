@@ -5,10 +5,12 @@ PMS remains the source of facts. The model may only return one allowed intent.
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Callable
 
 from services.ai.llm_client import (
     active_provider_name,
@@ -23,12 +25,21 @@ from services.ai.provider_engine import (
     get_unified_provider_engine,
 )
 
-__all__ = ["ALLOWED_INTENTS", "LocalIntentResult", "build_intent_json_schema", "local_intent_enabled", "suggest_intent"]
+__all__ = [
+    "ALLOWED_INTENTS",
+    "BoundedIntentContext",
+    "LocalIntentResult",
+    "build_intent_json_schema",
+    "call_suggest_intent",
+    "local_intent_enabled",
+    "suggest_intent",
+]
 
 ALLOWED_INTENTS = frozenset(
     {
         "greeting",
         "capabilities_help",
+        "explain_previous",
         "off_topic",
         "clarification",
         "performance_query",
@@ -43,6 +54,49 @@ ALLOWED_INTENTS = frozenset(
         "clarify",
     }
 )
+
+
+@dataclass(frozen=True)
+class BoundedIntentContext:
+    """Server-owned bounded conversation context passed to the intent classifier."""
+
+    confirmed_function: str | None = None
+    confirmed_team: str | None = None
+    confirmed_region: str | None = None
+    confirmed_branch: str | None = None
+    confirmed_level: str | None = None
+    confirmed_metric: str | None = None
+    confirmed_periods: tuple[str, ...] = field(default_factory=tuple)
+    previous_operation: str | None = None
+    has_confirmed_employee: bool = False
+    pending_clarification_code: str | None = None
+    last_answer_summary: str | None = None
+
+    def to_compact_dict(self) -> dict[str, object]:
+        out: dict[str, object] = {}
+        if self.confirmed_function:
+            out["function"] = self.confirmed_function
+        if self.confirmed_team:
+            out["team"] = self.confirmed_team
+        if self.confirmed_region:
+            out["country"] = self.confirmed_region
+        if self.confirmed_branch:
+            out["branch"] = self.confirmed_branch
+        if self.confirmed_level:
+            out["level"] = self.confirmed_level
+        if self.confirmed_metric:
+            out["metric"] = self.confirmed_metric
+        if self.confirmed_periods:
+            out["periods"] = list(self.confirmed_periods[:3])
+        if self.previous_operation:
+            out["previous_operation"] = self.previous_operation
+        if self.has_confirmed_employee:
+            out["has_confirmed_employee"] = True
+        if self.pending_clarification_code:
+            out["pending_clarification"] = self.pending_clarification_code
+        if self.last_answer_summary:
+            out["previous_answer_summary"] = self.last_answer_summary[:220]
+        return out
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
@@ -85,7 +139,25 @@ def build_intent_json_schema() -> dict[str, object]:
     }
 
 
-def suggest_intent(question: str) -> LocalIntentResult:
+def call_suggest_intent(
+    fn: Callable[..., LocalIntentResult],
+    question: str,
+    context: BoundedIntentContext | None = None,
+) -> LocalIntentResult:
+    """Invoke suggest_intent (or a 1-arg test double) cleanly with optional bounded context."""
+    try:
+        sig = inspect.signature(fn)
+        if "context" in sig.parameters:
+            return fn(question, context=context)
+    except (ValueError, TypeError):
+        pass
+    return fn(question)
+
+
+def suggest_intent(
+    question: str,
+    context: BoundedIntentContext | None = None,
+) -> LocalIntentResult:
     """Ask the configured model for an intent only, never scores, identities or SQL.
 
     The result is an untrusted suggestion. The caller must verify completeness,
@@ -106,10 +178,11 @@ def suggest_intent(question: str) -> LocalIntentResult:
         "Classify the user's message into one intent. Return JSON with only an intent field. "
         "Allowed intents: "
         "greeting (salutations or thanks like hi, hello, thanks), "
-        "capabilities_help (asking what the assistant can do or how it can help), "
+        "capabilities_help (asking what the assistant can do or how it can help, even when naming a team or department), "
+        "explain_previous (asking what the previous assistant answer meant, e.g. 'what do you mean', 'explain that', 'clarify'), "
         "off_topic (non-PMS topics like weather, recipes, jokes, movies, sports, general trivia), "
-        "clarification (vague data-less request missing team, KPI, person, or overview scope), "
-        "performance_query (broad PMS performance overview request), "
+        "clarification (vague data-less request missing team, KPI, person, or overview scope, or a bare period/country without active context), "
+        "performance_query (broad PMS performance overview request, follow-up refinement, or explicit correction of an active query), "
         "page_help (what does this page show, explain this view or metric definition), "
         "navigation (where can I find a page, scorecard, or feature), "
         "proposal (suggest or create a corrective action or improvement plan), "
@@ -121,6 +194,9 @@ def suggest_intent(question: str) -> LocalIntentResult:
         "clarify (ambiguous or missing scope). "
         "Do not answer, calculate, invent filters, or invent data."
     )
+    compact_ctx = context.to_compact_dict() if context is not None else {}
+    if compact_ctx:
+        instruction = f"{instruction}\nBounded conversation context: {json.dumps(compact_ctx, ensure_ascii=False)}"
     req = ProviderRequest(
         messages=[
             ProviderMessage(role="user", content=question.strip()),

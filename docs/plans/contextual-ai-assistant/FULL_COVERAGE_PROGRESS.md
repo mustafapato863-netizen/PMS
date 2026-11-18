@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL PROGRESS RECORD / REFERENCE ONLY**
+> This progress record documents historical work under the prior coverage plan.
+> Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS AI Full Coverage — Persistent Execution Progress
 
 **Plan Baseline:** `docs/plans/contextual-ai-assistant/FULL_COVERAGE_EXECUTION_PLAN.md`  

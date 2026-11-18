@@ -83,6 +83,7 @@ from services.ai.tool_registry import (
 )
 from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import function_for_team, user_can_access_team_level
+from utils.regions import ksa_region_hint_from_prompt
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 _last_exploration_provider: ContextVar[str] = ContextVar("last_exploration_provider", default="cloudflare")
@@ -991,6 +992,7 @@ def _validate_and_normalize_tool_call(
 
     lower_prompt = (prompt or "").casefold()
     explicit_teams = _detect_teams_in_prompt(lower_prompt)
+    requested_region = ksa_region_hint_from_prompt(prompt) or session_state.region
 
     raw_team = raw_tool.get("team")
     norm_team = (
@@ -1001,7 +1003,7 @@ def _validate_and_normalize_tool_call(
         else None
     )
     # Preserve unauthorized raw_team so RBAC check blocks it; otherwise bind explicit prompt team first
-    if norm_team and not user_can_access_team(scope, norm_team):
+    if norm_team and not user_can_access_team(scope, norm_team, region=requested_region):
         pass
     elif len(explicit_teams) == 1:
         norm_team = explicit_teams[0]
@@ -1100,7 +1102,7 @@ def _validate_and_normalize_tool_call(
 
     # 2. Cross-Scope Isolation Check: Team & Performance Level
     if norm_team:
-        if not user_can_access_team(scope, norm_team):
+        if not user_can_access_team(scope, norm_team, performance_level=eff_level, region=requested_region):
             allowed_fns = ", ".join(scope.get("accessible_functions") or []) or "your assigned teams"
             restr_plan = StructuredQueryPlan(
                 intent="current_value",
@@ -2179,8 +2181,9 @@ def run_bounded_exploration(
     # Pre-check: never send explicit unauthorized teams or branches in the user prompt to the local model
     lower = clean_prompt.casefold()
     explicit_teams = _detect_teams_in_prompt(lower)
+    requested_region = ksa_region_hint_from_prompt(clean_prompt) or session_state.region
     for t_cand in explicit_teams:
-        if not user_can_access_team(scope, t_cand):
+        if not user_can_access_team(scope, t_cand, region=requested_region):
             allowed_fns = ", ".join(scope.get("accessible_functions") or []) or "your assigned teams"
             return LocalExplorationResult(
                 handled=True,

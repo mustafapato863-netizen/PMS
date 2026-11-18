@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import functools
 import logging
+import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
@@ -23,7 +25,7 @@ from models.ai_schemas import (
     StructuredVisualCard,
     TypedMetricEvidence,
 )
-from services.ai.catalog import canonical_team_region, get_ai_catalog, user_can_access_branch
+from services.ai.catalog import CatalogMetricDefinition, canonical_team_region, get_ai_catalog, user_can_access_branch
 from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     sanitize_untrusted_text,
@@ -32,6 +34,7 @@ from services.ai.read_only_guard import ReadOnlySessionGuard
 from services.corrective_action_service import CorrectiveActionService
 from services.database_record_source import DatabaseRecordSource
 from services.insights_service import InsightsService
+from services.kpi_aggregation import aggregate_kpi_metric
 from services.planning_service import MONTH_ORDER, PlanningService
 from utils.branch_scope import (
     BRANCH_KEYS,
@@ -39,7 +42,7 @@ from utils.branch_scope import (
     record_matches_branch,
 )
 from utils.regions import first_region
-from utils.report_scope import filter_records_by_scope, selection_team_keys
+from utils.report_scope import filter_records_by_scope, selection_team_keys, user_can_access_team
 
 logger = logging.getLogger(__name__)
 
@@ -294,8 +297,448 @@ class ToolExecutionContext:
 class DeterministicToolRegistry:
     """Executes read-only domain tools and builds zero-hallucination StructuredVisualCards."""
 
+    AUTHORIZED_MODEL_LED_TOOLS: dict[str, dict[str, Any]] = {
+        "read_employee_metric": {
+            "type": "object",
+            "description": "Read a specific KPI metric or score for an employee in a given period.",
+            "properties": {
+                "employee_id": {"type": "string", "description": "PMS employee ID (e.g., EMP101) or employee name"},
+                "employee_name": {"type": "string", "description": "Employee full name (e.g., Nadia Fadel)"},
+                "metric_id": {"type": "string", "description": "Metric ID from catalog or name (e.g., inbound:waitingtime, waitingtime, bookings_count)"},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$", "description": "Period key like 2026-09"},
+                "team": {"type": "string", "description": "Team name (e.g., Inbound, Coding)"},
+                "branch": {"type": "string", "description": "Branch name (e.g., dubai, sharjah)"},
+            },
+            "required": ["metric_id"],
+            "additionalProperties": False,
+        },
+        "get_employee_history": {
+            "type": "object",
+            "description": "Retrieve multi-month historical trend records for an employee.",
+            "properties": {
+                "employee_id": {"type": "string", "description": "PMS employee ID or employee name"},
+                "employee_name": {"type": "string", "description": "Employee full name"},
+                "metric_id": {"type": "string", "description": "Metric ID from catalog or name (e.g., inbound:waitingtime, waitingtime)"},
+                "periods": {"type": "array", "items": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"}, "description": "Optional list of period keys"},
+                "team": {"type": "string"},
+                "branch": {"type": "string"},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        "compare_branches": {
+            "type": "object",
+            "description": "Read a metric for one branch or compare metrics, booking counts, or overall scores across UAE branches.",
+            "properties": {
+                "team": {"type": "string", "description": "Team/function name"},
+                "branches": {"type": "array", "items": {"type": "string", "enum": ["dubai", "sharjah", "ajman", "clinics"]}, "minItems": 1, "maxItems": 4},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"},
+                "metric": {"type": "string", "description": "Metric ID for comparison (e.g., bookings_count, overall_score)"},
+            },
+            "required": ["team", "period"],
+            "additionalProperties": False,
+        },
+        "get_score_trend": {
+            "type": "object",
+            "description": "Retrieve historical trend trajectory across months for an employee or team.",
+            "properties": {
+                "team": {"type": "string"},
+                "metric_id": {"type": "string"},
+                "periods": {"type": "array", "items": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"}, "minItems": 2, "maxItems": 12},
+                "branch": {"type": "string"},
+                "employee_id": {"type": "string"},
+                "employee_name": {"type": "string"},
+                "performance_level": {"type": "string", "enum": ["Employee", "Managerial", "Corporate"]},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        "rank_employees": {
+            "type": "object",
+            "description": "Rank and compare employee contributions on a metric or overall score within a team.",
+            "properties": {
+                "team": {"type": "string"},
+                "metric_id": {"type": "string"},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"},
+                "branch": {"type": "string"},
+                "performance_level": {"type": "string", "enum": ["Employee", "Managerial", "Corporate"]},
+                "direction": {"type": "string", "enum": ["best", "worst"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                "include_ties": {"type": "boolean"},
+                "score_threshold": {"type": "number"},
+                "threshold_operator": {
+                    "type": "string",
+                    "enum": [">", ">=", "<", "above", "over", "exceed", "exceeding", "more than", "at least", "below", "under", "less than"],
+                },
+            },
+            "required": ["team", "period"],
+            "additionalProperties": False,
+        },
+        "get_kpi_diagnosis": {
+            "type": "object",
+            "description": "Diagnose an employee's or team's KPI achievement and operational volume breakdowns.",
+            "properties": {
+                "employee_id": {"type": "string", "description": "PMS employee ID when diagnosing one employee"},
+                "employee_name": {"type": "string", "description": "Employee full name when diagnosing one employee"},
+                "team": {"type": "string"},
+                "metric_id": {"type": "string"},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"},
+                "branch": {"type": "string"},
+                "compare_branch": {"type": "string"},
+                "performance_level": {"type": "string", "enum": ["Employee", "Managerial", "Corporate"]},
+            },
+            "required": ["team", "period"],
+            "additionalProperties": False,
+        },
+    }
+
     def __init__(self, ctx: ToolExecutionContext) -> None:
         self.ctx = ctx
+
+    @_read_only_tool
+    def execute_model_led_tool(
+        self,
+        tool_name: str,
+        tool_arguments: dict[str, Any],
+    ) -> ToolExecutionResult:
+        if tool_name in ("get_employee_metric", "read_metric"):
+            tool_name = "read_employee_metric"
+        elif tool_name in ("read_employee_history", "get_history"):
+            tool_name = "get_employee_history"
+
+        if tool_name not in self.AUTHORIZED_MODEL_LED_TOOLS:
+            raise ValueError(f"Unknown model-led tool '{tool_name}'")
+
+        if "metric_id" not in tool_arguments:
+            m_val = tool_arguments.get("metric") or tool_arguments.get("metric_type") or tool_arguments.get("kpi") or tool_arguments.get("kpi_key")
+            if m_val:
+                tool_arguments["metric_id"] = m_val
+        for metric_arg in ("metric_id", "requested_metric_id"):
+            metric_leaf = str(tool_arguments.get(metric_arg) or "").strip().casefold().rsplit(":", 1)[-1]
+            if metric_leaf in ("performance", "score", "overall score", "overall_score", "pms score", "overall"):
+                tool_arguments[metric_arg] = "overall_score"
+
+        schema = self.AUTHORIZED_MODEL_LED_TOOLS[tool_name]
+        for req_field in schema.get("required", []):
+            if req_field not in tool_arguments or tool_arguments[req_field] is None:
+                raise ValueError(f"Missing required argument '{req_field}' for tool '{tool_name}'")
+
+        # Parse period if provided
+        period_str = str(tool_arguments.get("period") or "").strip()
+        month_str = None
+        year_int = None
+        if period_str:
+            iso_m = re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", period_str)
+            if iso_m:
+                year_int = int(iso_m.group(1))
+                m_num = int(iso_m.group(2))
+                from services.ai.entity_resolver import REVERSE_MONTHS_BY_NUM
+                month_str = REVERSE_MONTHS_BY_NUM.get(m_num)
+            elif any(m in period_str for m in MONTH_ORDER):
+                for m in MONTH_ORDER:
+                    if m.casefold() in period_str.casefold():
+                        month_str = m
+                        break
+                yr_m = re.search(r"20\d{2}", period_str)
+                year_int = int(yr_m.group(0)) if yr_m else 2026
+
+        # Pre-query RBAC checks
+        scope = self.ctx.scope
+        # 1. is_self_only check
+        if scope.get("is_self_only"):
+            caller_emp_id = str(scope.get("employee_id") or "").strip()
+            target_emp_id = str(tool_arguments.get("employee_id") or "").strip()
+            if not target_emp_id or target_emp_id.casefold() != caller_emp_id.casefold():
+                raise PermissionError("Self-only scope restriction: cannot access records of other employees or aggregate team metrics.")
+            if tool_name in ("compare_branches", "rank_employees") or (
+                tool_name == "get_kpi_diagnosis"
+                and not (tool_arguments.get("employee_id") or tool_arguments.get("employee_name"))
+            ):
+                raise PermissionError("Self-only scope restriction: employee cannot access organizational analytics tools.")
+
+        # 2. Branch restriction check
+        acc_branches = scope.get("accessible_branches") or scope.get("allowed_branches")
+        if acc_branches:
+            acc_set = {str(b).strip().casefold() for b in acc_branches if str(b).strip()}
+            req_branch = str(tool_arguments.get("branch") or "").strip().casefold()
+            if req_branch and req_branch not in acc_set and req_branch != "all":
+                raise PermissionError(f"Branch access restriction: cannot access branch '{req_branch}'.")
+            if tool_name == "compare_branches":
+                req_branches = [str(b).strip().casefold() for b in tool_arguments.get("branches", [])]
+                disallowed = [b for b in req_branches if b not in acc_set]
+                if disallowed:
+                    raise PermissionError(f"Branch access restriction: branches {disallowed} are not accessible.")
+
+        # 3. Team access check
+        req_team = str(tool_arguments.get("team") or "").strip()
+        if req_team and not user_can_access_team(scope, req_team):
+            raise PermissionError(f"Team access restriction: user cannot access team '{req_team}'.")
+
+        # Dispatch
+        if tool_name == "read_employee_metric":
+            emp_q = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            return self.execute_agent_spotlight_and_trend(
+                team=tool_arguments.get("team") or "Inbound",
+                branch=tool_arguments.get("branch"),
+                performance_level=tool_arguments.get("performance_level"),
+                month=month_str or "September",
+                year=year_int or 2026,
+                kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
+                employee_query=emp_q,
+                single_person=True,
+                months_window=1,
+            )
+        elif tool_name == "get_employee_history":
+            emp_q = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            return self.execute_agent_spotlight_and_trend(
+                team=tool_arguments.get("team") or "Inbound",
+                branch=tool_arguments.get("branch"),
+                performance_level=tool_arguments.get("performance_level"),
+                month=month_str or "September",
+                year=year_int or 2026,
+                kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
+                employee_query=emp_q,
+                single_person=True,
+                months_window=6,
+            )
+        elif tool_name == "compare_branches":
+            brs = tool_arguments.get("branches") or [
+                value for value in (tool_arguments.get("branch"), tool_arguments.get("compare_branch")) if value
+            ] or ["dubai", "sharjah", "ajman", "clinics"]
+            return self.execute_kpi_diagnosis_and_trends(
+                team=tool_arguments.get("team") or "Inbound",
+                branches=brs,
+                asks_branch_comparison=True,
+                kpi=tool_arguments.get("metric") or "overall_score",
+                month=month_str,
+                year=year_int,
+            )
+        elif tool_name == "get_score_trend":
+            emp_q = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            if emp_q:
+                return self.execute_agent_spotlight_and_trend(
+                    team=tool_arguments.get("team") or "Inbound",
+                    branch=tool_arguments.get("branch"),
+                    performance_level=tool_arguments.get("performance_level"),
+                    month=month_str or "September",
+                    year=year_int or 2026,
+                    kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
+                    employee_query=emp_q,
+                    single_person=True,
+                    months_window=6,
+                )
+            else:
+                return self.execute_team_metric_trend(
+                    team=tool_arguments.get("team") or "Inbound",
+                    branch=tool_arguments.get("branch"),
+                    performance_level=tool_arguments.get("performance_level"),
+                    kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
+                    period=tool_arguments.get("period"),
+                    periods=tool_arguments.get("periods"),
+                )
+        elif tool_name == "rank_employees":
+            return self.execute_people_contribution_and_rankings(
+                team=tool_arguments.get("team") or "Inbound",
+                branch=tool_arguments.get("branch"),
+                performance_level=tool_arguments.get("performance_level"),
+                kpi=tool_arguments.get("metric_id"),
+                limit=tool_arguments.get("limit", 6),
+                include_ties=tool_arguments.get("include_ties", True),
+                direction=tool_arguments.get("direction") or "best",
+                month=month_str,
+                year=year_int,
+                direct_rank_fallback=True,
+                score_threshold=tool_arguments.get("score_threshold"),
+                threshold_operator=tool_arguments.get("threshold_operator"),
+            )
+        elif tool_name == "get_kpi_diagnosis":
+            employee_query = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            if employee_query:
+                result = self.execute_agent_spotlight_and_trend(
+                    team=tool_arguments.get("team") or "Inbound",
+                    branch=tool_arguments.get("branch"),
+                    performance_level=tool_arguments.get("performance_level"),
+                    month=month_str or "September",
+                    year=year_int or 2026,
+                    kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
+                    employee_query=employee_query,
+                    single_person=True,
+                    months_window=1,
+                )
+                result.tool_name = "get_kpi_diagnosis"
+                result.arguments = {
+                    "employee_id": tool_arguments.get("employee_id"),
+                    "employee_name": tool_arguments.get("employee_name"),
+                    "team": tool_arguments.get("team"),
+                    "branch": tool_arguments.get("branch"),
+                    "metric_id": tool_arguments.get("metric_id"),
+                    "period": period_str or None,
+                }
+                return result
+            return self.execute_kpi_diagnosis_and_trends(
+                team=tool_arguments.get("team") or "Inbound",
+                branch=tool_arguments.get("branch"),
+                compare_branch=tool_arguments.get("compare_branch"),
+                kpi=tool_arguments.get("metric_id"),
+                month=month_str,
+                year=year_int,
+                performance_level=tool_arguments.get("performance_level"),
+            )
+        raise ValueError(f"Unhandled tool '{tool_name}'")
+
+    def execute_team_metric_trend(
+        self,
+        *,
+        team: str,
+        branch: str | None,
+        performance_level: str | None,
+        kpi: str | None,
+        period: str | None,
+        periods: list[str] | None = None,
+    ) -> ToolExecutionResult:
+        """Return team-level evidence for each requested or recently available period."""
+        resolved = self.ctx.resolve_filters(
+            team=team,
+            branch=branch,
+            performance_level=performance_level,
+        )
+
+        def _parse_period(raw: str) -> tuple[int, int, str] | None:
+            text = str(raw or "").strip()
+            iso = re.match(r"^(20\d{2})-(\d{1,2})$", text)
+            if iso:
+                year_val, month_num = int(iso.group(1)), int(iso.group(2))
+                month_name = next((name for name, number in MONTH_ORDER.items() if number == month_num), None)
+                return (year_val, month_num, month_name) if month_name else None
+            human = re.match(r"^([A-Za-z]+)\s+(20\d{2})$", text)
+            if human:
+                month_name = next((name for name in MONTH_ORDER if name.casefold() == human.group(1).casefold()), None)
+                if month_name:
+                    return (int(human.group(2)), MONTH_ORDER[month_name], month_name)
+            return None
+
+        scoped_records = self.ctx.get_scoped_records()
+        available: set[tuple[int, int, str]] = set()
+        team_keys = selection_team_keys(team)
+        for record in scoped_records:
+            record_team = str(_record_field(record, "team", "") or "").strip().casefold()
+            if record_team != team.casefold() and record_team not in {key.casefold() for key in team_keys}:
+                continue
+            record_level = str(_record_field(record, "performance_level", "Employee") or "Employee").casefold()
+            if performance_level and record_level != performance_level.casefold():
+                continue
+            if resolved["region"]:
+                record_region = _shared_record_region(record, record_team).strip().casefold()
+                if record_region != str(resolved["region"]).strip().casefold():
+                    continue
+            if resolved["branch"] and not record_matches_branch(record, resolved["branch"]):
+                continue
+            month_name = str(_record_field(record, "month", "") or "").strip()
+            year_value = int(_record_field(record, "year", 0) or 0)
+            month_num = next((number for name, number in MONTH_ORDER.items() if name.casefold() == month_name.casefold()), 0)
+            if month_num and year_value:
+                available.add((year_value, month_num, month_name))
+
+        requested_periods = [parsed for parsed in (_parse_period(value) for value in (periods or [])) if parsed]
+        if len(requested_periods) < 2:
+            current = _parse_period(period or "")
+            if current is None and resolved["month"] and resolved["year"]:
+                current = _parse_period(f"{resolved['month']} {resolved['year']}")
+            if current:
+                eligible = sorted(item for item in available if (item[0], item[1]) <= (current[0], current[1]))
+                requested_periods = eligible[-6:] if eligible else [current]
+        requested_periods = sorted(set(requested_periods))
+        if not requested_periods:
+            fallback = _parse_period(period or "")
+            if fallback:
+                requested_periods = [fallback]
+
+        period_results: list[tuple[tuple[int, int, str], ToolExecutionResult]] = []
+        for year_value, _month_num, month_name in requested_periods:
+            period_results.append(
+                (
+                    (year_value, _month_num, month_name),
+                    self.execute_kpi_diagnosis_and_trends(
+                        team=team,
+                        branch=branch,
+                        performance_level=performance_level,
+                        asks_period_comparison=False,
+                        kpi=kpi,
+                        month=month_name,
+                        year=year_value,
+                    ),
+                )
+            )
+        if not period_results:
+            return self.execute_kpi_diagnosis_and_trends(
+                team=team,
+                branch=branch,
+                performance_level=performance_level,
+                asks_period_comparison=True,
+                kpi=kpi,
+            )
+
+        target_norm = re.sub(r"[^a-z0-9]", "", str(kpi or "").casefold().rsplit(":", 1)[-1])
+
+        def _matches_requested_metric(evidence: TypedMetricEvidence) -> bool:
+            values = (
+                evidence.metric_id.rsplit(":", 1)[-1],
+                evidence.kpi_key,
+                evidence.display_name,
+            )
+            return any(
+                target_norm == re.sub(r"[^a-z0-9]", "", value.casefold())
+                or target_norm in re.sub(r"[^a-z0-9]", "", value.casefold())
+                or re.sub(r"[^a-z0-9]", "", value.casefold()) in target_norm
+                for value in values
+                if value
+            )
+
+        history_evidence: list[TypedMetricEvidence] = []
+        for (_year_value, _month_num, _month_name), result in period_results:
+            match = next(
+                (
+                    evidence
+                    for evidence in result.typed_evidence
+                    if evidence.actual is not None
+                    and not evidence.employee_id
+                    and _matches_requested_metric(evidence)
+                ),
+                None,
+            )
+            if match:
+                history_evidence.append(match)
+
+        latest_result = period_results[-1][1]
+        latest_result.typed_evidence = [
+            evidence
+            for evidence in latest_result.typed_evidence
+            if not _matches_requested_metric(evidence)
+        ] + history_evidence
+        latest_result.tool_name = "get_score_trend"
+        latest_result.arguments = {
+            "team": team,
+            "branch": branch,
+            "performance_level": performance_level,
+            "metric_id": kpi,
+            "periods": [f"{year_value:04d}-{month_num:02d}" for year_value, month_num, _ in requested_periods],
+        }
+        latest_result.digest = {
+            **(latest_result.digest if isinstance(latest_result.digest, dict) else {}),
+            "team_metric_history": [
+                {
+                    "period": evidence.period,
+                    "metric_id": evidence.metric_id,
+                    "display_name": evidence.display_name,
+                    "actual": evidence.actual,
+                    "actual_display": evidence.actual_display,
+                    "unit": evidence.unit,
+                    "sample_size": evidence.sample_size,
+                }
+                for evidence in history_evidence
+            ],
+        }
+        return latest_result
 
     @_read_only_tool
     def execute_executive_and_priority_insights(
@@ -376,7 +819,7 @@ class DeterministicToolRegistry:
                 delta = t.score_change
                 gap_val = max(0.0, round(100.0 - score_val, 1))
                 delta_str = (
-                    f"{delta:+.1f}% vs prev · {t.total_employees} agents"
+                    f"{delta:+.1f} pp vs prev · {t.total_employees} agents"
                     if delta is not None
                     else f"{t.total_employees} agents · Gap -{gap_val:.1f} pts"
                 )
@@ -742,6 +1185,26 @@ class DeterministicToolRegistry:
             "score_change": None,
             "total_records": len(period_records),
         }
+        typed_evidence: list[TypedMetricEvidence] = []
+        if avg_score is not None:
+            typed_evidence.append(
+                TypedMetricEvidence(
+                    metric_id=f"shared_scorecard:{team_name.lower().replace(' ', '_')}:overall_score",
+                    kpi_key="overall_score",
+                    display_name=f"{scope_label} Overall Score",
+                    team=team_name,
+                    performance_level="Employee",
+                    branch="all",
+                    period=period_label,
+                    actual=avg_score,
+                    actual_display=f"{avg_score:.1f}%",
+                    unit="%",
+                    direction="higher_better",
+                    sample_size=len(period_records),
+                    source_link=build_verified_deep_link("/insights", month=res_month, year=res_year, team=team_name),
+                )
+            )
+
         return ToolExecutionResult(
             tool_name="get_shared_region_scorecard",
             arguments={"team": team_name, "month": res_month, "year": res_year, "region": "All"},
@@ -750,6 +1213,7 @@ class DeterministicToolRegistry:
             visual_cards=cards,
             citations=citations,
             deep_links=[],
+            typed_evidence=typed_evidence,
             resolved_month=res_month,
             resolved_year=res_year,
         )
@@ -848,7 +1312,7 @@ class DeterministicToolRegistry:
 
         branch_comparison_digest: list[dict[str, Any]] = []
         if is_comparing_branches:
-            branches_to_compare = requested_branches if len(requested_branches) >= 2 else list(BRANCH_KEYS)
+            branches_to_compare = requested_branches or list(BRANCH_KEYS)
             branches_to_compare = [b for b in branches_to_compare if user_can_access_branch(self.ctx.scope, b)]
 
             bars: list[AiBarItem] = []
@@ -982,6 +1446,43 @@ class DeterministicToolRegistry:
         kpi_rows: list[AiKpiTableRow] = []
         kpi_bars: list[AiBarItem] = []
         typed_evidence: list[TypedMetricEvidence] = []
+        if is_comparing_branches:
+            for b_entry in branch_comparison_digest:
+                bk_lower = str(b_entry["branch"]).strip().lower()
+                val = (
+                    b_entry["bookings"]
+                    if count_field == "bookings"
+                    else (b_entry["attended"] if count_field == "attended" else b_entry["score"])
+                )
+                val_unit = "count" if count_field in ("bookings", "attended") else "%"
+                m_key = count_field or "overall_score"
+                evidence_kpi_key = (
+                    "bookings_count" if count_field == "bookings"
+                    else ("attended_count" if count_field == "attended" else m_key)
+                )
+                typed_evidence.append(
+                    TypedMetricEvidence(
+                        metric_id=f"branch_comparison:{bk_lower}:{evidence_kpi_key}",
+                        kpi_key=evidence_kpi_key,
+                        display_name=f"{b_entry['branch']} {count_title or 'Overall Score'}",
+                        team=resolved["team"] or "Call Center",
+                        branch=bk_lower,
+                        period=period_label,
+                        actual=float(val) if val is not None else None,
+                        actual_display=f"{val} {val_unit}" if val is not None else "Unavailable",
+                        unit=val_unit,
+                        direction="higher_better",
+                        is_missing=val is None,
+                        source_link=build_verified_deep_link(
+                            "/insights",
+                            month=res_month,
+                            year=res_year,
+                            team=resolved["team"],
+                            branch=bk_lower,
+                        ),
+                    )
+                )
+
         raw_diag = list(ws.kpi_diagnosis or [])
         catalog = get_ai_catalog()
 
@@ -1101,6 +1602,7 @@ class DeterministicToolRegistry:
         )
 
         # If a tracking-only or count KPI was explicitly requested (e.g. outbound:aht, PolicyRejection, or bookings_count)
+        unavailable_count_metric: dict[str, Any] | None = None
         if kpi:
             req_cat = catalog.find_metric_definition(
                 team=resolved["team"],
@@ -1113,6 +1615,7 @@ class DeterministicToolRegistry:
                     vol_val: float | None = None
                     act_disp_val = "Tracking Only"
                     tgt_disp_val = "0% Weight"
+                    skip_missing_count_evidence = False
                     if getattr(req_cat, "value_kind", None) == "count":
                         vol_map = {
                             "bookings_count": volume_summary.get("total_bookings"),
@@ -1130,43 +1633,52 @@ class DeterministicToolRegistry:
                             vol_val = float(cnt_v)
                             act_disp_val = f"{cnt_v:,} {req_cat.unit}".strip()
                             tgt_disp_val = "Volume Count"
+                        elif total_employees == 0:
+                            skip_missing_count_evidence = True
+                            unavailable_count_metric = {
+                                "display_name": req_cat.display_name,
+                                "team": resolved["team"],
+                                "branch": resolved["branch"],
+                                "period": period_label,
+                            }
                         else:
                             vol_val = None
                             act_disp_val = "Data Missing or Unpublished"
                             tgt_disp_val = "—"
-                    typed_evidence.insert(
-                        0,
-                        TypedMetricEvidence(
-                            metric_id=req_cat.metric_id,
-                            kpi_key=req_cat.kpi_key,
-                            display_name=req_cat.display_name,
-                            team=req_cat.team,
-                            position=req_cat.position,
-                            performance_level=req_cat.performance_level,
-                            branch=resolved["branch"] or "all",
-                            period=period_label,
-                            actual=vol_val,
-                            target=None,
-                            actual_display=act_disp_val,
-                            target_display=tgt_disp_val,
-                            achievement_percent=None,
-                            weight_percent=0.0,
-                            unit=req_cat.unit,
-                            direction=req_cat.direction,
-                            contributes_to_score=False,
-                            tracking_only_note=req_cat.tracking_only_note,
-                            sample_size=total_employees,
-                            source_link=primary_route,
-                            scoring_basis_status=basis_status,
-                            scoring_basis_note=req_cat.tracking_only_note or basis_note,
-                        ),
-                    )
-                    if req_cat.tracking_only_note:
-                        basis_note = (
-                            f"{req_cat.tracking_only_note} · {basis_note}"
-                            if basis_note
-                            else req_cat.tracking_only_note
+                    if not skip_missing_count_evidence:
+                        typed_evidence.insert(
+                            0,
+                            TypedMetricEvidence(
+                                metric_id=req_cat.metric_id,
+                                kpi_key=req_cat.kpi_key,
+                                display_name=req_cat.display_name,
+                                team=req_cat.team,
+                                position=req_cat.position,
+                                performance_level=req_cat.performance_level,
+                                branch=resolved["branch"] or "all",
+                                period=period_label,
+                                actual=vol_val,
+                                target=None,
+                                actual_display=act_disp_val,
+                                target_display=tgt_disp_val,
+                                achievement_percent=None,
+                                weight_percent=0.0,
+                                unit=req_cat.unit,
+                                direction=req_cat.direction,
+                                contributes_to_score=False,
+                                tracking_only_note=req_cat.tracking_only_note,
+                                sample_size=total_employees,
+                                source_link=primary_route,
+                                scoring_basis_status=basis_status,
+                                scoring_basis_note=req_cat.tracking_only_note or basis_note,
+                            ),
                         )
+                        if req_cat.tracking_only_note:
+                            basis_note = (
+                                f"{req_cat.tracking_only_note} · {basis_note}"
+                                if basis_note
+                                else req_cat.tracking_only_note
+                            )
 
         if kpi_rows:
             cards.append(
@@ -1292,6 +1804,12 @@ class DeterministicToolRegistry:
                 ),
                 None,
             )
+            single_published_sample = False
+            if matched_ev is None and req_cat and not is_comparing_branches:
+                matched_ev = self._single_published_team_kpi(resolved, req_cat, primary_route)
+                if matched_ev:
+                    typed_evidence.append(matched_ev)
+                    single_published_sample = True
             if matched_ev is not None:
                 matched_row = next(
                     (r for r in kpi_rows if r.kpi_key.casefold() == matched_ev.kpi_key.casefold()),
@@ -1308,6 +1826,7 @@ class DeterministicToolRegistry:
                     "people_below_target": matched_row.people_below_target if matched_row else 0,
                     "contributes_to_score": matched_ev.contributes_to_score,
                     "tracking_only_note": matched_ev.tracking_only_note,
+                    "single_published_sample": single_published_sample,
                 }
 
         period_comparison_payload: dict[str, Any] | None = None
@@ -1351,6 +1870,8 @@ class DeterministicToolRegistry:
             "kpis": [r.model_dump() for r in kpi_rows[:8]],
             "decisions": [d.model_dump() for d in kpi_decisions],
         }
+        if unavailable_count_metric is not None:
+            digest["unavailable_count_metric"] = unavailable_count_metric
 
         return ToolExecutionResult(
             tool_name="get_kpi_diagnosis_and_trends",
@@ -1377,8 +1898,13 @@ class DeterministicToolRegistry:
         performance_level: str | None = None,
         kpi: str | None = None,
         limit: int = 6,
+        include_ties: bool = True,
+        direction: str = "best",
         month: str | None = None,
         year: int | None = None,
+        direct_rank_fallback: bool = False,
+        score_threshold: float | None = None,
+        threshold_operator: str | None = None,
     ) -> ToolExecutionResult:
         resolved = self.ctx.resolve_filters(
             team=team,
@@ -1408,7 +1934,7 @@ class DeterministicToolRegistry:
             team=resolved["team"],
             function=resolved["function"],
             position=resolved["position"],
-            performance_level=resolved["performance_level"],
+            performance_level=resolved["performance_level"] or "Employee",
             kpi=effective_kpi_key,
             branch=resolved["branch"],
         )
@@ -1421,6 +1947,17 @@ class DeterministicToolRegistry:
         total_employees = sum(int(t.total_employees or 0) for t in (ws.team_summaries or []))
 
         pca = ws.people_contribution_analysis
+        requested_kpi_norm = re.sub(r"[^a-z0-9]", "", str(effective_kpi_key or "").casefold().rsplit(":", 1)[-1])
+        if score_threshold is not None or (
+            direct_rank_fallback
+            and requested_kpi_norm
+            and requested_kpi_norm not in {"overallscore", "score", "pmsscore", "overall"}
+        ):
+            # Contribution analysis ranks score impact. A requested KPI ranking or threshold count
+            # must evaluate the requested records directly rather than returning below-target score order.
+            pca = None
+        if (not pca or not pca.rows) and total_employees == 0:
+            direct_rank_fallback = True
         cards: list[StructuredVisualCard] = []
         top_negative_rows: list[dict[str, Any]] = []
         pareto_summary: dict[str, Any] = {}
@@ -1590,14 +2127,325 @@ class DeterministicToolRegistry:
             "pareto_summary": pareto_summary,
         }
 
+        typed_evidence: list[TypedMetricEvidence] = []
+        if pca and pca.rows:
+            target_rows = neg_rows[: max(1, min(limit, 10))]
+            for r in target_rows:
+                score_val = r.performance_score
+                impact_val = r.weighted_impact
+                val = score_val if score_val is not None else impact_val
+                clean_kpi = disambiguate_call_center_kpi_label(r.team, r.kpi_key, r.kpi_label)
+                typed_evidence.append(
+                    TypedMetricEvidence(
+                        metric_id=f"ranking:{r.employee_id}",
+                        kpi_key=r.kpi_key or "overall_score",
+                        display_name=clean_kpi or "Overall Score",
+                        team=r.team or resolved["team"] or "Call Center",
+                        performance_level=resolved["performance_level"] or "Employee",
+                        branch=resolved["branch"] or "all",
+                        period=period_label,
+                        actual=round(float(val), 2) if val is not None else None,
+                        actual_display=f"{val:.1f}%" if val is not None else "Unavailable",
+                        unit="%",
+                        direction="higher_better",
+                        employee_id=r.employee_id,
+                        employee_name=r.employee_name,
+                        source_link=build_verified_deep_link(
+                            f"/employee/{r.employee_id}",
+                            month=res_month,
+                            year=res_year,
+                            branch=resolved["branch"],
+                        ),
+                    )
+                )
+
+        ranked_recs_count = 0
+        if (direct_rank_fallback or score_threshold is not None) and not typed_evidence:
+            eff_rank_level = str(resolved["performance_level"] or "Employee")
+            period_recs = [
+                r for r in self.ctx.get_scoped_records()
+                if (
+                    not resolved["team"]
+                    or str(_record_field(r, "team", "")).casefold() == str(resolved["team"]).casefold()
+                    or str(_record_field(r, "team", "")).casefold() in {key.casefold() for key in selection_team_keys(resolved["team"])}
+                )
+                and (not res_month or str(_record_field(r, "month", "")).casefold() == str(res_month).casefold())
+                and (not res_year or int(_record_field(r, "year", 0) or 0) == int(res_year))
+                and (
+                    str(_record_field(r, "performance_level", "Employee") or "Employee").casefold()
+                    == eff_rank_level.casefold()
+                )
+                and (
+                    not resolved["region"]
+                    or _shared_record_region(r, str(_record_field(r, "team", ""))).casefold()
+                    == str(resolved["region"]).casefold()
+                )
+                and (not resolved["branch"] or record_matches_branch(r, resolved["branch"]))
+            ]
+            ranked_recs_count = len(period_recs)
+            if score_threshold is not None:
+                op_norm = " ".join(str(threshold_operator or "above").casefold().split())
+                if op_norm in ("at least", ">="):
+                    op_cmp = lambda v, t: v >= t
+                    op_label = "at least"
+                elif op_norm in ("below", "under", "less than", "<"):
+                    op_cmp = lambda v, t: v < t
+                    op_label = op_norm if op_norm in ("below", "under", "less than") else "below"
+                else:
+                    op_cmp = lambda v, t: v > t
+                    op_label = op_norm if op_norm in ("above", "over", "more than") else "above"
+
+                use_specific_kpi = bool(
+                    effective_kpi_key
+                    and requested_kpi_norm not in {"", "overallscore", "score", "pmsscore", "overall"}
+                )
+                qualifying_rows: list[tuple[Any, float, dict[str, Any] | None]] = []
+                evaluated_count = 0
+                for record in period_recs:
+                    snap: dict[str, Any] | None = None
+                    val: float | None = None
+                    if use_specific_kpi and effective_kpi_key:
+                        snap = self._extract_record_kpi_snapshot(
+                            record,
+                            effective_kpi_key,
+                            team_hint=resolved["team"],
+                            position_hint=resolved["position"],
+                        )
+                        if snap and snap.get("numeric_value") is not None:
+                            val = float(snap["numeric_value"])
+                    else:
+                        val = _record_evaluation_score(record)
+                    if val is None:
+                        continue
+                    evaluated_count += 1
+                    if op_cmp(val, float(score_threshold)):
+                        qualifying_rows.append((record, val, snap))
+
+                qualifying_rows.sort(key=lambda item: item[1], reverse=True)
+                team_label_for_ev = resolved["team"] or scope_label
+                team_slug = re.sub(r"[^a-z0-9]+", "_", team_label_for_ev.casefold()).strip("_") or "team"
+                team_route = build_verified_deep_link(
+                    f"/team/{_team_route_slug(team_label_for_ev)}",
+                    month=res_month,
+                    year=res_year,
+                    function=resolved["function"],
+                    team=resolved["team"],
+                    branch=resolved["branch"],
+                    performance_level=eff_rank_level,
+                )
+                typed_evidence.append(
+                    TypedMetricEvidence(
+                        metric_id=f"{team_slug}:qualifying_employee_count",
+                        kpi_key="qualifying_employee_count",
+                        display_name="Qualifying Employees",
+                        team=team_label_for_ev,
+                        performance_level=eff_rank_level,
+                        branch=resolved["branch"] or "all",
+                        period=period_label,
+                        actual=float(len(qualifying_rows)),
+                        actual_display=f"{len(qualifying_rows)} count",
+                        unit="count",
+                        direction="higher_better",
+                        sample_size=evaluated_count or ranked_recs_count,
+                        employee_id=None,
+                        employee_name=None,
+                        source_link=team_route,
+                    )
+                )
+                qualifying_summary_list: list[dict[str, Any]] = []
+                for record, val, snap in qualifying_rows:
+                    emp_id_val = str(_record_field(record, "employee_id", ""))
+                    emp_name_val = str(_record_field(record, "employee_name", "") or emp_id_val)
+                    r_team = str(_record_field(record, "team", "") or team_label_for_ev)
+                    r_level = str(_record_field(record, "performance_level", "") or eff_rank_level)
+                    emp_route = build_verified_deep_link(
+                        f"/employee/{emp_id_val}",
+                        month=res_month,
+                        year=res_year,
+                        branch=resolved["branch"],
+                    )
+                    qualifying_summary_list.append(
+                        {
+                            "employee_id": emp_id_val,
+                            "employee_name": emp_name_val,
+                            "score": round(float(val), 2),
+                            "unit": str(snap.get("unit") or "%") if snap else "%",
+                        }
+                    )
+                    if snap is not None:
+                        typed_evidence.append(
+                            TypedMetricEvidence(
+                                metric_id=f"ranking:{emp_id_val}:{snap.get('kpi_key') or effective_kpi_key}",
+                                kpi_key=str(snap.get("kpi_key") or effective_kpi_key),
+                                display_name=str(snap.get("kpi_label") or snap.get("kpi_key") or effective_kpi_key),
+                                team=r_team,
+                                performance_level=r_level,
+                                branch=str(_record_field(record, "branch", "") or "all"),
+                                period=period_label,
+                                actual=round(float(val), 2),
+                                target=float(snap["target_numeric"]) if snap.get("target_numeric") is not None else None,
+                                actual_display=str(snap.get("actual_display") or val),
+                                target_display=None,
+                                unit=str(snap.get("unit") or ""),
+                                direction=str(snap.get("direction") or "higher_better"),
+                                sample_size=evaluated_count or ranked_recs_count,
+                                employee_id=emp_id_val,
+                                employee_name=emp_name_val,
+                                source_link=emp_route,
+                            )
+                        )
+                    else:
+                        typed_evidence.append(
+                            TypedMetricEvidence(
+                                metric_id=f"ranking:{emp_id_val}",
+                                kpi_key="overall_score",
+                                display_name="Overall Score",
+                                team=r_team,
+                                performance_level=r_level,
+                                branch=str(_record_field(record, "branch", "") or "all"),
+                                period=period_label,
+                                actual=round(float(val), 2),
+                                actual_display=f"{val:.1f}%",
+                                unit="%",
+                                direction="higher_better",
+                                sample_size=evaluated_count or ranked_recs_count,
+                                employee_id=emp_id_val,
+                                employee_name=emp_name_val,
+                                source_link=emp_route,
+                            )
+                        )
+                digest["threshold_count_summary"] = {
+                    "count": len(qualifying_rows),
+                    "total_evaluated": evaluated_count or ranked_recs_count,
+                    "operator_label": op_label,
+                    "threshold": float(score_threshold),
+                    "team": scope_label,
+                    "period": period_label,
+                    "qualifying_employees": qualifying_summary_list,
+                }
+                digest["total_employees"] = evaluated_count or ranked_recs_count
+                eval_records = evaluated_count or ranked_recs_count
+            elif effective_kpi_key:
+                ranked_snapshots: list[tuple[Any, dict[str, Any]]] = []
+                for record in period_recs:
+                    snapshot = self._extract_record_kpi_snapshot(
+                        record,
+                        effective_kpi_key,
+                        team_hint=resolved["team"],
+                        position_hint=resolved["position"],
+                    )
+                    if snapshot and snapshot.get("numeric_value") is not None:
+                        ranked_snapshots.append((record, snapshot))
+                metric_direction = str(
+                    ranked_snapshots[0][1].get("direction") if ranked_snapshots else "higher_better"
+                )
+                wants_high = str(direction or "best").casefold() not in ("worst", "lowest", "lower")
+                reverse = wants_high != (metric_direction == "lower_better")
+                ranked_snapshots.sort(
+                    key=lambda pair: float(pair[1].get("numeric_value") or 0.0),
+                    reverse=reverse,
+                )
+                selected_snapshots = ranked_snapshots[: max(1, min(limit, 10))]
+                if include_ties and selected_snapshots:
+                    cutoff_value = float(selected_snapshots[-1][1].get("numeric_value") or 0.0)
+                    next_idx = len(selected_snapshots)
+                    while next_idx < len(ranked_snapshots):
+                        next_value = float(ranked_snapshots[next_idx][1].get("numeric_value") or 0.0)
+                        if abs(next_value - cutoff_value) > 1e-9:
+                            break
+                        selected_snapshots.append(ranked_snapshots[next_idx])
+                        next_idx += 1
+                for record, snapshot in selected_snapshots:
+                    emp_id_val = str(_record_field(record, "employee_id", ""))
+                    emp_name_val = str(_record_field(record, "employee_name", "") or emp_id_val)
+                    r_team = str(_record_field(record, "team", "") or resolved["team"] or "Call Center")
+                    typed_evidence.append(
+                        TypedMetricEvidence(
+                            metric_id=f"ranking:{emp_id_val}:{snapshot.get('kpi_key') or effective_kpi_key}",
+                            kpi_key=str(snapshot.get("kpi_key") or effective_kpi_key),
+                            display_name=str(snapshot.get("kpi_label") or snapshot.get("kpi_key") or effective_kpi_key),
+                            team=r_team,
+                            performance_level=str(_record_field(record, "performance_level", "") or "Employee"),
+                            branch=str(_record_field(record, "branch", "") or "all"),
+                            period=period_label,
+                            actual=float(snapshot["numeric_value"]),
+                            target=float(snapshot["target_numeric"]) if snapshot.get("target_numeric") is not None else None,
+                            actual_display=str(snapshot.get("actual_display") or snapshot["numeric_value"]),
+                            target_display=None,
+                            unit=str(snapshot.get("unit") or ""),
+                            direction=str(snapshot.get("direction") or "higher_better"),
+                            sample_size=ranked_recs_count,
+                            employee_id=emp_id_val,
+                            employee_name=emp_name_val,
+                            source_link=build_verified_deep_link(
+                                f"/employee/{emp_id_val}",
+                                month=res_month,
+                                year=res_year,
+                                branch=resolved["branch"],
+                            ),
+                        )
+                    )
+            else:
+                wants_high = str(direction or "best").casefold() not in ("worst", "lowest", "lower")
+                period_recs.sort(key=lambda r: _record_evaluation_score(r) or 0.0, reverse=wants_high)
+                selected_records = period_recs[: max(1, min(limit, 10))]
+                if include_ties and selected_records:
+                    cutoff_score = _record_evaluation_score(selected_records[-1])
+                    next_idx = len(selected_records)
+                    while cutoff_score is not None and next_idx < len(period_recs):
+                        next_score = _record_evaluation_score(period_recs[next_idx])
+                        if next_score is None or abs(next_score - cutoff_score) > 1e-9:
+                            break
+                        selected_records.append(period_recs[next_idx])
+                        next_idx += 1
+                for record in selected_records:
+                    score = _record_evaluation_score(record)
+                    emp_id_val = str(_record_field(record, "employee_id", ""))
+                    emp_name_val = str(_record_field(record, "employee_name", "") or emp_id_val)
+                    r_team = str(_record_field(record, "team", "") or resolved["team"] or "Call Center")
+                    typed_evidence.append(
+                        TypedMetricEvidence(
+                            metric_id=f"ranking:{emp_id_val}",
+                            kpi_key="overall_score",
+                            display_name="Overall Score",
+                            team=r_team,
+                            performance_level=str(_record_field(record, "performance_level", "") or "Employee"),
+                            branch=str(_record_field(record, "branch", "") or "all"),
+                            period=period_label,
+                            actual=round(float(score), 2) if score is not None else None,
+                            actual_display=f"{score:.1f}%" if score is not None else "Unavailable",
+                            unit="%",
+                            direction="higher_better",
+                            employee_id=emp_id_val,
+                            employee_name=emp_name_val,
+                            source_link=build_verified_deep_link(
+                                f"/employee/{emp_id_val}",
+                                month=res_month,
+                                year=res_year,
+                                branch=resolved["branch"],
+                            ),
+                        )
+                    )
+
+        eval_records = (
+            digest["threshold_count_summary"]["total_evaluated"]
+            if "threshold_count_summary" in digest
+            else (
+                pca.total_employees
+                if (pca and pca.total_employees)
+                else (total_employees or ranked_recs_count)
+            )
+        )
+
         return ToolExecutionResult(
             tool_name="get_people_contribution_and_rankings",
             arguments={**resolved, "kpi": kpi},
-            records_evaluated=pca.total_employees if pca else total_employees,
+            records_evaluated=eval_records,
             digest=digest,
             visual_cards=cards,
             citations=citations,
             deep_links=deep_links,
+            typed_evidence=typed_evidence,
             resolved_month=res_month,
             resolved_year=res_year,
         )
@@ -1614,6 +2462,57 @@ class DeterministicToolRegistry:
             return "D"
         return "E"
 
+    def _single_published_team_kpi(
+        self, resolved: dict[str, Any], metric: CatalogMetricDefinition, source_link: str,
+    ) -> TypedMetricEvidence | None:
+        """Use a single persisted measurement if the scored rollup omitted it."""
+        team, month, year = resolved["team"], resolved["month"], resolved["year"]
+        if not (team and month and year) or resolved["branch"] or metric.value_kind != "rate":
+            return None
+        if metric.team.casefold() != team.casefold():
+            return None
+        level = resolved["performance_level"] or "Employee"
+        records = [
+            record for record in self.ctx.get_scoped_records()
+            if str(_record_field(record, "team", "")).casefold() == team.casefold()
+            and _record_field(record, "month") == month and _record_field(record, "year") == year
+            and str(_record_field(record, "performance_level") or "Employee").casefold() == level.casefold()
+            and (not resolved["position"] or _record_field(record, "position") == resolved["position"])
+            and (not resolved["region"] or _shared_record_region(record, team).casefold() == resolved["region"].casefold())
+        ]
+        if len(records) != 1:
+            return None
+
+        def key(value: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+        label_key = key(metric.display_name)
+        aliases = {key(metric.kpi_key), label_key, label_key.removesuffix("rate")}
+        matches = [
+            value for value in _record_field(records[0], "kpi_values", []) or []
+            if _record_field(value, "unit") == metric.unit
+            and any(key(str(_record_field(value, name) or "")) in aliases for name in ("kpi_key", "label"))
+        ]
+        if len(matches) != 1:
+            return None
+        reading = aggregate_kpi_metric(matches, {"unit": metric.unit})
+        actual, target = reading.actual, reading.target
+        if actual is None or not math.isfinite(actual):
+            return None
+        if target is not None and not math.isfinite(target):
+            target = None
+        if metric.unit == "%" and metric.storage_scale == "ratio_0_1" and abs(actual) <= 1 and (target is None or abs(target) <= 1):
+            actual, target = actual * 100, target * 100 if target is not None else None
+        return TypedMetricEvidence(
+            metric_id=metric.metric_id, kpi_key=str(_record_field(matches[0], "kpi_key")),
+            display_name=metric.display_name, team=team, performance_level=level,
+            period=f"{month} {year}", branch="all", actual=round(actual, 2), target=target,
+            actual_display=f"{actual:g} {metric.unit}".strip(),
+            target_display=f"{target:g} {metric.unit}".strip() if target is not None else "—",
+            unit=metric.unit, direction=metric.direction, contributes_to_score=False,
+            sample_size=1, source_link=source_link,
+        )
+
     def _extract_record_kpi_snapshot(
         self,
         rec: Any,
@@ -1623,16 +2522,46 @@ class DeterministicToolRegistry:
     ) -> dict[str, Any] | None:
         if not kpi_query:
             return None
-        q_norm = kpi_query.strip().casefold()
+        # Structured plans carry the team-qualified metric ID, while record
+        # snapshots are keyed by the short catalogue key (e.g.
+        # ``outbound:bookings_count`` -> ``bookings_count``).
+        q_norm = kpi_query.strip().casefold().rsplit(":", 1)[-1]
         r_team = str(getattr(rec, "team", "") or team_hint or "Inbound")
         r_pos = str(getattr(rec, "position", "") or position_hint or "")
         cat_def = get_ai_catalog().find_metric_definition(
             team="Support Positions" if r_team.casefold() == "call center" and r_pos else r_team,
-            kpi_key_or_label=kpi_query,
+            kpi_key_or_label=q_norm,
             position=r_pos or None,
         )
         target_key = cat_def.kpi_key.casefold() if cat_def else None
-        target_display = cat_def.display_name if cat_def else kpi_query.strip()
+        target_display = cat_def.display_name if cat_def else q_norm.replace("_", " ").title()
+
+        if target_key == "overall_score" or q_norm in (
+            "overall_score",
+            "score",
+            "pms_score",
+            "performance",
+            "overall",
+        ):
+            score_value = _record_evaluation_score(rec)
+            if score_value is None:
+                try:
+                    raw_score = _record_field(rec, "overall_score", None)
+                    score_value = float(raw_score) if raw_score is not None else None
+                except (TypeError, ValueError):
+                    score_value = None
+            if score_value is not None:
+                return {
+                    "kpi_key": "overall_score",
+                    "kpi_label": cat_def.display_name if cat_def else "Overall PMS Score",
+                    "unit": "%",
+                    "numeric_value": float(score_value),
+                    "target_numeric": 100.0,
+                    "actual_display": f"{float(score_value):.1f}%",
+                    "achievement_percent": float(score_value),
+                    "direction": "higher_better",
+                    "sort_metric": float(score_value),
+                }
 
         if (target_key in ("totalbookings", "bookings_count")) or q_norm in (
             "bookings_count",
@@ -1698,10 +2627,15 @@ class DeterministicToolRegistry:
             k_key = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
             k_lbl_raw = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or k_key)
             k_lbl = disambiguate_call_center_kpi_label(r_team, k_key, k_lbl_raw)
+            q_clean = q_norm.replace("_", "").replace(" ", "").casefold()
+            k_clean = k_key.replace("_", "").replace(" ", "").casefold()
+            lbl_clean = k_lbl_raw.replace("_", "").replace(" ", "").casefold()
             matched = False
             if target_key and k_key.casefold() == target_key:
                 matched = True
             elif q_norm in k_key.casefold() or q_norm in k_lbl_raw.casefold() or q_norm in k_lbl.casefold():
+                matched = True
+            elif q_clean and (q_clean in k_clean or q_clean in lbl_clean or k_clean in q_clean):
                 matched = True
             if not matched:
                 continue
@@ -1709,7 +2643,7 @@ class DeterministicToolRegistry:
             unit = str((kv.get("unit") if isinstance(kv, dict) else getattr(kv, "unit", "%")) or "%")
             act_v = float((kv.get("actual_value") if isinstance(kv, dict) else getattr(kv, "actual_value", 0.0)) or 0.0)
             tgt_v = float((kv.get("target_value") if isinstance(kv, dict) else getattr(kv, "target_value", 0.0)) or 0.0)
-            ach_r = float((kv.get("achievement_ratio") if isinstance(kv, dict) else getattr(kv, "achievement_ratio", 0.0)) or 0.0)
+            achievement = _record_field(kv, "achievement_ratio", None)
             direction = str((kv.get("direction") if isinstance(kv, dict) else getattr(kv, "direction", "higher_better")) or "higher_better")
 
             if unit == "%":
@@ -1725,7 +2659,10 @@ class DeterministicToolRegistry:
                 target_num = round(tgt_v, 1)
                 act_disp = f"{act_v:.1f}"
 
-            ach_pct = min(100.0, round(ach_r * 100.0 if ach_r <= 2.0 else ach_r, 1))
+            ach_pct = None
+            if achievement is not None:
+                ach_r = float(achievement)
+                ach_pct = min(100.0, round(ach_r * 100.0 if ach_r <= 2.0 else ach_r, 1))
             sort_metric = -numeric_val if direction == "lower_better" else numeric_val
             return {
                 "kpi_key": k_key or target_display,
@@ -1748,6 +2685,7 @@ class DeterministicToolRegistry:
         position: str | None = None,
         function: str | None = None,
         branch: str | None = None,
+        performance_level: str | None = None,
         month: str | None = None,
         year: int | None = None,
         kpi: str | None = None,
@@ -1761,19 +2699,21 @@ class DeterministicToolRegistry:
             position=position,
             function=function,
             branch=branch,
+            performance_level=performance_level,
             month=month,
             year=year,
         )
         all_records = self.ctx.get_scoped_records()
 
-        # Filter to Employee-level records in the requested team/position/function
+        # Filter to records matching the requested level (defaults to Employee)
+        req_level = performance_level or resolved.get("performance_level") or "Employee"
         target_team = resolved["team"]
         target_pos = resolved["position"]
         target_fn = (resolved["function"] or "").casefold()
         scoped_recs = []
         for rec in all_records:
             lvl = str(getattr(rec, "performance_level", None) or "Employee")
-            if lvl != "Employee":
+            if lvl.casefold() != req_level.casefold():
                 continue
             r_team = str(getattr(rec, "team", "") or "")
             r_pos = str(getattr(rec, "position", "") or "").strip()
@@ -1889,6 +2829,7 @@ class DeterministicToolRegistry:
                     "period": period_label,
                     "scope": target_team or "Call Center",
                     "region": resolved["region"],
+                    "selected_period_has_score": False,
                     "spotlight": None,
                     "agent_spotlight": None,
                 },
@@ -1925,14 +2866,26 @@ class DeterministicToolRegistry:
 
         selected_rank_key = _rank_key(selected_rec)
         ties_list: list[str] = []
+        tied_agents: list[dict[str, str]] = []
+        tied_records: list[Any] = []
         for r in team_period_recs:
             r_id = str(getattr(r, "employee_id", "") or "").strip()
             if r_id == emp_id_resolved:
                 continue
             rk = _rank_key(r)
             if abs(rk[0] - selected_rank_key[0]) < 1e-4:
+                tied_records.append(r)
                 r_nm = str(getattr(r, "employee_name", "") or r_id).strip()
                 r_pos_val = str(getattr(r, "position", "") or "").strip()
+                tied_agents.append(
+                    {
+                        "employee_id": r_id,
+                        "employee_name": r_nm,
+                        "team": emp_team,
+                        "position": r_pos_val,
+                        "performance_level": str(resolved["performance_level"] or "Employee"),
+                    }
+                )
                 ties_list.append(
                     f"{r_nm} ({r_id} · {r_pos_val})"
                     if r_pos_val and r_pos_val.casefold() not in ("agent", "call center agent")
@@ -1958,8 +2911,23 @@ class DeterministicToolRegistry:
                 MONTH_ORDER.get(str(getattr(r, "month", "")).strip(), 0),
             )
         )
+        selected_period_key = (
+            int(getattr(selected_rec, "year", 0) or 0),
+            MONTH_ORDER.get(str(getattr(selected_rec, "month", "")).strip(), 0),
+        )
+        window_period_recs = [
+            r
+            for r in emp_history_recs
+            if (
+                int(getattr(r, "year", 0) or 0),
+                MONTH_ORDER.get(str(getattr(r, "month", "")).strip(), 0),
+            ) <= selected_period_key
+        ][-max(1, min(months_window, 12)) :]
+        window_period_ids = {id(r) for r in window_period_recs}
         all_history_points: list[dict[str, Any]] = []
         missing_months: list[str] = []
+        kpi_history_points: list[dict[str, Any]] = []
+        kpi_missing_months: list[str] = []
         for r in emp_history_recs:
             ev_all = getattr(r, "evaluation", None)
             raw_sc_all = getattr(ev_all, "score", None) if ev_all is not None else None
@@ -1968,6 +2936,24 @@ class DeterministicToolRegistry:
             m_all = str(getattr(r, "month", "") or "").strip()
             y_all = int(getattr(r, "year", 2026) or 2026)
             p_all = f"{m_all} {y_all}"
+            if kpi:
+                kpi_snap = self._extract_record_kpi_snapshot(r, kpi, emp_team, emp_pos)
+                if kpi_snap is None:
+                    kpi_missing_months.append(p_all)
+                elif id(r) in window_period_ids:
+                    kpi_history_points.append(
+                        {
+                            "month": m_all,
+                            "year": y_all,
+                            "period": p_all,
+                            "value": float(kpi_snap["numeric_value"]),
+                            "actual_display": str(kpi_snap["actual_display"]),
+                            "target": kpi_snap["target_numeric"],
+                            "achievement_percent": kpi_snap["achievement_percent"],
+                            "direction": kpi_snap["direction"],
+                            "unit": str(kpi_snap.get("unit") or ""),
+                        }
+                    )
             if raw_sc_all is None:
                 missing_months.append(p_all)
                 continue
@@ -1980,6 +2966,17 @@ class DeterministicToolRegistry:
                     "raw_score": sc_exact,
                     "score": sc_exact,
                 }
+            )
+        kpi_change_vs_prev: float | None = None
+        kpi_window_delta: float | None = None
+        if len(kpi_history_points) >= 2:
+            kpi_change_vs_prev = round(
+                float(kpi_history_points[-1]["value"]) - float(kpi_history_points[-2]["value"]),
+                2,
+            )
+            kpi_window_delta = round(
+                float(kpi_history_points[-1]["value"]) - float(kpi_history_points[0]["value"]),
+                2,
             )
         best_score: float | None = None
         best_months: list[str] = []
@@ -2020,9 +3017,9 @@ class DeterministicToolRegistry:
 
         window_records = [
             r
-            for r in emp_history_recs
+            for r in window_period_recs
             if (getattr(getattr(r, "evaluation", None), "score", None) is not None or getattr(r, "overall_score", None) is not None)
-        ][-max(1, min(months_window, 12)) :]
+        ]
 
         trend_points: list[AiTrendPoint] = []
         history_digest: list[dict[str, Any]] = []
@@ -2139,7 +3136,7 @@ class DeterministicToolRegistry:
                 label=f"Prior Month ({prev_month_label[:3]})" if prev_score_val is not None else "Team Rank",
                 value=f"{prev_score_val:.1f}%" if prev_score_val is not None else f"#{rank_idx} of {total_in_team}",
                 sublabel=(
-                    f"{change_vs_prev:+.1f}% vs {prev_month_label}"
+                    f"{change_vs_prev:+.1f} pp vs {prev_month_label}"
                     if change_vs_prev is not None
                     else f"{emp_team} · {period_label}"
                 ),
@@ -2147,7 +3144,7 @@ class DeterministicToolRegistry:
             ),
             AiSpotlightMetricTile(
                 label=f"{len(trend_points)}-Month Trajectory",
-                value=f"{six_month_delta:+.1f}%" if six_month_delta is not None else f"{curr_score:.1f}%",
+                value=f"{six_month_delta:+.1f} pp" if six_month_delta is not None else f"{curr_score:.1f}%",
                 sublabel=(
                     f"{first_month_label[:3]} {trend_points[0].score:.1f}% → {res_month[:3]} {curr_score:.1f}%"
                     if len(trend_points) >= 2
@@ -2289,6 +3286,21 @@ class DeterministicToolRegistry:
             "top_agents": top_agents_list,
             "ranking_metric_label": ranking_metric_label,
             "ranking_metric_display": ranking_metric_display,
+            "ranking_metric_actual_display": (
+                str(selected_kpi_snap["actual_display"]) if selected_kpi_snap else None
+            ),
+            "ranking_metric_actual": (
+                float(selected_kpi_snap["numeric_value"])
+                if selected_kpi_snap and selected_kpi_snap.get("numeric_value") is not None
+                else None
+            ),
+            "ranking_metric_target": selected_kpi_snap.get("target_numeric") if selected_kpi_snap else None,
+            "ranking_metric_target_display": (
+                f"{selected_kpi_snap['target_numeric']:g} {selected_kpi_snap.get('unit') or ''}".strip()
+                if selected_kpi_snap and selected_kpi_snap.get("target_numeric") is not None
+                else None
+            ),
+            "ranking_metric_direction": selected_kpi_snap.get("direction") if selected_kpi_snap else None,
             "region": resolved["region"],
             "period": period_label,
             "scope": f"{emp_team} ({branch_label})",
@@ -2304,6 +3316,7 @@ class DeterministicToolRegistry:
             "months_tracked": len(trend_points),
             "first_month_label": first_month_label,
             "ties": ties_list,
+            "tied_agents": tied_agents,
             "best_score": best_score,
             "best_period": best_period_label,
             "best_months": best_months,
@@ -2315,6 +3328,10 @@ class DeterministicToolRegistry:
             "is_asked_period_best": is_asked_period_best,
             "is_asked_period_worst": is_asked_period_worst,
             "all_history": all_history_points,
+            "kpi_history": kpi_history_points,
+            "kpi_missing_months": kpi_missing_months,
+            "kpi_change_vs_prev": kpi_change_vs_prev,
+            "kpi_window_delta": kpi_window_delta,
         }
 
         digest = {
@@ -2329,6 +3346,214 @@ class DeterministicToolRegistry:
             "spotlight": agent_spotlight_dict,
             "agent_spotlight": agent_spotlight_dict,
         }
+
+        typed_evidence: list[TypedMetricEvidence] = []
+        selected_metric_id = str(kpi or "").strip()
+        if selected_kpi_snap:
+            requested_metric_leaf = selected_metric_id.rsplit(":", 1)[-1]
+            source_metric_key = str(selected_kpi_snap["kpi_key"])
+            normalize_metric_key = lambda value: re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+            same_team_prefix = ":" in selected_metric_id and (
+                normalize_metric_key(selected_metric_id.split(":", 1)[0]) == normalize_metric_key(emp_team)
+            )
+            if same_team_prefix and normalize_metric_key(requested_metric_leaf) != normalize_metric_key(source_metric_key):
+                pass
+            else:
+                evidence_metric_leaf = (
+                    source_metric_key
+                    if normalize_metric_key(requested_metric_leaf) == normalize_metric_key(source_metric_key)
+                    else (requested_metric_leaf or source_metric_key)
+                )
+                selected_metric_id = (
+                    f"{emp_team.casefold().replace(' ', '_')}:{evidence_metric_leaf}"
+                )
+        eff_ev_level = str(getattr(selected_rec, "performance_level", None) or req_level or "Employee")
+        if kpi and selected_kpi_snap:
+            if kpi_history_points:
+                for pt in kpi_history_points:
+                    m_pt = pt.get("month") or res_month
+                    y_pt = pt.get("year") or res_year
+                    p_pt = f"{m_pt} {y_pt}"
+                    typed_evidence.append(
+                        TypedMetricEvidence(
+                            metric_id=selected_metric_id or f"{emp_team.casefold().replace(' ', '_')}:{selected_kpi_snap['kpi_key']}",
+                            kpi_key=str(selected_kpi_snap["kpi_key"]),
+                            display_name=str(selected_kpi_snap["kpi_label"]),
+                            team=emp_team,
+                            position=emp_pos,
+                            performance_level=eff_ev_level,
+                            branch=resolved["branch"] or "all",
+                            period=p_pt,
+                            actual=float(pt["value"]),
+                            target=pt["target"],
+                            actual_display=str(pt.get("actual_display") or f"{pt['value']} {pt.get('unit', '')}"),
+                            target_display=f"{pt['target']} {pt['unit']}" if pt["target"] is not None else None,
+                            achievement_percent=pt["achievement_percent"],
+                            unit=str(pt.get("unit") or selected_kpi_snap.get("unit") or ""),
+                            direction=pt["direction"],
+                            contributes_to_score=True,
+                            employee_id=emp_id_resolved,
+                            employee_name=emp_display_name,
+                            source_link=primary_emp_route,
+                        )
+                    )
+            elif selected_period_has_score and selected_kpi_snap:
+                typed_evidence.append(
+                    TypedMetricEvidence(
+                        metric_id=selected_metric_id or f"{emp_team.casefold().replace(' ', '_')}:{selected_kpi_snap['kpi_key']}",
+                        kpi_key=str(selected_kpi_snap["kpi_key"]),
+                        display_name=str(selected_kpi_snap["kpi_label"]),
+                        team=emp_team,
+                        position=emp_pos,
+                        performance_level=eff_ev_level,
+                        branch=resolved["branch"] or "all",
+                        period=period_label,
+                        actual=float(selected_kpi_snap["numeric_value"]),
+                        target=float(selected_kpi_snap.get("target_numeric")) if selected_kpi_snap.get("target_numeric") is not None else None,
+                        actual_display=str(selected_kpi_snap.get("actual_display") or f"{selected_kpi_snap['numeric_value']} {selected_kpi_snap.get('unit', '')}"),
+                        target_display=f"{selected_kpi_snap.get('target_numeric')} {selected_kpi_snap.get('unit')}" if selected_kpi_snap.get("target_numeric") is not None else "",
+                        achievement_percent=selected_kpi_snap["achievement_percent"],
+                        unit=str(selected_kpi_snap.get("unit") or ""),
+                        direction=str(selected_kpi_snap.get("direction") or "higher_better"),
+                        contributes_to_score=True,
+                        employee_id=emp_id_resolved,
+                        employee_name=emp_display_name,
+                        source_link=primary_emp_route,
+                    )
+                )
+
+        if window_records:
+            for r_w in window_records:
+                ev_w = getattr(r_w, "evaluation", None)
+                raw_w = getattr(ev_w, "score", None) if ev_w is not None else None
+                if raw_w is None:
+                    raw_w = getattr(r_w, "overall_score", None)
+                if raw_w is not None:
+                    m_w = str(getattr(r_w, "month", "") or "").strip()
+                    y_w = int(getattr(r_w, "year", 2026) or 2026)
+                    p_w = f"{m_w} {y_w}"
+                    if any(
+                        evidence.kpi_key == "overall_score"
+                        and evidence.period.casefold() == p_w.casefold()
+                        for evidence in typed_evidence
+                    ):
+                        continue
+                    typed_evidence.append(
+                        TypedMetricEvidence(
+                            metric_id=f"{emp_team.casefold().replace(' ', '_')}:overall_score",
+                            kpi_key="overall_score",
+                            display_name="Overall PMS Score",
+                            team=emp_team,
+                            position=emp_pos,
+                            performance_level=eff_ev_level,
+                            branch=resolved["branch"] or "all",
+                            period=p_w,
+                            actual=float(raw_w),
+                            target=100.0,
+                            actual_display=f"{float(raw_w):.1f}%",
+                            target_display="100.0%",
+                            achievement_percent=float(raw_w),
+                            unit="%",
+                            direction="higher_better",
+                            contributes_to_score=True,
+                            employee_id=emp_id_resolved,
+                            employee_name=emp_display_name,
+                            source_link=primary_emp_route,
+                        )
+                    )
+        elif selected_period_has_score:
+            typed_evidence.append(
+                TypedMetricEvidence(
+                    metric_id=f"{emp_team.casefold().replace(' ', '_')}:overall_score",
+                    kpi_key="overall_score",
+                    display_name="Overall PMS Score",
+                    team=emp_team,
+                    position=emp_pos,
+                    performance_level=eff_ev_level,
+                    branch=resolved["branch"] or "all",
+                    period=period_label,
+                    actual=float(curr_score),
+                    target=100.0,
+                    actual_display=f"{curr_score:.1f}%",
+                    target_display="100.0%",
+                    achievement_percent=float(curr_score),
+                    unit="%",
+                    direction="higher_better",
+                    contributes_to_score=True,
+                    employee_id=emp_id_resolved,
+                    employee_name=emp_display_name,
+                    source_link=primary_emp_route,
+                )
+            )
+
+        if not employee_query and tied_records:
+            for t_rec in tied_records:
+                t_id = str(getattr(t_rec, "employee_id", "") or "").strip()
+                t_raw_name = str(getattr(t_rec, "employee_name", "") or t_id).strip()
+                t_name = t_raw_name.title() if t_raw_name == t_raw_name.lower() else t_raw_name
+                t_pos = str(getattr(t_rec, "position", "") or "").strip() or None
+                t_level = str(getattr(t_rec, "performance_level", None) or req_level or "Employee")
+                t_route = build_verified_deep_link(
+                    f"/employee/{t_id}",
+                    month=res_month,
+                    year=res_year,
+                    branch=resolved["branch"],
+                    function=resolved["function"],
+                    team=emp_team,
+                    position=t_pos,
+                    performance_level=resolved["performance_level"],
+                )
+                t_snap = self._extract_record_kpi_snapshot(t_rec, kpi, emp_team, t_pos) if kpi else None
+                if kpi and t_snap:
+                    typed_evidence.append(
+                        TypedMetricEvidence(
+                            metric_id=selected_metric_id or f"{emp_team.casefold().replace(' ', '_')}:{t_snap['kpi_key']}",
+                            kpi_key=str(t_snap["kpi_key"]),
+                            display_name=str(t_snap["kpi_label"]),
+                            team=emp_team,
+                            position=t_pos,
+                            performance_level=t_level,
+                            branch=resolved["branch"] or "all",
+                            period=period_label,
+                            actual=float(t_snap["numeric_value"]),
+                            target=float(t_snap.get("target_numeric")) if t_snap.get("target_numeric") is not None else None,
+                            actual_display=str(t_snap.get("actual_display") or f"{t_snap['numeric_value']} {t_snap.get('unit', '')}"),
+                            target_display=f"{t_snap.get('target_numeric')} {t_snap.get('unit')}" if t_snap.get("target_numeric") is not None else "",
+                            achievement_percent=t_snap["achievement_percent"],
+                            unit=str(t_snap.get("unit") or ""),
+                            direction=str(t_snap.get("direction") or "higher_better"),
+                            contributes_to_score=True,
+                            employee_id=t_id,
+                            employee_name=t_name,
+                            source_link=t_route,
+                        )
+                    )
+                else:
+                    t_score = _record_evaluation_score(t_rec)
+                    if t_score is not None:
+                        typed_evidence.append(
+                            TypedMetricEvidence(
+                                metric_id=f"{emp_team.casefold().replace(' ', '_')}:overall_score",
+                                kpi_key="overall_score",
+                                display_name="Overall PMS Score",
+                                team=emp_team,
+                                position=t_pos,
+                                performance_level=t_level,
+                                branch=resolved["branch"] or "all",
+                                period=period_label,
+                                actual=float(t_score),
+                                target=100.0,
+                                actual_display=f"{float(t_score):.1f}%",
+                                target_display="100.0%",
+                                achievement_percent=float(t_score),
+                                unit="%",
+                                direction="higher_better",
+                                contributes_to_score=True,
+                                employee_id=t_id,
+                                employee_name=t_name,
+                                source_link=t_route,
+                            )
+                        )
 
         return ToolExecutionResult(
             tool_name="get_agent_spotlight_and_trend",
@@ -2345,6 +3570,7 @@ class DeterministicToolRegistry:
             visual_cards=[card],
             citations=citations,
             deep_links=deep_links,
+            typed_evidence=typed_evidence,
             resolved_month=res_month,
             resolved_year=res_year,
         )
@@ -3063,6 +4289,8 @@ class DeterministicToolRegistry:
         branch: str | None,
     ) -> dict[str, Any]:
         records = self.ctx.get_scoped_records()
+        sess_state = getattr(self.ctx, "session_state", None)
+        requested_region = (getattr(sess_state, "region", None) or "").strip().casefold()
         total_bookings = 0.0
         total_attended = 0.0
         total_calls = 0.0
@@ -3095,6 +4323,8 @@ class DeterministicToolRegistry:
             # 2. Team & function check (publication is scope-aware)
             emp = getattr(rec, "employee", None)
             r_team = str(getattr(emp, "team", "") or getattr(rec, "team", "") or "").strip()
+            if requested_region and _shared_record_region(rec, r_team).casefold() != requested_region:
+                continue
             if team and r_team.casefold() != team.casefold():
                 continue
             if not team and function:

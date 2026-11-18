@@ -1,3 +1,9 @@
+> [!NOTE]
+> **HISTORICAL BUG FIX RECORD / REFERENCE ONLY**
+> This task plan records the conversation origin fix (`legacy`, `workspace`, `page_assistant` separation).
+> Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> The origin separation and conversation isolation contracts documented herein remain preserved.
+
 # PMS AI conversation origin fixes
 
 ## Goal

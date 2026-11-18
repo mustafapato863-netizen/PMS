@@ -212,7 +212,10 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
                 "how many bookings",
             )
         )
-        or re.search(r"how many\b.{0,50}\bbookings?\b", lower)
+        or (
+            re.search(r"how many\b.{0,50}\bbookings?\b", lower)
+            and not re.search(r"\bbooking[\s-]+(?:rate|conversion)\b", lower)
+        )
     ):
         signals.asks_booking_count = True
 
@@ -254,7 +257,10 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     if any(
         re.search(rf"\b{w}\b", lower)
         for w in ("trend", "trends", "trajectory", "history", "monthly", "months", "progression")
-    ) or "over time" in lower:
+    ) or "over time" in lower or re.search(
+        r"\b(?:score|monthly|trend)\s+pattern\b|\bacross\b.{0,25}\bmonths?\b",
+        lower,
+    ):
         signals.asks_trend = True
 
     asks_person_word = any(
@@ -309,6 +315,20 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             signals.detected_team = "Outbound"
     elif any(k in lower for k in ("quality", "جودة", "الجودة")):
         signals.detected_kpi = "Quality"
+    elif "policy rejection" in lower:
+        signals.detected_kpi = "PolicyRejection"
+    elif any(k in lower for k in ("rejection", "rejected", "مرفوض", "رفض")):
+        signals.detected_kpi = "Rejection"
+    elif "waiting time" in lower:
+        signals.detected_kpi = "WaitingTime"
+    elif re.search(r"\bcpl\b", lower):
+        signals.detected_kpi = "mb_cpl"
+    elif re.search(r"\bleads\b", lower):
+        signals.detected_kpi = "mb_leads"
+    elif "rework" in lower:
+        signals.detected_kpi = "gd_rework"
+    elif "response time" in lower:
+        signals.detected_kpi = "sms_response_time"
 
     # 5. Detect Performance Level (Employee vs Managerial vs Corporate)
     if any(k in lower for k in ("corporate", "شركة", "قطاع", "كوربوريت")):
@@ -335,13 +355,14 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b",
             r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:a\s+new\s+joiner|new\s+in|join\b)",
             r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+join\b",
-            r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
+            r"\b(?:how\s+did|what\s+did|how\s+is|how\s+was)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})\s+(?:score|perform|do|doing|rank)\b",
+            r"(?:employee|agent|for|about|trend of|trend for|score of|profile of|show me|check|look at)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
             r"(?:الموظف|موظف|ايجنت|أيجنت|عن)\s+([\u0600-\u06FFa-zA-Z]+(?:\s+[\u0600-\u06FFa-zA-Z]+)?)",
         ]
         stop_words = {
             "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
             "dxb", "shj", "ajm", "uae", "egy", "egypt", "emirates",
-            "all", "team", "teams", "branch", "branches", "the", "his", "her", "their", "its", "this", "that", "and", "in",
+            "all", "team", "teams", "branch", "branches", "the", "his", "her", "him", "me", "their", "its", "this", "that", "and", "in", "instead",
             "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
             "lowest", "weakest", "strongest", "top", "bottom", "most", "fewest", "more", "less",
             "trend", "month", "months", "overall", "summary", "january", "february", "march", "april",
@@ -354,15 +375,39 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             "booking", "bookings", "attendance", "attended", "reachability", "abandon", "abandoned",
             "aht", "quality", "target", "targets", "gap", "gaps", "drop", "dropped", "dropping",
             "show", "tell", "give", "list", "find", "get", "display", "check", "within",
+            "person", "people", "someone", "anyone", "everyone", "individual",
+            "workforce", "analyst", "trainer", "assurance", "company", "everything", "things", "we", "they",
+            "let", "lets", "she", "he", "there", "here", "where", "how", "when", "why",
+            "pharmacy", "marketing", "coding", "submission", "resubmission", "rcm", "finance", "sales", "nursing", "pmo", "crm", "csr", "media", "buyer", "waiting", "time", "cpl",
         }
-        for pat in name_patterns:
-            m = re.search(pat, text, flags=re.IGNORECASE)
+        import difflib
+        person_search_text = re.sub(
+            r"^\s*not\s+[a-zA-Z]+(?:\s+[a-zA-Z]+)?\s*(?:,|—|-)+\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        for index, pat in enumerate(name_patterns):
+            m = re.search(pat, person_search_text, flags=re.IGNORECASE)
             if m:
+                if index == 0 and re.match(
+                    r"^(?:switch|go|see|check|look|review|be|been|got|have|is|are|was|were)\b",
+                    person_search_text[m.end():].strip(),
+                    flags=re.IGNORECASE,
+                ):
+                    continue
                 raw_tokens = [
                     tok for tok in m.group(1).strip().split()
                     if tok.casefold() not in stop_words
                 ]
                 if raw_tokens:
+                    if len(raw_tokens) == 1 and difflib.get_close_matches(
+                        raw_tokens[0].casefold(),
+                        ("inbound", "outbound", "marketing", "pharmacy", "finance", "nursing", "coding", "submission", "resubmission", "support", "collections"),
+                        n=1,
+                        cutoff=0.78,
+                    ):
+                        continue
                     signals.detected_employee_query = " ".join(raw_tokens)
                     break
 
@@ -699,34 +744,91 @@ _GREETING_PROMPT_RE = re.compile(
 _THANKS_PROMPT_RE = re.compile(
     r"^\s*(?:thanks|thank you|thx|ty|many thanks|thanks a lot|thank you so much|"
     r"got it,?\s*thanks|ok\s*thanks|okay\s*thanks|appreciate it|great,?\s*thanks|"
-    r"thanks,?\s*that was helpful|thank you,?\s*that was helpful)[\s!.,?]*$",
+    r"thanks,?\s*(?:that was helpful|that helps)|thank you,?\s*(?:that was helpful|that helps))[\s!.,?]*$",
+    re.I,
+)
+
+_CAPABILITIES_ANALYTICAL_EXCLUDE_RE = re.compile(
+    r"\b(?:what\s+(?:is|are|was|were)|who\s+(?:is|are|was|were|performed|leads|had|has|scored)|"
+    r"compare|versus|\bvs\b|trend|trajectory|dropped|drop|why\s+(?:did|is|are|was|were)|"
+    r"lowest|worst|best|highest|top\s+\d+|diagnose|calculate|rank\s+|"
+    r"how\s+many|overdue\s+corrective|most\s+bookings|best\s+month|worst\s+month|new\s+joiner)\b",
     re.I,
 )
 
 _CAPABILITIES_HELP_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\s*(?:hi[,!]?\s*)?help(?:\s+me)?(?:\s+please)?[\s?!.]*$", re.I),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:how\s+can\s+(?:you|u|this\s+assistant|pms\s+ai)\s+(?:help|assist)(?:\s+me)?)"
-        r"(?:\s+(?:with\s+(?:pms|this)|here))?[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:how\s+(?:can|could|do)\s+(?:you|u|this\s+assistant|pms\s+ai)\s+"
+        r"(?:help|assist|support)(?:\s+me)?)(?:\s+(?:with|for|on|in|about)\b.*)?[\s?!.]*$",
         re.I,
     ),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:what\s+can\s+(?:you|u|this\s+assistant|pms\s+ai)\s+(?:do|help(?:\s+me)?\s+with|assist\s+with|answer))"
-        r"(?:\s+(?:for\s+me|here|in\s+pms))?[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:can|could)\s+(?:you|u|this\s+assistant|pms\s+ai)\s+"
+        r"(?:do|help(?:\s+me)?(?:\s+with)?|assist(?:\s+me)?(?:\s+with)?|answer|support))(?:\s+(?:for|with|on|in|about|here)\b.*)?[\s?!.]*$",
         re.I,
     ),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:questions\s+|things\s+)?can\s+i\s+ask(?:\s+you)?)(?:\s+(?:about|here))?[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:questions|things|topics)\s+|what\s+all\s+|what\s+)can\s+i\s+ask(?:\s+you)?(?:\s+(?:about|for|here|on)\b.*)?[\s?!.]*$",
         re.I,
     ),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:do\s+you\s+do|are\s+your\s+capabilities)|capabilities)[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:do\s+you\s+do|are\s+your\s+capabilities)|capabilities)(?:\s+(?:for|in|on)\b.*)?[\s?!.]*$",
         re.I,
     ),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:can|could)\s+(?:you|u)\s+help(?:\s+me)?[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:can|could)\s+(?:you|u)\s+help(?:\s+me)?(?:\s+(?:with|for|on)\s+(?:my\s+|the\s+|our\s+)?(?:team|teams|department|scope|work|pms|rcm|inbound|outbound|call\s+center|kpi|kpis|metrics?))?[\s?!.]*$",
         re.I,
     ),
+)
+
+_EXPLAIN_PREVIOUS_RE = re.compile(
+    r"^\s*(?:"
+    r"what\s+(?:do\s+you|did\s+you|do\s+u)\s+mean(?:\s+by\b.*)?|"
+    r"what\s+does\s+(?:that|this|[\w.%+-]+(?:\s+[\w.%+-]+){0,3})\s+mean(?:\s+(?:here|in\s+(?:this|your)\s+(?:answer|reply|response)))?|"
+    r"(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:explain|clarify|elaborate\s+on|simplify|break\s+down)\s+"
+    r"(?:that|this|it|your\s+(?:last\s+|previous\s+)?(?:answer|reply|response|point|conclusion|numbers?|figures?))"
+    r"(?:\s+(?:more\s+)?(?:simply|in\s+(?:simple|plain|clear)\s+(?:words|terms|language)))?|"
+    r"(?:can\s+you\s+|could\s+you\s+)?clarify(?:\s+that|\s+this|\s+please)?|"
+    r"why\s+(?:do|did|are)\s+(?:you|u)\s+(?:say|call(?:ing)?)\s+(?:that|this|it)\b.*|"
+    r"(?:which|what)\s+part\s+of\s+your\s+(?:last\s+|previous\s+)?(?:answer|reply|response|explanation)\s+(?:supports|shows|proves)\b.*|"
+    r"what\s+(?:supports|backs\s+up)\s+(?:that|this|your)\s+(?:conclusion|claim|statement)\b.*|"
+    r"i\s+(?:don'?t|do\s+not)\s+understand(?:\s+(?:that|this|it|what\s+you\s+mean))?"
+    r")(?:\s+please)?\s*[?.!]*$",
+    re.I,
+)
+
+_EXPLICIT_CORRECTION_RE = re.compile(
+    r"(?:^\s*(?:"
+    r"no\s*,?\s*(?:i\s+mean(?:t)?\b|not\b)|"
+    r"sorry\s*,?\s*(?:i\s+mean(?:t)?\b|look\b|check\b|use\b|make\b)|"
+    r"i\s+mean(?:t)?\b|"
+    r"actually\s*(?:,|i\s+mean(?:t)?\b|check\b|look\b|show\b|use\b|try\b)|"
+    r"not\s+[a-z][a-z\s]{1,30}(?:,|—|-)+\s*(?:show|check|use|give|look)\b|"
+    r"make\s+(?:that|it)\b|"
+    r"change\s+(?:that|it)\s+to\b|"
+    r"switch\s+to\s+(?:the\s+)?(?:egypt|egy|uae|emirates|ksa|saudi\s+arabia)(?:\s+instead)?\s*[?.!]*$"
+    r")|\binstead\s*[?.!]*$)",
+    re.I,
+)
+
+_TOPIC_SWITCH_PREFIX_RE = re.compile(
+    r"^\s*(?:now\s+(?:show|check|tell|give|compare|analyze|review|what|who|how|look)\b|"
+    r"(?:let'?s\s+|alright\s*,?\s*)?switch(?:\s+gears)?\s+to\b|change\s+(?:topic|subject)\s+to\b|"
+    r"moving\s+on\s+to\b|(?:different|new|separate|another)\s+question\b|on\s+another\s+note\b)",
+    re.I,
+)
+
+_BARE_REFINEMENT_WORDS = frozenset(
+    {
+        "and", "what", "about", "how", "instead", "for", "in", "only", "the",
+        "uae", "egy", "egypt", "emirates", "all",
+        "dubai", "sharjah", "ajman", "clinics", "dxb", "shj", "ajm", "shjajm",
+        "january", "jan", "february", "feb", "march", "mar", "april", "apr",
+        "may", "june", "jun", "july", "jul", "august", "aug",
+        "september", "sep", "sept", "october", "oct", "november", "nov", "december", "dec",
+        "2024", "2025", "2026", "2027",
+    }
 )
 
 _OFF_TOPIC_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -790,11 +892,11 @@ _SECURITY_OR_MUTATION_RE = re.compile(
     re.I,
 )
 
-# Core PMS entities, KPIs, and analytical words (excludes bare branch cities so "weather in Dubai" stays off-topic).
+# Core PMS entities, KPIs, and analytical words (excludes bare branch cities and bare periods so "October" or "weather in Dubai" stays gated cleanly).
 _PMS_ENTITY_OR_KPI_RE = re.compile(
     r"\b(?:score|scores|scored|scoring|kpi|kpis|metric|metrics|target|targets|booking|bookings|"
     r"attended|attendance|abandon|abandoned|reachability|aht|fcr|qa|quality|sla|compliance|"
-    r"resubmission|re-submission|submission|coding|pre-approvals?|collections|denial|"
+    r"resubmission|re-submission|submission|coding|pre-approvals?|collections|denial|rejection|"
     r"revenue|sales|marketing|pharmacy|csr|finance|human\s+resources|crm|nursing|pmo|rcm|"
     r"inbound|outbound|call\s+center|support\s+positions?|support\s+team|scorecard|scorecards|bsc|balanced\s+scorecard|"
     r"corrective\s+actions?|action\s+plan|pip|sip|grade|grades|ranking|rank|ranks|"
@@ -804,7 +906,22 @@ _PMS_ENTITY_OR_KPI_RE = re.compile(
     r"pulling|below\s+target|dropped|drop|dropping|decline|declined|fell|fall|improve|improved|"
     r"improvement|underperform|overdue|joiner|joiners|joined|joining|hire\s+date|tenure|evaluation|"
     r"evaluations|managerial|corporate|sghd\d+|emp[-_ ]?\d+|e[-_]\d+|"
-    r"employee|employees|agent|agents|team|teams|department|departments)\b",
+    r"employee|employees|agent|agents)\b",
+    re.I,
+)
+
+_PMS_ANALYTICAL_INTENT_RE = re.compile(
+    r"\b(?:score|scores|scored|scoring|kpi|kpis|metric|metrics|target|targets|booking|bookings|"
+    r"attended|attendance|abandon|abandoned|reachability|aht|fcr|qa|quality|sla|compliance|"
+    r"rejection|resubmission|re-submission|submission|coding|pre-approvals?|collections|denial|"
+    r"operational|volume|volumes|revenue|revenues|perform|performs|performing|performed|focus|prioritize|priorities|"
+    r"waiting\s+time|cpl|cpv|leads|rework|response\s+time|leakage|tender\s+compliance|atv|media\s+buyer|"
+    r"scorecard|scorecards|bsc|balanced\s+scorecard|corrective\s+actions?|action\s+plan|"
+    r"ranking|rank|ranks|top|best|worst|lowest|highest|weakest|strongest|bottom|leader|leaders|leading|leads|"
+    r"driver|drivers|gap|gaps|trend|trends|trajectory|progression|over\s+time|6-month|"
+    r"compare|comparison|versus|vs|diagnose|root\s+cause|dragging|pulling|below\s+target|"
+    r"dropped|drop|dropping|decline|declined|fell|fall|overdue|joiner|joiners|joined|joining|"
+    r"hire\s+date|tenure|position|role|title|performance|result|results)\b",
     re.I,
 )
 
@@ -818,7 +935,7 @@ _PMS_BRANCH_OR_PERIOD_RE = re.compile(
 _ARABIC_PMS_KEYWORDS: tuple[str, ...] = (
     "أداء", "اداء", "نتيجة", "مؤشر", "مؤشرات", "تقييم", "حضور", "الحضور", "حجز", "حجوزات",
     "جودة", "انباوند", "إنباوند", "اوتباوند", "أوتباوند", "ماركتنج", "التسويق", "دبي",
-    "الشارقة", "عجمان", "موظف", "الموظف", "تيم", "فريق", "كول سنتر", "ايراد", "إيراد",
+    "الشارقة", "عجمان", "موظف", "الموظف", "كول سنتر", "ايراد", "إيراد",
     "خطة", "ملخص", "تارجت", "واقع", "السبب",
 )
 
@@ -836,9 +953,49 @@ def is_capabilities_help_prompt(prompt: str) -> bool:
     text = (prompt or "").strip()
     if not text:
         return False
-    if _PMS_ENTITY_OR_KPI_RE.search(text) or _PMS_BRANCH_OR_PERIOD_RE.search(text):
+    if _CAPABILITIES_ANALYTICAL_EXCLUDE_RE.search(text):
         return False
     return any(pat.match(text) for pat in _CAPABILITIES_HELP_PATTERNS)
+
+
+def is_explain_previous_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    return bool(_EXPLAIN_PREVIOUS_RE.match(text))
+
+
+def is_explicit_correction_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    return bool(_EXPLICIT_CORRECTION_RE.match(text))
+
+
+def is_topic_switch_prompt(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    m = _TOPIC_SWITCH_PREFIX_RE.match(text)
+    if not m:
+        return False
+    remainder = text[m.end():].strip(" ,.?!:-")
+    if remainder and is_bare_scope_or_period_refinement(remainder):
+        return False
+    return True
+
+
+def is_bare_scope_or_period_refinement(prompt: str) -> bool:
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    tokens = re.findall(r"[A-Za-z0-9]+", text.casefold())
+    if not tokens or len(tokens) > 4:
+        return False
+    has_scope_or_period = any(_PMS_BRANCH_OR_PERIOD_RE.fullmatch(tok) for tok in tokens)
+    if not has_scope_or_period:
+        return False
+    return all(tok in _BARE_REFINEMENT_WORDS for tok in tokens)
 
 
 def is_off_topic_prompt(prompt: str) -> bool:
@@ -866,11 +1023,21 @@ def is_vague_dataless_prompt(prompt: str) -> bool:
 
 def has_pms_performance_signal(prompt: str) -> bool:
     text = (prompt or "").strip()
-    if not text or is_off_topic_prompt(text):
+    if not text or is_off_topic_prompt(text) or is_capabilities_help_prompt(text) or is_explain_previous_prompt(text):
+        return False
+    if is_bare_scope_or_period_refinement(text):
         return False
     if is_broad_overview_prompt(text) or _SECURITY_OR_MUTATION_RE.search(text):
         return True
-    if _PMS_ENTITY_OR_KPI_RE.search(text) or _PMS_BRANCH_OR_PERIOD_RE.search(text):
+    if re.search(r"\b(?:sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", text, re.I):
+        return True
+    if _PMS_ANALYTICAL_INTENT_RE.search(text):
+        return True
+    lower = text.casefold()
+    if any(
+        re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower)
+        for alias in (*TEAM_ALIASES.keys(), *BARE_CROSS_COUNTRY_TEAM_ALIASES.keys())
+    ):
         return True
     if re.search(r"\bwho\s+(?:is|are|was|were)\s+[A-Z][a-z]+", text):
         return True

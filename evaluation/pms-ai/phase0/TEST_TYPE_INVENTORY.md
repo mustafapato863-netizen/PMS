@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 48. Test functions or `it` blocks: 637.
+Test files: 55. Test functions or `it` blocks: 767.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 15 | not applicable |
-| `mocked` | 30 | partial |
+| `synthetic` | 16 | not applicable |
+| `mocked` | 36 | partial |
 | `live-model` | 6 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -23,15 +23,15 @@ A file can carry more than one label, so the label counts can add up to more tha
 
 | Path | Kind | Labels | Cases | Evidence status |
 | --- | --- | --- | ---: | --- |
-| `Backend/tests/test_ai_admin_pilot.py` | test | `mocked` | 10 | partial |
+| `Backend/tests/test_ai_admin_pilot.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_booking_comparisons.py` | test | `mocked` | 23 | partial |
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_chat_scenarios_and_variation.py` | test | `mocked` | 10 | partial |
-| `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 14 | not applicable |
+| `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 19 | not applicable |
 | `Backend/tests/test_ai_conversation_claim_ledger_paired.py` | test | `live-model`, `mocked` | 13 | partial |
-| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 55 | partial |
+| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 59 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter_unified.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 19 | not applicable |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
@@ -41,14 +41,21 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_feedback_learning.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
+| `Backend/tests/test_ai_intent_gate_and_origin.py` | test | `mocked` | 9 | partial |
 | `Backend/tests/test_ai_person_name_routing.py` | test | `synthetic` | 4 | not applicable |
 | `Backend/tests/test_ai_phase1_runtime.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_phase2_reconciliation.py` | test | `synthetic` | 20 | not applicable |
+| `Backend/tests/test_ai_phase3_tool_contracts.py` | test | `mocked` | 25 | partial |
+| `Backend/tests/test_ai_phase4_conversation_answers.py` | test | `mocked` | 24 | partial |
+| `Backend/tests/test_ai_phase4_http_api.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_phase4_security_matrix.py` | test | `mocked` | 11 | partial |
+| `Backend/tests/test_ai_phase5_feedback_provenance.py` | test | `mocked` | 2 | partial |
+| `Backend/tests/test_ai_phase5_postfix_rescore.py` | test | `synthetic` | 6 | not applicable |
 | `Backend/tests/test_ai_phase6_feedback_governance.py` | test | `mocked` | 19 | partial |
 | `Backend/tests/test_ai_phase7_eval_gates.py` | test | `live-model` | 12 | blocked |
 | `Backend/tests/test_ai_pilot_readiness_script.py` | test | `mocked` | 13 | partial |
-| `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 65 | partial |
+| `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 66 | partial |
+| `Backend/tests/test_ai_response_quality.py` | test | `mocked` | 37 | partial |
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
@@ -56,7 +63,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
 | `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 30 | not applicable |
 | `Backend/tests/test_ai_synthesis_and_routing_unified.py` | test | `mocked` | 7 | partial |
-| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 28 | partial |
+| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 30 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
 | `Backend/tests/test_local_assistant_exploration.py` | test | `live-model`, `mocked` | 7 | partial |
@@ -64,13 +71,13 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 12 | partial |
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
 | `Backend/tests/test_pms_ai_phase0_eval_schema.py` | test | `synthetic` | 6 | not applicable |
-| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 4 | partial |
+| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 6 | partial |
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
-| `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 8 | partial |
+| `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
 | `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 4 | not applicable |
-| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 20 | partial |
+| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 23 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |
 
 ## Notes

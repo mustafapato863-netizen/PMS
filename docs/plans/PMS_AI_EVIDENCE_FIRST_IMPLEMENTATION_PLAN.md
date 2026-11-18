@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active execution plan by [PMS AI Model-Led Implementation Plan](PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The evidence, privacy, and business calculation requirements documented herein remain preserved as historical requirements and domain reference.
+
 # PMS AI: Evidence-First Assistant and Learning Plan
 
 **Status:** Proposed, 10 November 2026. This is an execution plan, not a statement that the phases or the current candidate are complete.

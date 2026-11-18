@@ -12,7 +12,12 @@ from services.ai.router import HybridQueryRouter
 
 
 def test_disabled_does_not_call_model(monkeypatch):
+    monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
+    assert suggest_intent("How has booking evolved?").reason == "disabled"
+    monkeypatch.delenv("PMS_AI_INTENT_ENABLED", raising=False)
     monkeypatch.delenv("PMS_AI_LOCAL_ROUTER_ENABLED", raising=False)
+    monkeypatch.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_GEMINI_ENABLED", "false")
     assert suggest_intent("How has booking evolved?").reason == "disabled"
 
 

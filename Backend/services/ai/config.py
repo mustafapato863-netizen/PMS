@@ -105,6 +105,7 @@ class AiRuntimeConfig:
     pilot_scopes: frozenset[str]
     redact_raw_prompts: bool
     conversation_state_enabled: bool = True
+    model_led_pilot_enabled: bool = False
 
     @property
     def can_call_gemini(self) -> bool:
@@ -157,10 +158,10 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     ).strip()
 
     try:
-        timeout_val = float(os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS", "4.0"))
-        timeout_seconds = max(0.5, min(timeout_val, 10.0))
+        timeout_val = float(os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS", "8.0"))
+        timeout_seconds = max(0.5, min(timeout_val, 30.0))
     except (TypeError, ValueError):
-        timeout_seconds = 4.0
+        timeout_seconds = 8.0
 
     raw_scopes = (
         os.environ.get("PMS_AI_ENABLED_SCOPES")
@@ -180,6 +181,9 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     conversation_state_enabled = _parse_bool(
         os.environ.get("PMS_AI_CONVERSATION_STATE_ENABLED"), default=True
     )
+    model_led_pilot_enabled = _parse_bool(
+        os.environ.get("PMS_AI_MODEL_LED_PILOT_ENABLED"), default=False
+    )
 
     return AiRuntimeConfig(
         router_mode=router_mode,
@@ -192,6 +196,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         pilot_scopes=pilot_scopes,
         redact_raw_prompts=redact_raw_prompts,
         conversation_state_enabled=conversation_state_enabled,
+        model_led_pilot_enabled=model_led_pilot_enabled,
     )
 
 

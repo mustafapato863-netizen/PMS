@@ -8,6 +8,8 @@ migration is required while keeping ``feedback_reason`` within ``String(120)``.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import logging
 import os
 import re
@@ -55,6 +57,15 @@ _COMMENT_MAX_LEN = 500
 _NOTES_MAX_LEN = 240
 _TRUTHY = {"1", "true", "yes", "on", "enabled"}
 _SHA_SAFE_RE = re.compile(r"[^0-9A-Za-z._\-]")
+
+
+class FeedbackIdempotencyConflictError(ValueError):
+    """An idempotency key was reused with a different feedback or review payload."""
+
+
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _parse_optional_uuid(value: str | None) -> str | None:
@@ -177,6 +188,75 @@ class FeedbackGovernanceService:
         sr["reviewer_verified"] = bool(row.reviewer_verified)
         row.structured_response = sr
 
+    def _trace_provenance(self, row: AiInteractionTrace) -> dict[str, Any]:
+        """Derive answer and evidence provenance from the stored trace, never the feedback client."""
+        sr = row.structured_response if isinstance(row.structured_response, dict) else {}
+        session = row.session_state if isinstance(row.session_state, dict) else {}
+        query = sr.get("structured_query") if isinstance(sr.get("structured_query"), dict) else {}
+        resolved = sr.get("resolved_session_state") if isinstance(sr.get("resolved_session_state"), dict) else {}
+        confirmed = resolved.get("last_confirmed_query") if isinstance(resolved.get("last_confirmed_query"), dict) else {}
+        usage = sr.get("provider_usage") if isinstance(sr.get("provider_usage"), dict) else {}
+        evidence = sr.get("typed_evidence")
+        if not isinstance(evidence, list):
+            evidence = sr.get("evidence_envelope_v2")
+        if not isinstance(evidence, list):
+            evidence = []
+        calls = row.tool_calls if isinstance(row.tool_calls, list) else sr.get("tool_calls", [])
+        tool_names = list(dict.fromkeys(
+            str(call.get("tool_name") or "").strip()
+            for call in calls
+            if isinstance(call, dict) and str(call.get("tool_name") or "").strip()
+        )) if isinstance(calls, list) else []
+        answer_snapshot = {
+            "headline": sr.get("headline"),
+            "narrative_bullets": sr.get("narrative_bullets") or [],
+            "detail_bullets": sr.get("detail_bullets") or [],
+            "typed_evidence": evidence,
+        }
+        envelope = sr.get("evidence_envelope_v2")
+        evidence_revision = sr.get("evidence_revision")
+        if evidence_revision is None and isinstance(envelope, dict):
+            evidence_revision = envelope.get("revision") or envelope.get("snapshot_revision")
+        prompt_version = sr.get("prompt_version") or sr.get("synthesis_prompt_version")
+        team = resolved.get("team") or confirmed.get("team") or query.get("team") or session.get("team")
+        country = resolved.get("region") or confirmed.get("region") or query.get("region") or session.get("region")
+        level = (
+            resolved.get("performance_level")
+            or confirmed.get("performance_level")
+            or query.get("performance_level")
+            or session.get("performance_level")
+        )
+        fallback = usage.get("fallback_outcome") or (
+            "provider_fallback" if sr.get("answer_source") == "fallback" else "none"
+        )
+        return {
+            "provider_name": self._sanitize_scope_label(row.provider_name, tokens=set(), max_len=60) or "unknown",
+            "model_version": self._sanitize_scope_label(row.model_name, tokens=set(), max_len=100) or "unknown",
+            "fallback_reason": self._sanitize_scope_label(str(fallback), tokens=set(), max_len=120) or "none",
+            "scope_team": self._sanitize_scope_label(str(team) if team else None, tokens=set(), max_len=120),
+            "scope_country": self._sanitize_scope_label(str(country) if country else None, tokens=set(), max_len=80),
+            "performance_level": self._sanitize_scope_label(str(level) if level else None, tokens=set(), max_len=40),
+            "operation_family": self._sanitize_scope_label(
+                ",".join(tool_names) or str(query.get("operation_kind_v2") or query.get("intent") or "workspace_chat"),
+                tokens=set(),
+                max_len=80,
+            ) or "workspace_chat",
+            "prompt_sha256": _canonical_sha256(str(row.sanitized_prompt or "")),
+            "answer_snapshot_sha256": _canonical_sha256(answer_snapshot),
+            "evidence_snapshot_sha256": _canonical_sha256(evidence),
+            "evidence_item_sha256": list(dict.fromkeys(_canonical_sha256(item) for item in evidence)),
+            "evidence_revision": self._sanitize_scope_label(
+                str(evidence_revision) if evidence_revision is not None else None,
+                tokens=set(),
+                max_len=100,
+            ),
+            "prompt_version": self._sanitize_scope_label(
+                str(prompt_version) if prompt_version is not None else None,
+                tokens=set(),
+                max_len=100,
+            ),
+        }
+
     def record_workspace_or_pilot_feedback(
         self,
         *,
@@ -218,6 +298,7 @@ class FeedbackGovernanceService:
         ) or configured_model_name()
         candidate_sha = _resolve_candidate_sha(payload.candidate_sha)
         evidence_ids = self._sanitize_evidence_ids(payload.evidence_ids, tokens=tokens)
+        provenance: dict[str, Any] | None = None
 
         reason_parts: list[str] = []
         if payload.reason_tag:
@@ -245,6 +326,13 @@ class FeedbackGovernanceService:
                 raise TraceOwnershipError("Cannot submit feedback for another user's interaction trace")
             if owner_id and not caller_id and caller_role is not None and str(caller_role) != "Admin":
                 raise TraceOwnershipError("Cannot submit feedback for another user's interaction trace")
+            if payload.surface == "workspace_chat":
+                provenance = self._trace_provenance(row)
+                provider_name = provenance["provider_name"]
+                model_version = provenance["model_version"]
+                fallback_reason = provenance["fallback_reason"]
+                operation_family = provenance["operation_family"]
+                evidence_ids = provenance["evidence_item_sha256"][:50]
         else:
             if payload.surface == "workspace_chat":
                 raise ValueError("trace_id is required for workspace_chat feedback")
@@ -281,9 +369,41 @@ class FeedbackGovernanceService:
 
         existing_meta = self._extract_gov_meta(row)
         session_dict = row.session_state if isinstance(row.session_state, dict) else {}
-        resolved_team = scope_team or self._sanitize_scope_label(session_dict.get("team"), tokens=tokens)
-        resolved_country = scope_country or self._sanitize_scope_label(session_dict.get("region"), tokens=tokens)
-        resolved_level = performance_level or self._sanitize_scope_label(session_dict.get("performance_level"), tokens=tokens)
+        if provenance is not None:
+            resolved_team = provenance["scope_team"]
+            resolved_country = provenance["scope_country"]
+            resolved_level = provenance["performance_level"]
+        else:
+            resolved_team = scope_team or self._sanitize_scope_label(session_dict.get("team"), tokens=tokens)
+            resolved_country = scope_country or self._sanitize_scope_label(session_dict.get("region"), tokens=tokens)
+            resolved_level = performance_level or self._sanitize_scope_label(session_dict.get("performance_level"), tokens=tokens)
+
+        request_digest = _canonical_sha256({
+            "surface": payload.surface,
+            "rating": payload.rating,
+            "reason_tag": payload.reason_tag,
+            "comment_redacted": comment_redacted,
+            "scope_team": resolved_team,
+            "scope_country": resolved_country,
+            "performance_level": resolved_level,
+        })
+        submission_requests = dict(existing_meta.get("submission_idempotency") or {})
+        idempotency_key = str(payload.idempotency_key or "").strip()
+        idempotency_digest = _canonical_sha256(idempotency_key) if idempotency_key else None
+        if idempotency_digest:
+            existing_request = submission_requests.get(idempotency_digest)
+            if isinstance(existing_request, dict):
+                if existing_request.get("request_sha256") != request_digest:
+                    raise FeedbackIdempotencyConflictError("Idempotency key was reused with a different feedback payload")
+                return AiPilotFeedbackResponse(
+                    trace_id=str(row.id),
+                    surface=existing_request.get("surface", payload.surface),
+                    rating=existing_request.get("rating", payload.rating),
+                    reason_tag=existing_request.get("reason_tag"),
+                    review_status="pending",
+                    reviewer_verified=False,
+                    pii_quarantined=bool(existing_request.get("pii_quarantined", False)),
+                )
 
         gov_meta: dict[str, Any] = {
             "surface": payload.surface,
@@ -306,8 +426,23 @@ class FeedbackGovernanceService:
             "proposed_action": None,
             "submitted_at": datetime.now(timezone.utc).isoformat(),
         }
+        if provenance is not None:
+            gov_meta["answer_provenance"] = provenance
+        if idempotency_digest:
+            submission_requests[idempotency_digest] = {
+                "request_sha256": request_digest,
+                "surface": payload.surface,
+                "rating": payload.rating,
+                "reason_tag": payload.reason_tag,
+                "pii_quarantined": bool(quarantined),
+                "recorded_at": gov_meta["submitted_at"],
+            }
+            gov_meta["submission_idempotency"] = submission_requests
         if isinstance(existing_meta.get("cohort_size"), int) and not isinstance(existing_meta.get("cohort_size"), bool):
             gov_meta["cohort_size"] = existing_meta["cohort_size"]
+        for retained_key in ("submission_idempotency", "review_idempotency", "answer_provenance"):
+            if retained_key not in gov_meta and retained_key in existing_meta:
+                gov_meta[retained_key] = existing_meta[retained_key]
 
         row.feedback_rating = payload.rating
         row.feedback_reason = compact_reason
@@ -376,6 +511,25 @@ class FeedbackGovernanceService:
         clean_action = self._sanitize_text(proposed_action, tokens=tokens, max_len=_NOTES_MAX_LEN)
 
         prev_meta = self._extract_gov_meta(row)
+        review_requests = dict(prev_meta.get("review_idempotency") or {})
+        review_key = str(request_id or "").strip()
+        review_key_digest = _canonical_sha256(review_key) if review_key else None
+        review_digest = _canonical_sha256({
+            "reviewer_id": str(reviewer_id or "admin"),
+            "decision": resolved_decision,
+            "reviewer_verified": resolved_verified,
+            "notes": clean_notes,
+            "proposed_action": clean_action,
+        })
+        if review_key_digest:
+            existing_request = review_requests.get(review_key_digest)
+            if isinstance(existing_request, dict):
+                if existing_request.get("request_sha256") != review_digest:
+                    raise FeedbackIdempotencyConflictError("Request ID was reused with a different review payload")
+                response_data = existing_request.get("response")
+                if isinstance(response_data, dict):
+                    return AiTraceReviewResponse(**response_data)
+                raise FeedbackIdempotencyConflictError("Stored review idempotency result is invalid")
         old_values = {
             "reviewer_verified": bool(row.reviewer_verified),
             "review_status": prev_meta.get("review_status", "pending"),
@@ -405,7 +559,6 @@ class FeedbackGovernanceService:
                 "proposed_action": clean_action,
             }
         )
-        self._write_gov_meta(row, gov_meta)
 
         eligible = bool(row.is_distillation_eligible and row.reviewer_verified)
         actor_uuid = _parse_optional_uuid(reviewer_id)
@@ -418,6 +571,27 @@ class FeedbackGovernanceService:
         }
         if actor_uuid is None:
             new_values["actor_user_id"] = str(reviewer_id or "admin")
+
+        response = AiTraceReviewResponse(
+            success=True,
+            message="Trace review updated",
+            trace_id=str(row.id),
+            reviewer_verified=resolved_verified,
+            reviewer_id=str(reviewer_id or "admin"),
+            reviewed_at=now_dt.isoformat(),
+            is_distillation_eligible=eligible,
+            decision=resolved_decision,  # type: ignore[arg-type]
+            review_status=resolved_decision,  # type: ignore[arg-type]
+            proposed_action=clean_action,
+        )
+        if review_key_digest:
+            review_requests[review_key_digest] = {
+                "request_sha256": review_digest,
+                "response": response.model_dump(mode="json"),
+                "recorded_at": now_dt.isoformat(),
+            }
+            gov_meta["review_idempotency"] = review_requests
+        self._write_gov_meta(row, gov_meta)
 
         _ensure_audit_table_in_nonprod(self.db)
         AuditService.log_operation(
@@ -433,18 +607,7 @@ class FeedbackGovernanceService:
             commit=commit,
         )
 
-        return AiTraceReviewResponse(
-            success=True,
-            message="Trace review updated",
-            trace_id=str(row.id),
-            reviewer_verified=resolved_verified,
-            reviewer_id=str(reviewer_id or "admin"),
-            reviewed_at=now_dt.isoformat(),
-            is_distillation_eligible=eligible,
-            decision=resolved_decision,  # type: ignore[arg-type]
-            review_status=resolved_decision,  # type: ignore[arg-type]
-            proposed_action=clean_action,
-        )
+        return response
 
     def cluster_failures(
         self,

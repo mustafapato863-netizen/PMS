@@ -33,6 +33,7 @@ from models.ai_schemas import (
     AiFeedbackPurgeResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
+    AiPilotFeedbackRequest,
     AiTraceReviewRequest,
     AiTraceReviewResponse,
     AiWatchingResponse,
@@ -41,7 +42,7 @@ from models.ai_schemas import (
 from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
 from services.ai.approved_patterns import ApprovedPatternMatcher
-from services.ai.feedback_service import FeedbackGovernanceService
+from services.ai.feedback_service import FeedbackGovernanceService, FeedbackIdempotencyConflictError
 from services.ai.llm_client import (
     get_recent_fallback_reason,
     local_exploration_enabled,
@@ -527,30 +528,75 @@ def post_ai_trace_feedback(
 ) -> AiFeedbackResponse:
     scope = require_authenticated_scope(db, request)
     caller_role = str(scope.get("role") or "")
-    try:
-        found, eligible = TrainingTraceLogger(db).record_feedback(
+    if body.reviewer_verified and caller_role != "Admin":
+        release_read_transaction(db)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Administrators can certify reviewed traces",
+        )
+    if db is None:
+        try:
+            ok, elig = TrainingTraceLogger(db).record_feedback(
+                trace_id=body.trace_id,
+                rating=body.rating,
+                category=body.category,
+                reason=body.reason,
+                caller_user_id=str(scope.get("user_id") or ""),
+                caller_role=caller_role,
+                reviewer_verified=body.reviewer_verified,
+            )
+        except TraceOwnershipError as exc:
+            release_read_transaction(db)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
+        verified = bool(body.reviewer_verified and caller_role == "Admin")
+        return AiFeedbackResponse(
+            success=True,
+            message="Feedback recorded",
             trace_id=body.trace_id,
             rating=body.rating,
             category=body.category,
-            reason=body.reason,
+            is_distillation_eligible=bool(elig and verified),
+            reviewer_verified=verified,
+        )
+    try:
+        feedback = FeedbackGovernanceService(db).record_workspace_or_pilot_feedback(
+            payload=AiPilotFeedbackRequest(
+                trace_id=body.trace_id,
+                idempotency_key=(
+                    body.idempotency_key
+                    or request.headers.get("idempotency-key")
+                    or request.headers.get("x-request-id")
+                ),
+                surface="workspace_chat",
+                rating=body.rating,
+                reason_tag=body.category,
+                comment=body.reason,
+            ),
             caller_user_id=str(scope.get("user_id") or ""),
             caller_role=caller_role,
-            reviewer_verified=body.reviewer_verified if caller_role == "Admin" else None,
         )
     except TraceOwnershipError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    if not found:
+    except FeedbackIdempotencyConflictError as exc:
         release_read_transaction(db)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except LookupError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return AiFeedbackResponse(
         success=True,
         message="Feedback recorded for administrator review",
-        trace_id=body.trace_id,
-        rating=body.rating,
-        category=body.category,
-        is_distillation_eligible=bool(eligible and body.reviewer_verified and caller_role == "Admin"),
-        reviewer_verified=bool(body.reviewer_verified and caller_role == "Admin"),
+        trace_id=feedback.trace_id,
+        rating=feedback.rating,
+        category=feedback.reason_tag,
+        is_distillation_eligible=False,
+        reviewer_verified=False,
     )
 
 
@@ -582,6 +628,9 @@ def post_ai_trace_review(
     except PermissionError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except FeedbackIdempotencyConflictError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if result is None:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")

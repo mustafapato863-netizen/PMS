@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active architecture plan by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The conversation lifecycle, turn persistence, ownership, and idempotency contracts documented herein remain preserved as historical requirements and domain reference.
+
 # PMS AI: conversational analytics implementation blueprint
 
 **Status:** implementation specification; not a completion or production-readiness claim.  

@@ -1,3 +1,7 @@
+> [!NOTE]
+> **HISTORICAL RELEASE MANIFEST / REFERENCE ONLY**
+> This manifest documents historical v2 release verification. Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS AI Conversational Analytics v2 — Release Manifest
 
 ## 1. Executive Summary

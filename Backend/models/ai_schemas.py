@@ -148,6 +148,7 @@ class ConfirmedQueryContext(BaseModel):
     performance_level: str | None = None
     metric_id: str | None = None
     metric_display_name: str | None = None
+    candidate_metrics: list[str] = Field(default_factory=list)
     periods: list[str] = Field(default_factory=list)
     comparison_type: Literal["period", "branch", "team", "none"] | None = "none"
     ranking_direction: Literal["best", "worst"] = "best"
@@ -159,6 +160,7 @@ class ConfirmedQueryContext(BaseModel):
     pending_clarification_code: ClarificationCodeType | None = None
     pending_clarification_choices: list[ClarificationChoice] = Field(default_factory=list)
     inherited_filters: list[str] = Field(default_factory=list)
+    prior_ranking_intent: bool = False
 
 
 class StructuredQueryPlan(BaseModel):
@@ -182,6 +184,10 @@ class StructuredQueryPlan(BaseModel):
     operation_kind_v2: OperationKindV2 | None = None
     clarification_code: ClarificationCodeType = "NONE"
     asks_decisions: bool = False
+    model_led_tool_call: dict | None = None
+    model_led_tool_calls: list[dict] = Field(default_factory=list, max_length=2)
+    model_led_direct_response: str | None = None
+    model_led_clarification: dict | None = None
 
 
 class TypedMetricEvidence(BaseModel):
@@ -195,8 +201,8 @@ class TypedMetricEvidence(BaseModel):
     period: str
     actual: float | None = None
     target: float | None = None
-    actual_display: str
-    target_display: str
+    actual_display: str = ""
+    target_display: str | None = None
     achievement_percent: float | None = None
     weight_percent: float = 0.0
     unit: str = "%"
@@ -207,6 +213,8 @@ class TypedMetricEvidence(BaseModel):
     source_link: str
     scoring_basis_status: str = "unchanged"
     scoring_basis_note: str | None = None
+    employee_id: str | None = None
+    employee_name: str | None = None
 
 
 class PageContextV1(BaseModel):
@@ -237,6 +245,7 @@ ContextualCapabilityMode = Literal[
     "navigation",
     "performance_query",
     "clarification",
+    "explain_previous",
     "off_topic",
     "proposal",
     "unsupported",
@@ -754,6 +763,7 @@ class AiChatResponsePayload(BaseModel):
     answer_detail: Literal["brief", "details"] = "details"
     headline: str
     narrative_bullets: list[str] = Field(default_factory=list)
+    detail_bullets: list[str] = Field(default_factory=list)
     visual_cards: list[StructuredVisualCard] = Field(default_factory=list)
     citations: list[SourceCitationPill] = Field(default_factory=list)
     deep_links: list[DeepLinkCta] = Field(default_factory=list)
@@ -771,6 +781,7 @@ class AiChatResponsePayload(BaseModel):
     tool_calls: list[AiToolCallRecord] = Field(default_factory=list)
     provider_used: str = "deterministic"
     model_used: str = "pms-deterministic-v1"
+    answer_source: str = "deterministic"
     latency_ms: int = 0
     timings: AiTurnTimingBreakdown = Field(default_factory=AiTurnTimingBreakdown)
     provider_usage: AiProviderUsageMetrics = Field(default_factory=AiProviderUsageMetrics)
@@ -848,6 +859,8 @@ class AiFeedbackRequest(BaseModel):
     rating: Literal["up", "down"]
     category: FeedbackCategoryType | None = None
     reason: str | None = Field(default=None, max_length=120)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
+    # Accepted for legacy clients; review is performed only through the Admin review endpoint.
     reviewer_verified: bool | None = None
 
 
@@ -1062,6 +1075,7 @@ class AiTraceReviewResponse(BaseModel):
 
 class AiPilotFeedbackRequest(BaseModel):
     trace_id: str | None = Field(default=None, max_length=100)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
     surface: FeedbackSurfaceType = "corrective_action_pilot"
     rating: Literal["up", "down"]
     reason_tag: FeedbackCategoryType | None = None

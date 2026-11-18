@@ -1,3 +1,9 @@
+> [!NOTE]
+> **HISTORICAL ARCHITECTURE MAP / REFERENCE ONLY**
+> This request flow documents the Phase 1 hybrid request architecture.
+> Active execution and target model-led request flows are defined in [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> API endpoints, frontend integration entrypoints, and telemetry contracts documented herein remain preserved.
+
 # Phase 1: End-to-End Request Flow Architecture
 
 **Document Version:** 1.0

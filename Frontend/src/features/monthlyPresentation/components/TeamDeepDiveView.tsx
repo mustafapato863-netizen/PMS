@@ -2708,7 +2708,7 @@ function TeamDeepDiveViewContent({
                     targetKpiLabel={matchedKpi?.label || card.targetKpi}
                     linkedKpiActualLabel={matchedKpi?.actualFormatted}
                     linkedKpiTargetLabel={matchedKpi?.targetFormatted}
-                    teamTrendLabel={matchedKpi?.trendLabel || null}
+                    teamTrendLabel={matchedKpi?.movementFormatted || null}
                     aiPayload={teamAiState?.payload}
                   />
                 </div>

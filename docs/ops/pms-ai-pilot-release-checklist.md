@@ -1,3 +1,8 @@
+> [!NOTE]
+> **OPERATIONAL RELEASE CHECKLIST**
+> This checklist enforces the default-off invariant, RBAC isolation, and emergency kill switches for the AI assistant.
+> Reconciled with the active transition under [PMS AI Model-Led Implementation Plan](../plans/PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS AI Pilot Release Checklist (Phase 9 — #103)
 
 > [!IMPORTANT]

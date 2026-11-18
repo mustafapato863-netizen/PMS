@@ -1,0 +1,197 @@
+{
+  "run_id": "phase5_corrected_glm_30s_v1_r2",
+  "created_at_utc": "2026-11-18T11:55:02.869428+00:00",
+  "requested_provider": "cloudflare",
+  "timeout_seconds": 30,
+  "model_led_output_cap_omitted": true,
+  "application_source_sha256": "d082129791087785eaa5246ea961e5f92bb3ba828602537b6034d547dc944c11",
+  "runner_sha256": "9f540b84f4a8aa099888cc3b9c7f062230f7f3a0f9694850e5a276686b5b749c",
+  "v2_runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "scoring_helper_sha256": "501d95500e2f5f443f2a6bf89e3092d4c89ce627a55eefbd3197530bf8b1262e",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "reference_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "reference_freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb",
+  "scoring_version": "pms-ai-metadata-units-v1",
+  "experiment": {
+    "schema_version": "1.0",
+    "selection_basis": "Previously timed-out turns in phase5_exposed_glm_v3_r3, with full preceding context in each selected conversation. Covers compound booking totals, booking trend follow-up, country switch and KPI continuation, and a Waiting Time target diagnosis.",
+    "model": "@cf/zai-org/glm-4.7-flash",
+    "deadline_seconds": [
+      30,
+      60
+    ],
+    "expectations": "ai_phase5_expectations_v2.json",
+    "previous_result": "phase5_exposed_glm_v3_r3.json",
+    "turn_prefixes": [
+      [
+        "p501_t1",
+        "p501_t2",
+        "p501_t3",
+        "p501_t4"
+      ],
+      [
+        "p502_t1",
+        "p502_t2",
+        "p502_t3",
+        "p502_t4"
+      ],
+      [
+        "p503_t1",
+        "p503_t2",
+        "p503_t3",
+        "p503_t4"
+      ],
+      [
+        "p504_t1",
+        "p504_t2",
+        "p504_t3",
+        "p504_t4"
+      ],
+      [
+        "p505_t1",
+        "p505_t2",
+        "p505_t3",
+        "p505_t4"
+      ],
+      [
+        "p506_t1",
+        "p506_t2",
+        "p506_t3",
+        "p506_t4"
+      ],
+      [
+        "p507_t1",
+        "p507_t2",
+        "p507_t3",
+        "p507_t4"
+      ],
+      [
+        "p508_t1",
+        "p508_t2",
+        "p508_t3",
+        "p508_t4"
+      ],
+      [
+        "p509_t1",
+        "p509_t2",
+        "p509_t3",
+        "p509_t4"
+      ],
+      [
+        "p510_t1",
+        "p510_t2",
+        "p510_t3",
+        "p510_t4"
+      ],
+      [
+        "p511_t1",
+        "p511_t2",
+        "p511_t3",
+        "p511_t4"
+      ],
+      [
+        "p512_t1",
+        "p512_t2",
+        "p512_t3",
+        "p512_t4"
+      ],
+      [
+        "p513_t1",
+        "p513_t2",
+        "p513_t3",
+        "p513_t4"
+      ],
+      [
+        "p514_t1",
+        "p514_t2",
+        "p514_t3",
+        "p514_t4"
+      ],
+      [
+        "p515_t1",
+        "p515_t2",
+        "p515_t3",
+        "p515_t4"
+      ],
+      [
+        "p516_t1",
+        "p516_t2",
+        "p516_t3",
+        "p516_t4"
+      ],
+      [
+        "p517_t1",
+        "p517_t2",
+        "p517_t3",
+        "p517_t4"
+      ],
+      [
+        "p518_t1",
+        "p518_t2",
+        "p518_t3",
+        "p518_t4"
+      ],
+      [
+        "p519_t1",
+        "p519_t2",
+        "p519_t3",
+        "p519_t4"
+      ],
+      [
+        "p520_t1",
+        "p520_t2",
+        "p520_t3",
+        "p520_t4"
+      ]
+    ],
+    "previous_timeout_turns": [
+      "p501_t1",
+      "p502_t2",
+      "p502_t3",
+      "p502_t4",
+      "p506_t2",
+      "p507_t2"
+    ],
+    "full_replay": true,
+    "sample_sha256": "fc288062e1e784bc5cc89c231548b5b20a612aee08a643d6079423bd3d751ba8",
+    "expectations_sha256": "fcd15dcba511b9716b0137e969877791e735435c9e24f6f62ed7b53c9422de65"
+  },
+  "evaluated_fixture_sha256": "607c58b9de49c4849687eba193603384c0348decfc769ee261ce195965443b64",
+  "result_sha256": "c05939a8ecb4caea91d7f79f0537dde5194fed3061e84d12a3e577f5086832c5",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 58,
+      "model_led_synthesis": 43
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 58,
+      "model_led_synthesis:success": 43,
+      "model_led_synthesis:provider_unavailable": 11,
+      "model_led_router:provider_unavailable": 9
+    },
+    "engine_calls": 121,
+    "provider_attempts_by_status": {
+      "success": 101,
+      "timeout": 20
+    },
+    "estimated_cost_usd_known_subtotal": 0.02979062,
+    "engine_calls_without_cost_estimate": 20,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {
+      "claim_validation_failed:mismatched_period": 1,
+      "provider_unavailable": 11,
+      "claim_validation_failed:mismatched_branch": 1,
+      "claim_validation_failed:unsupported_temporal_comparison": 8,
+      "claim_validation_failed:invented_number": 1,
+      "claim_validation_failed:missing_fact_value": 1,
+      "unavailable_data": 3
+    },
+    "answer_sources": {
+      "fallback": 23,
+      "model_synthesis": 31,
+      "deterministic": 26
+    }
+  }
+}

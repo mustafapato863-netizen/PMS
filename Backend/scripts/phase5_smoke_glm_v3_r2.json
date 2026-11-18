@@ -1,0 +1,107 @@
+{
+  "results": [
+    {
+      "outcome": "answer",
+      "answer_source": "model_synthesis",
+      "answer_provider": "cloudflare",
+      "answer_model": "@cf/zai-org/glm-4.7-flash",
+      "fallback_outcome": "none",
+      "headline": "Nadia Fadel's Pharmacy Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min (did not meet target).",
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": 1024,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 6076.51,
+          "usage": {
+            "prompt_tokens": 612,
+            "completion_tokens": 356,
+            "total_tokens": 968,
+            "neurons": 16.3244
+          },
+          "estimated_cost_usd": 0.00017957,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 6076.43,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 612,
+              "output_tokens": 356,
+              "neurons": 16.3244
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash"
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": 1024,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 16461.44,
+          "usage": {
+            "prompt_tokens": 363,
+            "completion_tokens": 856,
+            "total_tokens": 1219,
+            "neurons": 33.1549
+          },
+          "estimated_cost_usd": 0.0003647,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 16461.38,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 363,
+              "output_tokens": 856,
+              "neurons": 33.1549
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "run_id": "phase5_smoke_glm_v3_r2",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 1,
+      "model_led_synthesis": 1
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 1,
+      "model_led_synthesis:success": 1
+    },
+    "engine_calls": 2,
+    "provider_attempts_by_status": {
+      "success": 2
+    },
+    "estimated_cost_usd_known_subtotal": 0.0005442699999999999,
+    "engine_calls_without_cost_estimate": 0,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {}
+  },
+  "verified": true
+}

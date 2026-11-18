@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL EXPERIMENT REPORT / REFERENCE ONLY**
+> This evaluation report reflects the historical local classifier decision (`DO_NOT_PROMOTE_KEEP_HYBRID_RULES`).
+> Under the authoritative [PMS AI Model-Led Implementation Plan](PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md), conversational planning and understanding are model-led; no standalone local intent classifier is required in production runtime.
+
 # PMS AI Local Intent Classifier Evaluation Report (PR 6)
 
 ## 1. Executive Summary & Promotion Decision

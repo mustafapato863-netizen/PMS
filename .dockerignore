@@ -36,6 +36,14 @@ Backend/conftest.py
 Backend/pytest.ini
 Backend/requirements-dev.txt
 Backend/requirements-ai-eval.txt
+Backend/scripts/phase5_*
+Backend/scripts/run_phase5_*
+Backend/scripts/rescore_phase5_*
+Backend/scripts/phase2_model_led_http_trace_*.json
+Backend/scripts/phase2_verification_report.json
+Backend/scripts/run_phase1_smoke_test.py
+Backend/scripts/verify_phase2_model_led.py
+Backend/scripts/run_unseen_eval.py
 Backend/data/*.json
 Backend/*.xlsx
 Backend/*.xls

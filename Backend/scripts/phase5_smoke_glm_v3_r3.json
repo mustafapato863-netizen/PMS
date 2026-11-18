@@ -1,0 +1,150 @@
+{
+  "results": [
+    {
+      "outcome": "answer",
+      "answer_source": "model_synthesis",
+      "answer_provider": "cloudflare",
+      "answer_model": "@cf/zai-org/glm-4.7-flash",
+      "fallback_outcome": "none",
+      "headline": "Nadia Fadel's Pharmacy Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min (did not meet target).",
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 8521.79,
+          "usage": {
+            "prompt_tokens": 612,
+            "completion_tokens": 373,
+            "total_tokens": 985,
+            "neurons": 16.9432
+          },
+          "estimated_cost_usd": 0.00018638,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 8521.74,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 612,
+              "output_tokens": 373,
+              "neurons": 16.9432
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 29.9999643000192
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 373,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 20252.68,
+          "usage": {
+            "prompt_tokens": 363,
+            "completion_tokens": 887,
+            "total_tokens": 1250,
+            "neurons": 34.2833
+          },
+          "estimated_cost_usd": 0.00037712,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 20252.65,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 363,
+              "output_tokens": 887,
+              "neurons": 34.2833
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 29.999980599968694
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 887,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "run_id": "phase5_smoke_glm_v3_r3",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 1,
+      "model_led_synthesis": 1
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 1,
+      "model_led_synthesis:success": 1
+    },
+    "engine_calls": 2,
+    "provider_attempts_by_status": {
+      "success": 2
+    },
+    "estimated_cost_usd_known_subtotal": 0.0005635,
+    "engine_calls_without_cost_estimate": 0,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {},
+    "answer_sources": {
+      "model_synthesis": 1
+    }
+  },
+  "verified": true
+}

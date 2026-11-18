@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL VERIFICATION REPORT / REFERENCE ONLY**
+> This report documents historical verification under the prior local-model pilot.
+> Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS AI Full Coverage Release & Verification Report (Egypt, UAE, Shared, Managerial & Corporate BSC)
 
 **Plan Baseline:** [`FULL_COVERAGE_EXECUTION_PLAN.md`](file:///d:/Projects/PMS_Dashboard/docs/plans/contextual-ai-assistant/FULL_COVERAGE_EXECUTION_PLAN.md)  

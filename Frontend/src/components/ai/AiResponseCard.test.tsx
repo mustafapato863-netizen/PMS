@@ -209,4 +209,47 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
       view.unmount();
     }
   });
+
+  it('keeps all narrative_bullets visible in Brief mode while placing detail_bullets behind View details', () => {
+    const resp: AiChatResponsePayload = {
+      ...responseWithBarCard(),
+      outcome: 'answer',
+      answer_detail: 'brief',
+      capability_mode: 'performance_query',
+      headline: 'Kareem Adel (EMP701 · Quality Assurance) is the lowest-scoring agent in Support Positions.',
+      narrative_bullets: [
+        'Role / Position: Quality Assurance in Support Positions (September 2026).',
+        'Ranking metric: Overall PMS Score (62.0%) · Source: /team/Call%20Center.',
+        'Tie note: Ziad Nabil (EMP702) matched the same score at 62.0%.',
+      ],
+      detail_bullets: [
+        'Verified performer evidence: Kareem Adel (EMP701) · Period: September 2026.',
+        'Scope basis: Call Center support cohort (3 evaluated).',
+      ],
+      suggested_followups: [
+        'Compare Quality Assurance vs Trainer in September 2026',
+        'Show full Support Positions ranking',
+      ],
+    };
+
+    render(
+      <MemoryRouter>
+        <AiResponseCard response={resp} />
+      </MemoryRouter>,
+    );
+
+    // Every answer-bearing narrative bullet is visible in Brief mode without index slicing
+    expect(screen.getByText(/Role \/ Position: Quality Assurance/)).toBeInTheDocument();
+    expect(screen.getByText(/Ranking metric: Overall PMS Score/)).toBeInTheDocument();
+    expect(screen.getByText(/Tie note: Ziad Nabil/)).toBeInTheDocument();
+
+    // Supporting detail bullets stay hidden until View details is expanded
+    expect(screen.queryByTestId('ai-detail-bullets')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Verified performer evidence/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /View details/i }));
+    expect(screen.getByTestId('ai-detail-bullets')).toBeInTheDocument();
+    expect(screen.getByText(/Verified performer evidence/)).toBeInTheDocument();
+    expect(screen.getByText(/Scope basis: Call Center support cohort/)).toBeInTheDocument();
+  });
 });

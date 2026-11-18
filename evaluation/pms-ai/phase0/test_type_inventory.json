@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 48,
-  "case_count": 637,
+  "file_count": 55,
+  "case_count": 767,
   "files_by_label": {
-    "synthetic": 15,
-    "mocked": 30,
+    "synthetic": 16,
+    "mocked": 36,
     "live-model": 6,
     "source-parity": 2,
     "browser": 0
@@ -25,7 +25,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 10,
+      "cases": 12,
       "evidence_status": "partial",
       "note": ""
     },
@@ -85,7 +85,7 @@
       "labels": [
         "synthetic"
       ],
-      "cases": 14,
+      "cases": 19,
       "evidence_status": "not applicable",
       "note": ""
     },
@@ -107,7 +107,7 @@
         "live-model",
         "mocked"
       ],
-      "cases": 55,
+      "cases": 59,
       "evidence_status": "partial",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
     },
@@ -202,6 +202,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_intent_gate_and_origin.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 9,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_person_name_routing.py",
       "kind": "test",
       "labels": [
@@ -232,6 +242,36 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_phase3_tool_contracts.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 25,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase4_conversation_answers.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 24,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase4_http_api.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_phase4_security_matrix.py",
       "kind": "test",
       "labels": [
@@ -239,6 +279,26 @@
       ],
       "cases": 11,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase5_feedback_provenance.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase5_postfix_rescore.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 6,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
@@ -277,7 +337,17 @@
       "labels": [
         "mocked"
       ],
-      "cases": 65,
+      "cases": 66,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_response_quality.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 37,
       "evidence_status": "partial",
       "note": ""
     },
@@ -357,7 +427,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 28,
+      "cases": 30,
       "evidence_status": "partial",
       "note": ""
     },
@@ -440,7 +510,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 4,
+      "cases": 6,
       "evidence_status": "partial",
       "note": ""
     },
@@ -460,7 +530,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 8,
+      "cases": 9,
       "evidence_status": "partial",
       "note": ""
     },
@@ -500,7 +570,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 20,
+      "cases": 23,
       "evidence_status": "partial",
       "note": ""
     }

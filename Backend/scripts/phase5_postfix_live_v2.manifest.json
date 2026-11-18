@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "run_id": "pms-ai-phase5-postfix-validation-v2",
+  "mode": "live",
+  "created_at_utc": "2026-11-17T17:44:05.907388+00:00",
+  "runner": "Backend/scripts/run_phase5_postfix_validation_v2.py",
+  "runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "contract_version": "pms-ai-metadata-units-v1",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "contract_helper_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator": "Backend/scripts/run_unseen_eval.py",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "application_source_sha256": "8ccccc4b2b74a9ff768c2048a490b1e1e561334d40289969840683cad5bbc10f",
+  "method": "current application code; versioned metadata/unit validator; synthetic in-memory data only",
+  "run_bound": {
+    "max_turns": 80,
+    "actual_turns": 80
+  },
+  "versioned_fixture": {
+    "path": "Backend/tests/fixtures/ai_phase5_postfix_offline_v1.json",
+    "sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+    "freeze_manifest_path": "Backend/tests/fixtures/ai_phase5_postfix_offline_v1.manifest.json",
+    "freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb"
+  },
+  "original_frozen_inputs": {
+    "fixture_sha256": "9e939f0d393acca689c6f715589c0e8d144a9d8c354c8084c5eb1292bd46f2e8",
+    "freeze_manifest_sha256": "72eb979ec2cb479a461b4b8aad943aab514072933819e91402b1fee8427528be",
+    "first_run_outputs_unchanged": true
+  },
+  "source_data_sha256": "6bf79419ded46da9644e7bb0498a3a5da550a99bda494f8b3ac6acc977dbb68a",
+  "thresholds_unchanged": {
+    "min_conversations": 20,
+    "min_prompts": 80,
+    "critical_accuracy_pct": 100,
+    "semantic_accuracy_pct": 95
+  },
+  "contract_rules": [
+    "Use operation_kind_v2/requested_parts for legacy intent metadata only when supported; compare_periods maps to trend only when frozen minimum-period and movement-evidence checks pass.",
+    "Correct legacy metric metadata only when a recorded model-led tool metric argument and matching typed evidence both support the frozen expected metric.",
+    "Allow count/bookings/calls/leads/claims unit labels only for a raw catalog metric whose declared unit is in that count family; preserve source evidence unchanged.",
+    "Keep catalog-guarded ratio_0_1-to-display-% comparison from the reference evaluator.",
+    "Do not normalize outcomes, capability, content, period mentions, scope, identity, unit dimensions, source links, authorization, tools, or evidence absence.",
+    "Keep raw semantic and critical failures in each row and list every applied normalization."
+  ],
+  "provider_usage": {
+    "calls": 80,
+    "call_attempts": 80,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reported_estimated_cost_usd": 0.0,
+    "actual_cost_status": "unknown",
+    "fallback_turns": 24
+  },
+  "quality_gate": {
+    "structural_pass": true,
+    "critical_target_pct": 100.0,
+    "critical_pass": false,
+    "semantic_target_pct": 95.0,
+    "semantic_pass": false,
+    "passed": false
+  },
+  "result_path": "Backend\\scripts\\phase5_postfix_live_v2.json",
+  "result_sha256": "a3694e6fe7a5c7bbdf5e35903093f859253df86090c992f49a3173ca6849ac2e"
+}

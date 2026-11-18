@@ -1,0 +1,375 @@
+{
+  "timestamp": "2026-11-17 11:44:40 UTC",
+  "authentication": "authenticated Admin bearer token",
+  "data_source": "synthetic in-memory SQLite fixtures",
+  "configured_provider_snapshot": {
+    "primary_provider_configured": "cloudflare",
+    "primary_model_configured": "@cf/ibm-granite/granite-4.0-h-micro",
+    "fallback_provider_configured": "gemini",
+    "fallback_model_configured": "gemini-3.5-flash",
+    "fallback_enabled": true,
+    "configured_usable_provider_order": [
+      "cloudflare",
+      "gemini"
+    ],
+    "credential_presence": {
+      "cloudflare_account_id": true,
+      "cloudflare_api_token": true,
+      "gemini_api_key": true
+    },
+    "intent_enabled": true,
+    "synthesis_enabled": true,
+    "provider_timeout_seconds": 15.0,
+    "max_retries": 1
+  },
+  "actual_runtime_use": {
+    "providers_observed": [
+      "cloudflare"
+    ],
+    "models_observed": [
+      "@cf/ibm-granite/granite-4.0-h-micro"
+    ],
+    "provider_calls": 8,
+    "tokens_observed_from_provider_logs": 3810,
+    "estimated_cost_usd": 0.00011,
+    "fallback_outcomes": [
+      "none"
+    ],
+    "answer_sources": [
+      "model_synthesis"
+    ],
+    "provider_call_events": [
+      {
+        "purpose": "model_led_router",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2110.5,
+        "tokens": 536,
+        "neurons": 1.2227,
+        "estimated_cost_usd_from_provider_log": 1.3e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_synthesis",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2546.4,
+        "tokens": 430,
+        "neurons": 1.1627,
+        "estimated_cost_usd_from_provider_log": 1.3e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_router",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 1819.1,
+        "tokens": 537,
+        "neurons": 1.2501,
+        "estimated_cost_usd_from_provider_log": 1.4e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_synthesis",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2244.5,
+        "tokens": 419,
+        "neurons": 1.1457,
+        "estimated_cost_usd_from_provider_log": 1.3e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_router",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2053.7,
+        "tokens": 540,
+        "neurons": 1.2375,
+        "estimated_cost_usd_from_provider_log": 1.4e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_synthesis",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 4245.6,
+        "tokens": 408,
+        "neurons": 1.5941,
+        "estimated_cost_usd_from_provider_log": 1.8e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_router",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2124.5,
+        "tokens": 535,
+        "neurons": 1.2212,
+        "estimated_cost_usd_from_provider_log": 1.3e-05,
+        "fallback_used": false
+      },
+      {
+        "purpose": "model_led_synthesis",
+        "outcome": "success",
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "latency_ms": 2273.8,
+        "tokens": 405,
+        "neurons": 1.0811,
+        "estimated_cost_usd_from_provider_log": 1.2e-05,
+        "fallback_used": false
+      }
+    ]
+  },
+  "baseline_run": [
+    {
+      "turn": 1,
+      "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) scored 91.0% (Grade B, Rank #3 of 3 in Inbound) in September 2026, moving +2.5 pp vs August (+2.5 pp since August).",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 95,
+      "provider_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [],
+      "observed_estimated_cost_usd": 0,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=September&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      },
+      "conversation_id": "43201f2c-8377-4b90-ac40-c70dcf06e14a"
+    },
+    {
+      "turn": 2,
+      "prompt": "And in August?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) scored 88.5% (Grade C, Rank #1 of 1 in Inbound) in August 2026, moving +0.0 pp vs August (+0.0 pp since August).",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 33,
+      "provider_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [],
+      "observed_estimated_cost_usd": 0,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent&performance_level=Employee",
+        "icon_key": "employee"
+      }
+    },
+    {
+      "turn": 3,
+      "prompt": "How did her Waiting Time change across the available months?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Across August 2026 to September 2026 (2 months), Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) recorded 6.20 min on Waiting Time in September 2026 (from 6.80 min in August 2026, -0.6 min) in Inbound.",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 21,
+      "provider_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [],
+      "observed_estimated_cost_usd": 0,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent&performance_level=Employee",
+        "icon_key": "employee"
+      }
+    }
+  ],
+  "pilot_run": [
+    {
+      "turn": 1,
+      "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min (did not meet target)",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "read_employee_metric"
+      ],
+      "latency_ms": 4675,
+      "provider_calls": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [
+        {
+          "purpose": "model_led_router",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 2110.5,
+          "tokens": 536,
+          "neurons": 1.2227,
+          "estimated_cost_usd_from_provider_log": 1.3e-05,
+          "fallback_used": false
+        },
+        {
+          "purpose": "model_led_synthesis",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 2546.4,
+          "tokens": 430,
+          "neurons": 1.1627,
+          "estimated_cost_usd_from_provider_log": 1.3e-05,
+          "fallback_used": false
+        }
+      ],
+      "observed_estimated_cost_usd": 2.6e-05,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=September&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      },
+      "conversation_id": "dff2c840-926e-46dc-9571-08bea141f6ca"
+    },
+    {
+      "turn": 2,
+      "prompt": "And in August?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time was 6.8 min in August 2026, exceeding the target limit of 5.0 min by 1.8 min (did not meet target)",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "read_employee_metric"
+      ],
+      "latency_ms": 4081,
+      "provider_calls": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [
+        {
+          "purpose": "model_led_router",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 1819.1,
+          "tokens": 537,
+          "neurons": 1.2501,
+          "estimated_cost_usd_from_provider_log": 1.4e-05,
+          "fallback_used": false
+        },
+        {
+          "purpose": "model_led_synthesis",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 2244.5,
+          "tokens": 419,
+          "neurons": 1.1457,
+          "estimated_cost_usd_from_provider_log": 1.3e-05,
+          "fallback_used": false
+        }
+      ],
+      "observed_estimated_cost_usd": 2.7e-05,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      }
+    },
+    {
+      "turn": 3,
+      "prompt": "How did her Waiting Time change across the available months?",
+      "http_status": 200,
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time improved from 6.8 min in August 2026 to 6.2 min in September 2026, a change of -0.6 min indicating an improvement.",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "get_score_trend"
+      ],
+      "latency_ms": 6324,
+      "provider_calls": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "observed_provider_events": [
+        {
+          "purpose": "model_led_router",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 2053.7,
+          "tokens": 540,
+          "neurons": 1.2375,
+          "estimated_cost_usd_from_provider_log": 1.4e-05,
+          "fallback_used": false
+        },
+        {
+          "purpose": "model_led_synthesis",
+          "outcome": "success",
+          "provider": "cloudflare",
+          "model": "@cf/ibm-granite/granite-4.0-h-micro",
+          "latency_ms": 4245.6,
+          "tokens": 408,
+          "neurons": 1.5941,
+          "estimated_cost_usd_from_provider_log": 1.8e-05,
+          "fallback_used": false
+        }
+      ],
+      "observed_estimated_cost_usd": 3.2e-05,
+      "verification_failures": [],
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      }
+    }
+  ],
+  "security_and_edge_cases": {
+    "non_admin_denied": true,
+    "ambiguous_clarification": true,
+    "selection_resolved": true
+  },
+  "verification_failures": []
+}

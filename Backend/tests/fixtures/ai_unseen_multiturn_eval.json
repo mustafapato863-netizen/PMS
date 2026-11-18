@@ -1,0 +1,540 @@
+{
+  "version": "1.0",
+  "description": "Unseen multi-turn PMS AI evaluation set (36 prompts across 10 conversations: 6 development + 4 held-out).",
+  "conversations": [
+    {
+      "id": "conv_dev_01_inbound_corrections_and_explain",
+      "split": "dev",
+      "category": "pronouns_metric_period_team_correction_and_explain",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "d01_t1",
+          "prompt": "Who generated the most bookings in Inbound during September 2026?",
+          "expected_outcome": "answer",
+          "expected_intent": "ranking",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "metric": "inbound:bookings_count", "employee": "Sara Mahmoud"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Sara Mahmoud", "Inbound"],
+          "forbidden_content": []
+        },
+        {
+          "id": "d01_t2",
+          "prompt": "And what job title does she hold?",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "employee": "Sara Mahmoud"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Sara Mahmoud", "Senior Call Center Agent"],
+          "forbidden_content": ["Outbound"]
+        },
+        {
+          "id": "d01_t3",
+          "prompt": "Actually check Outbound instead.",
+          "expected_outcome": "answer",
+          "expected_intent": "ranking",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Outbound", "employee": "Omar Khalid"},
+          "expected_scope": {"function": "Call Center", "team": "Outbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Omar Khalid", "Outbound"],
+          "forbidden_content": ["Sara Mahmoud"]
+        },
+        {
+          "id": "d01_t4",
+          "prompt": "Sorry, look at August 2026 for that team instead.",
+          "expected_outcome": "answer",
+          "expected_intent": "ranking",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Outbound"},
+          "expected_scope": {"function": "Call Center", "team": "Outbound"},
+          "expected_periods": ["2026-08"],
+          "required_content": ["August 2026", "Outbound"],
+          "forbidden_content": ["Sara Mahmoud"]
+        }
+      ]
+    },
+    {
+      "id": "conv_dev_02_explain_previous_variants",
+      "split": "dev",
+      "category": "explain_previous_natural_questions",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "d02_t1",
+          "prompt": "Show Pre-Approvals IP Offshore rejection trend in September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "trend",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Pre-Approvals IP Offshore"},
+          "expected_scope": {"function": "RCM", "team": "Pre-Approvals IP Offshore"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Pre-Approvals IP Offshore", "Rejection"],
+          "forbidden_content": ["Call Center"]
+        },
+        {
+          "id": "d02_t2",
+          "prompt": "What does 4 percentage points mean here?",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "RCM", "team": "Pre-Approvals IP Offshore"},
+          "expected_periods": [],
+          "required_content": ["percentage point", "8", "12"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d02_t3",
+          "prompt": "Explain that more simply.",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "RCM", "team": "Pre-Approvals IP Offshore"},
+          "expected_periods": [],
+          "required_content": ["Pre-Approvals IP Offshore", "September 2026"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d02_t4",
+          "prompt": "Which part of your answer supports that conclusion?",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "RCM", "team": "Pre-Approvals IP Offshore"},
+          "expected_periods": [],
+          "required_content": ["Pre-Approvals IP Offshore", "August", "September"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        }
+      ]
+    },
+    {
+      "id": "conv_dev_03_topic_shift_without_now_and_greeting_preservation",
+      "split": "dev",
+      "category": "implicit_topic_switch_and_social_preservation",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "d03_t1",
+          "prompt": "How did Inbound score in Dubai for September 2026?",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "branch": "dubai"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound", "branch": "dubai"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Inbound", "Dubai", "September 2026"],
+          "forbidden_content": []
+        },
+        {
+          "id": "d03_t2",
+          "prompt": "Appreciate it!",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "greeting",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": [],
+          "required_content": ["welcome"],
+          "forbidden_content": [],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d03_t3",
+          "prompt": "Let's switch gears to Pharmacy waiting time in September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "actual_vs_target",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Pharmacy"},
+          "expected_scope": {"function": "Pharmacy", "team": "Pharmacy", "branch": null},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Pharmacy", "September 2026"],
+          "forbidden_content": ["Inbound", "Dubai"]
+        },
+        {
+          "id": "d03_t4",
+          "prompt": "Separate question: how much was Marketing Media Buyer CPL in September 2026?",
+          "expected_outcome": "answer",
+          "expected_intent": "actual_vs_target",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Marketing", "position": "Media Buyer"},
+          "expected_scope": {"team": "Marketing"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Marketing", "CPL"],
+          "forbidden_content": ["Pharmacy", "Inbound", "Dubai"]
+        }
+      ]
+    },
+    {
+      "id": "conv_dev_04_ambiguous_employee_and_person_correction",
+      "split": "dev",
+      "category": "ambiguous_names_and_person_correction",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "d04_t1",
+          "prompt": "How did Mariam score in Inbound for September 2026?",
+          "expected_outcome": "clarification",
+          "expected_intent": "clarify",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Mariam"],
+          "forbidden_content": [],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d04_t2",
+          "prompt": "Mariam Ali",
+          "clarification_choice_id": "choice-person-EMP601",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "employee": "Mariam Ali"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Mariam Ali", "88.0%"],
+          "forbidden_content": ["Mariam Hassan"]
+        },
+        {
+          "id": "d04_t3",
+          "prompt": "Not Mariam Ali — show me Adham Tarek instead.",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "employee": "Adham Tarek"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Adham Tarek", "91.0%"],
+          "forbidden_content": ["Mariam Ali"]
+        }
+      ]
+    },
+    {
+      "id": "conv_dev_05_compound_and_missing_history",
+      "split": "dev",
+      "category": "compound_and_missing_historical_data",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "d05_t1",
+          "prompt": "In Support Positions, tell me the bottom performer, their role, and anyone tied with them for September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "ranking",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Support Positions"},
+          "expected_scope": {"function": "Call Center", "team": "Support Positions"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Kareem Adel", "Ziad Nabil", "62.0%"],
+          "forbidden_content": []
+        },
+        {
+          "id": "d05_t2",
+          "prompt": "Why are you calling this the lowest result?",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center", "team": "Support Positions"},
+          "expected_periods": [],
+          "required_content": ["62.0%", "Kareem Adel"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d05_t3",
+          "prompt": "What was Inbound score in November 2026?",
+          "expected_outcome": "unavailable_data",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-11"],
+          "required_content": ["November 2026"],
+          "forbidden_content": ["94.0%", "September 2026 score is"],
+          "max_tool_calls": 0
+        }
+      ]
+    },
+    {
+      "id": "conv_dev_06_provider_failure_and_permission_revocation",
+      "split": "dev",
+      "category": "provider_failure_and_permission_change",
+      "scope": {"role": "Manager", "user_id": "00000000-0000-0000-0000-000000000701", "has_unrestricted_team_access": false, "accessible_functions": ["Call Center"], "accessible_teams": ["Inbound", "Outbound"]},
+      "turns": [
+        {
+          "id": "d06_t1",
+          "prompt": "Inbound score in September 2026",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Inbound", "September 2026"],
+          "forbidden_content": []
+        },
+        {
+          "id": "d06_t2",
+          "prompt": "Can you check that mysterious blip again?",
+          "force_provider_failure": "timeout",
+          "expected_outcome": "clarification",
+          "expected_intent": null,
+          "expected_capability_mode": "clarification",
+          "expected_entities": {},
+          "expected_scope": {},
+          "expected_periods": [],
+          "required_content": ["Inbound", "clarify", "try again", "available", "which"],
+          "forbidden_content": ["Pre-Approvals", "Pharmacy"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d06_t3",
+          "prompt": "Why are you calling it below target?",
+          "override_scope": {"role": "Manager", "user_id": "00000000-0000-0000-0000-000000000701", "has_unrestricted_team_access": false, "accessible_functions": ["Call Center"], "accessible_teams": ["Outbound"]},
+          "expected_outcome": "restricted_access",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {},
+          "expected_periods": [],
+          "required_content": ["Access restricted", "permissions"],
+          "forbidden_content": ["Inbound", "94.0%", "Sara Mahmoud"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "d06_t4",
+          "prompt": "What can you help me with here?",
+          "override_scope": {"role": "Manager", "user_id": "00000000-0000-0000-0000-000000000701", "has_unrestricted_team_access": false, "accessible_functions": ["Call Center"], "accessible_teams": ["Outbound"]},
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "capabilities_help",
+          "expected_entities": {},
+          "expected_scope": {},
+          "expected_periods": [],
+          "required_content": ["Outbound"],
+          "forbidden_content": ["Inbound", "94.0%"],
+          "max_tool_calls": 0
+        }
+      ]
+    },
+    {
+      "id": "conv_heldout_01_score_decline_explain_and_metric_correction",
+      "split": "heldout",
+      "category": "decline_explanation_and_metric_correction",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "h01_t1",
+          "prompt": "How did Adham Tarek perform across months including September 2026?",
+          "expected_outcome": "answer",
+          "expected_intent": "trend",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "employee": "Adham Tarek"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Adham Tarek", "91.0%", "-5.5 pp"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h01_t2",
+          "prompt": "Why are you calling this a decline?",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": [],
+          "required_content": ["96.5%", "91.0%"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "h01_t3",
+          "prompt": "Sorry, I meant Booking Rate for Inbound in September 2026, not overall score.",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "metric": "inbound:booking_rate"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Booking Rate", "Inbound"],
+          "forbidden_content": ["Adham Tarek"]
+        }
+      ]
+    },
+    {
+      "id": "conv_heldout_02_country_correction_and_implicit_topic_change",
+      "split": "heldout",
+      "category": "country_correction_and_implicit_topic_change",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "h02_t1",
+          "prompt": "Review Coding performance for September 2026 in Egypt.",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Coding EGY", "region": "EGY"},
+          "expected_scope": {"function": "RCM", "team": "Coding EGY"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Coding EGY", "September 2026"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h02_t2",
+          "prompt": "Make that UAE instead.",
+          "expected_outcome": "answer",
+          "expected_intent": "current_value",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Coding", "region": "UAE"},
+          "expected_scope": {"function": "RCM", "team": "Coding"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Coding", "UAE"],
+          "forbidden_content": ["Coding EGY"]
+        },
+        {
+          "id": "h02_t3",
+          "prompt": "Also, check who ranks #1 in Inbound booking conversion in September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "ranking",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "metric": "inbound:booking_rate"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Inbound", "Sara Mahmoud"],
+          "forbidden_content": ["Coding"]
+        },
+        {
+          "id": "h02_t4",
+          "prompt": "Good morning",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "greeting",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": [],
+          "required_content": ["Hello", "Hi"],
+          "forbidden_content": [],
+          "max_tool_calls": 0
+        }
+      ]
+    },
+    {
+      "id": "conv_heldout_03_compound_and_pronoun_followup",
+      "split": "heldout",
+      "category": "compound_and_pronoun_reference",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "h03_t1",
+          "prompt": "Compare Inbound Booking Rate trend and reveal the leading agent in September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "trend",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "metric": "inbound:booking_rate"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Booking Rate", "Sara Mahmoud"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h03_t2",
+          "prompt": "How did her overall trend develop across those months?",
+          "expected_outcome": "answer",
+          "expected_intent": "trend",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {"team": "Inbound", "employee": "Sara Mahmoud"},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Sara Mahmoud", "94.0%"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h03_t3",
+          "prompt": "What do you mean by that trajectory?",
+          "expected_outcome": "answer",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center", "team": "Inbound"},
+          "expected_periods": [],
+          "required_content": ["Sara Mahmoud", "94.0%"],
+          "forbidden_content": ["In my previous answer"],
+          "max_tool_calls": 0
+        }
+      ]
+    },
+    {
+      "id": "conv_heldout_04_reload_and_fresh_chat_isolation",
+      "split": "heldout",
+      "category": "reload_fresh_chat_and_bare_period_clarification",
+      "scope": {"role": "General Manager", "user_id": "u-eval-gm", "has_unrestricted_team_access": true},
+      "turns": [
+        {
+          "id": "h04_t1",
+          "prompt": "Rank Dubai, Sharjah, and Ajman by bookings volume in September 2026.",
+          "expected_outcome": "answer",
+          "expected_intent": "compare_branches",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center"},
+          "expected_periods": ["2026-09"],
+          "required_content": ["Dubai", "Sharjah", "Ajman"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h04_t2",
+          "prompt": "What about August 2026?",
+          "reload_from_service": true,
+          "expected_outcome": "answer",
+          "expected_intent": "compare_branches",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {},
+          "expected_scope": {"function": "Call Center"},
+          "expected_periods": ["2026-08"],
+          "required_content": ["August 2026", "Dubai"],
+          "forbidden_content": []
+        },
+        {
+          "id": "h04_t3",
+          "prompt": "August",
+          "start_fresh_conversation": true,
+          "expected_outcome": "clarification",
+          "expected_intent": null,
+          "expected_capability_mode": "clarification",
+          "expected_entities": {},
+          "expected_scope": {},
+          "expected_periods": [],
+          "required_content": ["August", "metric"],
+          "forbidden_content": ["Call Center", "Dubai", "Inbound"],
+          "max_tool_calls": 0
+        },
+        {
+          "id": "h04_t4",
+          "prompt": "Explain that in simple words please.",
+          "start_fresh_conversation": true,
+          "expected_outcome": "clarification",
+          "expected_intent": null,
+          "expected_capability_mode": "explain_previous",
+          "expected_entities": {},
+          "expected_scope": {},
+          "expected_periods": [],
+          "required_content": ["haven't shared", "analysis"],
+          "forbidden_content": ["Call Center", "In my previous answer"],
+          "max_tool_calls": 0
+        }
+      ]
+    }
+  ]
+}

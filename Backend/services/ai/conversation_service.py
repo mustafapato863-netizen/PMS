@@ -1264,3 +1264,105 @@ class AiConversationService:
             conversation_id=conversation_id,
             owner_user_id=owner_id,
         )
+
+    def get_last_completed_turn_summary(
+        self,
+        conversation_id: str,
+        *,
+        scope: dict[str, Any] | None = None,
+        batch_size: int = 15,
+        max_batches: int = 4,
+    ) -> dict[str, Any] | None:
+        """Return bounded, RBAC-revalidated details of the last completed analytical/clarification turn.
+
+        Queries completed turns in descending order with a bounded batch limit and minimal columns,
+        never loading full history and never skipping past an unauthorized latest turn.
+        """
+        eff_scope = self.validate_live_account_and_scope(scope)
+        owner_id, _ = self._resolve_owner(eff_scope)
+        row = self.repo.get_owned_conversation(
+            conversation_id=conversation_id,
+            owner_user_id=owner_id,
+            include_deleted=False,
+        )
+        if row is None:
+            return None
+
+        cursor_idx: int | None = None
+        safe_batch = max(1, min(int(batch_size), 50))
+        safe_batches = max(1, min(int(max_batches), 10))
+        for _ in range(safe_batches):
+            turns = self.repo.list_recent_completed_turns_for_summary(
+                conversation_id=str(row.id),
+                limit=safe_batch,
+                before_turn_index=cursor_idx,
+            )
+            if not turns:
+                return None
+            for turn in turns:
+                cursor_idx = int(turn.turn_index)
+                payload_dict = turn.response_payload if isinstance(turn.response_payload, dict) else None
+                if not payload_dict:
+                    continue
+                cap_mode = str(payload_dict.get("capability_mode") or "")
+                if cap_mode in ("greeting", "off_topic", "explain_previous", "capabilities_help", "clarification"):
+                    continue
+                if not self._is_turn_evidence_authorized(turn, eff_scope):
+                    return {"restricted": True}
+                headline = str(payload_dict.get("headline") or "").strip()
+                if not headline:
+                    continue
+                sq = payload_dict.get("structured_query") if isinstance(payload_dict.get("structured_query"), dict) else {}
+                compact_evidence: list[dict[str, Any]] = []
+                for ev in (payload_dict.get("evidence_envelope_v2") or [])[:6]:
+                    if isinstance(ev, dict):
+                        ev_scope = ev.get("scope") if isinstance(ev.get("scope"), dict) else {}
+                        compact_evidence.append(
+                            {
+                                "label": str(ev.get("metric_label") or ev.get("metric_id") or ev.get("kind") or "Metric"),
+                                "value": str(ev.get("display_value") or ev.get("actual_display") or ev.get("value") or ""),
+                                "target": str(ev.get("target_display") or ""),
+                                "period": str(ev_scope.get("period") or ev.get("period") or ""),
+                                "team": str(ev_scope.get("team") or ""),
+                            }
+                        )
+                if not compact_evidence:
+                    for tev in (payload_dict.get("typed_evidence") or [])[:6]:
+                        if isinstance(tev, dict):
+                            compact_evidence.append(
+                                {
+                                    "label": str(tev.get("kpi_label") or tev.get("metric_id") or "Metric"),
+                                    "value": str(tev.get("actual_display") or ""),
+                                    "target": str(tev.get("target_display") or ""),
+                                    "period": str(tev.get("period") or ""),
+                                    "team": str(tev.get("team") or ""),
+                                }
+                            )
+                return {
+                    "restricted": False,
+                    "turn_index": int(turn.turn_index),
+                    "headline": headline,
+                    "narrative_bullets": [
+                        str(b) for b in (payload_dict.get("narrative_bullets") or [])[:4] if b
+                    ],
+                    "detail_bullets": [
+                        str(b) for b in (payload_dict.get("detail_bullets") or [])[:4] if b
+                    ],
+                    "scope_banner": payload_dict.get("scope_banner"),
+                    "basis_warning": payload_dict.get("basis_warning"),
+                    "outcome": str(turn.outcome or payload_dict.get("outcome") or "answer"),
+                    "capability_mode": cap_mode or "performance_query",
+                    "structured_query": {
+                        "intent": sq.get("intent"),
+                        "function": sq.get("function"),
+                        "team": sq.get("team"),
+                        "branch": sq.get("branch"),
+                        "metric": sq.get("metric"),
+                        "periods": list(sq.get("periods") or [])[:4],
+                        "employee_name": sq.get("employee_name"),
+                    },
+                    "evidence_items": compact_evidence,
+                }
+            if len(turns) < safe_batch:
+                break
+        return None

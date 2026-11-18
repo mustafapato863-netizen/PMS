@@ -39,6 +39,7 @@ export type ContextualCapabilityMode =
   | 'navigation'
   | 'performance_query'
   | 'clarification'
+  | 'explain_previous'
   | 'proposal'
   | 'unsupported'
   | 'off_topic';
@@ -424,6 +425,7 @@ export interface AiChatResponsePayload {
   answer_detail?: 'brief' | 'details';
   headline: string;
   narrative_bullets: string[];
+  detail_bullets?: string[];
   visual_cards: StructuredVisualCard[];
   citations: SourceCitationPill[];
   deep_links: DeepLinkCta[];
@@ -439,6 +441,7 @@ export interface AiChatResponsePayload {
   tool_calls: AiToolCallRecord[];
   provider_used: string;
   model_used: string;
+  answer_source?: string;
   latency_ms: number;
   timings?: AiTurnTimingBreakdown;
   provider_usage?: AiProviderUsageMetrics;

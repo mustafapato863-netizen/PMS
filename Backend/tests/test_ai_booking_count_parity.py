@@ -243,7 +243,7 @@ def test_rules_only_branch_booking_comparison_bars_show_counts(monkeypatch):
     assert bars["Inbound · Dubai"].display_value == "350 bookings"
     assert bars["Inbound · Sharjah"].display_value == "90 bookings"
     assert bars["Inbound · Ajman"].display_value == "40 bookings"
-    assert bars["Inbound · Clinics"].display_value == "20 bookings"
+    assert set(bars) == {"Inbound · Dubai", "Inbound · Sharjah", "Inbound · Ajman"}
     assert all("%" not in b.display_value for b in bar_cards[0].bars), "count bars must not show percentages"
 
 
@@ -376,7 +376,7 @@ def test_paired_parity_clinics_bookings_model_on_vs_rules_only(monkeypatch):
 
 
 def test_paired_parity_branch_booking_comparison_model_on_vs_rules_only(monkeypatch):
-    prompt = "Which branch had the most Inbound bookings in September 2026: Dubai, Sharjah, or Ajman?"
+    prompt = "Which destination branch had the most bookings handled by Egypt-based Inbound in September 2026: Dubai, Sharjah, or Ajman?"
     rules_only = _ask(monkeypatch, prompt)
 
     _enable_exploration(monkeypatch)
@@ -397,6 +397,12 @@ def test_paired_parity_branch_booking_comparison_model_on_vs_rules_only(monkeypa
     assert model_on.structured_query.metric == "inbound:bookings_count"
     assert model_on.headline == rules_only.headline
     assert "Dubai led September 2026 Inbound bookings with 350" in model_on.headline
+    assert model_on.resolved_session_state.region == "EGY"
+    bar_cards = [c for c in (model_on.visual_cards or []) if c.card_type == "horizontal_bar" and "Booking" in (c.title or "")]
+    assert bar_cards, "expected booking counts attributed to destination branches"
+    bars = {b.label: b for b in bar_cards[0].bars}
+    assert bars["Inbound · Dubai"].display_value == "350 bookings"
+    assert bars["Inbound · Sharjah"].display_value == "90 bookings"
 
 
 def test_paired_parity_inbound_score_model_on_vs_rules_only(monkeypatch):

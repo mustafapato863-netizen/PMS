@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active execution plan by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The country scope separation (Egypt/UAE), calculation basis, and coverage requirements documented herein remain preserved as historical requirements and domain reference.
+
 # PMS AI full coverage plan for Egypt and the UAE
 
 **Plan date:** 7 November 2026  

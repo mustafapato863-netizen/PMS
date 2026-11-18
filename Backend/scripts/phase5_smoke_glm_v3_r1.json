@@ -1,0 +1,102 @@
+{
+  "results": [
+    {
+      "outcome": "answer",
+      "answer_source": "fallback",
+      "answer_provider": "deterministic",
+      "answer_model": "deterministic-fallback",
+      "headline": "Nadia Fadel's Pharmacy Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min.",
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 12509.13,
+          "usage": {
+            "prompt_tokens": 612,
+            "completion_tokens": 484,
+            "total_tokens": 1096,
+            "neurons": 20.9836
+          },
+          "estimated_cost_usd": 0.00023082,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 12509.05,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 612,
+              "output_tokens": 484,
+              "neurons": 20.9836
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash"
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "provider": "none",
+          "engine_model": "none",
+          "outcome": "truncated_response",
+          "latency_ms": 6701.37,
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "estimated_cost_usd": null,
+          "error": "Cloudflare output truncated: model reached maxOutputTokens limit",
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "truncated_response",
+              "latency_ms": 6701.03,
+              "http_code": 502,
+              "error_detail": "Cloudflare output truncated: model reached maxOutputTokens limit",
+              "retry_count": 0,
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "run_id": "phase5_smoke_glm_v3_r1",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 1
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 1,
+      "model_led_synthesis:truncated_response": 1
+    },
+    "engine_calls": 2,
+    "provider_attempts_by_status": {
+      "success": 1,
+      "truncated_response": 1
+    },
+    "estimated_cost_usd_known_subtotal": 0.00023082,
+    "engine_calls_without_cost_estimate": 1,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {}
+  },
+  "verified": false
+}

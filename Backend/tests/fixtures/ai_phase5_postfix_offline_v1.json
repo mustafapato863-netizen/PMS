@@ -1,0 +1,2657 @@
+{
+  "version": "1.0",
+  "description": "Frozen final synthetic PMS AI evaluation: 80 prompts across 20 conversations; blind to prior development and holdout wording.",
+  "freeze_manifest": "ai_phase5_postfix_offline_v1.manifest.json",
+  "freeze_requirements": {
+    "min_conversations": 20,
+    "min_prompts": 80,
+    "critical_accuracy_pct": 100,
+    "semantic_accuracy_pct": 95
+  },
+  "coverage": {
+    "required_tags": [
+      "operation.read_employee_metric",
+      "operation.get_employee_history",
+      "operation.compare_branches",
+      "operation.get_score_trend",
+      "operation.rank_employees",
+      "operation.get_kpi_diagnosis",
+      "country.EGY",
+      "country.UAE",
+      "country.KSA_missing",
+      "role.Admin",
+      "role.Manager",
+      "role.Employee",
+      "role.Branch_Director",
+      "department.Call_Center",
+      "department.Pre_Approvals_IP_Offshore",
+      "department.Coding",
+      "department.Pharmacy",
+      "department.Finance",
+      "department.Human_Resources",
+      "department.IT",
+      "department.Sales",
+      "edge.ambiguous_name",
+      "edge.tie",
+      "edge.missing_period",
+      "edge.person_correction",
+      "edge.country_correction",
+      "conversation.reload",
+      "conversation.delete",
+      "provider.failure"
+    ],
+    "notes": "Turn tags identify intended operation and department/country; conversation tags identify authorization and lifecycle coverage. Coverage is evaluated before model runs."
+  },
+  "conversations": [
+    {
+      "id": "phase5_01_inbound_compound_and_history",
+      "split": "frozen_eval",
+      "category": "compound_trend_rank_history",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p501_t1",
+          "prompt": "What was the total number of bookings for the Inbound team in August and September 2026, and which employee had the highest bookings count in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_score_trend",
+            "operation.rank_employees",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "trend",
+          "expected_entities": {
+            "team": "Inbound"
+          },
+          "expected_periods": [
+            "2026-08",
+            "2026-09"
+          ],
+          "expected_min_trend_periods": 2,
+          "require_trend_evidence": true,
+          "required_content": [
+            "635",
+            "665",
+            "August 2026",
+            "September 2026",
+            "Sara Mahmoud",
+            "205"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-08",
+              "actual": 635,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true
+            },
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 665,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true
+            },
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 205,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101",
+              "employee_name": "Sara Mahmoud"
+            }
+          ]
+        },
+        {
+          "id": "p501_t2",
+          "prompt": "How many bookings did Sara Mahmoud have in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "205"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 205,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p501_t3",
+          "prompt": "How many bookings did Sara Mahmoud have in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "175"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-08",
+              "actual": 175,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p501_t4",
+          "prompt": "How did Sara Mahmoud's overall score change from August to September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_employee_history",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "trend",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "expected_periods": [
+            "2026-08",
+            "2026-09"
+          ],
+          "expected_min_trend_periods": 2,
+          "require_trend_evidence": true,
+          "required_content": [
+            "Sara Mahmoud",
+            "91",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-08",
+              "actual": 91,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            },
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_02_outbound_rank_and_periods",
+      "split": "frozen_eval",
+      "category": "outbound_ranking_and_history",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p502_t1",
+          "prompt": "Who had the most bookings in Outbound in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Outbound",
+            "employee": "Omar Khalid"
+          },
+          "required_content": [
+            "Omar Khalid",
+            "370"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 370,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP201"
+            }
+          ]
+        },
+        {
+          "id": "p502_t2",
+          "prompt": "What was Omar Khalid's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Omar Khalid"
+          },
+          "required_content": [
+            "Omar Khalid",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP201"
+            }
+          ]
+        },
+        {
+          "id": "p502_t3",
+          "prompt": "How many bookings did Omar Khalid have in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "employee": "Omar Khalid"
+          },
+          "required_content": [
+            "Omar Khalid",
+            "370"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-08",
+              "actual": 370,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP201"
+            }
+          ]
+        },
+        {
+          "id": "p502_t4",
+          "prompt": "How did Outbound bookings change between August and September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_score_trend",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "trend",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "team": "Outbound"
+          },
+          "expected_periods": [
+            "2026-08",
+            "2026-09"
+          ],
+          "expected_min_trend_periods": 2,
+          "require_trend_evidence": true,
+          "required_content": [
+            "370",
+            "August 2026",
+            "September 2026"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-08",
+              "actual": 370,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true
+            },
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 370,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_03_branch_comparison",
+      "split": "frozen_eval",
+      "category": "branch_aggregate_and_comparison",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p503_t1",
+          "prompt": "Compare Dubai and Sharjah bookings for the Inbound team in September 2026.",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.compare_branches",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "compare_branches",
+          "expected_entities": {
+            "team": "Inbound"
+          },
+          "required_content": [
+            "Dubai",
+            "Sharjah",
+            "350",
+            "180"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 350,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true,
+              "branch": "dubai"
+            },
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 180,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true,
+              "branch": "sharjah"
+            }
+          ]
+        },
+        {
+          "id": "p503_t2",
+          "prompt": "How many Inbound bookings came from Dubai in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "team": "Inbound",
+            "branch": "dubai"
+          },
+          "required_content": [
+            "Dubai",
+            "350"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 350,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true,
+              "branch": "dubai"
+            }
+          ]
+        },
+        {
+          "id": "p503_t3",
+          "prompt": "How many Inbound bookings came from Sharjah in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "team": "Inbound",
+            "branch": "sharjah"
+          },
+          "required_content": [
+            "Sharjah",
+            "180"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 180,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true,
+              "branch": "sharjah"
+            }
+          ]
+        },
+        {
+          "id": "p503_t4",
+          "prompt": "Which had more Inbound bookings in September 2026, Dubai or Sharjah?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.compare_branches",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "compare_branches",
+          "expected_entities": {
+            "team": "Inbound"
+          },
+          "required_content": [
+            "Dubai",
+            "Sharjah",
+            "350",
+            "180"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_04_ambiguous_name_and_correction",
+      "split": "frozen_eval",
+      "category": "same_name_ambiguity_and_person_correction",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p504_t1",
+          "prompt": "How did Mariam score in Inbound for September 2026?",
+          "expected_outcome": "clarification",
+          "expected_intent": "clarify",
+          "expected_capability_mode": "performance_query",
+          "expected_entities": {
+            "team": "Inbound"
+          },
+          "expected_periods": [
+            "2026-09"
+          ],
+          "required_content": [
+            "Mariam"
+          ],
+          "expected_choice_employee_ids": [
+            "EMP601",
+            "EMP602"
+          ],
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "edge.ambiguous_name",
+            "department.Call_Center",
+            "country.EGY"
+          ]
+        },
+        {
+          "id": "p504_t2",
+          "prompt": "Mariam Ali",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "clarification_choice_id": "choice-person-EMP601",
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "team": "Inbound",
+            "employee": "Mariam Ali"
+          },
+          "required_content": [
+            "Mariam Ali",
+            "88"
+          ],
+          "forbidden_content": [
+            "Mariam Hassan"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 88,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP601"
+            }
+          ]
+        },
+        {
+          "id": "p504_t3",
+          "prompt": "Not Mariam Ali — show me Adham Tarek instead.",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "edge.person_correction",
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "team": "Inbound",
+            "employee": "Adham Tarek"
+          },
+          "required_content": [
+            "Adham Tarek",
+            "91"
+          ],
+          "forbidden_content": [
+            "Mariam Ali"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 91,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP102"
+            }
+          ]
+        },
+        {
+          "id": "p504_t4",
+          "prompt": "What was Adham Tarek's overall score in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Adham Tarek"
+          },
+          "required_content": [
+            "Adham Tarek",
+            "96.5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-08",
+              "actual": 96.5,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP102"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_05_tied_rankings",
+      "split": "frozen_eval",
+      "category": "lowest_score_tie_resolution",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p505_t1",
+          "prompt": "Who had the lowest overall score in Call Center in September 2026, including ties?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "edge.tie",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Call Center"
+          },
+          "required_content": [
+            "Kareem Adel",
+            "Ziad Nabil",
+            "62"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 62,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP301"
+            },
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 62,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP302"
+            }
+          ]
+        },
+        {
+          "id": "p505_t2",
+          "prompt": "What was Kareem Adel's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Kareem Adel"
+          },
+          "required_content": [
+            "Kareem Adel",
+            "62"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 62,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP301"
+            }
+          ]
+        },
+        {
+          "id": "p505_t3",
+          "prompt": "What was Ziad Nabil's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Ziad Nabil"
+          },
+          "required_content": [
+            "Ziad Nabil",
+            "62"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 62,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP302"
+            }
+          ]
+        },
+        {
+          "id": "p505_t4",
+          "prompt": "Who had the highest overall score in Call Center in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Call Center",
+            "employee": "Nour Hassan"
+          },
+          "required_content": [
+            "Nour Hassan",
+            "93"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 93,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP303"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_06_coding_country_correction",
+      "split": "frozen_eval",
+      "category": "coding_egy_uae_country_switch",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p506_t1",
+          "prompt": "What is the Quality Errors rate for Coding in the UAE in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "QualityErrors",
+          "expected_entities": {
+            "region": "UAE"
+          },
+          "required_content": [
+            "Tariq Mansoor",
+            "2.5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "QualityErrors",
+              "period": "2026-09",
+              "actual": 2.5,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP502"
+            }
+          ]
+        },
+        {
+          "id": "p506_t2",
+          "prompt": "Switch to Egypt instead.",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "edge.country_correction",
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "QualityErrors",
+          "expected_entities": {
+            "region": "EGY"
+          },
+          "required_content": [
+            "Salma Youssef",
+            "1.8"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "QualityErrors",
+              "period": "2026-09",
+              "actual": 1.8,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP501"
+            }
+          ]
+        },
+        {
+          "id": "p506_t3",
+          "prompt": "And the rate?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "QualityErrors",
+          "expected_entities": {
+            "region": "EGY"
+          },
+          "required_content": [
+            "Salma Youssef",
+            "1.8"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "QualityErrors",
+              "period": "2026-09",
+              "actual": 1.8,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP501"
+            }
+          ]
+        },
+        {
+          "id": "p506_t4",
+          "prompt": "What was Salma Youssef's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "region": "EGY",
+            "employee": "Salma Youssef"
+          },
+          "required_content": [
+            "Salma Youssef",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP501"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_07_pharmacy_metric_and_diagnosis",
+      "split": "frozen_eval",
+      "category": "pharmacy_waiting_time_target_diagnosis",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p507_t1",
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "waitingtime",
+          "expected_entities": {
+            "employee": "Nadia Fadel"
+          },
+          "required_content": [
+            "Nadia Fadel",
+            "6.2",
+            "min"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p507_t2",
+          "prompt": "Why did Nadia Fadel's Waiting Time miss the 5 minute target in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_kpi_diagnosis",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "expected_intent": "score_drivers",
+          "expected_metric": "waitingtime",
+          "expected_entities": {
+            "employee": "Nadia Fadel"
+          },
+          "required_content": [
+            "6.2",
+            "5",
+            "min"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ],
+          "expected_any_tool_names": [
+            "get_kpi_diagnosis",
+            "kpi_diagnosis"
+          ]
+        },
+        {
+          "id": "p507_t3",
+          "prompt": "What was Nadia Fadel's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Nadia Fadel"
+          },
+          "required_content": [
+            "Nadia Fadel",
+            "87.5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 87.5,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p507_t4",
+          "prompt": "Did Nadia Fadel meet the Waiting Time target in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "expected_metric": "waitingtime",
+          "expected_entities": {
+            "employee": "Nadia Fadel"
+          },
+          "required_content": [
+            "6.2",
+            "5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_08_rcm_rejection_rate",
+      "split": "frozen_eval",
+      "category": "preapprovals_rejection_rate_trend",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p508_t1",
+          "prompt": "What was Heba Nabil's controllable rejection rate in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pre_Approvals_IP_Offshore",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "RejectionRate",
+          "expected_entities": {
+            "employee": "Heba Nabil"
+          },
+          "required_content": [
+            "Heba Nabil",
+            "12"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-09",
+              "actual": 0.12,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            }
+          ]
+        },
+        {
+          "id": "p508_t2",
+          "prompt": "What was Heba Nabil's controllable rejection rate in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pre_Approvals_IP_Offshore",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "RejectionRate",
+          "expected_entities": {
+            "employee": "Heba Nabil"
+          },
+          "required_content": [
+            "Heba Nabil",
+            "8"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-08",
+              "actual": 0.08,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            }
+          ]
+        },
+        {
+          "id": "p508_t3",
+          "prompt": "How did Heba Nabil's controllable rejection rate change from August to September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_employee_history",
+            "department.Pre_Approvals_IP_Offshore",
+            "country.EGY"
+          ],
+          "expected_intent": "trend",
+          "expected_metric": "RejectionRate",
+          "expected_entities": {
+            "employee": "Heba Nabil"
+          },
+          "expected_periods": [
+            "2026-08",
+            "2026-09"
+          ],
+          "expected_min_trend_periods": 2,
+          "require_trend_evidence": true,
+          "required_content": [
+            "8",
+            "12"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-08",
+              "actual": 0.08,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            },
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-09",
+              "actual": 0.12,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            }
+          ]
+        },
+        {
+          "id": "p508_t4",
+          "prompt": "Why did Heba Nabil miss the 5% controllable rejection rate target in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.get_kpi_diagnosis",
+            "department.Pre_Approvals_IP_Offshore",
+            "country.EGY"
+          ],
+          "expected_intent": "score_drivers",
+          "expected_metric": "RejectionRate",
+          "expected_entities": {
+            "employee": "Heba Nabil"
+          },
+          "required_content": [
+            "12",
+            "5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-09",
+              "actual": 0.12,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            }
+          ],
+          "expected_any_tool_names": [
+            "get_kpi_diagnosis",
+            "kpi_diagnosis"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_09_finance_department",
+      "split": "frozen_eval",
+      "category": "finance_employee_and_team",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p509_t1",
+          "prompt": "What was Layla Sami's overall score in Finance in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Finance",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Layla Sami"
+          },
+          "required_content": [
+            "Layla Sami",
+            "86"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 86,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP901"
+            }
+          ]
+        },
+        {
+          "id": "p509_t2",
+          "prompt": "Who had the highest overall score in Finance in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Finance",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Finance",
+            "employee": "Layla Sami"
+          },
+          "required_content": [
+            "Layla Sami",
+            "86"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 86,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP901"
+            }
+          ]
+        },
+        {
+          "id": "p509_t3",
+          "prompt": "What was Layla Sami's score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Finance",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Layla Sami"
+          },
+          "required_content": [
+            "Layla Sami",
+            "86"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 86,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP901"
+            }
+          ]
+        },
+        {
+          "id": "p509_t4",
+          "prompt": "How many Finance employees had a September 2026 overall score above 85%?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "department.Finance",
+            "country.EGY"
+          ],
+          "expected_entities": {
+            "team": "Finance"
+          },
+          "required_content": [
+            "Layla Sami",
+            "86"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 86,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP901"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_10_human_resources_department",
+      "split": "frozen_eval",
+      "category": "human_resources_employee_and_role",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p510_t1",
+          "prompt": "What was Hadi Nasser's overall score in Human Resources in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Human_Resources",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Hadi Nasser"
+          },
+          "required_content": [
+            "Hadi Nasser",
+            "84"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 84,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP902"
+            }
+          ]
+        },
+        {
+          "id": "p510_t2",
+          "prompt": "What is Hadi Nasser's job title?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": null,
+          "coverage_tags": [
+            "department.Human_Resources",
+            "country.EGY"
+          ],
+          "required_content": [
+            "Hadi Nasser",
+            "HR Specialist"
+          ]
+        },
+        {
+          "id": "p510_t3",
+          "prompt": "Who had the highest overall score in Human Resources in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Human_Resources",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Human Resources",
+            "employee": "Hadi Nasser"
+          },
+          "required_content": [
+            "Hadi Nasser",
+            "84"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 84,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP902"
+            }
+          ]
+        },
+        {
+          "id": "p510_t4",
+          "prompt": "What was Hadi Nasser's score for September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Human_Resources",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Hadi Nasser"
+          },
+          "required_content": [
+            "Hadi Nasser",
+            "84"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 84,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP902"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_11_it_department",
+      "split": "frozen_eval",
+      "category": "it_department_score_and_role",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p511_t1",
+          "prompt": "What was Mina Fawzi's overall score in IT in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.IT",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Mina Fawzi"
+          },
+          "required_content": [
+            "Mina Fawzi",
+            "90"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 90,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP903"
+            }
+          ]
+        },
+        {
+          "id": "p511_t2",
+          "prompt": "What is Mina Fawzi's job title?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": null,
+          "coverage_tags": [
+            "department.IT",
+            "country.EGY"
+          ],
+          "required_content": [
+            "Mina Fawzi",
+            "IT Director"
+          ]
+        },
+        {
+          "id": "p511_t3",
+          "prompt": "Who had the highest overall score in IT in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.IT",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "IT",
+            "employee": "Mina Fawzi"
+          },
+          "required_content": [
+            "Mina Fawzi",
+            "90"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 90,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP903"
+            }
+          ]
+        },
+        {
+          "id": "p511_t4",
+          "prompt": "What was Mina Fawzi's score for September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.IT",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Mina Fawzi"
+          },
+          "required_content": [
+            "Mina Fawzi",
+            "90"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 90,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP903"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_12_sales_managerial_level",
+      "split": "frozen_eval",
+      "category": "sales_managerial_department",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p512_t1",
+          "prompt": "What was Nour El-Sayed's overall score in Sales in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Sales",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Nour El-Sayed"
+          },
+          "expected_scope": {
+            "performance_level": "Managerial"
+          },
+          "validate_scope": true,
+          "required_content": [
+            "Nour El-Sayed",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP904"
+            }
+          ]
+        },
+        {
+          "id": "p512_t2",
+          "prompt": "What is Nour El-Sayed's job title?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": null,
+          "coverage_tags": [
+            "department.Sales",
+            "country.UAE"
+          ],
+          "required_content": [
+            "Nour El-Sayed",
+            "Sales Manager"
+          ]
+        },
+        {
+          "id": "p512_t3",
+          "prompt": "Who had the highest overall score in Sales in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Sales",
+            "country.UAE"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Sales",
+            "employee": "Nour El-Sayed"
+          },
+          "expected_scope": {
+            "performance_level": "Managerial"
+          },
+          "validate_scope": true,
+          "required_content": [
+            "Nour El-Sayed",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP904"
+            }
+          ]
+        },
+        {
+          "id": "p512_t4",
+          "prompt": "What was Nour El-Sayed's score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Sales",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Nour El-Sayed"
+          },
+          "required_content": [
+            "Nour El-Sayed",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP904"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_13_manager_authorization",
+      "split": "frozen_eval",
+      "category": "manager_authorized_and_denied_departments",
+      "scope": {
+        "role": "Manager",
+        "user_id": "u-phase5-synth-manager",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound",
+          "Outbound"
+        ]
+      },
+      "coverage_tags": [
+        "role.Manager"
+      ],
+      "turns": [
+        {
+          "id": "p513_t1",
+          "prompt": "What was Sara Mahmoud's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p513_t2",
+          "prompt": "What was Omar Khalid's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Omar Khalid"
+          },
+          "required_content": [
+            "Omar Khalid",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP201"
+            }
+          ]
+        },
+        {
+          "id": "p513_t3",
+          "prompt": "What was Salma Youssef's overall score in Coding EGY in September 2026?",
+          "expected_outcome": "restricted_access",
+          "expected_capability_mode": "performance_query",
+          "required_content": [
+            "Access restricted"
+          ],
+          "critical_authorization": true,
+          "expect_no_evidence": true,
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "department.Coding",
+            "country.EGY"
+          ]
+        },
+        {
+          "id": "p513_t4",
+          "prompt": "Who had the highest bookings count in Inbound in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "ranking",
+          "expected_entities": {
+            "team": "Inbound",
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "205"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 205,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_14_employee_self_only",
+      "split": "frozen_eval",
+      "category": "employee_self_only_permissions",
+      "scope": {
+        "role": "Employee",
+        "user_id": "u-phase5-synth-emp101",
+        "employee_id": "EMP101",
+        "is_self_only": true,
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "coverage_tags": [
+        "role.Employee"
+      ],
+      "turns": [
+        {
+          "id": "p514_t1",
+          "prompt": "What was Sara Mahmoud's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p514_t2",
+          "prompt": "How many bookings did Sara Mahmoud have in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "employee": "Sara Mahmoud"
+          },
+          "required_content": [
+            "Sara Mahmoud",
+            "205"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 205,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p514_t3",
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "expected_outcome": "restricted_access",
+          "expected_capability_mode": "performance_query",
+          "required_content": [
+            "Access restricted"
+          ],
+          "critical_authorization": true,
+          "expect_no_evidence": true,
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ]
+        },
+        {
+          "id": "p514_t4",
+          "prompt": "Who had the highest bookings count in Inbound in September 2026?",
+          "expected_outcome": "restricted_access",
+          "expected_capability_mode": "performance_query",
+          "required_content": [
+            "Access restricted"
+          ],
+          "critical_authorization": true,
+          "expect_no_evidence": true,
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "operation.rank_employees",
+            "department.Call_Center",
+            "country.EGY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_15_missing_period_data",
+      "split": "frozen_eval",
+      "category": "missing_months_and_valid_period",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p515_t1",
+          "prompt": "What was Nadia Fadel's Waiting Time in January 2020?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_capability_mode": "performance_query",
+          "expected_periods": [
+            "2020-01"
+          ],
+          "required_content": [
+            "Nadia Fadel"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "edge.missing_period",
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ]
+        },
+        {
+          "id": "p515_t2",
+          "prompt": "What was Nadia Fadel's Waiting Time in August 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_capability_mode": "performance_query",
+          "expected_periods": [
+            "2026-08"
+          ],
+          "required_content": [
+            "Nadia Fadel"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "edge.missing_period",
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ]
+        },
+        {
+          "id": "p515_t3",
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "waitingtime",
+          "required_content": [
+            "Nadia Fadel",
+            "6.2",
+            "min"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p515_t4",
+          "prompt": "What was Nadia Fadel's Waiting Time in October 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_capability_mode": "performance_query",
+          "expected_periods": [
+            "2026-10"
+          ],
+          "required_content": [
+            "Nadia Fadel"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "edge.missing_period",
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_16_ksa_no_data",
+      "split": "frozen_eval",
+      "category": "ksa_no_source_data",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p516_t1",
+          "prompt": "What was the overall score for Finance in Saudi Arabia in September 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_periods": [
+            "2026-09"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "country.KSA_missing",
+            "department.Finance"
+          ]
+        },
+        {
+          "id": "p516_t2",
+          "prompt": "What was the Quality Errors rate for Coding in Saudi Arabia in September 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_periods": [
+            "2026-09"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "country.KSA_missing",
+            "department.Coding"
+          ]
+        },
+        {
+          "id": "p516_t3",
+          "prompt": "What was Sales overall score in Saudi Arabia for September 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_periods": [
+            "2026-09"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "country.KSA_missing",
+            "department.Sales"
+          ]
+        },
+        {
+          "id": "p516_t4",
+          "prompt": "How many Inbound bookings were recorded in Saudi Arabia in September 2026?",
+          "expected_outcomes": [
+            "unavailable_data",
+            "clarification"
+          ],
+          "expected_periods": [
+            "2026-09"
+          ],
+          "expect_no_evidence": true,
+          "coverage_tags": [
+            "country.KSA_missing",
+            "department.Call_Center"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_17_branch_scope_permission",
+      "split": "frozen_eval",
+      "category": "branch_limited_access",
+      "scope": {
+        "role": "Branch Director",
+        "user_id": "u-phase5-synth-branch",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound"
+        ],
+        "accessible_branches": [
+          "dubai"
+        ]
+      },
+      "coverage_tags": [
+        "role.Branch_Director"
+      ],
+      "turns": [
+        {
+          "id": "p517_t1",
+          "prompt": "What is Inbound Booking Rate in Dubai in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_entities": {
+            "team": "Inbound",
+            "branch": "dubai"
+          },
+          "required_content": [
+            "Dubai"
+          ]
+        },
+        {
+          "id": "p517_t2",
+          "prompt": "Compare bookings across Dubai and Sharjah for Inbound in September 2026.",
+          "expected_outcome": "restricted_access",
+          "expected_capability_mode": "performance_query",
+          "required_content": [
+            "Access restricted"
+          ],
+          "critical_authorization": true,
+          "expect_no_evidence": true,
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "operation.compare_branches",
+            "department.Call_Center",
+            "country.EGY"
+          ]
+        },
+        {
+          "id": "p517_t3",
+          "prompt": "How many Inbound bookings came from Dubai in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "expected_entities": {
+            "team": "Inbound",
+            "branch": "dubai"
+          },
+          "required_content": [
+            "Dubai",
+            "350"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 350,
+              "unit": "count",
+              "source_required": true,
+              "require_aggregate": true,
+              "branch": "dubai"
+            }
+          ]
+        },
+        {
+          "id": "p517_t4",
+          "prompt": "What was Inbound Booking Rate in Sharjah in September 2026?",
+          "expected_outcome": "restricted_access",
+          "expected_capability_mode": "performance_query",
+          "required_content": [
+            "Access restricted"
+          ],
+          "critical_authorization": true,
+          "expect_no_evidence": true,
+          "max_tool_calls": 0,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_18_provider_failure_fallback",
+      "split": "frozen_eval",
+      "category": "provider_failure_and_fallback",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin"
+      ],
+      "turns": [
+        {
+          "id": "p518_t1",
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "provider.failure",
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "force_provider_failure": "timeout",
+          "expected_intent": "current_value",
+          "expected_metric": "waitingtime",
+          "expected_answer_source": "fallback",
+          "expected_fallback_outcome": "timeout",
+          "expected_provider_used": "deterministic",
+          "required_content": [
+            "Nadia Fadel",
+            "6.2",
+            "min"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p518_t2",
+          "prompt": "What was Sara Mahmoud's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "provider.failure",
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "force_provider_failure": "provider_error",
+          "expected_answer_source": "fallback",
+          "expected_fallback_outcome": "provider_error",
+          "expected_provider_used": "deterministic",
+          "required_content": [
+            "Sara Mahmoud",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p518_t3",
+          "prompt": "What was Heba Nabil's controllable rejection rate in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "provider.failure",
+            "operation.read_employee_metric",
+            "department.Pre_Approvals_IP_Offshore",
+            "country.EGY"
+          ],
+          "force_provider_failure": "timeout",
+          "expected_answer_source": "fallback",
+          "expected_fallback_outcome": "timeout",
+          "expected_provider_used": "deterministic",
+          "required_content": [
+            "Heba Nabil",
+            "12"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "RejectionRate",
+              "period": "2026-09",
+              "actual": 0.12,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP401"
+            }
+          ]
+        },
+        {
+          "id": "p518_t4",
+          "prompt": "What was Salma Youssef's Quality Errors rate in Coding EGY in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "QualityErrors",
+          "expected_entities": {
+            "employee": "Salma Youssef"
+          },
+          "required_content": [
+            "Salma Youssef",
+            "1.8"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "QualityErrors",
+              "period": "2026-09",
+              "actual": 1.8,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP501"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_19_service_reload",
+      "split": "frozen_eval",
+      "category": "conversation_context_service_reload",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin",
+        "conversation.reload"
+      ],
+      "turns": [
+        {
+          "id": "p519_t1",
+          "prompt": "What was Sara Mahmoud's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "required_content": [
+            "Sara Mahmoud",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p519_t2",
+          "prompt": "How many bookings did Sara Mahmoud have in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "reload_from_service": true,
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "required_content": [
+            "Sara Mahmoud",
+            "175"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-08",
+              "actual": 175,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p519_t3",
+          "prompt": "What were Sara Mahmoud's bookings in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "reload_from_service": true,
+          "expected_intent": "current_value",
+          "expected_metric": "bookings_count",
+          "required_content": [
+            "Sara Mahmoud",
+            "205"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "bookings_count",
+              "period": "2026-09",
+              "actual": 205,
+              "unit": "count",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p519_t4",
+          "prompt": "What was Omar Khalid's overall score in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "reload_from_service": true,
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "required_content": [
+            "Omar Khalid",
+            "89"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-08",
+              "actual": 89,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP201"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "phase5_20_service_delete_and_fresh_chat",
+      "split": "frozen_eval",
+      "category": "conversation_delete_and_fresh_state",
+      "scope": {
+        "role": "Admin",
+        "user_id": "u-phase5-synth-admin",
+        "has_unrestricted_team_access": true
+      },
+      "coverage_tags": [
+        "role.Admin",
+        "conversation.delete"
+      ],
+      "turns": [
+        {
+          "id": "p520_t1",
+          "prompt": "What was Sara Mahmoud's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "required_content": [
+            "Sara Mahmoud",
+            "94"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 94,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP101"
+            }
+          ]
+        },
+        {
+          "id": "p520_t2",
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "delete_conversation": true,
+          "expected_intent": "current_value",
+          "expected_metric": "waitingtime",
+          "required_content": [
+            "Nadia Fadel",
+            "6.2"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "waitingtime",
+              "period": "2026-09",
+              "actual": 6.2,
+              "unit": "min",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p520_t3",
+          "prompt": "What was Nadia Fadel's overall score in September 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "reload_from_service": true,
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "required_content": [
+            "Nadia Fadel",
+            "87.5"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-09",
+              "actual": 87.5,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP701"
+            }
+          ]
+        },
+        {
+          "id": "p520_t4",
+          "prompt": "What was Mariam Ali's overall score in August 2026?",
+          "expected_outcome": "answer",
+          "expected_capability_mode": "performance_query",
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Call_Center",
+            "country.EGY"
+          ],
+          "start_fresh_conversation": true,
+          "expected_intent": "current_value",
+          "expected_metric": "overall_score",
+          "required_content": [
+            "Mariam Ali",
+            "88"
+          ],
+          "expected_evidence": [
+            {
+              "kpi_key": "overall_score",
+              "period": "2026-08",
+              "actual": 88,
+              "unit": "%",
+              "source_required": true,
+              "employee_id": "EMP601"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,8 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL EXECUTION QUEUE**
+> This PR execution queue has been superseded by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> Active phases and execution milestones are tracked under `docs/plans/pms-ai-model-led/`.
+
 # PMS AI — PR Execution Queue & GitHub Ticket Index
 
 **Master Tracking Epic:** [#104](https://github.com/mustafapato863-netizen/PMS/issues/104)  

@@ -28,6 +28,15 @@ conftest.py
 pytest.ini
 requirements-dev.txt
 requirements-ai-eval.txt
+# Local PMS AI evaluation reports, runners and synthetic transcripts.
+scripts/phase5_*
+scripts/run_phase5_*
+scripts/rescore_phase5_*
+scripts/phase2_model_led_http_trace_*.json
+scripts/phase2_verification_report.json
+scripts/run_phase1_smoke_test.py
+scripts/verify_phase2_model_led.py
+scripts/run_unseen_eval.py
 data/*.json
 *.xlsx
 *.xls

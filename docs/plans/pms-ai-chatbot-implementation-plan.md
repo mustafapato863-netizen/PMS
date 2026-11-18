@@ -1,3 +1,9 @@
+> [!WARNING]
+> **SUPERSEDED / HISTORICAL REFERENCE ONLY**
+> This document has been superseded as an active execution plan by [PMS AI Model-Led Implementation Plan](PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+> All execution and architecture decisions are governed by the authoritative plan.
+> The hierarchy, presentation metrics, and calculation contracts documented herein remain preserved as historical requirements and domain reference.
+
 # PMS AI chatbot implementation plan
 
 **Product goal** — Let managers ask a performance question in ordinary English and get a short answer they can verify against PMS. Answer common questions locally. Use Gemini for questions that need help with interpretation, and evaluate scikit-learn as a way to reduce those calls.

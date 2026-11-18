@@ -164,6 +164,7 @@ class EmployeeHistoryCandidate:
     team: str
     function: str
     position: str | None = None
+    performance_level: str = "Employee"
     branch: str | None = None
     period_scores: dict[str, float] = field(default_factory=dict)
     earliest_period: str = "2026-09"
@@ -222,8 +223,6 @@ def build_employee_candidates_from_records(
 
     for rec in records:
         rec_level = str(getattr(rec, "performance_level", None) or "Employee").strip()
-        if rec_level.casefold() != "employee":
-            continue
         raw_team = str(getattr(rec, "team", "") or "").strip()
         raw_pos = str(getattr(rec, "position", "") or "").strip() or None
         display_team = "Support Positions" if (raw_team == "Call Center" and raw_pos) else raw_team
@@ -269,12 +268,17 @@ def build_employee_candidates_from_records(
                 "employee_name": emp_name,
                 "team": display_team,
                 "function": fn_name,
+                "performance_level": rec_level,
+                "level_period": (yr_val, m_num),
                 "position": raw_pos,
                 "branch": getattr(rec, "branch", None),
                 "period_scores": {},
                 "missing_periods": set(),
             },
         )
+        if (yr_val, m_num) >= entry.get("level_period", (0, 0)):
+            entry["performance_level"] = rec_level
+            entry["level_period"] = (yr_val, m_num)
         if raw_pos and not entry.get("position"):
             entry["position"] = raw_pos
         if score_val is not None:
@@ -312,6 +316,7 @@ def build_employee_candidates_from_records(
                 team=info["team"],
                 function=info["function"],
                 position=info["position"],
+                performance_level=info["performance_level"],
                 branch=info["branch"],
                 period_scores=p_scores,
                 earliest_period=earliest_p,
@@ -421,6 +426,7 @@ def resolve_employee_from_candidates(
     team: str | None = None,
     function: str | None = None,
     position: str | None = None,
+    performance_level: str | None = None,
     explicit_employee_id: str | None = None,
 ) -> EmployeeResolutionResult:
     """Resolve an employee mention against authorized EmployeeHistoryCandidate entries."""
@@ -431,6 +437,7 @@ def resolve_employee_from_candidates(
     t_norm = (team or "").strip().casefold()
     fn_norm = (function or "").strip().casefold()
     pos_norm = (position or "").strip().casefold()
+    level_norm = (performance_level or "").strip().casefold()
     filtered_cands: list[EmployeeHistoryCandidate] = []
     for c in cand_list:
         if t_norm and t_norm not in ("all", "call center"):
@@ -442,24 +449,15 @@ def resolve_employee_from_candidates(
         if pos_norm and pos_norm not in ("all", ""):
             if not c.position or c.position.casefold() != pos_norm:
                 continue
+        if level_norm and level_norm not in ("all", ""):
+            if str(c.performance_level or "Employee").casefold() != level_norm:
+                continue
         filtered_cands.append(c)
     candidates = filtered_cands if filtered_cands else cand_list
 
-    # 1. Explicit employee_id (from choice or session state)
-    if explicit_employee_id:
-        wanted_id = explicit_employee_id.strip().casefold()
-        for c in candidates:
-            if c.employee_id.casefold() == wanted_id:
-                return EmployeeResolutionResult(
-                    status="unique",
-                    matched_employee=c,
-                    candidates=[c],
-                    extracted_token=c.employee_id,
-                )
-
     lower = (prompt or "").strip().casefold()
 
-    # 2. Direct employee_id in prompt
+    # 1. Direct employee_id in prompt (explicit instruction overrides inherited state)
     for c in candidates:
         if re.search(rf"\b{re.escape(c.employee_id.casefold())}\b", lower):
             return EmployeeResolutionResult(
@@ -469,7 +467,7 @@ def resolve_employee_from_candidates(
                 extracted_token=c.employee_id,
             )
 
-    # 3. Exact full name match in prompt
+    # 2. Exact full name match in prompt (explicit instruction overrides inherited state)
     full_matches = [
         c
         for c in candidates
@@ -490,6 +488,18 @@ def resolve_employee_from_candidates(
             candidates=full_matches[:3],
             extracted_token=full_matches[0].employee_name,
         )
+
+    # 3. Explicit employee_id from session context or previously confirmed selection
+    if explicit_employee_id:
+        wanted_id = explicit_employee_id.strip().casefold()
+        for c in candidates:
+            if c.employee_id.casefold() == wanted_id:
+                return EmployeeResolutionResult(
+                    status="unique",
+                    matched_employee=c,
+                    candidates=[c],
+                    extracted_token=c.employee_id,
+                )
 
     extracted = extract_person_token_from_prompt(prompt)
 

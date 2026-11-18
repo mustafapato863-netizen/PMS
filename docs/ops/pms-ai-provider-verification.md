@@ -1,3 +1,8 @@
+> [!NOTE]
+> **OPERATIONAL REFERENCE & HISTORICAL VERIFICATION**
+> This operational report records live provider verification and benchmark latencies for Cloudflare Workers AI and Google Gemini fallback.
+> Target architecture and phase requirements are governed by [PMS AI Model-Led Implementation Plan](../plans/PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS AI — Live Provider Verification & Optimization Report
 **Phase 1 & Phase 2 Technical Deliverable**
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "selection_basis": "Previously timed-out turns in phase5_exposed_glm_v3_r3, with full preceding context in each selected conversation. Covers compound booking totals, booking trend follow-up, country switch and KPI continuation, and a Waiting Time target diagnosis.",
+  "model": "@cf/zai-org/glm-4.7-flash",
+  "deadline_seconds": [30, 60],
+  "expectations": "ai_phase5_expectations_v2.json",
+  "previous_result": "phase5_exposed_glm_v3_r3.json",
+  "turn_prefixes": [
+    ["p501_t1"],
+    ["p502_t1", "p502_t2", "p502_t3", "p502_t4"],
+    ["p506_t1", "p506_t2", "p506_t3"],
+    ["p507_t1", "p507_t2"]
+  ],
+  "previous_timeout_turns": ["p501_t1", "p502_t2", "p502_t3", "p502_t4", "p506_t2", "p507_t2"]
+}

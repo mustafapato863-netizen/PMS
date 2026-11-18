@@ -18,6 +18,14 @@ from services.ai.provider_engine import ProviderAttempt, ProviderRequest, Provid
 DEFAULT_MODEL = {"cloudflare": "@cf/ibm-granite/granite-4.0-h-micro", "gemini": "gemini-2.5-flash"}
 
 
+def tool_response(tool_name: str, **tool_arguments: Any) -> dict[str, Any]:
+    return {
+        "response_type": "tool_call",
+        "tool_name": tool_name,
+        "tool_arguments": tool_arguments,
+    }
+
+
 def ok_response(content: str, provider: str = "cloudflare", model: str | None = None, latency_ms: float = 1.0) -> ProviderResponse:
     model = model or DEFAULT_MODEL[provider]
     return ProviderResponse(

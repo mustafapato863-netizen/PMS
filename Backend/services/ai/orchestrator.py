@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import re
 import time
 from typing import Any
@@ -16,6 +18,7 @@ from models.ai_schemas import (
     AiTurnTimingBreakdown,
     AiWatchingAlertItem,
     AiWatchingPayload,
+    ClarificationChoice,
     DeepLinkCta,
     EvidenceItemV2,
     QueryOperationV2,
@@ -42,6 +45,7 @@ from services.ai.contextual_assistant import (
     build_clarification_gate_payload,
     build_corrective_action_proposal_from_evidence,
     build_effective_context_label,
+    build_explain_previous_payload,
     build_navigation_payload,
     build_off_topic_gate_payload,
     build_page_help_payload,
@@ -54,12 +58,22 @@ from services.ai.domain_policies import (
     build_call_center_guardrails,
     build_call_center_starter_prompts,
     extract_prompt_signals,
+    has_pms_performance_signal,
     is_greeting_or_thanks_prompt,
     sanitize_untrusted_text,
 )
 from services.ai.entity_resolver import (
     EmployeeHistoryCandidate,
     build_employee_candidates_from_records,
+    format_period_label,
+    resolve_employee_from_candidates,
+    REVERSE_MONTHS_BY_NUM,
+)
+from services.ai.provider_engine import (
+    ProviderMessage,
+    ProviderRequest,
+    ProviderTimeoutError,
+    get_unified_provider_engine,
 )
 from services.ai.local_evidence_synthesis import (
     extract_branch_booking_facts,
@@ -70,9 +84,15 @@ from services.ai.local_evidence_synthesis import (
     synthesize_validated_executive_variation,
 )
 from services.ai.llm_client import active_provider_name, configured_model_name
+from services.ai.local_model_router import BoundedIntentContext
 from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
 from services.ai.providers import DeterministicLocalProviderAdapter, ProviderUnavailableError, resolve_variation_index
-from services.ai.router import AiProviderUnavailableError, HybridQueryRouter, RouterValidationResult
+from services.ai.router import (
+    AiProviderUnavailableError,
+    HybridQueryRouter,
+    RouterValidationResult,
+    parse_score_threshold_query,
+)
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
     ToolExecutionContext,
@@ -85,9 +105,162 @@ from services.ai.trace_logger import (
 )
 from services.corrective_action_service import CorrectiveActionService
 from services.database_record_source import DatabaseRecordSource
+from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import filter_records_by_scope
+from utils.regions import ksa_region_hint_from_prompt
+
+logger = logging.getLogger(__name__)
 
 REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
+
+
+def _build_bounded_intent_context(session_state: SessionFilterContext) -> BoundedIntentContext:
+    """Build classifier context from validated scope fields, never client history or employee lists."""
+    confirmed = session_state.last_confirmed_query
+    return BoundedIntentContext(
+        confirmed_function=(confirmed.function if confirmed and confirmed.function else session_state.function),
+        confirmed_team=(confirmed.team if confirmed and confirmed.team else session_state.team),
+        confirmed_region=(confirmed.region if confirmed and confirmed.region else session_state.region),
+        confirmed_branch=(confirmed.branch if confirmed and confirmed.branch else session_state.branch),
+        confirmed_level=(
+            confirmed.performance_level
+            if confirmed and confirmed.performance_level
+            else session_state.performance_level
+        ),
+        confirmed_metric=(confirmed.metric_display_name if confirmed else None),
+        confirmed_periods=tuple(str(period) for period in (confirmed.periods[:3] if confirmed else []) if period),
+        previous_operation=(
+            (confirmed.last_operation_kind or confirmed.intent)
+            if confirmed and confirmed.intent not in (None, "clarify", "unsupported")
+            else None
+        ),
+        has_confirmed_employee=bool(
+            (confirmed and (confirmed.last_subject_employee_id or confirmed.last_subject_employee_name))
+            or session_state.employee_id
+        ),
+        pending_clarification_code=(confirmed.pending_clarification_code if confirmed else None),
+    )
+
+
+def _resolved_capability_mode(
+    capability_mode: str,
+    *,
+    outcome: str,
+    plan_intent: str,
+    prompt: str,
+) -> str:
+    if (
+        outcome == "clarification"
+        and plan_intent == "clarify"
+        and capability_mode == "performance_query"
+        and not has_pms_performance_signal(prompt)
+    ):
+        return "clarification"
+    return capability_mode
+
+
+def _ranking_candidates_from_digests(
+    digests: list[dict[str, Any]] | None,
+) -> list[dict[str, str]]:
+    """Return named ranking candidates, retaining ties for a follow-up choice."""
+    for digest in digests or []:
+        if not isinstance(digest, dict):
+            continue
+        spotlight = digest.get("agent_spotlight") or digest.get("spotlight")
+        if not isinstance(spotlight, dict):
+            continue
+
+        candidates: list[dict[str, str]] = []
+        tied_agents = spotlight.get("tied_agents") or []
+        if spotlight.get("ties") and isinstance(tied_agents, list):
+            selected_id = spotlight.get("entity_id") or digest.get("employee_id")
+            selected_name = spotlight.get("entity_name") or digest.get("employee_name")
+            if selected_id and selected_name:
+                candidates.append(
+                    {
+                        "employee_id": str(selected_id),
+                        "employee_name": str(selected_name),
+                        "team": str(spotlight.get("team") or digest.get("team") or ""),
+                        "position": str(spotlight.get("position") or ""),
+                    }
+                )
+            for candidate in tied_agents:
+                if not isinstance(candidate, dict):
+                    continue
+                employee_id = candidate.get("employee_id")
+                employee_name = candidate.get("employee_name")
+                if employee_id and employee_name:
+                    candidates.append(
+                        {
+                            "employee_id": str(employee_id),
+                            "employee_name": str(employee_name),
+                            "team": str(candidate.get("team") or spotlight.get("team") or ""),
+                            "position": str(candidate.get("position") or ""),
+                        }
+                    )
+
+        if len(candidates) < 2:
+            top_agents = spotlight.get("top_agents") or []
+            if isinstance(top_agents, list):
+                candidates = [
+                    {
+                        "employee_id": str(candidate["employee_id"]),
+                        "employee_name": str(candidate["employee_name"]),
+                        "team": str(candidate.get("team") or spotlight.get("team") or ""),
+                        "position": str(candidate.get("position") or ""),
+                    }
+                    for candidate in top_agents
+                    if isinstance(candidate, dict)
+                    and candidate.get("employee_id")
+                    and candidate.get("employee_name")
+                ]
+
+        unique: list[dict[str, str]] = []
+        seen_ids: set[str] = set()
+        for candidate in candidates:
+            if candidate["employee_id"] in seen_ids:
+                continue
+            seen_ids.add(candidate["employee_id"])
+            unique.append(candidate)
+        if len(unique) > 1:
+            return unique
+    return []
+
+
+def _format_country_scope_text(text: str, team: str | None, region: str | None) -> str:
+    """Render shared-country teams with an explicit country in user-facing text."""
+    team_value = (team or "").strip()
+    region_value = (region or "").strip().upper()
+    team_bases = {
+        "coding": "Coding",
+        "coding egy": "Coding",
+        "submission": "Submission",
+        "submission egy": "Submission",
+        "re-submission": "Re-Submission",
+        "resubmission": "Re-Submission",
+    }
+    team_base = team_bases.get(team_value.casefold())
+    if not team_base:
+        return text
+    if not region_value and team_value.casefold().endswith(" egy"):
+        region_value = "EGY"
+    country = {"EGY": "Egypt", "UAE": "UAE", "KSA": "Saudi Arabia"}.get(region_value)
+    if not country:
+        return text
+    display_label = f"{team_base} · {country}"
+    return re.sub(re.escape(team_value), lambda _: display_label, text, flags=re.IGNORECASE)
+
+
+def _prompt_region_hint(prompt: str) -> str | None:
+    ksa_region = ksa_region_hint_from_prompt(prompt)
+    if ksa_region:
+        return ksa_region
+    lower = (prompt or "").casefold()
+    if re.search(r"\b(?:egy|egypt)\b", lower):
+        return "EGY"
+    if re.search(r"\b(?:uae|emirates)\b", lower):
+        return "UAE"
+    return None
 
 
 def _watching_scope_label(resolved: dict[str, Any]) -> str:
@@ -288,8 +461,26 @@ class PmsAiOrchestrator:
         routed: RouterValidationResult,
         *,
         turn_kind: str = "analytical",
+        prompt: str = "",
     ) -> ValidatedQueryPlanV2:
         p = routed.plan
+        prompt_lower = prompt.casefold()
+        month_mentions = set(
+            re.findall(
+                r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b",
+                prompt_lower,
+            )
+        )
+        asks_team_trend_and_rank = bool(
+            (len(p.periods) >= 2 or len(month_mentions) >= 2)
+            and re.search(r"\b(?:who|which\s+(?:employee|agent|person)|top\s+performer)\b", prompt_lower)
+            and re.search(r"\b(?:top|highest|most|best|rank|leader)\b", prompt_lower)
+        )
+        has_explicit_employee_in_prompt = bool(
+            (p.employee_id and p.employee_id.casefold() in prompt_lower)
+            or (p.employee_name and p.employee_name.casefold() in prompt_lower)
+        )
+        team_level_compound = asks_team_trend_and_rank and not has_explicit_employee_in_prompt
         op_kind_override = routed.confirmed_context.last_operation_kind
         branches_list = list(p.branches)
         if not branches_list:
@@ -310,11 +501,11 @@ class PmsAiOrchestrator:
                 if op_kind_override in ("employee_best_period", "person_best_period", "employee_worst_period", "person_worst_period")
                 else ("explicit" if p.periods else "latest_published")
             ),
-            employee_id=p.employee_id,
-            employee_placeholder="<EMP_1>" if p.employee_id else None,
+            employee_id=None if team_level_compound else p.employee_id,
+            employee_placeholder="<EMP_1>" if p.employee_id and not team_level_compound else None,
         )
         ops: list[QueryOperationV2] = []
-        if p.requested_parts == ["trend", "ranking"] or (
+        if team_level_compound or p.requested_parts == ["trend", "ranking"] or (
             "trend" in p.requested_parts and "ranking" in p.requested_parts
         ):
             ops.append(
@@ -332,7 +523,7 @@ class PmsAiOrchestrator:
                     metric_id=p.metric,
                     dimension="employee",
                     direction=p.ranking_direction,
-                    limit=1 if p.single_person else 3,
+                    limit=1 if (team_level_compound or p.single_person) else 3,
                 )
             )
         else:
@@ -342,8 +533,19 @@ class PmsAiOrchestrator:
                 "joiner_check": "person_tenure_check",
                 "unsupported": "current_value",
             }
-            raw_kind = op_kind_override or p.intent
+            raw_kind = p.operation_kind_v2 or op_kind_override or p.intent
             effective_kind = kind_map.get(str(raw_kind), str(raw_kind))
+            if p.employee_id and effective_kind == "current_value":
+                effective_kind = "person_summary"
+            if "score_drivers" in p.requested_parts:
+                effective_kind = "score_drivers"
+            asks_person_trend = bool(
+                len(p.periods) >= 2
+                and (p.single_person or p.employee_id or p.employee_name)
+                and re.search(r"\b(?:change|changed|trend|over\s+time|across\s+months?)\b", prompt_lower)
+            )
+            if asks_person_trend:
+                effective_kind = "trend"
             valid_kinds = {
                 "greeting",
                 "thanks",
@@ -604,6 +806,1759 @@ class PmsAiOrchestrator:
             eligible_levels=eligible["eligible_levels"],
         )
 
+    def _handle_model_led_turn(
+        self,
+        *,
+        req: AiChatRequest,
+        routed: RouterValidationResult,
+        registry: DeterministicToolRegistry,
+        employee_candidates: list[EmployeeHistoryCandidate],
+        published_periods: set[str] | None,
+        live_auth_service: Any,
+        active_conversation_id: str | None,
+        claimed_turn: Any,
+        claimed_token: str | None,
+        claimed_context_version: int | None,
+        active_context_version: int | None,
+        conv_service: Any,
+        t0: float,
+        role: str,
+        effective_detail: str,
+        t_res_start: float,
+        validated_plan_v2: ValidatedQueryPlanV2,
+    ) -> AiChatResponsePayload:
+        cfg = get_ai_runtime_config()
+        t_tool_start = time.perf_counter()
+        tool_call = routed.plan.model_led_tool_call or {}
+        tool_name = str(tool_call.get("tool_name") or "").strip()
+        if tool_name in ("get_employee_metric", "read_metric"):
+            tool_name = "read_employee_metric"
+        elif tool_name in ("read_employee_history", "get_history"):
+            tool_name = "get_employee_history"
+        tool_args = tool_call.get("tool_arguments") or {}
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+
+        prior = req.session_state.last_confirmed_query
+        prompt_lower = req.prompt.casefold()
+        prompt_mentions_employee = any(
+            (candidate.employee_name and candidate.employee_name.casefold() in prompt_lower)
+            or (candidate.employee_id and candidate.employee_id.casefold() in prompt_lower)
+            for candidate in employee_candidates
+        ) or bool(
+            (routed.plan.employee_name and routed.plan.employee_name.casefold() in prompt_lower)
+            or (routed.plan.employee_id and routed.plan.employee_id.casefold() in prompt_lower)
+            or re.search(r"\b(?:sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", prompt_lower)
+        )
+        requested_team = routed.plan.team or validated_plan_v2.scope.team
+        team_level_compound = (
+            [str(operation.kind) for operation in validated_plan_v2.operations[:2]] == ["trend", "ranking"]
+            and not prompt_mentions_employee
+        )
+        explicit_prompt_region = _prompt_region_hint(req.prompt)
+        team_level_query = team_level_compound or bool(
+            requested_team
+            and validated_plan_v2.scope.employee_id is None
+            and not prompt_mentions_employee
+            and not re.search(r"\b(?:his|her|their|him|he|she|they|them)\b", prompt_lower)
+        )
+        requested_function = (
+            routed.plan.function
+            or validated_plan_v2.scope.function
+            or routed.confirmed_context.function
+        )
+        current_region = explicit_prompt_region or registry.ctx.session_state.region
+        scope_changed = bool(
+            prior
+            and (
+                (requested_function and prior.function and requested_function.casefold() != prior.function.casefold())
+                or
+                (requested_team and prior.team and requested_team.casefold() != prior.team.casefold())
+                or (current_region and prior.region and current_region.casefold() != prior.region.casefold())
+                or (
+                    routed.plan.branch
+                    and prior.branch
+                    and routed.plan.branch.casefold() != prior.branch.casefold()
+                )
+                or (
+                    routed.plan.position
+                    and prior.position
+                    and routed.plan.position.casefold() != prior.position.casefold()
+                )
+            )
+        )
+
+        # Validate tool name against registry.AUTHORIZED_MODEL_LED_TOOLS
+        if tool_name not in registry.AUTHORIZED_MODEL_LED_TOOLS and tool_name not in ("read_employee_history", "agent_spotlight_trend"):
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="clarification",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=f"The requested tool '{tool_name}' is not supported.",
+                narrative_bullets=[f"Tool '{tool_name}' is not an authorized data tool."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    fallback_outcome="unknown_tool",
+                ),
+            )
+
+        # Validate required arguments before data access
+        if "metric_id" not in tool_args:
+            m_val = tool_args.get("metric") or tool_args.get("metric_type") or tool_args.get("kpi") or tool_args.get("kpi_key")
+            if m_val:
+                tool_args["metric_id"] = m_val
+        if str(tool_args.get("metric_id") or "").strip().casefold() in ("performance", "score", "overall score", "pms score", "overall"):
+            tool_args["metric_id"] = "overall_score"
+
+        metric_arg_raw = tool_args.get("metric_id") or (prior.metric_id if prior else None)
+        if tool_name in ("read_employee_metric", "get_employee_history", "read_employee_history") and not metric_arg_raw:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="clarification",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Could not complete query due to missing required metric argument.",
+                narrative_bullets=["Please specify the metric or KPI you would like to view."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    fallback_outcome="invalid_tool_arguments",
+                ),
+            )
+
+        # A model tool argument is not an employee identity grant. Bind an employee
+        # only when the local validated plan or the user's prompt resolves one.
+        # This prevents a team-level question from becoming a person read because
+        # the model supplied an employee name or ID in its tool arguments.
+        prompt_employee_id_match = re.search(
+            r"\b(sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", req.prompt, re.IGNORECASE
+        )
+        prompt_employee_id = prompt_employee_id_match.group(1).upper() if prompt_employee_id_match else None
+        prompt_employee_matches = [
+            candidate
+            for candidate in employee_candidates
+            if candidate.employee_name and candidate.employee_name.casefold() in prompt_lower
+        ]
+        unique_prompt_employee_ids = {candidate.employee_id for candidate in prompt_employee_matches}
+        prompt_cand = (
+            prompt_employee_matches[0]
+            if prompt_employee_matches and len(unique_prompt_employee_ids) == 1
+            else None
+        )
+        validated_employee_id = validated_plan_v2.scope.employee_id
+        trusted_employee_id = validated_employee_id or (prompt_cand.employee_id if prompt_cand else None) or prompt_employee_id
+        trusted_employee = next(
+            (candidate for candidate in employee_candidates if candidate.employee_id == trusted_employee_id),
+            None,
+        )
+        if trusted_employee_id:
+            tool_args["employee_id"] = trusted_employee_id
+            if trusted_employee:
+                tool_args["employee_name"] = trusted_employee.employee_name
+        else:
+            tool_args.pop("employee_id", None)
+            tool_args.pop("employee_name", None)
+
+        # Resolve an employee only from a user-supplied reference or the
+        # validated plan. Never add the model's untrusted name to the search text.
+        resolved_emp = None
+        cand_prompt = req.prompt if prompt_mentions_employee and not trusted_employee_id else ""
+        raw_id = str(tool_args.get("employee_id") or "").strip()
+        explicit_id = None
+        if req.clarification_choice_id:
+            for prefix in ("choice-person-", "choice-emp-"):
+                if prefix in req.clarification_choice_id:
+                    explicit_id = req.clarification_choice_id.replace(prefix, "").strip()
+                    break
+        if prompt_cand:
+            explicit_id = prompt_cand.employee_id
+            if prompt_cand.team:
+                tool_args["team"] = prompt_cand.team
+        elif not explicit_id:
+            if raw_id and not any(c in raw_id for c in " \t\n") and not raw_id.startswith("EMP"):
+                explicit_id = raw_id
+            elif (raw_id.startswith("EMP") or raw_id.startswith("emp")) and not (
+                scope_changed and not prompt_mentions_employee
+            ):
+                explicit_id = raw_id
+            elif prior and prior.last_subject_employee_id and not scope_changed:
+                explicit_id = prior.last_subject_employee_id
+            elif req.session_state.employee_id and not scope_changed:
+                explicit_id = req.session_state.employee_id
+
+        resolution = resolve_employee_from_candidates(
+            prompt=cand_prompt,
+            candidates=employee_candidates,
+            explicit_employee_id=explicit_id,
+        )
+
+        # Ambiguous employee resolution -> ask focused clarification
+        if resolution.status == "ambiguous" and len(resolution.candidates) > 1:
+            choices = [
+                ClarificationChoice(
+                    id=f"choice-emp-{c.employee_id}",
+                    label=f"{c.employee_name} ({c.team} · {c.branch})",
+                    prompt_to_send=req.prompt,
+                    employee_id=c.employee_id,
+                    employee_name=c.employee_name,
+                )
+                for c in resolution.candidates[:5]
+            ]
+            routed.confirmed_context.pending_clarification_code = "AMBIGUOUS_PERSON"
+            routed.confirmed_context.pending_clarification_choices = choices
+            clar_prompt = AiClarificationPrompt(
+                prompt="Multiple employees match your request. Please select one:",
+                choices=[c.label for c in choices],
+                code="AMBIGUOUS_PERSON",
+            )
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            clar_resp = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="clarification",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Multiple employees match your request. Please select one:",
+                narrative_bullets=[f"{c.employee_name}: {c.team} · {c.branch}" for c in resolution.candidates[:5]],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[c.label for c in choices[:2]],
+                resolved_session_state=req.session_state.model_copy(update={"last_confirmed_query": routed.confirmed_context}),
+                scope_banner="All Authorized Departments",
+                clarification=clar_prompt,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used=routed.provider_metrics.provider_used or "cloudflare",
+                model_used=routed.provider_metrics.model_used or "granite-4.0-h-micro",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(
+                    resolution_ms=round((time.perf_counter() - t_res_start) * 1000.0, 2),
+                    provider_ms=routed.provider_metrics.provider_ms,
+                    database_ms=0.0,
+                    trace_ms=0.0,
+                    total_ms=tot_ms,
+                ),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    fallback_outcome="none",
+                ),
+            )
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = clar_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
+                new_ver = conv_service.complete_turn(
+                    conversation_id=active_conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
+                    scope=self.scope,
+                    outcome="clarification",
+                    turn_kind="clarification",
+                    route_used="model_led_pilot",
+                    validated_plan=validated_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=payload_for_store,
+                    session_state=clar_resp.resolved_session_state,
+                    confirmed_context=routed.confirmed_context,
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    total_ms=tot_ms,
+                )
+                clar_resp.context_version = new_ver
+            return clar_resp
+
+        if resolution.status == "unique" and resolution.matched_employee:
+            resolved_emp = resolution.matched_employee
+            emp_id = resolved_emp.employee_id
+            emp_name = resolved_emp.employee_name
+            emp_pos = getattr(resolved_emp, "position", None) or getattr(routed.plan, "position", None)
+            team = resolved_emp.team
+            branch = resolved_emp.branch
+        else:
+            safe_raw_id = raw_id if not scope_changed or prompt_mentions_employee else None
+            emp_id = explicit_id or safe_raw_id or (prior.last_subject_employee_id if prior and not scope_changed else None)
+            emp_name = str(
+                (tool_args.get("employee_name") if not scope_changed or prompt_mentions_employee else None)
+                or (prior.last_subject_employee_name if prior and not scope_changed else None)
+                or ""
+            )
+            emp_pos = (getattr(prior, "position", None) if prior and not scope_changed else None) or getattr(routed.plan, "position", None)
+            model_team = tool_args.get("team") if not scope_changed or requested_team else None
+            team = requested_team or model_team or (None if scope_changed else req.session_state.team or (prior.team if prior else None)) or "Inbound"
+            branch = routed.plan.branch or registry.ctx.session_state.branch
+
+        if team_level_query:
+            emp_id = None
+            emp_name = ""
+            emp_pos = None
+            team = requested_team or req.session_state.team or "Inbound"
+            branch = routed.plan.branch or registry.ctx.session_state.branch
+
+        branch = str(branch or "").casefold().strip() or None
+        if branch not in BRANCH_KEYS:
+            branch = None
+
+        # 2. Check authorization
+        is_auth = live_auth_service.is_plan_and_context_authorized(
+            scope=self.scope,
+            team=team,
+            function=requested_function or req.session_state.function or (prior.function if prior else None),
+            branch=branch,
+            employee_id=emp_id,
+        )
+        if not is_auth:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="restricted_access",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Access restricted: your permissions do not allow viewing this employee or scope.",
+                narrative_bullets=["You do not have permission to view the requested evaluation records."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=["Show performance summary for my authorized scope"],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome="restricted_access",
+                ),
+            )
+
+        # 3. Parse period and metric
+        period_arg = str(tool_args.get("period") or tool_args.get("time_period") or "").strip()
+        month_str = None
+        year_int = None
+        # Explicit user instructions override inherited context
+        prompt_month = None
+        for m in MONTHS:
+            if re.search(rf"\b{m}\b", req.prompt, re.IGNORECASE):
+                prompt_month = m
+                break
+        if prompt_month:
+            month_str = prompt_month
+            year_match = re.search(r"20\d{2}", req.prompt)
+            year_int = int(year_match.group(0)) if year_match else (req.session_state.year or 2026)
+        elif re.match(r"^20\d{2}-(0[1-9]|1[0-2])$", period_arg):
+            year_int = int(period_arg.split("-")[0])
+            month_num = int(period_arg.split("-")[1])
+            month_str = REVERSE_MONTHS_BY_NUM.get(month_num, "September")
+        elif period_arg.capitalize() in MONTHS:
+            month_str = period_arg.capitalize()
+            year_int = req.session_state.year or 2026
+        elif any(m in period_arg.capitalize() for m in MONTHS):
+            for m in MONTHS:
+                if m.casefold() in period_arg.casefold():
+                    month_str = m
+                    break
+            year_match = re.search(r"20\d{2}", period_arg)
+            year_int = int(year_match.group(0)) if year_match else (req.session_state.year or 2026)
+        elif req.session_state.month and req.session_state.year:
+            month_str = req.session_state.month
+            year_int = req.session_state.year
+        else:
+            month_str = "September"
+            year_int = 2026
+
+        if team_level_compound and validated_plan_v2.scope.periods:
+            latest_period = str(validated_plan_v2.scope.periods[-1])
+            latest_period_match = re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", latest_period)
+            if latest_period_match:
+                year_int = int(latest_period_match.group(1))
+                month_str = REVERSE_MONTHS_BY_NUM.get(int(latest_period_match.group(2)), month_str)
+
+        planned_metric_id = (
+            validated_plan_v2.operations[0].metric_id
+            if len(validated_plan_v2.operations) == 1
+            else None
+        )
+        metric_arg = str(
+            (planned_metric_id if team_level_query else None)
+            or tool_args.get("metric_id")
+            or planned_metric_id
+            or routed.plan.metric
+            or (prior.metric_id if prior else None)
+            or "waitingtime"
+        ).strip().casefold()
+        catalog = get_ai_catalog()
+        metric_definition = catalog.find_metric_definition(
+            team=team,
+            kpi_key_or_label=metric_arg,
+            position=emp_pos,
+            performance_level=validated_plan_v2.scope.performance_level or "Employee",
+        )
+        metric_scope_rebased = False
+        original_metric_id = metric_definition.metric_id if metric_definition else None
+        if metric_definition and metric_definition.team.casefold() != team.casefold():
+            requested_label = metric_definition.display_name
+            team_metric_definition = catalog.find_metric_definition(
+                team=team,
+                kpi_key_or_label=requested_label,
+                position=emp_pos,
+                performance_level=validated_plan_v2.scope.performance_level or "Employee",
+            )
+            if team_metric_definition is None:
+                metric_leaf = metric_arg.rsplit(":", 1)[-1].replace("_", " ")
+                team_metric_definition = catalog.find_metric_definition(
+                    team=team,
+                    kpi_key_or_label=metric_leaf,
+                    position=emp_pos,
+                    performance_level=validated_plan_v2.scope.performance_level or "Employee",
+                )
+            if team_metric_definition is not None:
+                metric_definition = team_metric_definition
+                metric_scope_rebased = True
+        canonical_metric_id = metric_definition.metric_id if metric_definition else None
+        if canonical_metric_id:
+            kpi_key = canonical_metric_id.rsplit(":", 1)[-1]
+            kpi_display = metric_definition.display_name
+            if metric_scope_rebased:
+                routed.plan.metric = canonical_metric_id
+                routed.confirmed_context.metric_id = canonical_metric_id
+                for operation in validated_plan_v2.operations:
+                    if operation.metric_id and operation.metric_id.casefold() == str(original_metric_id).casefold():
+                        operation.metric_id = canonical_metric_id
+        elif "wait" in metric_arg:
+            kpi_key = "waitingtime"
+            kpi_display = "Waiting Time"
+        elif "book" in metric_arg:
+            kpi_key = "bookings_count"
+            kpi_display = "Bookings Count"
+        elif "attend" in metric_arg:
+            kpi_key = "attendance"
+            kpi_display = "Attendance"
+        elif "score" in metric_arg or "pms" in metric_arg or "perform" in metric_arg:
+            kpi_key = "overall_score"
+            kpi_display = "Overall Score"
+        else:
+            kpi_key = metric_arg.split(":")[-1]
+            kpi_display = kpi_key.replace("_", " ").title()
+
+        single_operation = validated_plan_v2.operations[0] if len(validated_plan_v2.operations) == 1 else None
+        single_operation_kind = str(single_operation.kind) if single_operation else ""
+        if single_operation_kind in ("compare_branches", "branch_comparison"):
+            routed.plan.intent = "compare_branches"
+            routed.plan.operation_kind_v2 = "compare_branches"
+        elif single_operation_kind in ("score_drivers", "diagnosis"):
+            routed.plan.intent = "score_drivers"
+            routed.plan.operation_kind_v2 = "score_drivers"
+        canonical_tool_for_operation = {
+            "trend": "get_employee_history" if emp_id else "get_score_trend",
+            "compare_periods": "get_employee_history" if emp_id else "get_score_trend",
+            "ranking": "rank_employees",
+            "compare_branches": "compare_branches",
+            "branch_comparison": "compare_branches",
+            "score_drivers": "get_kpi_diagnosis",
+            "diagnosis": "get_kpi_diagnosis",
+        }.get(single_operation_kind)
+        if emp_id and single_operation_kind in (
+            "current_value",
+            "actual_vs_target",
+            "person_summary",
+        ):
+            canonical_tool_for_operation = "read_employee_metric"
+        elif (
+            not emp_id
+            and (branch or routed.plan.branch)
+            and single_operation_kind in ("current_value", "actual_vs_target")
+            and metric_definition is not None
+            and metric_definition.value_kind == "count"
+        ):
+            canonical_tool_for_operation = "compare_branches"
+        elif (
+            not emp_id and single_operation_kind in ("current_value", "actual_vs_target")
+            and (
+                tool_name == "compare_branches"
+                or (tool_name == "read_employee_metric" and (team_level_query or tool_args.get("branch") != branch))
+            )
+        ):
+            canonical_tool_for_operation = "get_kpi_diagnosis"
+        threshold_spec = parse_score_threshold_query(req.prompt)
+        if threshold_spec is not None:
+            canonical_tool_for_operation = "rank_employees"
+        if canonical_tool_for_operation:
+            tool_name = canonical_tool_for_operation
+
+        # Check if trend / multi-month
+        is_history = (
+            single_operation_kind in ("trend", "compare_periods")
+            or tool_name in ("get_employee_history", "read_employee_history")
+            or any(kw in req.prompt.casefold() for kw in ("change", "trend", "across", "months", "history", "evolv"))
+        )
+        if is_history and (
+            single_operation_kind in ("trend", "compare_periods")
+            or re.search(r"\bhow\s+did\b.*\bchange\b", req.prompt.casefold())
+        ):
+            routed.plan.operation_kind_v2 = "trend"
+            if routed.plan.intent in ("current_value", "person_summary"):
+                routed.plan.intent = "trend"
+        months_window = 6 if is_history else 1
+
+        # Prepare tool arguments
+        effective_tool_args = dict(tool_args)
+        if threshold_spec is not None:
+            effective_tool_args["threshold_operator"] = threshold_spec[0]
+            effective_tool_args["score_threshold"] = threshold_spec[1]
+        if scope_changed:
+            if requested_team:
+                effective_tool_args["team"] = requested_team
+            else:
+                effective_tool_args.pop("team", None)
+            if not prompt_mentions_employee:
+                effective_tool_args.pop("employee_id", None)
+                effective_tool_args.pop("employee_name", None)
+            if not routed.plan.branch:
+                effective_tool_args.pop("branch", None)
+        if "team" not in effective_tool_args or not effective_tool_args["team"]:
+            effective_tool_args["team"] = team
+        effective_tool_args["branch"] = branch
+        effective_tool_args["metric_id"] = canonical_metric_id or kpi_key
+        effective_tool_args["metric"] = canonical_metric_id or kpi_key
+        if emp_id and "employee_id" not in effective_tool_args:
+            effective_tool_args["employee_id"] = emp_id
+        if emp_name and "employee_name" not in effective_tool_args:
+            effective_tool_args["employee_name"] = emp_name
+        if "period" not in effective_tool_args or not effective_tool_args["period"]:
+            effective_tool_args["period"] = f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"
+
+        # 4. Execute the model-selected call, completing a validated two-operation plan when needed.
+        call_specs: list[tuple[str, dict[str, Any]]] = [(tool_name, effective_tool_args)]
+        if single_operation and canonical_tool_for_operation:
+            operation_periods = list(validated_plan_v2.scope.periods)
+            plan_period = operation_periods[-1] if operation_periods else effective_tool_args.get("period")
+            canonical_metric = canonical_metric_id or str(single_operation.metric_id or kpi_key)
+            canonical_args = dict(effective_tool_args)
+            canonical_args.update(
+                {
+                    "team": requested_team or team,
+                    "metric_id": canonical_metric,
+                    "metric": canonical_metric,
+                    "period": plan_period,
+                }
+            )
+            if validated_plan_v2.scope.performance_level:
+                canonical_args["performance_level"] = validated_plan_v2.scope.performance_level
+            if branch and not scope_changed:
+                canonical_args["branch"] = branch
+            if single_operation_kind in ("trend", "compare_periods") and operation_periods:
+                canonical_args["periods"] = operation_periods
+            if single_operation_kind == "ranking":
+                canonical_args["limit"] = int(single_operation.limit or 1)
+                canonical_args["include_ties"] = bool(single_operation.include_ties)
+                canonical_args["direction"] = single_operation.direction or routed.plan.ranking_direction
+            if threshold_spec is not None:
+                canonical_args["threshold_operator"] = threshold_spec[0]
+                canonical_args["score_threshold"] = threshold_spec[1]
+            if emp_id and single_operation_kind in ("trend", "compare_periods", "person_summary", "current_value", "actual_vs_target"):
+                canonical_args["employee_id"] = emp_id
+                if emp_name:
+                    canonical_args["employee_name"] = emp_name
+            if emp_id and single_operation_kind in ("score_drivers", "diagnosis"):
+                canonical_args["employee_id"] = emp_id
+                if emp_name:
+                    canonical_args["employee_name"] = emp_name
+            if canonical_tool_for_operation == "compare_branches":
+                requested_branches = [
+                    str(value).strip().casefold()
+                    for value in (routed.plan.branches or [])
+                    if str(value).strip()
+                ]
+                if not requested_branches:
+                    requested_branches = [
+                        str(value).strip().casefold()
+                        for value in (branch, routed.plan.compare_branch)
+                        if value and str(value).strip()
+                    ]
+                canonical_args = {
+                    "team": requested_team or team,
+                    "branches": requested_branches,
+                    "metric": canonical_metric,
+                    "period": plan_period,
+                }
+            elif canonical_tool_for_operation == "get_kpi_diagnosis":
+                canonical_args.pop("metric", None)
+                if not routed.plan.compare_branch:
+                    canonical_args.pop("compare_branch", None)
+                canonical_args["branch"] = branch
+            call_specs = [(canonical_tool_for_operation, canonical_args)]
+            tool_args_with_kpi = dict(canonical_args)
+            if metric_definition is not None:
+                tool_args_with_kpi["kpi_key"] = metric_definition.kpi_key
+            routed.plan.model_led_tool_call = {
+                "tool_name": canonical_tool_for_operation,
+                "tool_arguments": tool_args_with_kpi,
+            }
+            routed.plan.model_led_tool_calls = [
+                {"tool_name": canonical_tool_for_operation, "tool_arguments": dict(tool_args_with_kpi)}
+            ]
+        elif metric_definition is not None and isinstance(routed.plan.model_led_tool_call, dict):
+            ta = dict(routed.plan.model_led_tool_call.get("tool_arguments") or {})
+            ta.setdefault("kpi_key", metric_definition.kpi_key)
+            routed.plan.model_led_tool_call = {
+                **routed.plan.model_led_tool_call,
+                "tool_arguments": ta,
+            }
+        if len(validated_plan_v2.operations) > 1:
+            model_calls = routed.plan.model_led_tool_calls or [
+                {"tool_name": tool_name, "tool_arguments": tool_args}
+            ]
+            planned_specs: list[tuple[str, dict[str, Any]]] = []
+            scope_team = requested_team or team
+            plan_period = (
+                validated_plan_v2.scope.periods[-1]
+                if validated_plan_v2.scope.periods
+                else effective_tool_args.get("period")
+            )
+            for operation in validated_plan_v2.operations[:2]:
+                metric_id = canonical_metric_id or str(operation.metric_id or metric_arg_raw or kpi_key).split(":")[-1]
+                operation_kind = str(operation.kind)
+                if operation_kind == "trend":
+                    derived_name = "get_employee_history" if emp_id and not team_level_compound else "get_score_trend"
+                    accepted_names = {"get_score_trend"} if team_level_compound else {"get_employee_history", "get_score_trend"}
+                elif operation_kind == "ranking":
+                    derived_name = "rank_employees"
+                    accepted_names = {"rank_employees"}
+                elif operation_kind in ("compare_branches", "branch_comparison"):
+                    derived_name = "compare_branches"
+                    accepted_names = {"compare_branches"}
+                elif operation_kind in ("score_drivers", "actual_vs_target", "diagnosis"):
+                    derived_name = "get_kpi_diagnosis"
+                    accepted_names = {"get_kpi_diagnosis", "read_employee_metric"}
+                else:
+                    derived_name = "read_employee_metric"
+                    accepted_names = {"read_employee_metric"}
+
+                derived_args: dict[str, Any] = {
+                    "team": scope_team,
+                    "metric_id": metric_id,
+                    "period": plan_period,
+                    "branch": branch,
+                }
+                if operation_kind == "trend" and validated_plan_v2.scope.periods:
+                    derived_args["periods"] = list(validated_plan_v2.scope.periods)
+                if operation_kind in ("compare_branches", "branch_comparison"):
+                    derived_args["metric"] = metric_id
+                    if routed.plan.branches:
+                        derived_args["branches"] = list(routed.plan.branches)
+                if operation_kind == "ranking":
+                    derived_args["limit"] = int(operation.limit or 1)
+                    derived_args["include_ties"] = bool(operation.include_ties)
+                    derived_args["direction"] = operation.direction or routed.plan.ranking_direction
+                if validated_plan_v2.scope.performance_level:
+                    derived_args["performance_level"] = validated_plan_v2.scope.performance_level
+                if emp_id and operation_kind == "trend":
+                    derived_args["employee_id"] = emp_id
+                    if emp_name:
+                        derived_args["employee_name"] = emp_name
+
+                model_match: tuple[str, dict[str, Any]] | None = None
+                for candidate in model_calls:
+                    if not isinstance(candidate, dict):
+                        continue
+                    candidate_name = str(candidate.get("tool_name") or "").strip()
+                    if candidate_name not in accepted_names:
+                        continue
+                    candidate_args = candidate.get("tool_arguments")
+                    candidate_args = dict(candidate_args) if isinstance(candidate_args, dict) else {}
+                    if scope_changed:
+                        if not requested_team:
+                            candidate_args.pop("team", None)
+                        if not routed.plan.branch:
+                            candidate_args.pop("branch", None)
+                        if not prompt_mentions_employee:
+                            candidate_args.pop("employee_id", None)
+                            candidate_args.pop("employee_name", None)
+                    if team_level_compound:
+                        candidate_args.pop("employee_id", None)
+                        candidate_args.pop("employee_name", None)
+                    merged_args = {**candidate_args, **derived_args}
+                    requested_metric_id = str(candidate_args.get("metric_id") or "").strip()
+                    if requested_metric_id and canonical_metric_id:
+                        normalize_metric_ref = lambda value: re.sub(
+                            r"[^a-z0-9]", "", str(value or "").casefold().rsplit(":", 1)[-1]
+                        )
+                        allowed_metric_refs = {
+                            normalize_metric_ref(canonical_metric_id),
+                            normalize_metric_ref(getattr(metric_definition, "kpi_key", "")),
+                            normalize_metric_ref(getattr(metric_definition, "display_name", "")),
+                            *(
+                                normalize_metric_ref(alias)
+                                for alias in (getattr(metric_definition, "aliases", ()) or ())
+                            ),
+                        }
+                        if normalize_metric_ref(requested_metric_id) in allowed_metric_refs:
+                            merged_args["requested_metric_id"] = requested_metric_id.rsplit(":", 1)[-1]
+                    model_match = (candidate_name, merged_args)
+                    break
+                planned_specs.append(model_match or (derived_name, derived_args))
+            if planned_specs:
+                call_specs = planned_specs[:2]
+
+        try:
+            tool_results: list[ToolExecutionResult] = []
+            tool_records: list[AiToolCallRecord] = []
+            tool_exec_ms_total = 0.0
+            for call_name, call_args in call_specs:
+                call_start = time.perf_counter()
+                if call_name in registry.AUTHORIZED_MODEL_LED_TOOLS:
+                    call_result = registry.execute_model_led_tool(
+                        tool_name=call_name,
+                        tool_arguments=call_args,
+                    )
+                elif call_name == "agent_spotlight_trend":
+                    call_result = registry.execute_agent_spotlight_and_trend(
+                        team=call_args.get("team") or team,
+                        branch=call_args.get("branch") or branch,
+                        month=month_str,
+                        year=year_int,
+                        kpi=call_args.get("metric_id") or kpi_key,
+                        employee_query=call_args.get("employee_name") or call_args.get("employee_id") or emp_name or emp_id,
+                        single_person=True,
+                        months_window=months_window,
+                    )
+                else:
+                    raise ValueError(f"Tool '{call_name}' is not an authorized model-led tool")
+                call_ms = round((time.perf_counter() - call_start) * 1000.0, 2)
+                tool_exec_ms_total += call_ms
+                tool_results.append(call_result)
+                tool_records.append(
+                    AiToolCallRecord(
+                        tool_name=call_name,
+                        arguments=call_args,
+                        records_evaluated=call_result.records_evaluated,
+                    )
+                )
+            tool_name, tool_args = call_specs[0]
+            executed_period = str(tool_args.get("period") or "").strip()
+            executed_period_match = re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", executed_period)
+            if executed_period_match:
+                year_int = int(executed_period_match.group(1))
+                month_str = REVERSE_MONTHS_BY_NUM.get(int(executed_period_match.group(2)), month_str)
+            tool_result = tool_results[0]
+            for extra_result in tool_results[1:]:
+                tool_result.records_evaluated += extra_result.records_evaluated
+                tool_result.visual_cards.extend(extra_result.visual_cards)
+                tool_result.citations.extend(extra_result.citations)
+                tool_result.deep_links.extend(extra_result.deep_links)
+                tool_result.typed_evidence.extend(extra_result.typed_evidence)
+                tool_result.guardrail_triggered = tool_result.guardrail_triggered or extra_result.guardrail_triggered
+                if not tool_result.basis_warning:
+                    tool_result.basis_warning = extra_result.basis_warning
+            all_tool_digests = [result.digest for result in tool_results]
+            t_tool_ms = round(tool_exec_ms_total, 2)
+        except PermissionError as p_exc:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="restricted_access",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Access restricted: your permissions do not allow viewing this employee or scope.",
+                narrative_bullets=[str(p_exc)],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome="restricted_access",
+                ),
+            )
+        except Exception as exc:
+            # Handle malformed arguments gracefully
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="clarification",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Could not complete query with the provided arguments.",
+                narrative_bullets=[str(exc)],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-fallback",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome="invalid_tool_arguments",
+                ),
+            )
+
+        # 5. Check returned evidence authorization
+        ev_auth = live_auth_service.is_returned_evidence_authorized(
+            scope=self.scope,
+            typed_evidence=tool_result.typed_evidence,
+            tool_digests=all_tool_digests,
+        )
+        if not ev_auth:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="restricted_access",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Access restricted: live permission revalidation detected unauthorized records.",
+                narrative_bullets=["Your role does not allow viewing the returned evaluation evidence."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=tool_records,
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome="restricted_access",
+                ),
+            )
+
+        # 6. Check missing data
+        if tool_result.records_evaluated == 0 or not tool_result.typed_evidence:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            missing_team = requested_team or (None if scope_changed else team)
+            missing_period = f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"
+            missing_context = routed.confirmed_context.model_copy(
+                update={
+                    "intent": routed.plan.intent,
+                    "team": missing_team,
+                    "function": requested_function or routed.confirmed_context.function,
+                    "position": routed.plan.position or (None if scope_changed else emp_pos),
+                    "branch": branch,
+                    "region": current_region,
+                    "performance_level": routed.plan.performance_level or (
+                        None if scope_changed else req.session_state.performance_level
+                    ),
+                    "metric_id": canonical_metric_id or metric_arg,
+                    "metric_display_name": kpi_display,
+                    "periods": [missing_period],
+                    "last_subject_employee_id": None if scope_changed else emp_id,
+                    "last_subject_employee_name": None if scope_changed else (emp_name or None),
+                    "candidate_employees": [] if scope_changed else routed.confirmed_context.candidate_employees,
+                }
+            )
+            missing_state = req.session_state.model_copy(
+                update={
+                    "function": missing_context.function,
+                    "team": missing_context.team,
+                    "position": missing_context.position,
+                    "branch": missing_context.branch,
+                    "region": missing_context.region,
+                    "performance_level": missing_context.performance_level,
+                    "employee_id": missing_context.last_subject_employee_id,
+                    "month": month_str,
+                    "year": year_int,
+                    "last_confirmed_query": missing_context,
+                }
+            )
+            missing_scope_name = _format_country_scope_text(
+                missing_context.team or missing_context.function or "the requested subject",
+                missing_context.team,
+                missing_context.region,
+            )
+            missing_scope_banner, _ = self._resolve_scope_banner_and_function(
+                session_state=missing_state,
+                region=missing_context.region,
+            )
+            ucm = (
+                tool_result.digest.get("unavailable_count_metric")
+                if isinstance(tool_result.digest, dict)
+                else None
+            )
+            missing_outcome: Any = "unavailable_data"
+            if ucm and not tool_result.typed_evidence:
+                ucm_team_lbl = str(ucm.get("team") or missing_scope_name)
+                ucm_branch = ucm.get("branch") or branch
+                ucm_branch_title = str(ucm_branch).capitalize() if ucm_branch else ""
+                missing_headline = (
+                    f"No published {ucm['display_name']} records exist for {ucm_team_lbl} in {ucm_branch_title} ({month_str} {year_int})."
+                    if ucm_branch_title
+                    else f"No published {ucm['display_name']} records exist for {ucm_team_lbl} ({month_str} {year_int})."
+                )
+            elif (
+                tool_name == "get_kpi_diagnosis"
+                and not emp_id
+                and branch
+                and current_region != "KSA"
+                and not ksa_region_hint_from_prompt(req.prompt)
+                and (not metric_definition or getattr(metric_definition, "value_kind", None) != "count")
+                and (not published_periods or missing_period in published_periods)
+            ):
+                missing_outcome = "answer"
+                missing_headline = (
+                    f"No performance records matched the selected filters ({missing_scope_name} · {month_str} {year_int} · {str(branch).capitalize()})."
+                )
+            else:
+                branch_clause = f" in {str(branch).capitalize()}" if branch and str(branch).casefold() != "all" else ""
+                missing_headline = f"No published PMS evaluation records exist for {emp_name or missing_scope_name}{branch_clause} in {month_str} {year_int}."
+            missing_response = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome=missing_outcome,
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=missing_headline,
+                narrative_bullets=[] if missing_outcome == "answer" else [f"No performance data was found for {missing_scope_name} in {month_str} {year_int}."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=missing_state,
+                scope_banner=missing_scope_banner,
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=tool_records,
+                provider_used="deterministic",
+                model_used="deterministic-fallback",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome=missing_outcome,
+                ),
+            )
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = missing_response.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
+                new_ver = conv_service.complete_turn(
+                    conversation_id=active_conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
+                    scope=self.scope,
+                    outcome="unavailable_data",
+                    turn_kind="clarification",
+                    route_used="model_led_pilot",
+                    validated_plan=validated_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=payload_for_store,
+                    session_state=missing_state,
+                    confirmed_context=missing_context,
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    total_ms=tot_ms,
+                )
+                missing_response.context_version = new_ver
+            return missing_response
+
+        # 7. Grounded Model Synthesis Pass
+        def _norm_k(k: str | None) -> str:
+            return re.sub(r"[^a-z0-9]", "", str(k or "").casefold())
+        def _metric_tokens(value: str | None) -> set[str]:
+            raw = str(value or "").strip()
+            values = {raw}
+            if ":" in raw:
+                values.add(raw.rsplit(":", 1)[-1])
+            return {token for item in values if (token := _norm_k(item))}
+
+        requested_metric_tokens = set().union(
+            _metric_tokens(kpi_key),
+            _metric_tokens(canonical_metric_id),
+            _metric_tokens(metric_arg),
+            _metric_tokens(kpi_display),
+        )
+        if metric_definition:
+            requested_metric_tokens.update(_metric_tokens(metric_definition.kpi_key))
+            requested_metric_tokens.update(
+                token
+                for alias in metric_definition.aliases
+                for token in _metric_tokens(alias)
+            )
+        ev_items = [
+            ev for ev in tool_result.typed_evidence
+            if (
+                _metric_tokens(ev.kpi_key)
+                | _metric_tokens(ev.metric_id)
+                | _metric_tokens(ev.display_name)
+            )
+            & requested_metric_tokens
+        ]
+
+        def _period_id(raw_period: str | None) -> str | None:
+            text = str(raw_period or "").strip()
+            iso_match = re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", text)
+            if iso_match:
+                return f"{int(iso_match.group(1)):04d}-{int(iso_match.group(2)):02d}"
+            human_match = re.search(r"\b([A-Za-z]+)\s+(20\d{2})\b", text)
+            if human_match:
+                month_number = MONTHS.get(human_match.group(1).capitalize())
+                if month_number:
+                    return f"{int(human_match.group(2)):04d}-{month_number:02d}"
+            return None
+
+        requested_period_ids = {
+            period_id
+            for raw_period in validated_plan_v2.scope.periods
+            if (period_id := _period_id(raw_period))
+        }
+        if not is_history:
+            requested_period_ids = {f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"}
+        if requested_period_ids and (not is_history or len(requested_period_ids) >= 2):
+            ev_items = [ev for ev in ev_items if _period_id(ev.period) in requested_period_ids]
+
+        is_position_query = any(kw in req.prompt.casefold() for kw in ("job title", "position", "role"))
+        if not ev_items and is_position_query:
+            ev_items = [
+                ev for ev in tool_result.typed_evidence
+                if (emp_id and ev.employee_id == emp_id)
+                or (emp_name and ev.employee_name and ev.employee_name.casefold() == emp_name.casefold())
+            ]
+
+        if not ev_items:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="unavailable_data",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=f"No published {kpi_display} evidence was found for {emp_name or team} in the requested period.",
+                narrative_bullets=["No answer was produced because the requested metric evidence was unavailable."],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=tool_records,
+                provider_used="deterministic",
+                model_used="deterministic-fallback",
+                answer_source="fallback",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(total_ms=tot_ms),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    fallback_outcome="unavailable_data",
+                ),
+            )
+
+        if is_history and len(validated_plan_v2.scope.periods) >= 2:
+            req_p_labels = {format_period_label(p).casefold() for p in validated_plan_v2.scope.periods}
+            matched_ev_items = [ev for ev in ev_items if str(ev.period or "").strip().casefold() in req_p_labels]
+            if len(matched_ev_items) >= 2:
+                ev_items = matched_ev_items
+        if not is_history and month_str:
+            latest_ev = ev_items[-1]
+        else:
+            latest_ev = ev_items[-1]
+
+        def _safe_period_label(p: str) -> str:
+            if not p:
+                return f"{month_str} {year_int}"
+            if "-" in p:
+                return format_period_label(p)
+            return p
+
+        if latest_ev.display_name and latest_ev.display_name.casefold() not in ("overall pms score", "score", "overall score"):
+            kpi_display = latest_ev.display_name
+        unit = latest_ev.unit or ("min" if "wait" in kpi_key else ("%" if "score" in kpi_key or "attend" in kpi_key else ""))
+        curr_val = latest_ev.actual
+        curr_period = latest_ev.period or f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"
+        curr_period_label = _safe_period_label(curr_period)
+
+        display_subject = getattr(latest_ev, "employee_name", None) or emp_name or latest_ev.team or team
+        compound_required_groups: list[list[str]] = []
+        compound_trend_result = (
+            tool_results[0]
+            if len(validated_plan_v2.operations) > 1
+            and validated_plan_v2.operations[0].kind == "trend"
+            and tool_results
+            else next(
+                (result for result in tool_results if result.tool_name in ("get_employee_history", "get_score_trend")),
+                None,
+            )
+        )
+        compound_rank_result = (
+            tool_results[1]
+            if len(validated_plan_v2.operations) > 1
+            and validated_plan_v2.operations[1].kind == "ranking"
+            and len(tool_results) > 1
+            else next(
+                (result for result in tool_results if result.tool_name == "rank_employees"),
+                None,
+            )
+        )
+        compound_trend_evidence: list[TypedMetricEvidence] = []
+        compound_rank_evidence: list[TypedMetricEvidence] = []
+        if compound_trend_result and compound_rank_result and len(validated_plan_v2.operations) > 1:
+            requested_metric = _norm_k(
+                str(validated_plan_v2.operations[0].metric_id or kpi_key).rsplit(":", 1)[-1]
+            )
+            compound_trend_evidence = [
+                ev for ev in compound_trend_result.typed_evidence
+                if ev.actual is not None
+                and (not team_level_compound or (not ev.employee_id and not ev.employee_name))
+                and (
+                    _norm_k(ev.kpi_key) == requested_metric
+                    or _norm_k(ev.metric_id).endswith(requested_metric)
+                    or requested_metric in _norm_k(ev.display_name)
+                )
+            ]
+            compound_rank_evidence = [
+                ev for ev in compound_rank_result.typed_evidence
+                if ev.employee_name
+                and ev.actual is not None
+                and (
+                    _norm_k(ev.kpi_key) == requested_metric
+                    or _norm_k(ev.metric_id).endswith(requested_metric)
+                    or requested_metric in _norm_k(ev.display_name)
+                )
+            ]
+
+        compound_trend_ready = len({ev.period for ev in compound_trend_evidence}) >= 2
+        compound_rank_ready = bool(compound_rank_evidence)
+
+        if compound_trend_ready and compound_rank_ready:
+            month_index = {name.casefold(): index for index, name in enumerate(MONTHS, start=1)}
+
+            def _compound_period_key(ev: TypedMetricEvidence) -> tuple[int, int, str]:
+                match = re.search(r"([A-Za-z]+)\s+(20\d{2})", ev.period or "")
+                if match:
+                    return (int(match.group(2)), month_index.get(match.group(1).casefold(), 0), ev.period)
+                iso_match = re.match(r"(20\d{2})-(\d{2})", ev.period or "")
+                if iso_match:
+                    return (int(iso_match.group(1)), int(iso_match.group(2)), ev.period)
+                return (0, 0, ev.period or "")
+
+            compound_trend_evidence.sort(key=_compound_period_key)
+            trend_first, trend_last = compound_trend_evidence[0], compound_trend_evidence[-1]
+            top_performer = compound_rank_evidence[0]
+            compound_metric_display = trend_last.display_name or kpi_display
+            compound_unit = trend_last.unit or unit
+            trend_subject = (
+                f"{trend_last.employee_name}'s"
+                if trend_last.employee_name
+                else f"{team} team's"
+            )
+            trend_first_period = _safe_period_label(trend_first.period)
+            trend_last_period = _safe_period_label(trend_last.period)
+            rank_period = _safe_period_label(top_performer.period)
+            first_display = trend_first.actual_display or f"{trend_first.actual} {compound_unit}".strip()
+            last_display = trend_last.actual_display or f"{trend_last.actual} {compound_unit}".strip()
+            rank_display = top_performer.actual_display or f"{top_performer.actual} {top_performer.unit}".strip()
+            fallback_headline = (
+                f"{top_performer.employee_name} was the top performer in {team} for {compound_metric_display} "
+                f"in {rank_period} with {rank_display}. {trend_subject} {compound_metric_display} changed "
+                f"from {first_display} in {trend_first_period} to {last_display} in {trend_last_period}."
+            )
+            fallback_bullets = [
+                f"{trend_first_period}: {first_display}",
+                f"{trend_last_period}: {last_display}",
+                f"Top performer in {rank_period}: {top_performer.employee_name} ({rank_display})",
+            ]
+            facts_payload = {
+                "team": team,
+                "metric": compound_metric_display,
+                "trend": [
+                    {"period": trend_first_period, "value": trend_first.actual, "display": first_display, "unit": compound_unit},
+                    {"period": trend_last_period, "value": trend_last.actual, "display": last_display, "unit": compound_unit},
+                ],
+                "top_performer": {
+                    "employee": top_performer.employee_name,
+                    "period": rank_period,
+                    "value": top_performer.actual,
+                    "display": rank_display,
+                    "unit": top_performer.unit,
+                },
+            }
+            instruction = (
+                "Answer both parts of the question in the same response: report the verified trend values for both periods, "
+                "then name the first employee in the verified ranking and give that employee's value. Use only the supplied facts. "
+                "Do not omit a requested period, employee, metric, value, or unit; do not invent numbers. "
+                'Return JSON with {"headline": "...", "narrative_bullets": [...]}.'
+            )
+            compound_required_groups = [
+                [str(top_performer.employee_name or "").casefold()],
+                [compound_metric_display.casefold()],
+                [trend_first_period.casefold()],
+                [trend_last_period.casefold()],
+                list(dict.fromkeys(
+                    [str(trend_first.actual), f"{trend_first.actual:.1f}"]
+                    + ([str(int(float(trend_first.actual)))] if float(trend_first.actual).is_integer() else [])
+                )),
+                list(dict.fromkeys(
+                    [str(trend_last.actual), f"{trend_last.actual:.1f}"]
+                    + ([str(int(float(trend_last.actual)))] if float(trend_last.actual).is_integer() else [])
+                )),
+                ["top", "highest", "most"],
+            ]
+        elif tool_name == "compare_branches":
+            branch_ev = [ev for ev in tool_result.typed_evidence if ev.branch and ev.branch != "all" and ev.actual is not None]
+            period_lbl = f"{month_str} {year_int}"
+            fallback_headline = f"UAE branch comparison for {team} in {period_lbl}: " + ", ".join(
+                f"{ev.branch.capitalize()}: {ev.actual_display}" for ev in branch_ev
+            ) + "."
+            fallback_bullets = [f"{ev.branch.capitalize()}: {ev.actual_display}" for ev in branch_ev]
+            facts_payload = {
+                "team": team,
+                "metric": kpi_display,
+                "period": period_lbl,
+                "branches": [
+                    {"branch": ev.branch.capitalize(), "value": ev.actual, "unit": ev.unit}
+                    for ev in branch_ev
+                ],
+            }
+            instruction = (
+                "You are the PMS AI Assistant. State the verified branch comparison answer directly and concisely in 1-2 sentences. "
+                "Use ONLY the exact branch names, metric name, period, values, and unit in `verified_facts`. "
+                "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
+                'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+            )
+        elif tool_name == "rank_employees":
+            tcs = (tool_result.digest or {}).get("threshold_count_summary") if isinstance(tool_result.digest, dict) else None
+            if tcs:
+                cnt = int(tcs.get("count") or 0)
+                tot = int(tcs.get("total_evaluated") or 0)
+                op_lbl = str(tcs.get("operator_label") or "above")
+                thr = tcs.get("threshold")
+                thr_txt = f"{thr:g}%" if thr is not None else ""
+                t_team = str(tcs.get("team") or team)
+                t_period = str(tcs.get("period") or f"{month_str} {year_int}")
+                q_emps = tcs.get("qualifying_employees") or []
+                emp_word = "employee" if cnt == 1 else "employees"
+                if tot == 0:
+                    fallback_headline = f"No published PMS evaluation records matched {t_team} in {t_period}."
+                elif q_emps:
+                    names_txt = ", ".join(f"{e['employee_name']} ({e['score']:.1f}%)" for e in q_emps[:10])
+                    fallback_headline = f"In {t_team} ({t_period}), {cnt} of {tot} evaluated {emp_word} scored {op_lbl} {thr_txt}: {names_txt}."
+                else:
+                    fallback_headline = f"In {t_team} ({t_period}), 0 of {tot} evaluated employees scored {op_lbl} {thr_txt}."
+                fallback_bullets = [f"{e['employee_name']} ({e['employee_id']}): {e['score']:.1f}%." for e in q_emps[:5]]
+                facts_payload = {"threshold_count_summary": tcs}
+                instruction = (
+                    "You are the PMS AI Assistant. State the exact qualifying employee count and qualifying employee names/scores "
+                    "from `verified_facts.threshold_count_summary` directly and concisely in 1-2 sentences. Do NOT invent numbers. "
+                    'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                )
+            else:
+                rank_ev = [ev for ev in ev_items if ev.employee_name and ev.actual is not None]
+                period_lbl = f"{month_str} {year_int}"
+                fallback_headline = f"Employee performance rankings for {team} in {period_lbl}: " + ", ".join(
+                    f"{ev.employee_name}: {ev.actual_display}" for ev in rank_ev[:5]
+                ) + "."
+                fallback_bullets = [f"{ev.employee_name}: {ev.actual_display}" for ev in rank_ev[:5]]
+                facts_payload = {
+                    "team": team,
+                    "metric": kpi_display,
+                    "period": period_lbl,
+                    "rankings": [
+                        {"rank": i + 1, "employee": ev.employee_name, "value": ev.actual, "unit": ev.unit}
+                        for i, ev in enumerate(rank_ev[:5])
+                    ],
+                }
+                instruction = (
+                    "You are the PMS AI Assistant. State the verified employee rankings directly and concisely in 1-2 sentences. "
+                    "Use ONLY the exact employee names, metric name, period, values, and unit in `verified_facts`. "
+                    "Disclose any ties clearly. Do NOT invent numbers. "
+                    'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                )
+        elif is_history and len(ev_items) >= 2:
+            prev_ev = ev_items[-2]
+            prev_val = prev_ev.actual
+            prev_period = prev_ev.period
+            prev_period_label = _safe_period_label(prev_period)
+            delta = round(curr_val - prev_val, 2)
+            is_better = (delta < 0) if latest_ev.direction == "lower_better" else (delta > 0)
+            if delta == 0:
+                diff_word = "unchanged"
+                change = f"0.0 {unit} (unchanged)"
+                direction_instruction = "State that the value was unchanged."
+            else:
+                diff_word = "improvement" if is_better else "worsening"
+                change = f"{abs(delta):.1f} {unit} ({diff_word})"
+                direction_instruction = f"Describe the change of {abs(delta):.1f} {unit} as {diff_word}."
+            fallback_headline = (
+                f"{display_subject}'s {kpi_display} went from {prev_val} {unit} in {prev_period_label} "
+                f"to {curr_val} {unit} in {curr_period_label}. Change: {change}."
+            )
+            fallback_bullets = [
+                f"{prev_period_label}: {prev_val} {unit}",
+                f"{curr_period_label}: {curr_val} {unit}",
+                f"Change: {change}",
+            ]
+            facts_payload = {
+                "employee": display_subject,
+                "metric": kpi_display,
+                "unit": unit,
+                "history": [
+                    {"period": prev_period_label, "value": prev_val, "unit": unit},
+                    {"period": curr_period_label, "value": curr_val, "unit": unit},
+                ],
+                "delta": delta,
+                "evaluation": diff_word,
+            }
+            instruction = (
+                "You are the PMS AI Assistant. State the verified performance trend answer directly and concisely in 1-2 sentences. "
+                "Use ONLY the exact employee name, metric name, periods, values, and unit in `verified_facts`. "
+                f"State both the {prev_period_label} value and the {curr_period_label} value. {direction_instruction} "
+                "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
+                'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+            )
+        else:
+            eff_dir = latest_ev.direction or "higher_better"
+            tgt_clause = ""
+            tgt_note = ""
+            if latest_ev.target is not None:
+                tgt_val = float(latest_ev.target)
+                c_val = float(curr_val)
+                diff = round(abs(c_val - tgt_val), 2)
+                if eff_dir == "lower_better":
+                    if c_val <= tgt_val:
+                        tgt_clause = f"meeting the target of {tgt_val} {unit}"
+                        tgt_note = f"The headline must state that {display_subject}'s {kpi_display} was {c_val} {unit} in {curr_period_label}, meeting the target of {tgt_val} {unit} (for {kpi_display}, lower is better)."
+                    else:
+                        tgt_clause = f"exceeding the target limit of {tgt_val} {unit} by {diff:.1f} {unit}"
+                        tgt_note = (
+                            f"The headline must state that {display_subject}'s {kpi_display} was {c_val} {unit} in {curr_period_label}, exceeding the target limit of {tgt_val} {unit} by {diff:.1f} {unit} (did not meet target). "
+                            "Do NOT state that it met the target."
+                        )
+                else:
+                    if c_val >= tgt_val:
+                        tgt_clause = f"meeting the target of {tgt_val} {unit}"
+                        tgt_note = f"The headline must state that {display_subject}'s {kpi_display} was {c_val} {unit} in {curr_period_label}, meeting the target of {tgt_val} {unit}."
+                    else:
+                        tgt_clause = f"falling short of the target of {tgt_val} {unit} by {diff:.1f} {unit}"
+                        tgt_note = (
+                            f"The headline must state that {display_subject}'s {kpi_display} was {c_val} {unit} in {curr_period_label}, falling short of the target of {tgt_val} {unit} by {diff:.1f} {unit}. "
+                            "Do NOT state that it met the target."
+                        )
+
+            is_pos_query = is_position_query
+            if is_pos_query:
+                pos_val = str(getattr(latest_ev, "position", None) or emp_pos or "Call Center Agent").strip()
+                fallback_headline = f"{display_subject}'s job title is {pos_val} ({team})."
+                fallback_bullets = [f"Position: {pos_val}", f"Team: {team}"]
+                facts_payload = {
+                    "employee": display_subject,
+                    "team": team,
+                    "position": pos_val,
+                    "metric": "Job Title",
+                    "period": curr_period_label,
+                    "value": pos_val,
+                    "unit": "",
+                }
+                instruction = (
+                    "You are the PMS AI Assistant. State the verified employee position/job title answer directly and concisely in 1 sentence. "
+                    "Use ONLY the exact employee name, position, and team from `verified_facts`. "
+                    f"State that {display_subject}'s position is {pos_val} in {team}. "
+                    'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                )
+            else:
+                fallback_headline = (
+                    f"{display_subject}'s {kpi_display} was {curr_val} {unit} in {curr_period_label}"
+                    + (f", {tgt_clause}." if tgt_clause else ".")
+                )
+                fallback_bullets = [f"Target: {latest_ev.target} {unit}"] if latest_ev.target is not None else []
+                facts_payload = {
+                    "employee": display_subject,
+                    "team": team,
+                    "position": getattr(latest_ev, "position", None) or emp_pos,
+                    "metric": kpi_display,
+                    "period": curr_period_label,
+                    "value": curr_val,
+                    "unit": unit,
+                    "target": latest_ev.target,
+                    "target_status": tgt_clause,
+                }
+                instruction = (
+                    "You are the PMS AI Assistant. State the verified performance answer directly and concisely in 1-2 sentences. "
+                    "Use ONLY the exact employee name, metric name, period, value, and unit in `verified_facts`. "
+                    "For single-period questions, report only the requested period's value and target (if present). "
+                    + (f"{tgt_note} " if tgt_note else "")
+                    + "Do NOT use temporal change words like 'increased', 'decreased', or 'improved' across time because there is no prior period comparison. "
+                    "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
+                    'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                )
+
+        claim_ev = ev_items if is_history else [latest_ev]
+        claim_ledger = build_claim_ledger(typed_evidence=claim_ev)
+
+        # Call configured model for Pass 2 synthesis
+        engine = get_unified_provider_engine()
+        req_synth = ProviderRequest(
+            messages=[
+                ProviderMessage(role="system", content=instruction),
+                ProviderMessage(role="user", content=f"Question: {req.prompt}\nVerified Facts: {json.dumps(facts_payload)}"),
+            ],
+            response_format="json",
+            json_schema={
+                "type": "object",
+                "properties": {
+                    "headline": {"type": "string"},
+                    "narrative_bullets": {"type": ["array", "null"], "items": {"type": "string"}},
+                },
+                "required": ["headline"],
+            },
+            temperature=0.0,
+            max_tokens=None,
+            timeout_seconds=cfg.provider_timeout_seconds,
+            purpose="model_led_synthesis",
+        )
+
+        synth_provider_calls = 0
+        synth_ms = 0.0
+        final_headline = fallback_headline
+        final_bullets = fallback_bullets
+        final_provider = "deterministic"
+        final_model = "deterministic-fallback"
+        final_fallback_outcome = "none"
+        final_answer_source = "fallback"
+
+        try:
+            resp_synth = engine.generate(req_synth)
+            synth_ms = resp_synth.latency_ms
+            if resp_synth.is_success and resp_synth.content:
+                synth_provider_calls = 1
+                parsed = json.loads(resp_synth.content)
+                cand_h = str(parsed.get("headline") or "").strip()
+                cand_b = [str(b).strip() for b in (parsed.get("narrative_bullets") or []) if str(b).strip()]
+                # If model put value into bullets rather than headline, integrate it into headline
+                has_val_in_h = str(curr_val) in cand_h or f"{curr_val:.1f}" in cand_h
+                has_val_in_b = any(str(curr_val) in b or f"{curr_val:.1f}" in b for b in cand_b)
+                if not has_val_in_h and has_val_in_b:
+                    if f"{curr_val}" not in cand_h:
+                        cand_h = f"{display_subject}'s {kpi_display} was {curr_val} {unit} in {curr_period_label} ({cand_h})."
+
+                # Verify claims with claim validator
+                check = validate_claims(headline=cand_h, bullets=cand_b, ledger=claim_ledger)
+                candidate_text = (cand_h + " " + " ".join(cand_b)).casefold()
+                has_compound_facts = all(
+                    any(str(term).casefold() in candidate_text for term in alternatives)
+                    for alternatives in compound_required_groups
+                )
+                # Verify exact value and unit are present
+                if tool_name in ("compare_branches", "rank_employees"):
+                    has_val = True
+                    has_unit = True
+                elif any(kw in req.prompt.casefold() for kw in ("job title", "position", "role")):
+                    pos_val = str(getattr(latest_ev, "position", None) or emp_pos or "")
+                    has_val = pos_val.casefold() in cand_h.casefold() or len(cand_h) > 10
+                    has_unit = True
+                else:
+                    has_val = str(curr_val) in cand_h or f"{curr_val:.1f}" in cand_h
+                    has_unit = (
+                        unit.casefold() in cand_h.casefold()
+                        or (unit.casefold() == "min" and "minute" in cand_h.casefold())
+                        if unit else True
+                    )
+                if check.valid and has_val and has_unit and has_compound_facts:
+                    final_headline = cand_h
+                    final_bullets = cand_b if cand_b else fallback_bullets
+                    if is_history and len(ev_items) >= 2 and not compound_trend_ready and not any(f"{abs(delta):.1f}" in b for b in final_bullets) and not (f"{abs(delta):.1f}" in final_headline):
+                        final_bullets.append(f"Change: {abs(delta):.1f} {unit} ({diff_word})")
+                    final_provider = resp_synth.provider
+                    final_model = resp_synth.model
+                    final_fallback_outcome = "none"
+                    final_answer_source = "model_synthesis"
+                else:
+                    reason = check.reason_code if not check.valid else (
+                        "missing_compound_component" if not has_compound_facts else ("missing_value" if not has_val else "missing_unit")
+                    )
+                    logger.debug(
+                        "Pass 2 model synthesis rejected: cand_h=%s cand_b=%s check.valid=%s check.reason=%s check.errors=%s has_val=%s has_unit=%s",
+                        cand_h, cand_b, check.valid, check.reason_code, check.errors, has_val, has_unit
+                    )
+                    final_fallback_outcome = f"claim_validation_failed:{reason}"
+                    final_answer_source = "fallback"
+            else:
+                final_fallback_outcome = resp_synth.outcome or "timeout"
+                final_answer_source = "fallback"
+        except (ProviderTimeoutError, TimeoutError):
+            final_fallback_outcome = "timeout"
+            final_answer_source = "fallback"
+        except Exception:
+            final_fallback_outcome = "synthesis_exception"
+            final_answer_source = "fallback"
+
+        # Update confirmed context
+        final_headline = _format_country_scope_text(
+            final_headline,
+            requested_team or team,
+            current_region,
+        )
+        model_led_ranking = bool(
+            routed.plan.intent == "ranking"
+            or any(operation.kind == "ranking" for operation in validated_plan_v2.operations)
+        )
+        ranking_candidates = (
+            _ranking_candidates_from_digests(all_tool_digests)
+            if model_led_ranking and not routed.plan.employee_id
+            else []
+        )
+        evidence_subject_ids = {
+            str(evidence.employee_id).strip()
+            for evidence in tool_result.typed_evidence
+            if evidence.employee_id and str(evidence.employee_id).strip()
+        }
+        evidence_subject_id = (
+            next(iter(evidence_subject_ids))
+            if len(evidence_subject_ids) == 1
+            and tool_name in ("read_employee_metric", "get_kpi_diagnosis")
+            and not team_level_query
+            and (not scope_changed or prompt_mentions_employee)
+            else None
+        )
+        evidence_subject_name = next(
+            (
+                evidence.employee_name
+                for evidence in tool_result.typed_evidence
+                if evidence_subject_id
+                and str(evidence.employee_id).strip() == evidence_subject_id
+                and evidence.employee_name
+            ),
+            None,
+        )
+        confirmed_subject_id = emp_id or evidence_subject_id
+        confirmed_subject_name = (emp_name or evidence_subject_name) if confirmed_subject_id else None
+        if ranking_candidates:
+            routed.confirmed_context.last_subject_employee_id = None
+            routed.confirmed_context.last_subject_employee_name = None
+            routed.confirmed_context.candidate_employees = ranking_candidates
+        else:
+            routed.confirmed_context.last_subject_employee_id = confirmed_subject_id
+            routed.confirmed_context.last_subject_employee_name = confirmed_subject_name
+            routed.confirmed_context.candidate_employees = []
+        routed.confirmed_context.intent = routed.plan.intent
+        routed.confirmed_context.metric_id = canonical_metric_id or f"{team.lower()}:{kpi_key}"
+        routed.confirmed_context.periods = [_period_id(curr_period) or f"{year_int:04d}-{MONTHS[month_str]:02d}"]
+        routed.confirmed_context.team = requested_team or (None if scope_changed else team)
+        routed.confirmed_context.function = requested_function or routed.confirmed_context.function
+        routed.confirmed_context.region = current_region
+        routed.confirmed_context.branch = branch
+
+        resolved_session_state = req.session_state.model_copy(
+            update={
+                "employee_id": None if ranking_candidates else confirmed_subject_id,
+                "team": requested_team or (None if scope_changed else team),
+                "function": requested_function or req.session_state.function,
+                "position": emp_pos if not scope_changed else routed.plan.position,
+                "branch": branch,
+                "region": current_region,
+                "performance_level": routed.plan.performance_level or (None if scope_changed else req.session_state.performance_level),
+                "month": month_str,
+                "year": year_int,
+                "last_confirmed_query": routed.confirmed_context,
+            }
+        )
+
+        scope_banner, _ = self._resolve_scope_banner_and_function(
+            session_state=resolved_session_state,
+            typed_evidence=tool_result.typed_evidence,
+            tool_digests=all_tool_digests,
+        )
+
+        tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        primary_link = tool_result.deep_links[0] if tool_result.deep_links else None
+
+        total_provider_calls = routed.provider_metrics.provider_calls + synth_provider_calls
+        total_provider_ms = round(routed.provider_metrics.provider_ms + synth_ms, 2)
+
+        resp_payload = AiChatResponsePayload(
+            trace_id="",
+            conversation_id=active_conversation_id,
+            turn_id=str(claimed_turn.id) if claimed_turn else None,
+            context_version=active_context_version,
+            outcome="answer",
+            answer_detail=effective_detail,  # type: ignore[arg-type]
+            headline=final_headline,
+            narrative_bullets=final_bullets,
+            visual_cards=tool_result.visual_cards,
+            citations=tool_result.citations,
+            deep_links=tool_result.deep_links,
+            primary_source_link=primary_link,
+            suggested_followups=[],
+            resolved_session_state=resolved_session_state,
+            scope_banner=scope_banner,
+            clarification=None,
+            structured_query=routed.plan,
+            validated_plan_v2=validated_plan_v2,
+            evidence_envelope_v2=[],
+            typed_evidence=tool_result.typed_evidence,
+            domain_guardrail_notes=[],
+            tool_calls=tool_records,
+            provider_used=final_provider,
+            model_used=final_model,
+            answer_source=final_answer_source,
+            latency_ms=max(0, int(round(tot_ms))),
+            timings=AiTurnTimingBreakdown(
+                resolution_ms=round((time.perf_counter() - t_res_start) * 1000.0, 2),
+                provider_ms=total_provider_ms,
+                database_ms=t_tool_ms,
+                trace_ms=0.0,
+                total_ms=tot_ms,
+            ),
+            provider_usage=AiProviderUsageMetrics(
+                router_mode=cfg.router_mode,
+                route_used="model_led_pilot",
+                provider_calls=total_provider_calls,
+                fallback_outcome=final_fallback_outcome if final_fallback_outcome != "none" else routed.provider_metrics.fallback_outcome,
+            ),
+        )
+
+        if conv_service and active_conversation_id and claimed_turn:
+            payload_for_store = resp_payload.model_dump()
+            if claimed_context_version is not None:
+                payload_for_store["context_version"] = claimed_context_version + 1
+            new_ver = conv_service.complete_turn(
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id),
+                expected_context_version=claimed_context_version,
+                claim_token=claimed_token,
+                scope=self.scope,
+                outcome="answer",
+                turn_kind="analytical",
+                route_used="model_led_pilot",
+                validated_plan=validated_plan_v2.model_dump(),
+                evidence_envelope=[],
+                response_payload=payload_for_store,
+                session_state=resolved_session_state,
+                confirmed_context=routed.confirmed_context,
+                provider_calls=total_provider_calls,
+                total_ms=tot_ms,
+            )
+            resp_payload.context_version = new_ver
+
+        return resp_payload
+
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
         claim_state: dict[str, Any] = {}
         try:
@@ -643,6 +2598,9 @@ class PmsAiOrchestrator:
         role = str(self.scope.get("role") or "Manager")
         page_ctx_ok, page_restr_h, page_restr_b = validate_page_context_scope(req, self.scope, live_auth_service)
         req, selected_metric_display = apply_page_context_to_request(req)
+        prompt_region = _prompt_region_hint(req.prompt)
+        if prompt_region:
+            req.session_state = req.session_state.model_copy(update={"region": prompt_region})
         if req.session_state.last_confirmed_query is not None:
             lcq = req.session_state.last_confirmed_query
             if not live_auth_service._is_function_authorized(lcq.function, self.scope):
@@ -697,7 +2655,11 @@ class PmsAiOrchestrator:
                     else []
                 )
             release_read_transaction(self.db)
-            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(req)
+            bounded_intent_context = _build_bounded_intent_context(req.session_state)
+            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(
+                req,
+                intent_context=bounded_intent_context,
+            )
             is_gate_non_perf = capability_mode in (
                 "greeting",
                 "capabilities_help",
@@ -705,6 +2667,7 @@ class PmsAiOrchestrator:
                 "navigation",
                 "clarification",
                 "off_topic",
+                "explain_previous",
             )
             claimed_turn, replayed_payload = conv_service.claim_or_replay_turn(
                 conversation_id=active_conversation_id,
@@ -729,7 +2692,11 @@ class PmsAiOrchestrator:
                 _claim_state["claimed_token"] = claimed_token
                 _claim_state["active_conversation_id"] = active_conversation_id
         else:
-            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(req)
+            bounded_intent_context = _build_bounded_intent_context(req.session_state)
+            capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(
+                req,
+                intent_context=bounded_intent_context,
+            )
 
         social_kind = is_greeting_or_thanks_prompt(req.prompt)
         if social_kind is not None or capability_mode == "greeting":
@@ -863,12 +2830,23 @@ class PmsAiOrchestrator:
                 restr_resp.context_version = new_ver
             return restr_resp
 
-        if capability_mode in ("capabilities_help", "clarification", "off_topic"):
-            gate_session_state = (
-                req.session_state.model_copy(update={"function": initial_fn})
-                if initial_fn != req.session_state.function
-                else req.session_state
-            )
+        if capability_mode in ("capabilities_help", "clarification", "off_topic", "explain_previous"):
+            explicit_help_function = "RCM" if re.search(r"\brcm\b", lower_prompt) else None
+            gate_function = explicit_help_function or initial_fn
+            gate_updates: dict[str, Any] = {}
+            if gate_function != req.session_state.function:
+                gate_updates["function"] = gate_function
+            if explicit_help_function:
+                gate_updates.update(
+                    team=None,
+                    position=None,
+                    branch=None,
+                    employee_id=None,
+                )
+            gate_session_state = req.session_state.model_copy(update=gate_updates) if gate_updates else req.session_state
+            gate_scope_banner, _ = self._resolve_scope_banner_and_function(session_state=gate_session_state)
+            g_detail_bullets: list[str] = []
+            explain_meta: dict[str, Any] = {}
             if capability_mode == "capabilities_help":
                 g_head, g_bullets, g_followups = build_capabilities_help_payload(
                     scope=self.scope,
@@ -888,6 +2866,32 @@ class PmsAiOrchestrator:
                     code="AMBIGUOUS_TEAM_SCOPE",
                     question=g_head,
                     choices=[],
+                )
+            elif capability_mode == "explain_previous":
+                previous_summary = (
+                    conv_service.get_last_completed_turn_summary(active_conversation_id, scope=self.scope)
+                    if conv_service is not None and active_conversation_id
+                    else None
+                )
+                (
+                    g_head,
+                    g_bullets,
+                    g_detail_bullets,
+                    g_followups,
+                    g_outcome,
+                    explain_meta,
+                ) = build_explain_previous_payload(
+                    last_turn_summary=previous_summary,
+                    scope=self.scope,
+                    session_state=gate_session_state,
+                    prompt=req.prompt,
+                    provider_override=req.provider_override or "auto",
+                )
+                g_turn_kind = "social" if g_outcome == "answer" else "clarification"
+                g_clar = (
+                    AiClarificationPrompt(code="AMBIGUOUS_KPI_SCOPE", question=g_head, choices=[])
+                    if g_outcome == "clarification"
+                    else None
                 )
             else:
                 g_head, g_bullets, g_followups = build_off_topic_gate_payload(
@@ -936,16 +2940,25 @@ class PmsAiOrchestrator:
                 narrative_bullets=g_bullets,
                 suggested_followups=g_followups[:3],
                 resolved_session_state=gate_session_state,
-                scope_banner=initial_scope_banner,
+                scope_banner=gate_scope_banner,
                 effective_context_label=eff_ctx_label_initial,
                 clarification=g_clar,
+                detail_bullets=g_detail_bullets,
                 validated_plan_v2=gate_plan_v2,
                 evidence_envelope_v2=[],
                 typed_evidence=[],
                 tool_calls=[],
                 capability_mode=capability_mode,
-                provider_used=active_provider_name() if cap_source == "local_model_router" else "deterministic",
-                model_used=configured_model_name() if cap_source == "local_model_router" else "intent-gate-v1",
+                provider_used=(
+                    str(explain_meta.get("provider_used") or "deterministic")
+                    if capability_mode == "explain_previous"
+                    else (active_provider_name() if cap_source == "local_model_router" else "deterministic")
+                ),
+                model_used=(
+                    str(explain_meta.get("model_used") or "intent-gate-v1")
+                    if capability_mode == "explain_previous"
+                    else (configured_model_name() if cap_source == "local_model_router" else "intent-gate-v1")
+                ),
                 latency_ms=max(0, int(round(tot_gate_ms))),
                 timings=AiTurnTimingBreakdown(
                     resolution_ms=round(cap_provider_ms, 2),
@@ -955,7 +2968,11 @@ class PmsAiOrchestrator:
                 provider_usage=AiProviderUsageMetrics(
                     router_mode=cfg.router_mode,
                     route_used=cap_source,  # type: ignore[arg-type]
-                    provider_calls=1 if cap_source == "local_model_router" else 0,
+                    provider_calls=(
+                        int(explain_meta.get("provider_calls") or 0)
+                        if capability_mode == "explain_previous"
+                        else (1 if cap_source == "local_model_router" else 0)
+                    ),
                 ),
             )
             if conv_service and active_conversation_id and claimed_turn:
@@ -1375,7 +3392,40 @@ class PmsAiOrchestrator:
             session_state=req.session_state,
             provider_override=req.provider_override,
             clarification_choice_id=req.clarification_choice_id,
+            bounded_context=bounded_intent_context,
+            history=req.history,
         )
+        effective_region = prompt_region or routed.confirmed_context.region or req.session_state.region
+        prior_scope_context = req.session_state.last_confirmed_query
+        current_scope_values = {
+            "function": routed.plan.function or routed.confirmed_context.function,
+            "team": routed.plan.team,
+            "position": routed.plan.position,
+            "branch": routed.plan.branch,
+            "region": effective_region,
+            "performance_level": routed.plan.performance_level,
+        }
+        previous_employee_id = req.session_state.employee_id or (
+            prior_scope_context.last_subject_employee_id if prior_scope_context else None
+        )
+        changed_employee = bool(
+            routed.plan.employee_id and previous_employee_id
+            and routed.plan.employee_id.casefold() != previous_employee_id.casefold()
+        )
+        resolved_scope_changed = changed_employee or bool(
+            prior_scope_context
+            and any(
+                current_value
+                and prior_value
+                and str(current_value).casefold() != str(prior_value).casefold()
+                for field, current_value in current_scope_values.items()
+                for prior_value in [getattr(prior_scope_context, field, None)]
+            )
+        )
+        if effective_region:
+            routed.confirmed_context.region = effective_region
+        if routed.plan.team:
+            routed.confirmed_context.team = routed.plan.team
         if explored_fallback_reason not in ("none", "disabled"):
             routed.provider_metrics.provider_calls += explored_fallback_calls
             routed.provider_metrics.provider_ms = round(routed.provider_metrics.provider_ms + explored_fallback_ms, 2)
@@ -1384,7 +3434,7 @@ class PmsAiOrchestrator:
         signals = extract_prompt_signals(req.prompt, req.session_state)
 
         # Synchronize signals with validated StructuredQueryPlan (including inherited follow-up context)
-        if routed.plan.team:
+        if routed.plan.team or resolved_scope_changed:
             signals.detected_team = routed.plan.team
         signals.detected_branch = routed.plan.branch
         signals.detected_compare_branch = (
@@ -1396,7 +3446,7 @@ class PmsAiOrchestrator:
             else ([routed.plan.branch] if routed.plan.branch else [])
         )
         signals.asks_branch_comparison = routed.plan.intent == "compare_branches"
-        if routed.plan.performance_level:
+        if routed.plan.performance_level or resolved_scope_changed:
             signals.detected_level = routed.plan.performance_level
         if routed.plan.metric:
             signals.detected_kpi = routed.plan.metric.split(":")[-1]
@@ -1406,6 +3456,8 @@ class PmsAiOrchestrator:
             signals.detected_employee_query = routed.plan.employee_id
         elif routed.plan.intent == "ranking":
             signals.detected_employee_query = None
+        if routed.plan.intent in ("trend", "compare_periods") or routed.plan.operation_kind_v2 == "trend":
+            signals.asks_trend = True
         signals.asks_single_person = bool(routed.plan.single_person)
         if routed.confirmed_context.last_operation_kind in ("employee_worst_period", "person_worst_period"):
             signals.asks_worst_month_history = True
@@ -1424,15 +3476,10 @@ class PmsAiOrchestrator:
         )
         if is_open_ended_extremum_q:
             signals.asks_specific_month_in_prompt = False
-        if False:
-            signals.asks_best_month_history = True
-            signals.asks_worst_month_history = False
         if routed.plan.periods:
             p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
             if p_month:
                 signals.detected_month = p_month
-                if False and routed.inherited_filters and (signals.asks_best_month_history or signals.asks_worst_month_history):
-                    signals.asks_specific_month_in_prompt = True
             if p_year:
                 signals.detected_year = p_year
         signals.asks_worst_agent = routed.plan.ranking_direction == "worst"
@@ -1466,7 +3513,10 @@ class PmsAiOrchestrator:
                     )
                 )
             )
-            if routed.plan.intent in ("actual_vs_target", "score_drivers", "compare_periods", "compare_branches"):
+            if routed.plan.intent in ("actual_vs_target", "score_drivers", "compare_periods", "compare_branches") or (
+                routed.plan.intent == "current_value" and routed.plan.team
+                and routed.plan.metric and routed.plan.metric != "overall_score"
+            ):
                 signals.primary_intents = [
                     t for t in signals.primary_intents if t not in ("executive_insights", "executive_summary")
                 ]
@@ -1499,8 +3549,76 @@ class PmsAiOrchestrator:
         validated_plan_v2 = self._build_validated_plan_v2(
             routed,
             turn_kind="analytical" if routed.outcome == "answer" else "clarification",
+            prompt=req.prompt,
         )
         known_emp_names = [c.employee_name for c in employee_candidates if c.employee_name]
+
+        # Phase 2 Model-Led Pilot direct conversational response
+        if routed.route_used == "model_led_pilot" and routed.plan.model_led_direct_response and not routed.plan.model_led_tool_call:
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            direct_resp = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="answer",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=routed.plan.model_led_direct_response,
+                narrative_bullets=[],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used=routed.provider_metrics.provider_used or "cloudflare",
+                model_used=routed.provider_metrics.model_used or "granite-4.0-h-micro",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(
+                    resolution_ms=resolution_ms,
+                    provider_ms=routed.provider_metrics.provider_ms,
+                    database_ms=0.0,
+                    trace_ms=0.0,
+                    total_ms=tot_ms,
+                ),
+                provider_usage=AiProviderUsageMetrics(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    fallback_outcome="none",
+                ),
+            )
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = direct_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
+                new_ver = conv_service.complete_turn(
+                    conversation_id=active_conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
+                    scope=self.scope,
+                    outcome="answer",
+                    turn_kind="conversational",
+                    route_used="model_led_pilot",
+                    validated_plan=validated_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=payload_for_store,
+                    session_state=req.session_state,
+                    confirmed_context=routed.confirmed_context,
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    total_ms=tot_ms,
+                )
+                direct_resp.context_version = new_ver
+            return direct_resp
 
         # Pre-read validation short-circuit for clarification, restricted_access, unavailable_data, unsupported_request
         if routed.outcome != "answer":
@@ -1510,20 +3628,20 @@ class PmsAiOrchestrator:
                 else (req.session_state.month, req.session_state.year)
             )
             resolved_state = SessionFilterContext(
-                function=routed.plan.function or req.session_state.function,
-                team=routed.plan.team or req.session_state.team,
-                position=routed.plan.position or req.session_state.position,
-                branch=routed.plan.branch or req.session_state.branch,
-                region=routed.confirmed_context.region or req.session_state.region,
-                performance_level=routed.plan.performance_level or req.session_state.performance_level,
+                function=routed.plan.function or routed.confirmed_context.function or req.session_state.function,
+                team=routed.plan.team or (None if resolved_scope_changed else req.session_state.team),
+                position=routed.plan.position or (None if resolved_scope_changed else req.session_state.position),
+                branch=routed.plan.branch or (None if resolved_scope_changed else req.session_state.branch),
+                region=effective_region,
+                performance_level=routed.plan.performance_level or (None if resolved_scope_changed else req.session_state.performance_level),
                 month=p_month or req.session_state.month,
                 year=p_year or req.session_state.year,
-                employee_id=routed.plan.employee_id or req.session_state.employee_id,
+                employee_id=routed.plan.employee_id,
                 last_confirmed_query=routed.confirmed_context,
             )
             scope_banner, short_fn = self._resolve_scope_banner_and_function(
                 session_state=resolved_state,
-                region=routed.confirmed_context.region,
+                region=effective_region,
             )
             if short_fn != resolved_state.function:
                 resolved_state.function = short_fn
@@ -1600,6 +3718,12 @@ class PmsAiOrchestrator:
                 provider_usage=provider_usage,
                 basis_warning=None,
                 cache_hit=False,
+                capability_mode=_resolved_capability_mode(
+                    capability_mode,
+                    outcome=routed.outcome,
+                    plan_intent=routed.plan.intent,
+                    prompt=req.prompt,
+                ),
             )
             if conv_service and active_conversation_id and claimed_turn:
                 payload_for_store = short_resp.model_dump()
@@ -1628,13 +3752,57 @@ class PmsAiOrchestrator:
         t_db_start = time.perf_counter()
         self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
         tool_session_state = req.session_state.model_copy(
-            update={"region": routed.confirmed_context.region}
+            update={
+                "function": routed.plan.function or routed.confirmed_context.function or (
+                    None if resolved_scope_changed else req.session_state.function
+                ),
+                "team": routed.plan.team or (None if resolved_scope_changed else req.session_state.team),
+                "position": routed.plan.position or (None if resolved_scope_changed else req.session_state.position),
+                "branch": routed.plan.branch or (None if resolved_scope_changed else req.session_state.branch),
+                "region": effective_region,
+                "performance_level": routed.plan.performance_level or (
+                    None if resolved_scope_changed else req.session_state.performance_level
+                ),
+                "employee_id": routed.plan.employee_id,
+            }
         )
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=tool_session_state)
         registry = DeterministicToolRegistry(ctx)
 
+        # Phase 2 Model-Led Pilot execution path
+        if routed.route_used == "model_led_pilot" and routed.plan.model_led_tool_call:
+            return self._handle_model_led_turn(
+                req=req,
+                routed=routed,
+                registry=registry,
+                employee_candidates=employee_candidates,
+                published_periods=published_periods,
+                live_auth_service=live_auth_service,
+                active_conversation_id=active_conversation_id,
+                claimed_turn=claimed_turn,
+                claimed_token=claimed_token,
+                claimed_context_version=claimed_context_version,
+                active_context_version=active_context_version,
+                conv_service=conv_service,
+                t0=t0,
+                role=role,
+                effective_detail=effective_detail,
+                t_res_start=t_res_start,
+                validated_plan_v2=validated_plan_v2,
+            )
+
         tool_results: list[ToolExecutionResult] = []
         guardrail_notes: list[str] = []
+        booking_team = routed.plan.team
+        booking_metric = routed.plan.metric
+        period_operations = [op.kind for op in validated_plan_v2.operations]
+        bookings_trend = bool(
+            booking_team and booking_metric and booking_metric.endswith(":bookings_count")
+            and not validated_plan_v2.scope.employee_id
+            and not signals.asks_branch_comparison
+            and len(validated_plan_v2.scope.periods) >= 2
+            and any(kind in ("trend", "compare_periods") for kind in period_operations)
+        )
 
         if signals.asks_revenue_in_call_center:
             guardrail_notes.append(
@@ -1651,7 +3819,7 @@ class PmsAiOrchestrator:
 
         cache_sig = {
             "intents": list(signals.primary_intents[:2]),
-            "region": routed.confirmed_context.region,
+            "region": effective_region,
             "team": signals.detected_team or req.session_state.team,
             "function": routed.plan.function or req.session_state.function,
             "position": routed.plan.position,
@@ -1660,7 +3828,7 @@ class PmsAiOrchestrator:
             "branches": list(signals.detected_branches),
             "asks_branch_comparison": signals.asks_branch_comparison,
             "level": signals.detected_level or req.session_state.performance_level,
-            "kpi": signals.detected_kpi,
+            "kpi": routed.plan.metric or signals.detected_kpi,
             "month": signals.detected_month or req.session_state.month,
             "year": signals.detected_year or req.session_state.year,
             "periods": list(routed.plan.periods),
@@ -1695,23 +3863,39 @@ class PmsAiOrchestrator:
                     year=signals.detected_year or req.session_state.year,
                 )
             )
+        elif bookings_trend and booking_team:
+            periods = validated_plan_v2.scope.periods
+            tool_results.append(registry.execute_team_metric_trend(
+                team=booking_team, branch=routed.plan.branch,
+                performance_level=routed.plan.performance_level, kpi=booking_metric,
+                period=periods[-1], periods=periods,
+            ))
+            if "ranking" in period_operations:
+                rank_month, rank_year = _period_key_to_month_year(periods[-1])
+                tool_results.append(registry.execute_agent_spotlight_and_trend(
+                    team=booking_team, branch=routed.plan.branch,
+                    performance_level=routed.plan.performance_level, kpi=booking_metric,
+                    ranking_direction=routed.plan.ranking_direction,
+                    single_person=True, month=rank_month, year=rank_year, months_window=1,
+                ))
         else:
             for intent in signals.primary_intents[:2]:
                 if intent == "agent_spotlight_trend":
-                    tool_results.append(
-                        registry.execute_agent_spotlight_and_trend(
-                            team=signals.detected_team,
-                            position=routed.plan.position,
-                            function=routed.plan.function,
-                            branch=signals.detected_branch,
-                            month=signals.detected_month,
-                            year=signals.detected_year,
-                            kpi=signals.detected_kpi,
-                            employee_query=signals.detected_employee_query,
-                            ranking_direction="worst" if signals.asks_worst_agent else "best",
-                            single_person=signals.asks_single_person,
-                        )
+                    spotlight_res = registry.execute_agent_spotlight_and_trend(
+                        team=signals.detected_team,
+                        position=routed.plan.position,
+                        function=routed.plan.function,
+                        branch=signals.detected_branch,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                        kpi=routed.plan.metric or signals.detected_kpi,
+                        employee_query=signals.detected_employee_query,
+                        ranking_direction="worst" if signals.asks_worst_agent else "best",
+                        single_person=signals.asks_single_person,
                     )
+                    if routed.plan.intent == "score_drivers" and routed.plan.employee_id:
+                        spotlight_res.tool_name = "get_kpi_diagnosis"
+                    tool_results.append(spotlight_res)
                 elif intent == "team_trend_spotlight":
                     tool_results.append(
                         registry.execute_team_trend_spotlight(
@@ -1758,6 +3942,7 @@ class PmsAiOrchestrator:
                         )
                     )
                 elif intent == "people_contribution":
+                    threshold_spec_det = parse_score_threshold_query(req.prompt)
                     tool_results.append(
                         registry.execute_people_contribution_and_rankings(
                             team=signals.detected_team,
@@ -1768,6 +3953,9 @@ class PmsAiOrchestrator:
                             kpi=signals.detected_kpi,
                             month=signals.detected_month,
                             year=signals.detected_year,
+                            direct_rank_fallback=threshold_spec_det is not None,
+                            score_threshold=threshold_spec_det[1] if threshold_spec_det is not None else None,
+                            threshold_operator=threshold_spec_det[0] if threshold_spec_det is not None else None,
                         )
                     )
                 elif intent == "kpi_diagnosis":
@@ -1782,7 +3970,7 @@ class PmsAiOrchestrator:
                             asks_branch_comparison=signals.asks_branch_comparison,
                             asks_period_comparison=routed.plan.intent == "compare_periods",
                             performance_level=signals.detected_level,
-                            kpi=signals.detected_kpi,
+                            kpi=routed.plan.metric or signals.detected_kpi,
                             month=signals.detected_month,
                             year=signals.detected_year,
                         )
@@ -1900,6 +4088,14 @@ class PmsAiOrchestrator:
         render_ms = round((time.perf_counter() - t_render_start) * 1000.0, 2)
 
         t_prov_start = time.perf_counter()
+        if len(routed.plan.periods) >= 2:
+            req_period_labels = [format_period_label(p) for p in routed.plan.periods if format_period_label(p)]
+            for td in tool_digests:
+                if isinstance(td, dict):
+                    for sp_key in ("spotlight", "agent_spotlight"):
+                        sp_obj = td.get(sp_key)
+                        if isinstance(sp_obj, dict):
+                            sp_obj["requested_period_labels"] = req_period_labels
         adapter = DeterministicLocalProviderAdapter()
         booking_comparison_facts = None
         synthesis = adapter.synthesize(
@@ -1961,7 +4157,7 @@ class PmsAiOrchestrator:
                     branch=routed.plan.branch,
                     branches=list(routed.plan.branches or []),
                     performance_level=routed.plan.performance_level,
-                    region=routed.confirmed_context.region,
+                    region=effective_region,
                 )
                 and live_auth_service.is_returned_evidence_authorized(
                     scope=self.scope,
@@ -2123,7 +4319,7 @@ class PmsAiOrchestrator:
                         branch=routed.plan.branch,
                         branches=list(routed.plan.branches or []),
                         performance_level=routed.plan.performance_level,
-                        region=routed.confirmed_context.region,
+                        region=effective_region,
                     )
                     and live_auth_service.is_returned_evidence_authorized(
                         scope=self.scope,
@@ -2155,15 +4351,15 @@ class PmsAiOrchestrator:
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(
-            function=routed.plan.function or req.session_state.function,
-            team=signals.detected_team or req.session_state.team,
-            position=routed.plan.position or req.session_state.position,
-            branch=None if signals.asks_branch_comparison else (signals.detected_branch or req.session_state.branch),
-            region=routed.confirmed_context.region,
-            performance_level=signals.detected_level or req.session_state.performance_level,
+            function=routed.plan.function or routed.confirmed_context.function or req.session_state.function,
+            team=signals.detected_team or (None if resolved_scope_changed else req.session_state.team),
+            position=routed.plan.position or (None if resolved_scope_changed else req.session_state.position),
+            branch=None if signals.asks_branch_comparison else (signals.detected_branch or (None if resolved_scope_changed else req.session_state.branch)),
+            region=effective_region,
+            performance_level=signals.detected_level or (None if resolved_scope_changed else req.session_state.performance_level),
             month=res_month,
             year=res_year,
-            employee_id=routed.plan.employee_id or req.session_state.employee_id,
+            employee_id=routed.plan.employee_id,
             last_confirmed_query=routed.confirmed_context,
         )
 
@@ -2176,7 +4372,7 @@ class PmsAiOrchestrator:
             session_state=resolved_state,
             typed_evidence=typed_evidence,
             tool_digests=tool_digests,
-            region=routed.confirmed_context.region,
+            region=effective_region,
             branch_override=branch_override,
             month=res_month,
             year=res_year,
@@ -2219,7 +4415,7 @@ class PmsAiOrchestrator:
             branch=resolved_state.branch or routed.plan.branch,
             branches=list(routed.plan.branches or []),
             performance_level=resolved_state.performance_level or routed.plan.performance_level,
-            region=routed.confirmed_context.region,
+            region=effective_region,
             employee_id=detected_emp_id,
             employee_name=detected_emp_name,
         )
@@ -2236,13 +4432,32 @@ class PmsAiOrchestrator:
         # later "his/her" question cannot silently select a different employee,
         # and store ranked candidates on plural rankings so pronoun follow-ups clarify.
         if post_exec_authorized:
+            is_ranking_result = bool(
+                routed.plan.intent == "ranking"
+                or "ranking" in routed.plan.requested_parts
+                or any(operation.kind == "ranking" for operation in validated_plan_v2.operations)
+            )
+            ranking_candidates = (
+                _ranking_candidates_from_digests(tool_digests)
+                if is_ranking_result and not routed.plan.employee_id
+                else []
+            )
+            if len(ranking_candidates) > 1:
+                routed.confirmed_context.candidate_employees = ranking_candidates
+                routed.confirmed_context.last_subject_employee_id = None
+                routed.confirmed_context.last_subject_employee_name = None
+                resolved_state.employee_id = None
+                resolved_state.last_confirmed_query = routed.confirmed_context
+
             person_results = [
                 tr.digest for tr in tool_results
                 if tr.tool_name == "get_agent_spotlight_and_trend"
                 and isinstance(tr.digest, dict)
                 and tr.digest.get("employee_id")
             ]
-            if routed.plan.single_person and len(person_results) == 1:
+            if len(ranking_candidates) > 1:
+                pass
+            elif routed.plan.single_person and len(person_results) == 1:
                 person = person_results[0]
                 spotlight = person.get("agent_spotlight") or {}
                 if routed.plan.employee_id or not spotlight.get("ties"):
@@ -2251,22 +4466,64 @@ class PmsAiOrchestrator:
                     routed.confirmed_context.candidate_employees = []
                     resolved_state.last_confirmed_query = routed.confirmed_context
             elif not routed.plan.single_person and person_results:
-                spotlight = person_results[0].get("agent_spotlight") or {}
-                top_cands = [
-                    {
-                        "employee_id": str(c["employee_id"]),
-                        "employee_name": str(c["employee_name"]),
-                        "team": str(c.get("team") or ""),
-                        "position": str(c.get("position") or ""),
-                    }
-                    for c in (spotlight.get("top_agents") or [])
-                    if isinstance(c, dict) and c.get("employee_id") and c.get("employee_name")
-                ]
+                top_cands = _ranking_candidates_from_digests([person_results[0]])
                 if len(top_cands) > 1:
                     routed.confirmed_context.candidate_employees = top_cands
                     routed.confirmed_context.last_subject_employee_id = None
                     routed.confirmed_context.last_subject_employee_name = None
                     resolved_state.last_confirmed_query = routed.confirmed_context
+
+        if post_exec_authorized and routed.outcome == "answer" and len(typed_evidence) == 0:
+            ucm_det = next(
+                (
+                    tr.digest.get("unavailable_count_metric")
+                    for tr in tool_results
+                    if isinstance(tr.digest, dict) and tr.digest.get("unavailable_count_metric")
+                ),
+                None,
+            )
+            if ucm_det:
+                routed.outcome = "unavailable_data"
+                typed_evidence = []
+                evidence_envelope_v2 = []
+                ucm_team_lbl = str(ucm_det.get("team") or routed.plan.team or "the requested team")
+                ucm_branch = ucm_det.get("branch") or routed.plan.branch
+                ucm_branch_title = str(ucm_branch).capitalize() if ucm_branch else ""
+                m_lbl = signals.detected_month or res_month or "September"
+                y_lbl = signals.detected_year or res_year or 2026
+                synthesis.headline = (
+                    f"No published {ucm_det['display_name']} records exist for {ucm_team_lbl} in {ucm_branch_title} ({m_lbl} {y_lbl})."
+                    if ucm_branch_title
+                    else f"No published {ucm_det['display_name']} records exist for {ucm_team_lbl} ({m_lbl} {y_lbl})."
+                )
+                synthesis.narrative_bullets = []
+                synthesis.suggested_followups = []
+
+        if (
+            post_exec_authorized
+            and routed.outcome == "answer"
+            and routed.plan.employee_id
+            and signals.detected_month
+            and signals.detected_year
+            and not signals.asks_trend
+        ):
+            emp_spotlight_missing = False
+            for tr in tool_results:
+                if tr.tool_name in ("get_agent_spotlight_and_trend", "get_kpi_diagnosis") and isinstance(tr.digest, dict):
+                    sp_obj = tr.digest.get("agent_spotlight") or tr.digest.get("spotlight")
+                    if sp_obj is None and tr.records_evaluated == 0:
+                        emp_spotlight_missing = True
+                        break
+            if emp_spotlight_missing:
+                routed.outcome = "unavailable_data"
+                typed_evidence = []
+                evidence_envelope_v2 = []
+                synthesis.headline = (
+                    f"No published PMS evaluation records exist for {routed.plan.employee_name or routed.plan.employee_id} "
+                    f"in {signals.detected_month} {signals.detected_year}."
+                )
+                synthesis.narrative_bullets = []
+                synthesis.suggested_followups = []
 
         if (
             post_exec_authorized
@@ -2275,7 +4532,11 @@ class PmsAiOrchestrator:
             and signals.detected_month
             and signals.detected_year
             and not routed.plan.employee_id
-            and routed.plan.team not in ("Support Positions", "Call Center", "RCM", "Finance", None)
+            and (
+                routed.plan.team not in ("Support Positions", "Call Center", "RCM", "Finance", None)
+                or ksa_region_hint_from_prompt(req.prompt)
+                or routed.confirmed_context.region == "KSA"
+            )
             and routed.confirmed_context.region != "All"
         ):
             avail = check_scope_data_availability(
@@ -2286,19 +4547,22 @@ class PmsAiOrchestrator:
                 month=signals.detected_month,
                 year=signals.detected_year,
             )
-            if not avail["has_data"] and avail["available_periods"]:
-                latest_avail = avail["available_periods"][-1]
+            available_periods = avail["available_periods"]
+            if not avail["has_data"] and (available_periods or ksa_region_hint_from_prompt(req.prompt)):
                 routed.outcome = "unavailable_data"
                 reg_note = f" ({routed.confirmed_context.region})" if routed.confirmed_context.region else ""
                 synthesis.headline = (
                     f"No published PMS evaluation records exist for {routed.plan.team}{reg_note} in {signals.detected_month} {signals.detected_year}."
                 )
-                synthesis.narrative_bullets = [
-                    f"The latest verified period for this scope is {latest_avail}."
-                ]
-                synthesis.suggested_followups = [
-                    f"What is {routed.plan.team} score in {latest_avail}?"
-                ]
+                synthesis.narrative_bullets = []
+                synthesis.suggested_followups = []
+                if not available_periods:
+                    typed_evidence = []
+                    evidence_envelope_v2 = []
+                if available_periods:
+                    latest_avail = available_periods[-1]
+                    synthesis.narrative_bullets = [f"The latest verified period for this scope is {latest_avail}."]
+                    synthesis.suggested_followups = [f"What is {routed.plan.team} score in {latest_avail}?"]
 
         if not post_exec_authorized:
             routed.outcome = "restricted_access"
@@ -2327,6 +4591,13 @@ class PmsAiOrchestrator:
             routed.confirmed_context.last_subject_employee_name = None
             routed.confirmed_context.single_person = False
             resolved_state.last_confirmed_query = routed.confirmed_context
+
+        elif routed.outcome == "answer":
+            synthesis.headline = _format_country_scope_text(
+                synthesis.headline,
+                routed.plan.team or resolved_state.team,
+                routed.confirmed_context.region or resolved_state.region,
+            )
 
         response_dict = {
             "headline": synthesis.headline,
@@ -2384,7 +4655,12 @@ class PmsAiOrchestrator:
             selected_metric_display=selected_metric_display,
         )
         action_proposal = None
-        final_capability_mode = capability_mode
+        final_capability_mode = _resolved_capability_mode(
+            capability_mode,
+            outcome=routed.outcome,
+            plan_intent=routed.plan.intent,
+            prompt=req.prompt,
+        )
         if (
             post_exec_authorized
             and routed.outcome == "answer"
@@ -2419,6 +4695,17 @@ class PmsAiOrchestrator:
                     *action_proposal.observed_facts,
                     *([action_proposal.hypothesis] if action_proposal.hypothesis else []),
                 ]
+
+        if (
+            routed.outcome == "answer"
+            and routed.plan.metric is None
+            and routed.plan.model_led_tool_call is None
+            and any(ev.kpi_key == "overall_score" and ev.source_link for ev in typed_evidence)
+        ):
+            routed.plan.model_led_tool_call = {
+                "tool_name": "read_employee_metric" if routed.plan.employee_id else "rank_employees",
+                "tool_arguments": {"metric_id": "overall_score"},
+            }
 
         final_resp = AiChatResponsePayload(
             trace_id=trace_id,

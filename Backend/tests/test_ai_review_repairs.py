@@ -959,6 +959,7 @@ def test_live_grant_revocation_between_steps_and_during_synthesis_with_and_witho
             id=str(uuid.uuid4()),
             owner_user_id=str(mgr_user.id),
             owner_role="Manager",
+            origin="workspace",
         )
         db.add(conv)
         db.commit()

@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL EVALUATION REPORT / REFERENCE ONLY**
+> This report documents historical execution and evaluation under the prior local-model pilot.
+> Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # PMS Contextual AI Assistant — Phase 0 to Phase 6 Execution & Evaluation Report
 
 ## 1. Phase 0 — Production Overhead Audit & Measured Cleanup

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import re
 import threading
 import time
@@ -45,12 +46,23 @@ from services.ai.catalog import evaluation_cache_identity, function_for_team, ge
 from services.ai.conversation_service import AiConversationService
 from services.ai.domain_policies import (
     has_pms_performance_signal,
+    is_bare_scope_or_period_refinement,
     is_capabilities_help_prompt,
+    is_explain_previous_prompt,
+    is_explicit_correction_prompt,
     is_greeting_or_thanks_prompt,
     is_off_topic_prompt,
     is_vague_dataless_prompt,
 )
-from services.ai.local_model_router import local_intent_enabled, suggest_intent
+from services.ai.llm_client import local_synthesis_enabled, synthesis_timeout_seconds
+from services.ai.local_model_router import (
+    BoundedIntentContext,
+    LocalIntentResult,
+    call_suggest_intent,
+    local_intent_enabled,
+    suggest_intent,
+)
+from services.ai.provider_engine import ProviderMessage, ProviderRequest, get_unified_provider_engine
 from services.ai.providers import resolve_variation_index
 from services.cache_invalidation_service import CacheInvalidationService
 from services.corrective_action_service import (
@@ -554,10 +566,17 @@ _AMBIGUOUS_DATA_WORD_RE = re.compile(
 )
 
 
+_FOLLOWUP_DISCOURSE_RE = re.compile(
+    r"^(?:and|what\s+about|how\s+about|compare\s+it\s+with|same\s+for|now\s+(?:show|check|for|in)|switch\s+to)\b"
+    r"|\b(?:his|her|their|him|that\s+agent|that\s+employee|top\s+agent|top\s+performer|the\s+leader|position|role|title)\b",
+    re.I,
+)
+
+
 def _has_specific_entity_context(req: AiChatRequest) -> bool:
-    """True when the request already points to a specific team, entity, metric, or prior turn."""
+    """True when the conversation already has an active analytical query or page entity."""
     lcq = req.session_state.last_confirmed_query
-    if lcq is not None and lcq.intent not in ("clarify", "unsupported") and any(
+    if lcq is not None and lcq.intent not in (None, "clarify", "unsupported") and any(
         (
             lcq.team,
             lcq.function,
@@ -569,25 +588,42 @@ def _has_specific_entity_context(req: AiChatRequest) -> bool:
     ):
         return True
     pc = req.page_context
-    if pc is not None and any((pc.selected_metric_id, pc.selected_entity_id, pc.team_id, pc.employee_id)):
+    if pc is not None and any((pc.selected_metric_id, pc.selected_entity_id, pc.employee_id)):
+        return True
+    return False
+
+
+def _has_active_analytical_query(req: AiChatRequest) -> bool:
+    """True only when an established analytical query or pending clarification exists."""
+    lcq = req.session_state.last_confirmed_query
+    if lcq is not None:
+        if lcq.pending_clarification_code:
+            return True
+        if lcq.intent not in (None, "clarify", "unsupported"):
+            return True
+    pc = req.page_context
+    if pc is not None and any((pc.selected_metric_id, pc.selected_entity_id, pc.employee_id)):
         return True
     return False
 
 
 def _has_grounded_followup_context(req: AiChatRequest) -> bool:
-    """True when a short or deictic prompt can inherit a confirmed query or page scope."""
-    if _has_specific_entity_context(req):
+    """True only when the current prompt actually follows up or corrects an active query."""
+    if not _has_active_analytical_query(req):
+        return False
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        return False
+    if is_explicit_correction_prompt(prompt) or is_bare_scope_or_period_refinement(prompt):
         return True
-    if req.session_state.team and req.session_state.team.strip().casefold() not in {"all", ""}:
-        return True
-    lcq = req.session_state.last_confirmed_query
-    if lcq is not None and lcq.intent not in (None, "clarify", "unsupported"):
-        return True
-    return False
+    return bool(_FOLLOWUP_DISCOURSE_RE.search(prompt))
 
 
 def detect_contextual_capability(
     req: AiChatRequest,
+    *,
+    intent_context: BoundedIntentContext | None = None,
+    out_intent_result: list[LocalIntentResult] | None = None,
 ) -> tuple[ContextualCapabilityMode, str, float]:
     """Classify a turn safely BEFORE any performance DB read or exploration.
 
@@ -600,6 +636,14 @@ def detect_contextual_capability(
 
     prompt = (req.prompt or "").strip()
     lower = prompt.casefold()
+    if is_explain_previous_prompt(prompt):
+        return "explain_previous", "local_rules", 0.0
+
+    # Phase 2: Pilot flag check - if enabled, skip lexical gates and route to model
+    from services.ai.config import get_ai_runtime_config
+    config = get_ai_runtime_config()
+    if config.model_led_pilot_enabled:
+        return "performance_query", "model_led_pilot", 0.0
 
     if is_greeting_or_thanks_prompt(prompt) is not None:
         return "greeting", "local_rules", 0.0
@@ -628,14 +672,21 @@ def detect_contextual_capability(
 
     # Vague data-less requests without grounded follow-up context -> clarification (0 DB reads)
     if is_vague_dataless_prompt(prompt):
+        if _has_grounded_followup_context(req):
+            return "performance_query", "local_rules", 0.0
         if _has_specific_entity_context(req) and any(
-            w in lower for w in ("this", "that", "it", "analyze", "review", "inspect")
+            w in lower for w in ("this", "it", "analyze", "review", "inspect")
         ):
             return "performance_query", "local_rules", 0.0
         return "clarification", "local_rules", 0.0
 
-    # If model router is enabled and prompt contains contextual help/navigation/proposal cues without
-    # explicit analytical data query keywords, allow the configured AI model to classify page_help / navigation / proposal intents.
+    # Bare period/country/branch tokens ("October", "UAE", "Dubai") only refine an active analytical query.
+    if is_bare_scope_or_period_refinement(prompt):
+        if _has_active_analytical_query(req):
+            return "performance_query", "local_rules", 0.0
+        return "clarification", "local_rules", 0.0
+
+    # Contextual help/navigation/proposal cues without explicit analytical data query keywords
     has_contextual_cue = any(
         cue in lower
         for cue in (
@@ -699,12 +750,15 @@ def detect_contextual_capability(
         and has_contextual_cue
         and not has_analytical_kw
     ):
-        local_res = suggest_intent(prompt)
+        local_res = call_suggest_intent(suggest_intent, prompt, context=intent_context)
+        if out_intent_result is not None:
+            out_intent_result.append(local_res)
         if local_res.reason == "ok" and local_res.intent in (
             "page_help",
             "navigation",
             "proposal",
             "capabilities_help",
+            "explain_previous",
             "off_topic",
             "clarification",
         ):
@@ -716,14 +770,17 @@ def detect_contextual_capability(
     if _has_grounded_followup_context(req):
         return "performance_query", "local_rules", 0.0
 
-    # Unrecognized prompt with zero PMS signals and zero grounded context:
-    # optional model disambiguation (intent JSON only), never defaulting to current_value.
+    # Unrecognized prompt with zero PMS signals and zero grounded follow-up cues:
+    # ask the configured intent classifier (with bounded context) once; never default to current_value.
     if (req.provider_override or "auto") == "auto" and local_intent_enabled():
-        local_res = suggest_intent(prompt)
+        local_res = call_suggest_intent(suggest_intent, prompt, context=intent_context)
+        if out_intent_result is not None:
+            out_intent_result.append(local_res)
         if local_res.reason == "ok" and local_res.intent is not None:
             mapped: dict[str, ContextualCapabilityMode] = {
                 "greeting": "greeting",
                 "capabilities_help": "capabilities_help",
+                "explain_previous": "explain_previous",
                 "page_help": "page_help",
                 "navigation": "navigation",
                 "off_topic": "off_topic",
@@ -731,9 +788,16 @@ def detect_contextual_capability(
                 "clarify": "clarification",
                 "proposal": "proposal",
                 "performance_query": "performance_query",
+                "current_value": "performance_query",
+                "actual_vs_target": "performance_query",
+                "trend": "performance_query",
+                "ranking": "performance_query",
+                "score_drivers": "performance_query",
             }
             if local_res.intent in mapped:
                 return mapped[local_res.intent], "local_model_router", local_res.elapsed_ms
+        # Provider unavailable, timed out, or returned invalid structured output: never guess performance_query.
+        return "clarification", "local_model_router", local_res.elapsed_ms
 
     if _AMBIGUOUS_DATA_WORD_RE.search(lower):
         return "clarification", "local_rules", 0.0
@@ -744,20 +808,26 @@ def detect_contextual_capability(
 def _describe_authorized_scope(scope: dict[str, Any], session_state: SessionFilterContext) -> str:
     if is_self_only(scope):
         return "your own Employee Scorecard"
-    if session_state.team and session_state.team.strip().casefold() not in {"all", ""}:
-        return session_state.team.strip()
-    if session_state.function and session_state.function.strip().casefold() not in {"all", ""}:
-        return session_state.function.strip()
     is_unrestricted = bool(scope.get("has_unrestricted_team_access")) or str(scope.get("role") or "").strip() in {
         "Admin",
         "General Manager",
         "Performance Team",
         "Viewer",
     }
+    if session_state.team and session_state.team.strip().casefold() not in {"all", ""}:
+        t_cand = session_state.team.strip()
+        if is_unrestricted or user_can_access_team(scope, t_cand):
+            return t_cand
     if not is_unrestricted:
         teams = [str(t).strip() for t in (scope.get("accessible_teams") or []) if str(t).strip()]
         if len(teams) == 1:
             return teams[0]
+    if session_state.function and session_state.function.strip().casefold() not in {"all", ""}:
+        fn_cand = session_state.function.strip()
+        allowed_fns = {str(f).strip().casefold() for f in (scope.get("accessible_functions") or []) if f}
+        if is_unrestricted or fn_cand.casefold() in allowed_fns:
+            return fn_cand
+    if not is_unrestricted:
         fns = [str(f).strip() for f in (scope.get("accessible_functions") or []) if str(f).strip()]
         if len(fns) == 1:
             return f"{fns[0]} teams"
@@ -772,6 +842,8 @@ def _build_role_aware_starter_followups(scope: dict[str, Any], session_state: Se
             "How do I find my scorecard?",
         ]
     active_team = session_state.team if session_state.team and session_state.team.strip().casefold() not in {"all", ""} else None
+    if active_team and not user_can_access_team(scope, active_team):
+        active_team = None
     if not active_team and not scope.get("has_unrestricted_team_access"):
         teams = [str(t).strip() for t in (scope.get("accessible_teams") or []) if str(t).strip()]
         if len(teams) == 1:
@@ -793,9 +865,11 @@ def build_capabilities_help_payload(
     *,
     scope: dict[str, Any],
     session_state: SessionFilterContext,
+    prompt: str = "",
 ) -> tuple[str, list[str], list[str]]:
-    """Return concise, role-aware capabilities help without fake numbers or DB queries."""
-    scope_desc = _describe_authorized_scope(scope, session_state)
+    """Return concise, role-aware, scope-aware capabilities help without fake numbers or DB queries."""
+    from services.ai.router import _detect_teams_in_prompt
+
     followups = _build_role_aware_starter_followups(scope, session_state)[:3]
     if is_self_only(scope):
         headline = "I can help you review your own PMS scorecard, KPI targets, monthly trends, and assigned actions."
@@ -805,6 +879,67 @@ def build_capabilities_help_payload(
         ]
         return headline, bullets, followups
 
+    lower = (prompt or "").casefold()
+    mentioned_teams = _detect_teams_in_prompt(lower)
+    is_unrestricted = bool(scope.get("has_unrestricted_team_access")) or str(scope.get("role") or "").strip() in {
+        "Admin",
+        "General Manager",
+        "Performance Team",
+        "Viewer",
+    }
+    allowed_fns = {str(f).strip().casefold() for f in (scope.get("accessible_functions") or []) if str(f).strip()}
+    allowed_teams = {str(t).strip().casefold() for t in (scope.get("accessible_teams") or []) if str(t).strip()}
+
+    requested_fn: str | None = None
+    if re.search(r"\brcm\b", lower):
+        requested_fn = "RCM"
+    elif re.search(r"\bcall\s+center\b", lower):
+        requested_fn = "Call Center"
+    elif len(mentioned_teams) == 1:
+        t_name = mentioned_teams[0]
+        if not user_can_access_team(scope, t_name):
+            scope_desc = _describe_authorized_scope(scope, session_state)
+            headline = f"{t_name} is outside your current access permissions, so I can only assist with {scope_desc}."
+            bullets = [
+                f"Ask about overall scores, KPI targets, trends, or drivers within {scope_desc}.",
+            ]
+            return headline, bullets, followups
+        headline = f"For {t_name}, I can summarize scores vs. targets, diagnose KPI drivers, track trends, and review employee or action status."
+        bullets = [
+            f"Ask for {t_name} monthly scores, KPI gaps against target, or top/lowest performers in a period.",
+            "You can also follow up to drill into a specific KPI, branch, or corrective action.",
+        ]
+        return headline, bullets, [
+            f"What is {t_name} score vs target?",
+            f"Show {t_name} trends",
+            "How are we doing overall?",
+        ][:3]
+
+    if requested_fn:
+        has_fn_access = is_unrestricted or requested_fn.casefold() in allowed_fns or any(
+            (function_for_team(t) or "").casefold() == requested_fn.casefold()
+            for t in (scope.get("accessible_teams") or [])
+        )
+        if not has_fn_access:
+            scope_desc = _describe_authorized_scope(scope, session_state)
+            headline = f"{requested_fn} is outside your current access permissions, so I can only assist with {scope_desc}."
+            bullets = [
+                f"Ask about scores, KPI targets, or trends within {scope_desc}.",
+            ]
+            return headline, bullets, followups
+        if requested_fn == "RCM":
+            headline = "For your authorized RCM scope, I can inspect Coding, Submission, Re-Submission, Pre-Approvals, rejection trends, and KPI targets."
+            bullets = [
+                "Ask for RCM team scores, rejection or SLA trends across published months, or compare Egypt and UAE RCM units within your scope.",
+                "Ask which KPIs are missing target or review open corrective actions.",
+            ]
+            return headline, bullets, [
+                "Show RCM rejection trends",
+                "Compare RCM team scores",
+                "Which RCM KPIs missed target?",
+            ]
+
+    scope_desc = _describe_authorized_scope(scope, session_state)
     can_write = can_user_write_corrective_action(
         scope,
         team=session_state.team,
@@ -825,17 +960,418 @@ def build_capabilities_help_payload(
     return headline, bullets, followups
 
 
+_NUM_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])([+-]?\d+(?:\.\d+)?)")
+_UNGROUNDED_CAUSE_RE = re.compile(
+    r"\b(?:staffing\s+shortage|shortage|illness|sick\s+leave|holiday|outage|system\s+crash|training\s+gap|attrition|turnover)\b",
+    re.I,
+)
+
+
+def _extract_numeric_magnitudes(text: str) -> set[float]:
+    vals: set[float] = set()
+    for m in _NUM_TOKEN_RE.finditer(text or ""):
+        try:
+            v = abs(float(m.group(1)))
+            if v < 2000:  # exclude years/IDs/large years handled separately
+                vals.add(round(v, 2))
+                vals.add(round(v, 1))
+        except ValueError:
+            pass
+    return vals
+
+
+def _build_allowed_explanation_numbers(summary: dict[str, Any]) -> set[float]:
+    parts = [
+        str(summary.get("headline") or ""),
+        *[str(b) for b in (summary.get("narrative_bullets") or [])],
+        *[str(b) for b in (summary.get("detail_bullets") or [])],
+        str(summary.get("basis_warning") or ""),
+        str(summary.get("scope_banner") or ""),
+    ]
+    for ev in summary.get("evidence_items") or []:
+        if isinstance(ev, dict):
+            parts.append(str(ev.get("value") or ""))
+            parts.append(str(ev.get("target") or ""))
+    joined = " ".join(parts)
+    base_nums = _extract_numeric_magnitudes(joined)
+    allowed = set(base_nums)
+    # Allow exact arithmetic differences & reconstructions (e.g., 12% - 8% = 4 pp; 12 - 4 = 8)
+    sorted_nums = sorted(base_nums)
+    for a in sorted_nums:
+        for b in sorted_nums:
+            diff = round(abs(a - b), 2)
+            tot = round(a + b, 2)
+            allowed.add(diff)
+            allowed.add(round(diff, 1))
+            allowed.add(tot)
+            allowed.add(round(tot, 1))
+    return allowed
+
+
+def _is_provider_explanation_grounded(
+    headline: str,
+    bullets: list[str],
+    summary: dict[str, Any],
+) -> bool:
+    hl = headline.strip()
+    if not hl or hl.casefold().startswith("in my previous answer"):
+        return False
+    prev_hl = str(summary.get("headline") or "").strip()
+    if hl.casefold() == prev_hl.casefold():
+        return False
+    candidate_text = " ".join([hl, *bullets])
+    source_text = " ".join(
+        [
+            prev_hl,
+            *[str(b) for b in (summary.get("narrative_bullets") or [])],
+            *[str(b) for b in (summary.get("detail_bullets") or [])],
+            str(summary.get("basis_warning") or ""),
+        ]
+    )
+    if _UNGROUNDED_CAUSE_RE.search(candidate_text) and not _UNGROUNDED_CAUSE_RE.search(source_text):
+        return False
+    allowed_nums = _build_allowed_explanation_numbers(summary)
+    for m in _NUM_TOKEN_RE.finditer(candidate_text):
+        try:
+            v = abs(float(m.group(1)))
+        except ValueError:
+            continue
+        if v >= 2000:
+            if str(int(v)) not in source_text and f"{v:g}" not in source_text:
+                return False
+            continue
+        if v in (1.0, 2.0, 3.0):
+            # Ordinal rank / simple English count ("1st", "2 months")
+            continue
+        if not any(abs(v - a) <= 0.11 for a in allowed_nums):
+            return False
+    return True
+
+
+def _detect_explain_ambiguity(prompt: str, summary: dict[str, Any]) -> str | None:
+    lower = (prompt or "").casefold()
+    ev_items = [
+        ev for ev in (summary.get("evidence_items") or [])
+        if isinstance(ev, dict) and ev.get("label")
+    ]
+    metric_labels: list[str] = []
+    for ev in ev_items:
+        lbl = str(ev.get("label") or "").strip()
+        if lbl and lbl not in metric_labels:
+            metric_labels.append(lbl)
+    if re.search(r"\b(?:which\s+(?:number|metric|figure|one)|the\s+other\s+(?:metric|number|one)|that\s+other\s+(?:metric|number))\b", lower):
+        if len(metric_labels) >= 2:
+            return f"Multiple metrics appeared in that answer ({', '.join(metric_labels[:3])}). Which one would you like me to explain?"
+        return "Which specific figure or phrase from my previous answer would you like me to clarify?"
+    return None
+
+
+def _build_deterministic_plain_explanation(
+    *,
+    prompt: str,
+    summary: dict[str, Any],
+    provider_failure_reason: str | None = None,
+) -> tuple[str, list[str], list[str]]:
+    """Build a plain-language grounded explanation without parroting the previous headline."""
+    lower = (prompt or "").casefold()
+    prev_hl = str(summary.get("headline") or "").strip()
+    prev_bullets = [str(b).strip() for b in (summary.get("narrative_bullets") or []) if str(b).strip()]
+    prev_details = [str(b).strip() for b in (summary.get("detail_bullets") or []) if str(b).strip()]
+    prev_scope = str(summary.get("scope_banner") or "").strip()
+    prev_warn = str(summary.get("basis_warning") or "").strip()
+    sq = summary.get("structured_query") if isinstance(summary.get("structured_query"), dict) else {}
+    ev_items = [ev for ev in (summary.get("evidence_items") or []) if isinstance(ev, dict)]
+
+    team_or_fn = str(sq.get("team") or sq.get("function") or prev_scope or "this scope").strip()
+    period_match = re.search(
+        r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+202\d\b",
+        prev_hl,
+    )
+    period_str = period_match.group(0) if period_match else ""
+    scope_period = f"{team_or_fn}{f' in {period_str}' if period_str else ''}"
+
+    pcts = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)%", prev_hl)]
+    delta_m = re.search(r"([+-]?\d+(?:\.\d+)?)\s*pp\b(?:\s+vs\s+([A-Za-z]+))?", prev_hl, re.I)
+
+    bullets: list[str] = []
+    detail_bullets: list[str] = []
+
+    if provider_failure_reason:
+        bullets.append(
+            f"Note: the live explanation model was unavailable ({provider_failure_reason}), so this explanation uses only the verified figures from the previous answer."
+        )
+
+    if re.search(r"\b(?:percentage\s+points?|pts|pp)\b", lower):
+        if delta_m:
+            raw_d = float(delta_m.group(1))
+            vs_month = delta_m.group(2) or "the prior month"
+            if len(pcts) >= 1:
+                cur_v = pcts[0]
+                prev_v = round(cur_v - raw_d, 1)
+                direction_word = "up" if raw_d >= 0 else "down"
+                headline = (
+                    f"In plain terms, {abs(raw_d):.1f} percentage points (pp) means the rate in {scope_period} moved "
+                    f"{direction_word} from {prev_v:.1f}% in {vs_month} to {cur_v:.1f}% (a direct arithmetic difference of {raw_d:+.1f} percentage points, not a {abs(raw_d):.1f}% relative jump)."
+                )
+            else:
+                headline = (
+                    f"Percentage points (pp) measure the direct subtraction between two percentages in {scope_period} "
+                    f"({raw_d:+.1f} pp vs {vs_month}), rather than a relative percentage ratio."
+                )
+        else:
+            headline = (
+                f"Percentage points (pp) show the straight numerical difference between two percentages in {scope_period}, "
+                "rather than a relative percent change."
+            )
+    elif re.search(r"\b(?:declin\w*|drop\w*|fell|lower|worse|decrease\w*)\b", lower):
+        if delta_m and len(pcts) >= 1:
+            raw_d = float(delta_m.group(1))
+            vs_month = delta_m.group(2) or "the comparison month"
+            cur_v = pcts[0]
+            prev_v = round(cur_v - raw_d, 1)
+            if raw_d < 0:
+                headline = (
+                    f"It is called a decline because the verified score in {scope_period} fell from {prev_v:.1f}% "
+                    f"({vs_month}) to {cur_v:.1f}%—a drop of {abs(raw_d):.1f} percentage points."
+                )
+            else:
+                headline = (
+                    f"Performance worsened because the rate moved by {raw_d:+.1f} percentage points (from {prev_v:.1f}% in {vs_month} to {cur_v:.1f}%) "
+                    f"on a lower-is-better metric in {scope_period}."
+                )
+        elif prev_hl:
+            headline = (
+                f"The comparison showed a decline because the measured result in {scope_period} was lower than its prior-period benchmark."
+            )
+        else:
+            headline = "The result moved down compared with the prior period in the stored evidence."
+    elif re.search(r"\b(?:which\s+part|supports|evidence|conclusion|prove|backs?\s+up|lowest|bottom)\b", lower):
+        if ev_items:
+            ev_summary = "; ".join(
+                f"{e['label']}: {e['value']}" + (f" (target {e['target']})" if e.get("target") else "")
+                for e in ev_items[:3]
+                if e.get("value")
+            )
+            headline = (
+                f"That conclusion is directly supported by the verified PMS metrics for {scope_period}: {ev_summary}."
+                if ev_summary
+                else f"That conclusion comes from the published evaluation records for {scope_period}."
+            )
+        elif prev_bullets:
+            headline = f"The conclusion for {scope_period} is supported by these recorded facts: {prev_bullets[0]}"
+        elif pcts:
+            vals_str = ", ".join(f"{v:.1f}%" for v in pcts[:3])
+            headline = f"The conclusion for {scope_period} rests directly on the published PMS evaluation figures ({vals_str}) compared across all eligible records in that scope."
+        else:
+            headline = f"That finding comes directly from the verified evaluation records for {scope_period}."
+    else:
+        # Plain-language simplification preserving original figures, scope, period, and caveats
+        if delta_m and len(pcts) >= 1:
+            raw_d = float(delta_m.group(1))
+            vs_month = delta_m.group(2) or "the previous month"
+            cur_v = pcts[0]
+            prev_v = round(cur_v - raw_d, 1)
+            if abs(raw_d) < 0.05:
+                headline = (
+                    f"Simply put, for {scope_period}, the measured figure stayed unchanged at {cur_v:.1f}% "
+                    f"compared with {vs_month} ({prev_v:.1f}%)."
+                )
+            else:
+                dir_txt = "higher" if raw_d > 0 else "lower"
+                headline = (
+                    f"Simply put, for {scope_period}, the measured figure is {cur_v:.1f}%, which is {abs(raw_d):.1f} percentage points "
+                    f"{dir_txt} than {vs_month} ({prev_v:.1f}%)."
+                )
+        elif pcts:
+            headline = (
+                f"Simply put, {scope_period} recorded {pcts[0]:.1f}% based on the published PMS evaluation records for that scope."
+            )
+        elif ev_items:
+            top_ev = ev_items[0]
+            headline = f"Simply put, for {scope_period}, {top_ev.get('label', 'the metric')} measured {top_ev.get('value', 'the reported figure')}."
+        else:
+            headline = f"In plain terms, the previous result reflects published evaluation records strictly for {scope_period}."
+
+    # Add non-redundant supporting points (preserving evidence & uncertainty without repeating prev_hl verbatim)
+    for b in prev_bullets:
+        if b.casefold() != prev_hl.casefold() and len(bullets) < 2:
+            bullets.append(b)
+    if prev_warn and len(bullets) < 3:
+        bullets.append(f"Caveat to keep in mind: {prev_warn}")
+    if prev_details:
+        detail_bullets.extend(prev_details[:3])
+    if prev_hl and prev_hl not in detail_bullets:
+        detail_bullets.append(f"Original summary: {prev_hl}")
+    if not bullets:
+        bullets.append(f"Scope covered: {prev_scope or scope_period}. Figures reflect published records without extrapolation.")
+    return headline, bullets[:3], detail_bullets[:4]
+
+
+def build_explain_previous_payload(
+    *,
+    last_turn_summary: dict[str, Any] | None,
+    scope: dict[str, Any],
+    session_state: SessionFilterContext,
+    prompt: str = "",
+    provider_override: str = "auto",
+) -> tuple[str, list[str], list[str], list[str], str, dict[str, Any]]:
+    """Explain or clarify the previous assistant response without running a new performance query.
+
+    Returns (headline, bullets, detail_bullets, followups, outcome, explain_meta).
+    """
+    followups = _build_role_aware_starter_followups(scope, session_state)[:2]
+    meta: dict[str, Any] = {
+        "provider_used": "deterministic",
+        "model_used": "intent-gate-v1",
+        "provider_calls": 0,
+        "provider_ms": 0.0,
+        "fallback_outcome": "none",
+    }
+    if last_turn_summary is None:
+        return (
+            "I haven't shared an analysis in this conversation yet. Which team, KPI, or period would you like me to inspect?",
+            ["Specify a team, metric, or ask how performance looks overall so I have an answer to explain."],
+            [],
+            followups,
+            "clarification",
+            meta,
+        )
+    if last_turn_summary.get("restricted"):
+        return (
+            "Access restricted: your permissions changed and no longer include the scope of that earlier answer.",
+            ["Ask a question within your current authorized scope."],
+            [],
+            followups,
+            "restricted_access",
+            meta,
+        )
+
+    ambig_q = _detect_explain_ambiguity(prompt, last_turn_summary)
+    if ambig_q is not None:
+        return (
+            ambig_q,
+            ["Name the specific figure, metric, or comparison you want me to break down."],
+            [],
+            followups,
+            "clarification",
+            meta,
+        )
+
+    provider_failure_reason: str | None = None
+    use_provider = (provider_override or "auto") != "deterministic" and local_synthesis_enabled()
+    if use_provider:
+        schema = {
+            "type": "object",
+            "properties": {
+                "headline": {"type": "string"},
+                "bullets": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["headline", "bullets"],
+            "additionalProperties": False,
+        }
+        prev_hl_str = str(last_turn_summary.get("headline") or "")
+        pcts_hl = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)%", prev_hl_str)]
+        delta_hl = re.search(r"([+-]?\d+(?:\.\d+)?)\s*pp\b(?:\s+vs\s+([A-Za-z]+))?", prev_hl_str, re.I)
+        verified_math: str | None = None
+        if delta_hl and pcts_hl:
+            d_val = float(delta_hl.group(1))
+            vs_m = delta_hl.group(2) or "prior month"
+            cur_v = pcts_hl[0]
+            verified_math = f"current={cur_v:.1f}%, {vs_m}={round(cur_v - d_val, 1):.1f}%, change={d_val:+.1f} percentage points"
+        bounded_prior = {
+            "scope_banner": last_turn_summary.get("scope_banner"),
+            "headline": last_turn_summary.get("headline"),
+            "narrative_bullets": last_turn_summary.get("narrative_bullets") or [],
+            "detail_bullets": (last_turn_summary.get("detail_bullets") or [])[:3],
+            "basis_warning": last_turn_summary.get("basis_warning"),
+            "verified_math": verified_math,
+            "evidence_items": (last_turn_summary.get("evidence_items") or [])[:4],
+        }
+        sys_inst = (
+            "You explain a prior PMS analytics answer in simpler, clearer language.\n"
+            "Rules:\n"
+            "1. Directly answer what the user asked about the prior response (e.g. meaning of percentage points vs relative %, why it is called a decline, or which verified numbers support the conclusion).\n"
+            "2. Preserve exact numbers, periods, scope, and any uncertainty/caveats from the authorized prior answer.\n"
+            "3. Never confuse a change value ('+X pp since April') with an absolute monthly score; use verified_math for prior vs current values.\n"
+            "4. NEVER invent causes, staff issues, numbers, recommendations, or targets not present in the JSON.\n"
+            "5. NEVER start with 'In my previous answer' or repeat the prior headline word-for-word.\n"
+            "6. Keep the headline concise (1-2 sentences) and at most 2 short supporting bullets.\n"
+            f"Authorized prior answer JSON: {json.dumps(bounded_prior, ensure_ascii=False)}"
+        )
+        p_req = ProviderRequest(
+            messages=[ProviderMessage(role="user", content=(prompt or "Explain the previous answer more simply.").strip())],
+            system_instruction=sys_inst,
+            temperature=0.0,
+            max_tokens=420,
+            response_format="json",
+            json_schema=schema,
+            timeout_seconds=synthesis_timeout_seconds(),
+            purpose="explain_previous",
+            user_id=str(scope.get("user_id") or "") or None,
+            user_role=str(scope.get("role") or "") or None,
+        )
+        p_resp = get_unified_provider_engine().generate(p_req)
+        meta["provider_calls"] = 1
+        meta["provider_ms"] = round(float(p_resp.latency_ms or 0.0), 2)
+        if p_resp.outcome in ("ok", "success", "fallback_success") and p_resp.content:
+            try:
+                raw_txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", p_resp.content.strip(), flags=re.IGNORECASE)
+                parsed = json.loads(raw_txt)
+                cand_hl = str(parsed.get("headline") or "").strip()
+                cand_bullets = [str(b).strip() for b in (parsed.get("bullets") or []) if str(b).strip()][:2]
+                if _is_provider_explanation_grounded(cand_hl, cand_bullets, last_turn_summary):
+                    prev_warn = str(last_turn_summary.get("basis_warning") or "").strip()
+                    if prev_warn and prev_warn.casefold() not in " ".join([cand_hl, *cand_bullets]).casefold():
+                        cand_bullets.append(f"Caveat: {prev_warn}")
+                    det_lines = [str(b).strip() for b in (last_turn_summary.get("detail_bullets") or []) if str(b).strip()]
+                    prev_hl = str(last_turn_summary.get("headline") or "").strip()
+                    if prev_hl and prev_hl not in det_lines:
+                        det_lines.append(f"Original summary: {prev_hl}")
+                    meta["provider_used"] = p_resp.provider
+                    meta["model_used"] = p_resp.model
+                    return cand_hl, cand_bullets[:3], det_lines[:4], followups, "answer", meta
+                provider_failure_reason = "validation_rejected"
+            except Exception:
+                provider_failure_reason = "invalid_json"
+        else:
+            provider_failure_reason = p_resp.outcome or "provider_unavailable"
+        meta["fallback_outcome"] = provider_failure_reason
+        meta["provider_used"] = p_resp.provider if p_resp.provider != "none" else "deterministic"
+
+    headline, bullets, detail_bullets = _build_deterministic_plain_explanation(
+        prompt=prompt,
+        summary=last_turn_summary,
+        provider_failure_reason=provider_failure_reason,
+    )
+    return headline, bullets, detail_bullets, followups, "answer", meta
+
+
 def build_clarification_gate_payload(
     *,
     scope: dict[str, Any],
     session_state: SessionFilterContext,
+    prompt: str = "",
+    provider_reason: str | None = None,
 ) -> tuple[str, list[str], list[str]]:
-    """Return a concise clarification prompt for vague data-less requests (0 DB reads)."""
+    """Return a concise clarification prompt for vague data-less requests or unresolved provider failures (0 DB reads)."""
     followups = _build_role_aware_starter_followups(scope, session_state)[:3]
     if is_self_only(scope):
         headline = "Which part of your scorecard or which KPI or month would you like me to inspect?"
         bullets = [
             "Specify a KPI, a published month, or ask for your overall performance summary.",
+        ]
+        return headline, bullets, followups
+    if is_bare_scope_or_period_refinement(prompt):
+        token = (prompt or "").strip().rstrip("?.!")
+        headline = f"What metric, team, or performance question would you like me to inspect for {token}?"
+        bullets = [
+            f"Specify what you want to see for {token}—such as a team score, KPI target, or overall overview.",
+        ]
+        return headline, bullets, followups
+    if provider_reason and provider_reason not in ("ok", "disabled"):
+        headline = "I couldn't classify that request automatically right now. Could you specify which team, KPI, or period you'd like to inspect?"
+        bullets = [
+            "The intent classification provider is temporarily unavailable, so please name a specific team, metric, employee, or ask for an overall summary.",
         ]
         return headline, bullets, followups
     headline = "Which team, KPI, person, or performance overview would you like me to inspect?"

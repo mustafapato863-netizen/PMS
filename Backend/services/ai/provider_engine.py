@@ -286,12 +286,15 @@ class ProviderAttempt:
         return res
 
 
+MODEL_LED_REQUEST_PURPOSES = frozenset({"model_led_router", "model_led_synthesis"})
+
+
 @dataclass
 class ProviderRequest:
     messages: list[ProviderMessage] = field(default_factory=list)
     system_instruction: str | None = None
     temperature: float = 0.0
-    max_tokens: int = 2048
+    max_tokens: int | None = 2048  # None leaves the output limit to the provider.
     response_format: str = "text"  # "text" | "json"
     json_schema: dict[str, Any] | None = None
     timeout_seconds: float | None = None
@@ -937,8 +940,11 @@ class CloudflareAIProviderAdapter:
             "model": resolved_model,
             "messages": messages,
             "temperature": max(0.0, min(request.temperature, 2.0)),
-            "max_tokens": request.max_tokens or 2048,
         }
+        if request.max_tokens is not None:
+            payload["max_tokens"] = request.max_tokens or 2048
+        if request.purpose in MODEL_LED_REQUEST_PURPOSES and resolved_model == "@cf/zai-org/glm-4.7-flash":
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
         if request.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
@@ -1083,9 +1089,16 @@ class GeminiProviderAdapter:
 
         generation_config: dict[str, Any] = {
             "temperature": max(0.0, min(request.temperature, 2.0)),
-            # Ensure output token limit accommodates reasoning thoughts + text
-            "maxOutputTokens": max(256, request.max_tokens or 2048),
         }
+        if request.max_tokens is not None:
+            generation_config["maxOutputTokens"] = max(256, request.max_tokens or 2048)
+        if request.purpose in MODEL_LED_REQUEST_PURPOSES:
+            if re.fullmatch(r"gemini-3(?:\.\d+)?-(?:flash(?:-lite)?|pro)(?:-preview(?:-\d+-\d+)?)?", resolved_model):
+                generation_config["thinkingConfig"] = {"thinkingLevel": "HIGH"}
+            elif resolved_model == "gemini-2.5-pro":
+                generation_config["thinkingConfig"] = {"thinkingBudget": 32768}
+            elif re.fullmatch(r"gemini-2\.5-flash(?:-lite)?(?:-preview(?:-\d+-\d+)?)?", resolved_model):
+                generation_config["thinkingConfig"] = {"thinkingBudget": 24576}
         if request.response_format == "json":
             generation_config["responseMimeType"] = "application/json"
             if request.json_schema:

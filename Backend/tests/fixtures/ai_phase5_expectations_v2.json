@@ -1,0 +1,69 @@
+{
+  "schema_version": "2.0",
+  "base_fixture": "ai_phase5_postfix_offline_v1.json",
+  "base_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "corrections": {
+    "p505_t4": {
+      "source_proof": "Call Center includes Inbound and Outbound as well as support. September EMP101 has 94.0, whereas EMP303 has the support-only maximum of 93.0.",
+      "replace": {
+        "expected_entities": {"team": "Call Center", "employee": "Sara Mahmoud"},
+        "required_content": ["Sara Mahmoud", "94"],
+        "expected_evidence": [{"kpi_key": "overall_score", "period": "2026-09", "actual": 94, "unit": "%", "source_required": true, "employee_id": "EMP101"}]
+      }
+    },
+    "p506_t1": {
+      "source_proof": "The prompt requests the UAE Coding team. Its September scoped cohort has one measurement, 2.5%. The prompt does not request EMP502.",
+      "replace": {
+        "required_content": ["Coding", "2.5"],
+        "expected_evidence": [{"kpi_key": "QualityErrors", "period": "2026-09", "actual": 2.5, "unit": "%", "source_required": true, "require_aggregate": true}]
+      }
+    },
+    "p506_t2": {
+      "source_proof": "The country switch retains the team KPI and September. Egypt Coding's scoped cohort has one measurement, 1.8%.",
+      "replace": {
+        "required_content": ["Coding", "1.8"],
+        "expected_evidence": [{"kpi_key": "QualityErrors", "period": "2026-09", "actual": 1.8, "unit": "%", "source_required": true, "require_aggregate": true}]
+      }
+    },
+    "p506_t3": {
+      "source_proof": "The follow-up retains the Egypt team, month, and metric from p506_t2. It does not select EMP501.",
+      "replace": {
+        "required_content": ["Coding", "1.8"],
+        "expected_evidence": [{"kpi_key": "QualityErrors", "period": "2026-09", "actual": 1.8, "unit": "%", "source_required": true, "require_aggregate": true}]
+      }
+    },
+    "p509_t4": {
+      "source_proof": "September Finance has one unique qualifying employee above 85%, EMP901 at 86%. The prompt asks for the count. Employee evidence remains useful as support for the aggregate.",
+      "replace": {
+        "required_content": ["Finance"],
+        "expected_evidence": [
+          {"kpi_key": "qualifying_employee_count", "period": "2026-09", "actual": 1, "unit": "count", "source_required": true, "require_aggregate": true},
+          {"kpi_key": "overall_score", "period": "2026-09", "actual": 86, "unit": "%", "source_required": true, "employee_id": "EMP901"}
+        ]
+      }
+    },
+    "p517_t3": {
+      "source_proof": "The global Dubai destination total is 350. The Branch Director's branch-attributed source filter admits zero of the contributing Inbound records.",
+      "remove": ["expected_intent", "expected_metric", "expected_evidence"],
+      "replace": {
+        "expected_outcome": "unavailable_data",
+        "required_content": ["Dubai"],
+        "forbidden_content": ["350"],
+        "expect_no_evidence": true,
+        "critical_authorization": true
+      }
+    },
+    "p518_t1": {
+      "source_proof": "This fixture explicitly requests an injected timeout. Live provider trials do not inject it. Keep the fact check in both modes and check the expected fallback only in fault-injection mode.",
+      "live_remove": ["expected_answer_source", "expected_fallback_outcome", "expected_provider_used"]
+    },
+    "p518_t2": {
+      "source_proof": "This fixture explicitly requests an injected provider error. Live provider trials do not inject it.",
+      "live_remove": ["expected_answer_source", "expected_fallback_outcome", "expected_provider_used"]
+    },
+    "p518_t3": {
+      "source_proof": "This fixture explicitly requests an injected timeout. Live provider trials do not inject it.",
+      "live_remove": ["expected_answer_source", "expected_fallback_outcome", "expected_provider_used"]
+    }
+  }
+}

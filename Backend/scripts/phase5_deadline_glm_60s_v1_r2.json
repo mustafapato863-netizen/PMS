@@ -1,0 +1,4243 @@
+{
+  "mode": "live",
+  "fixture": "ai_phase5_deadline_sample_v1.json",
+  "fixture_sha256": "9717d9b00869c3ee47ca132308dbfb84945893a36ba0b5d3137f806e3dae34ab",
+  "source_data_sha256": "6bf79419ded46da9644e7bb0498a3a5da550a99bda494f8b3ac6acc977dbb68a",
+  "runner_sha256": "2a14fcbd2df3a6cfc74948e5083e4f19d3a446b97f3a6b7750859ff9d1f9c9f0",
+  "freeze_manifest": null,
+  "conversation_count": 4,
+  "prompt_count": 10,
+  "coverage": {},
+  "coverage_counts": {
+    "role.Admin": 4,
+    "operation.get_score_trend": 2,
+    "operation.rank_employees": 2,
+    "department.Call_Center": 5,
+    "country.EGY": 7,
+    "operation.read_employee_metric": 6,
+    "department.Coding": 3,
+    "country.UAE": 3,
+    "edge.country_correction": 1,
+    "department.Pharmacy": 2,
+    "operation.get_kpi_diagnosis": 1
+  },
+  "coverage_missing_tags": [],
+  "freeze_requirements": {
+    "min_conversations": 4,
+    "min_prompts": 10,
+    "critical_accuracy_pct": 100,
+    "semantic_accuracy_pct": 95
+  },
+  "quality_gate": {
+    "structural_pass": true,
+    "critical_target_pct": 100.0,
+    "critical_pass": true,
+    "semantic_target_pct": 95.0,
+    "semantic_pass": false,
+    "passed": false
+  },
+  "freeze_manifest_sha256": null,
+  "started_at_utc": "2026-11-18T01:41:05.555576+00:00",
+  "completed_at_utc": "2026-11-18T01:47:08.789035+00:00",
+  "summary": {
+    "frozen_eval": {
+      "total": 10,
+      "passed": 6,
+      "accuracy_pct": 60.0,
+      "semantic_passed": 6,
+      "semantic_accuracy_pct": 60.0,
+      "critical_check_passed_turns": 10,
+      "critical_check_required_turns": 10,
+      "critical_check_pass_rate_pct": 100.0,
+      "avg_ms": 36010.64,
+      "p50_ms": 33686.88,
+      "p95_ms": 59630.97,
+      "total_provider_calls": 14,
+      "total_provider_call_attempts": 14,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_estimated_cost_usd": 0.0,
+      "fallback_turns": 2,
+      "failures": [
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t1",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "What is the Quality Errors rate for Coding in the UAE in September 2026?",
+          "passed": false,
+          "failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 41405.8,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "In Coding · UAE (September 2026 · All Branches), Quality Errors is at 2.5% vs target 3.0% (100.0% achievement, 20% weight).",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "actual_vs_target",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding:quality_errors",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding:quality_errors",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors",
+              "team": "Coding",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 2.5,
+              "target": 3.0,
+              "actual_display": "2.5%",
+              "target_display": "3.0%",
+              "achievement_percent": 100.0,
+              "weight_percent": 20.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding?month=September&year=2026&function=RCM&team=Coding&performance_level=Employee",
+              "scoring_basis_status": "changed",
+              "scoring_basis_note": "Month-over-month scoring basis changed",
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.UAE"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "raw_semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 40759.53,
+              "usage": {
+                "prompt_tokens": 602,
+                "completion_tokens": 738,
+                "total_tokens": 1340,
+                "neurons": 30.174200000000003
+              },
+              "estimated_cost_usd": 0.00033192,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 40759.46,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 602,
+                  "output_tokens": 738,
+                  "neurons": 30.174200000000003
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99995209998451
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 738,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t2",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "Switch to Egypt instead.",
+          "passed": false,
+          "failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 60721.1,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Quality Errors Rate for Coding · Egypt in September 2026 was 1.8 % from one published record.",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "actual_vs_target",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding EGY",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors Rate",
+              "team": "Coding EGY",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 1.8,
+              "target": 3.0,
+              "actual_display": "1.8 %",
+              "target_display": "3 %",
+              "achievement_percent": null,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": false,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "edge.country_correction",
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "raw_semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "none",
+              "engine_model": "none",
+              "outcome": "provider_unavailable",
+              "latency_ms": 60163.89,
+              "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+              },
+              "estimated_cost_usd": null,
+              "error": "Primary provider failed and fallback is disabled",
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "timeout",
+                  "latency_ms": 60163.69,
+                  "http_code": 408,
+                  "error_detail": "Cloudflare call timed out after 60.0s",
+                  "retry_count": 0,
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99996629997622
+                }
+              ],
+              "http_responses": []
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t3",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "And the rate?",
+          "passed": false,
+          "failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 31186.77,
+          "provider_used": "cloudflare",
+          "model_used": "@cf/zai-org/glm-4.7-flash",
+          "answer_source": "model_synthesis",
+          "provider_calls": 2,
+          "provider_call_attempts": 2,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Coding · Egypt's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 % (for Quality Errors Rate, lower is better).",
+          "narrative_bullets": [
+            "Coding EGY's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 %."
+          ],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "current_value",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding EGY",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": {
+              "tool_name": "get_kpi_diagnosis",
+              "tool_arguments": {
+                "team": "Coding EGY",
+                "function": "RCM",
+                "period": "2026-09",
+                "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+                "branch": null,
+                "performance_level": "Employee"
+              }
+            },
+            "model_led_tool_calls": [
+              {
+                "tool_name": "get_kpi_diagnosis",
+                "tool_arguments": {
+                  "team": "Coding EGY",
+                  "function": "RCM",
+                  "period": "2026-09",
+                  "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+                  "branch": null,
+                  "performance_level": "Employee"
+                }
+              }
+            ],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors Rate",
+              "team": "Coding EGY",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 1.8,
+              "target": 3.0,
+              "actual_display": "1.8 %",
+              "target_display": "3 %",
+              "achievement_percent": null,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": false,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis"
+          ],
+          "raw_semantic_failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 15429.37,
+              "usage": {
+                "prompt_tokens": 617,
+                "completion_tokens": 520,
+                "total_tokens": 1137,
+                "neurons": 22.3215
+              },
+              "estimated_cost_usd": 0.00024554,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 15429.32,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 617,
+                  "output_tokens": 520,
+                  "neurons": 22.3215
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99996970000211
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 520,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            },
+            {
+              "stage": "model_led_synthesis",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 15713.61,
+              "usage": {
+                "prompt_tokens": 325,
+                "completion_tokens": 839,
+                "total_tokens": 1164,
+                "neurons": 32.3271
+              },
+              "estimated_cost_usd": 0.0003556,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 15713.56,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 325,
+                  "output_tokens": 839,
+                  "neurons": 32.3271
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99997349997284
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 839,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+          "split": "frozen_eval",
+          "turn_id": "p507_t1",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "passed": false,
+          "failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "semantic_failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 764.42,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Nadia Fadel's Waiting Time was 6.20 min in September 2026.",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "current_value",
+            "requested_parts": [
+              "current_value"
+            ],
+            "team": "Pharmacy",
+            "function": null,
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": null,
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": true,
+            "employee_id": "EMP701",
+            "employee_name": "Nadia Fadel",
+            "employee_placeholder": "[EMPLOYEE_ID]",
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "person_summary",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "pharmacy:WaitingTime",
+              "kpi_key": "WaitingTime",
+              "display_name": "Waiting Time",
+              "team": "Pharmacy",
+              "position": "Call Center Agent",
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 6.2,
+              "target": 5.0,
+              "actual_display": "6.20 min",
+              "target_display": "5.0 min",
+              "achievement_percent": 80.0,
+              "weight_percent": 0.0,
+              "unit": "min",
+              "direction": "lower_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 0,
+              "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": "EMP701",
+              "employee_name": "Nadia Fadel"
+            },
+            {
+              "metric_id": "pharmacy:overall_score",
+              "kpi_key": "overall_score",
+              "display_name": "Overall PMS Score",
+              "team": "Pharmacy",
+              "position": "Call Center Agent",
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 87.5,
+              "target": 100.0,
+              "actual_display": "87.5%",
+              "target_display": "100.0%",
+              "achievement_percent": 87.5,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "higher_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 0,
+              "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": "EMP701",
+              "employee_name": "Nadia Fadel"
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "tool_names": [
+            "get_agent_spotlight_and_trend"
+          ],
+          "raw_semantic_failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "none",
+              "engine_model": "none",
+              "outcome": "provider_unavailable",
+              "latency_ms": 706.07,
+              "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+              },
+              "estimated_cost_usd": null,
+              "error": "Primary provider failed and fallback is disabled",
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "transient_error",
+                  "latency_ms": 705.87,
+                  "http_code": 500,
+                  "error_detail": "Cloudflare server error (HTTP 500)",
+                  "retry_count": 0,
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99989020003704
+                }
+              ],
+              "http_responses": []
+            }
+          ]
+        }
+      ]
+    },
+    "overall": {
+      "total": 10,
+      "passed": 6,
+      "accuracy_pct": 60.0,
+      "semantic_passed": 6,
+      "semantic_accuracy_pct": 60.0,
+      "critical_check_passed_turns": 10,
+      "critical_check_required_turns": 10,
+      "critical_check_pass_rate_pct": 100.0,
+      "avg_ms": 36010.64,
+      "p50_ms": 33686.88,
+      "p95_ms": 59630.97,
+      "total_provider_calls": 14,
+      "total_provider_call_attempts": 14,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_estimated_cost_usd": 0.0,
+      "fallback_turns": 2,
+      "failures": [
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t1",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "What is the Quality Errors rate for Coding in the UAE in September 2026?",
+          "passed": false,
+          "failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 41405.8,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "In Coding · UAE (September 2026 · All Branches), Quality Errors is at 2.5% vs target 3.0% (100.0% achievement, 20% weight).",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "actual_vs_target",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding:quality_errors",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding:quality_errors",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors",
+              "team": "Coding",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 2.5,
+              "target": 3.0,
+              "actual_display": "2.5%",
+              "target_display": "3.0%",
+              "achievement_percent": 100.0,
+              "weight_percent": 20.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding?month=September&year=2026&function=RCM&team=Coding&performance_level=Employee",
+              "scoring_basis_status": "changed",
+              "scoring_basis_note": "Month-over-month scoring basis changed",
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.UAE"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "raw_semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding:quality_errors' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 40759.53,
+              "usage": {
+                "prompt_tokens": 602,
+                "completion_tokens": 738,
+                "total_tokens": 1340,
+                "neurons": 30.174200000000003
+              },
+              "estimated_cost_usd": 0.00033192,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 40759.46,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 602,
+                  "output_tokens": 738,
+                  "neurons": 30.174200000000003
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99995209998451
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 738,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t2",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "Switch to Egypt instead.",
+          "passed": false,
+          "failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 60721.1,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Quality Errors Rate for Coding · Egypt in September 2026 was 1.8 % from one published record.",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "actual_vs_target",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding EGY",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors Rate",
+              "team": "Coding EGY",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 1.8,
+              "target": 3.0,
+              "actual_display": "1.8 %",
+              "target_display": "3 %",
+              "achievement_percent": null,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": false,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "edge.country_correction",
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "raw_semantic_failures": [
+            "intent 'actual_vs_target' != 'current_value'",
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "none",
+              "engine_model": "none",
+              "outcome": "provider_unavailable",
+              "latency_ms": 60163.89,
+              "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+              },
+              "estimated_cost_usd": null,
+              "error": "Primary provider failed and fallback is disabled",
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "timeout",
+                  "latency_ms": 60163.69,
+                  "http_code": 408,
+                  "error_detail": "Cloudflare call timed out after 60.0s",
+                  "retry_count": 0,
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99996629997622
+                }
+              ],
+              "http_responses": []
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_06_coding_country_correction",
+          "split": "frozen_eval",
+          "turn_id": "p506_t3",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "And the rate?",
+          "passed": false,
+          "failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "semantic_failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 31186.77,
+          "provider_used": "cloudflare",
+          "model_used": "@cf/zai-org/glm-4.7-flash",
+          "answer_source": "model_synthesis",
+          "provider_calls": 2,
+          "provider_call_attempts": 2,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Coding · Egypt's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 % (for Quality Errors Rate, lower is better).",
+          "narrative_bullets": [
+            "Coding EGY's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 %."
+          ],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "current_value",
+            "requested_parts": [
+              "actual_vs_target"
+            ],
+            "team": "Coding EGY",
+            "function": "RCM",
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": false,
+            "employee_id": null,
+            "employee_name": null,
+            "employee_placeholder": null,
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "actual_vs_target",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": {
+              "tool_name": "get_kpi_diagnosis",
+              "tool_arguments": {
+                "team": "Coding EGY",
+                "function": "RCM",
+                "period": "2026-09",
+                "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+                "branch": null,
+                "performance_level": "Employee"
+              }
+            },
+            "model_led_tool_calls": [
+              {
+                "tool_name": "get_kpi_diagnosis",
+                "tool_arguments": {
+                  "team": "Coding EGY",
+                  "function": "RCM",
+                  "period": "2026-09",
+                  "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+                  "branch": null,
+                  "performance_level": "Employee"
+                }
+              }
+            ],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+              "kpi_key": "QualityErrors",
+              "display_name": "Quality Errors Rate",
+              "team": "Coding EGY",
+              "position": null,
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 1.8,
+              "target": 3.0,
+              "actual_display": "1.8 %",
+              "target_display": "3 %",
+              "achievement_percent": null,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "lower_better",
+              "contributes_to_score": false,
+              "tracking_only_note": null,
+              "sample_size": 1,
+              "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": null,
+              "employee_name": null
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Coding",
+            "country.EGY"
+          ],
+          "tool_names": [
+            "get_kpi_diagnosis"
+          ],
+          "raw_semantic_failures": [
+            "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 15429.37,
+              "usage": {
+                "prompt_tokens": 617,
+                "completion_tokens": 520,
+                "total_tokens": 1137,
+                "neurons": 22.3215
+              },
+              "estimated_cost_usd": 0.00024554,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 15429.32,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 617,
+                  "output_tokens": 520,
+                  "neurons": 22.3215
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99996970000211
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 520,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            },
+            {
+              "stage": "model_led_synthesis",
+              "max_tokens": null,
+              "provider": "cloudflare",
+              "engine_model": "@cf/zai-org/glm-4.7-flash",
+              "outcome": "success",
+              "latency_ms": 15713.61,
+              "usage": {
+                "prompt_tokens": 325,
+                "completion_tokens": 839,
+                "total_tokens": 1164,
+                "neurons": 32.3271
+              },
+              "estimated_cost_usd": 0.0003556,
+              "error": null,
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "success",
+                  "latency_ms": 15713.56,
+                  "http_code": null,
+                  "error_detail": null,
+                  "retry_count": 0,
+                  "input_tokens": 325,
+                  "output_tokens": 839,
+                  "neurons": 32.3271
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99997349997284
+                }
+              ],
+              "http_responses": [
+                {
+                  "http_status": 200,
+                  "reported_model": "@cf/zai-org/glm-4.7-flash",
+                  "finish_reason": "stop",
+                  "completion_tokens": 839,
+                  "reasoning_tokens": null,
+                  "has_reasoning_content": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+          "split": "frozen_eval",
+          "turn_id": "p507_t1",
+          "reload_from_service": false,
+          "delete_before_turn": false,
+          "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+          "passed": false,
+          "failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "semantic_failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "critical_failures": [],
+          "critical_check_required": true,
+          "elapsed_ms": 764.42,
+          "provider_used": "deterministic",
+          "model_used": "pms-local-router-v1",
+          "answer_source": "deterministic",
+          "provider_calls": 0,
+          "provider_call_attempts": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "fallback_outcome": "none",
+          "headline": "Nadia Fadel's Waiting Time was 6.20 min in September 2026.",
+          "narrative_bullets": [],
+          "detail_bullets": [],
+          "outcome": "answer",
+          "capability_mode": "performance_query",
+          "structured_query": {
+            "intent": "current_value",
+            "requested_parts": [
+              "current_value"
+            ],
+            "team": "Pharmacy",
+            "function": null,
+            "position": null,
+            "branch": null,
+            "compare_branch": null,
+            "branches": [],
+            "performance_level": "Employee",
+            "metric": null,
+            "periods": [
+              "2026-09"
+            ],
+            "ranking_direction": "best",
+            "single_person": true,
+            "employee_id": "EMP701",
+            "employee_name": "Nadia Fadel",
+            "employee_placeholder": "[EMPLOYEE_ID]",
+            "turn_kind_v2": "analytical",
+            "operation_kind_v2": "person_summary",
+            "clarification_code": "NONE",
+            "asks_decisions": false,
+            "model_led_tool_call": null,
+            "model_led_tool_calls": [],
+            "model_led_direct_response": null,
+            "model_led_clarification": null
+          },
+          "typed_evidence": [
+            {
+              "metric_id": "pharmacy:WaitingTime",
+              "kpi_key": "WaitingTime",
+              "display_name": "Waiting Time",
+              "team": "Pharmacy",
+              "position": "Call Center Agent",
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 6.2,
+              "target": 5.0,
+              "actual_display": "6.20 min",
+              "target_display": "5.0 min",
+              "achievement_percent": 80.0,
+              "weight_percent": 0.0,
+              "unit": "min",
+              "direction": "lower_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 0,
+              "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": "EMP701",
+              "employee_name": "Nadia Fadel"
+            },
+            {
+              "metric_id": "pharmacy:overall_score",
+              "kpi_key": "overall_score",
+              "display_name": "Overall PMS Score",
+              "team": "Pharmacy",
+              "position": "Call Center Agent",
+              "performance_level": "Employee",
+              "branch": "all",
+              "period": "September 2026",
+              "actual": 87.5,
+              "target": 100.0,
+              "actual_display": "87.5%",
+              "target_display": "100.0%",
+              "achievement_percent": 87.5,
+              "weight_percent": 0.0,
+              "unit": "%",
+              "direction": "higher_better",
+              "contributes_to_score": true,
+              "tracking_only_note": null,
+              "sample_size": 0,
+              "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+              "scoring_basis_status": "unchanged",
+              "scoring_basis_note": null,
+              "employee_id": "EMP701",
+              "employee_name": "Nadia Fadel"
+            }
+          ],
+          "clarification": null,
+          "coverage_tags": [
+            "operation.read_employee_metric",
+            "department.Pharmacy",
+            "country.UAE"
+          ],
+          "tool_names": [
+            "get_agent_spotlight_and_trend"
+          ],
+          "raw_semantic_failures": [
+            "metric None != 'waitingtime'"
+          ],
+          "raw_critical_failures": [],
+          "normalizations": [],
+          "provider_stages": [
+            {
+              "stage": "model_led_router",
+              "max_tokens": null,
+              "provider": "none",
+              "engine_model": "none",
+              "outcome": "provider_unavailable",
+              "latency_ms": 706.07,
+              "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+              },
+              "estimated_cost_usd": null,
+              "error": "Primary provider failed and fallback is disabled",
+              "attempts": [
+                {
+                  "provider": "cloudflare",
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "status": "transient_error",
+                  "latency_ms": 705.87,
+                  "http_code": 500,
+                  "error_detail": "Cloudflare server error (HTTP 500)",
+                  "retry_count": 0,
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              ],
+              "http_requests": [
+                {
+                  "model": "@cf/zai-org/glm-4.7-flash",
+                  "body_keys": [
+                    "chat_template_kwargs",
+                    "messages",
+                    "model",
+                    "response_format",
+                    "temperature"
+                  ],
+                  "output_cap_fields": [],
+                  "thinking_enabled": true,
+                  "response_format": "json_object",
+                  "timeout_seconds": 59.99989020003704
+                }
+              ],
+              "http_responses": []
+            }
+          ]
+        }
+      ],
+      "actual_cost_status": "unknown"
+    }
+  },
+  "results": [
+    {
+      "conversation": "phase5_01_inbound_compound_and_history",
+      "split": "frozen_eval",
+      "turn_id": "p501_t1",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "What was the total number of bookings for the Inbound team in August and September 2026, and which employee had the highest bookings count in September 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 58298.6,
+      "provider_used": "deterministic",
+      "model_used": "deterministic-fallback",
+      "answer_source": "fallback",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "claim_validation_failed:mismatched_period",
+      "headline": "Sara Mahmoud was the top performer in Inbound for Bookings (Count) in September 2026 with 205 bookings. Inbound team's Bookings (Count) changed from 635 count in August 2026 to 665 count in September 2026.",
+      "narrative_bullets": [
+        "August 2026: 635 count",
+        "September 2026: 665 count",
+        "Top performer in September 2026: Sara Mahmoud (205 bookings)"
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "compare_periods"
+        ],
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "inbound:bookings_count",
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "compare_periods",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "get_score_trend",
+          "tool_arguments": {
+            "metric": "bookings_count",
+            "period": "2026-08, 2026-09",
+            "metric_id": "bookings_count"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "get_score_trend",
+            "tool_arguments": {
+              "metric": "bookings_count",
+              "period": "2026-08, 2026-09",
+              "metric_id": "bookings_count"
+            }
+          },
+          {
+            "tool_name": "rank_employees",
+            "tool_arguments": {
+              "metric": "bookings_count",
+              "period": "2026-09",
+              "metric_id": "bookings_count"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "inbound:abandon_rate",
+          "kpi_key": "Other",
+          "display_name": "Abandon Rate (Inbound)",
+          "team": "Inbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 6.0,
+          "target": 5.0,
+          "actual_display": "6.0%",
+          "target_display": "5.0%",
+          "achievement_percent": 83.3,
+          "weight_percent": 10.0,
+          "unit": "%",
+          "direction": "lower_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 4,
+          "source_link": "/team/inbound?month=September&year=2026&function=Call+Center&team=Inbound&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Month-over-month scoring basis changed",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "inbound:attendance_rate",
+          "kpi_key": "Attendance",
+          "display_name": "Attendance Rate (Patient Attended / Bookings)",
+          "team": "Inbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 73.77,
+          "target": 65.0,
+          "actual_display": "73.8%",
+          "target_display": "65.0%",
+          "achievement_percent": 100.0,
+          "weight_percent": 70.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 4,
+          "source_link": "/team/inbound?month=September&year=2026&function=Call+Center&team=Inbound&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Month-over-month scoring basis changed",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "inbound:bookings_count",
+          "kpi_key": "TotalBookings",
+          "display_name": "Bookings (Count)",
+          "team": "Inbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "August 2026",
+          "actual": 635.0,
+          "target": null,
+          "actual_display": "635 count",
+          "target_display": "Volume Count",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "count",
+          "direction": "higher_better",
+          "contributes_to_score": false,
+          "tracking_only_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "sample_size": 4,
+          "source_link": "/team/inbound?month=August&year=2026&function=Call+Center&team=Inbound&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "inbound:bookings_count",
+          "kpi_key": "TotalBookings",
+          "display_name": "Bookings (Count)",
+          "team": "Inbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 665.0,
+          "target": null,
+          "actual_display": "665 count",
+          "target_display": "Volume Count",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "count",
+          "direction": "higher_better",
+          "contributes_to_score": false,
+          "tracking_only_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "sample_size": 4,
+          "source_link": "/team/inbound?month=September&year=2026&function=Call+Center&team=Inbound&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "ranking:EMP101:bookings_count",
+          "kpi_key": "bookings_count",
+          "display_name": "Bookings (Count)",
+          "team": "Inbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 205.0,
+          "target": 0.0,
+          "actual_display": "205 bookings",
+          "target_display": null,
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "bookings",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 4,
+          "source_link": "/employee/EMP101?month=September&year=2026",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP101",
+          "employee_name": "Sara Mahmoud"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.get_score_trend",
+        "operation.rank_employees",
+        "department.Call_Center",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "get_score_trend",
+        "rank_employees"
+      ],
+      "raw_semantic_failures": [
+        "intent 'current_value' != 'trend'"
+      ],
+      "raw_critical_failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101', 'employee_name': 'Sara Mahmoud'}"
+      ],
+      "normalizations": [
+        "legacy intent resolved through compare_periods operation with required period and movement evidence",
+        "count-unit alias 'bookings' accepted for 'count' under raw catalog metric ranking:EMP101:bookings_count"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 46590.78,
+          "usage": {
+            "prompt_tokens": 620,
+            "completion_tokens": 2658,
+            "total_tokens": 3278,
+            "neurons": 100.16120000000001
+          },
+          "estimated_cost_usd": 0.00110177,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 46590.74,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 620,
+              "output_tokens": 2658,
+              "neurons": 100.16120000000001
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99997689999873
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 2658,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 10461.52,
+          "usage": {
+            "prompt_tokens": 315,
+            "completion_tokens": 753,
+            "total_tokens": 1068,
+            "neurons": 29.1417
+          },
+          "estimated_cost_usd": 0.00032056,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 10461.48,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 315,
+              "output_tokens": 753,
+              "neurons": 29.1417
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99997860001167
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 753,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "split": "frozen_eval",
+      "turn_id": "p502_t1",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "Who had the most bookings in Outbound in September 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 28567.92,
+      "provider_used": "cloudflare",
+      "model_used": "@cf/zai-org/glm-4.7-flash",
+      "answer_source": "model_synthesis",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Omar Khalid's Bookings (Count) was 370.0 bookings in September 2026 (Omar Khalid Ranked #1 in Outbound Bookings (September 2026)).",
+      "narrative_bullets": [
+        "Omar Khalid had the most bookings in Outbound in September 2026 with 370.0 bookings."
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "ranking"
+        ],
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "outbound:bookings_count",
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "ranking",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "rank_employees",
+          "tool_arguments": {
+            "team": "Outbound",
+            "metric": "outbound:bookings_count",
+            "period": "2026-09",
+            "metric_id": "outbound:bookings_count",
+            "branch": null,
+            "performance_level": "Employee",
+            "limit": 1,
+            "include_ties": true,
+            "direction": "best"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "rank_employees",
+            "tool_arguments": {
+              "team": "Outbound",
+              "metric": "outbound:bookings_count",
+              "period": "2026-09",
+              "metric_id": "outbound:bookings_count",
+              "branch": null,
+              "performance_level": "Employee",
+              "limit": 1,
+              "include_ties": true,
+              "direction": "best"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "ranking:EMP201:bookings_count",
+          "kpi_key": "bookings_count",
+          "display_name": "Bookings (Count)",
+          "team": "Outbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 370.0,
+          "target": 0.0,
+          "actual_display": "370 bookings",
+          "target_display": null,
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "bookings",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/employee/EMP201?month=September&year=2026",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP201",
+          "employee_name": "Omar Khalid"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.rank_employees",
+        "department.Call_Center",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "rank_employees"
+      ],
+      "raw_semantic_failures": [
+        "intent 'current_value' != 'ranking'"
+      ],
+      "raw_critical_failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+      ],
+      "normalizations": [
+        "legacy intent resolved through canonical operation metadata 'ranking'",
+        "count-unit alias 'bookings' accepted for 'count' under raw catalog metric ranking:EMP201:bookings_count"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 14732.27,
+          "usage": {
+            "prompt_tokens": 600,
+            "completion_tokens": 764,
+            "total_tokens": 1364,
+            "neurons": 31.1096
+          },
+          "estimated_cost_usd": 0.00034221,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 14732.18,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 600,
+              "output_tokens": 764,
+              "neurons": 31.1096
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99994579999475
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 764,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 13791.42,
+          "usage": {
+            "prompt_tokens": 221,
+            "completion_tokens": 848,
+            "total_tokens": 1069,
+            "neurons": 32.0827
+          },
+          "estimated_cost_usd": 0.00035291,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 13791.37,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 221,
+              "output_tokens": 848,
+              "neurons": 32.0827
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99997759994585
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 848,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "split": "frozen_eval",
+      "turn_id": "p502_t2",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "What was Omar Khalid's overall score in September 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 33833.65,
+      "provider_used": "deterministic",
+      "model_used": "deterministic-fallback",
+      "answer_source": "fallback",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "claim_validation_failed:unsupported_temporal_comparison",
+      "headline": "Omar Khalid's Overall Score was 89.0 % in September 2026, falling short of the target of 100.0 % by 11.0 %.",
+      "narrative_bullets": [
+        "Target: 100.0 %"
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "current_value"
+        ],
+        "team": "Outbound",
+        "function": null,
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": "EMP201",
+        "employee_name": "Omar Khalid",
+        "employee_placeholder": "[EMPLOYEE_ID]",
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "person_summary",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "read_employee_metric",
+          "tool_arguments": {
+            "employee_id": "EMP201",
+            "metric": "overall_score",
+            "period": "2026-09",
+            "metric_id": "overall_score",
+            "employee_name": "Omar Khalid",
+            "team": "Outbound",
+            "branch": null,
+            "performance_level": "Employee"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "read_employee_metric",
+            "tool_arguments": {
+              "employee_id": "EMP201",
+              "metric": "overall_score",
+              "period": "2026-09",
+              "metric_id": "overall_score",
+              "employee_name": "Omar Khalid",
+              "team": "Outbound",
+              "branch": null,
+              "performance_level": "Employee"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "outbound:overall_score",
+          "kpi_key": "overall_score",
+          "display_name": "Overall PMS Score",
+          "team": "Outbound",
+          "position": "Outbound Specialist",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 89.0,
+          "target": 100.0,
+          "actual_display": "89.0%",
+          "target_display": "100.0 %",
+          "achievement_percent": 89.0,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP201?month=September&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP201",
+          "employee_name": "Omar Khalid"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.read_employee_metric",
+        "department.Call_Center",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "read_employee_metric"
+      ],
+      "raw_semantic_failures": [
+        "metric None != 'overall_score'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [
+        "legacy metric metadata resolved by matching tool argument and typed evidence for overall_score"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 19912.56,
+          "usage": {
+            "prompt_tokens": 623,
+            "completion_tokens": 360,
+            "total_tokens": 983,
+            "neurons": 16.5305
+          },
+          "estimated_cost_usd": 0.00018184,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 19912.52,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 623,
+              "output_tokens": 360,
+              "neurons": 16.5305
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.999979899963364
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 360,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 13895.31,
+          "usage": {
+            "prompt_tokens": 352,
+            "completion_tokens": 889,
+            "total_tokens": 1241,
+            "neurons": 34.2956
+          },
+          "estimated_cost_usd": 0.00037725,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 13895.25,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 352,
+              "output_tokens": 889,
+              "neurons": 34.2956
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99996200000169
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 889,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "split": "frozen_eval",
+      "turn_id": "p502_t3",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "How many bookings did Omar Khalid have in August 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 30597.62,
+      "provider_used": "cloudflare",
+      "model_used": "@cf/zai-org/glm-4.7-flash",
+      "answer_source": "model_synthesis",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Omar Khalid's Bookings (Count) was 370.0 bookings in August 2026, meeting the target of 0.0 bookings.",
+      "narrative_bullets": [
+        "Omar Khalid recorded 370.0 bookings in August 2026, meeting the target of 0.0 bookings."
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "actual_vs_target"
+        ],
+        "team": "Outbound",
+        "function": null,
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "inbound:bookings_count",
+        "periods": [
+          "2026-08"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": "EMP201",
+        "employee_name": "Omar Khalid",
+        "employee_placeholder": "[EMPLOYEE_ID]",
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "person_summary",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "read_employee_metric",
+          "tool_arguments": {
+            "employee_id": "EMP201",
+            "metric": "outbound:bookings_count",
+            "period": "2026-08",
+            "metric_id": "outbound:bookings_count",
+            "employee_name": "Omar Khalid",
+            "team": "Outbound",
+            "branch": null,
+            "performance_level": "Employee"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "read_employee_metric",
+            "tool_arguments": {
+              "employee_id": "EMP201",
+              "metric": "outbound:bookings_count",
+              "period": "2026-08",
+              "metric_id": "outbound:bookings_count",
+              "employee_name": "Omar Khalid",
+              "team": "Outbound",
+              "branch": null,
+              "performance_level": "Employee"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "outbound:bookings_count",
+          "kpi_key": "bookings_count",
+          "display_name": "Bookings (Count)",
+          "team": "Outbound",
+          "position": "Outbound Specialist",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "August 2026",
+          "actual": 370.0,
+          "target": 0.0,
+          "actual_display": "370 bookings",
+          "target_display": "0.0 bookings",
+          "achievement_percent": 100.0,
+          "weight_percent": 0.0,
+          "unit": "bookings",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP201?month=August&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP201",
+          "employee_name": "Omar Khalid"
+        },
+        {
+          "metric_id": "outbound:overall_score",
+          "kpi_key": "overall_score",
+          "display_name": "Overall PMS Score",
+          "team": "Outbound",
+          "position": "Outbound Specialist",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "August 2026",
+          "actual": 89.0,
+          "target": 100.0,
+          "actual_display": "89.0%",
+          "target_display": "100.0%",
+          "achievement_percent": 89.0,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP201?month=August&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP201",
+          "employee_name": "Omar Khalid"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.read_employee_metric",
+        "department.Call_Center",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "read_employee_metric"
+      ],
+      "raw_semantic_failures": [],
+      "raw_critical_failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+      ],
+      "normalizations": [
+        "count-unit alias 'bookings' accepted for 'count' under raw catalog metric outbound:bookings_count"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 11093.33,
+          "usage": {
+            "prompt_tokens": 623,
+            "completion_tokens": 417,
+            "total_tokens": 1040,
+            "neurons": 18.6053
+          },
+          "estimated_cost_usd": 0.00020466,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 11093.26,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 623,
+              "output_tokens": 417,
+              "neurons": 18.6053
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99995259998832
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 417,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 19482.59,
+          "usage": {
+            "prompt_tokens": 334,
+            "completion_tokens": 728,
+            "total_tokens": 1062,
+            "neurons": 28.3362
+          },
+          "estimated_cost_usd": 0.0003117,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 19482.56,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 334,
+              "output_tokens": 728,
+              "neurons": 28.3362
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99998429999687
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 728,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "split": "frozen_eval",
+      "turn_id": "p502_t4",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "How did Outbound bookings change between August and September 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 33540.11,
+      "provider_used": "cloudflare",
+      "model_used": "@cf/zai-org/glm-4.7-flash",
+      "answer_source": "model_synthesis",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Outbound's Bookings (Count) was 370.0 count in September 2026 (Outbound Bookings (Count) remained unchanged between August and September 2026).",
+      "narrative_bullets": [
+        "Outbound Bookings (Count) was 370.0 count in August 2026",
+        "Outbound Bookings (Count) was 370.0 count in September 2026"
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "compare_periods"
+        ],
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": "Outbound Specialist",
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "outbound:bookings_count",
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": false,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "trend",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "get_score_trend",
+          "tool_arguments": {
+            "subject": "Outbound",
+            "metric": "outbound:bookings_count",
+            "period_start": "2026-08",
+            "period_end": "2026-09",
+            "metric_id": "outbound:bookings_count",
+            "team": "Outbound",
+            "branch": null,
+            "period": "2026-09",
+            "performance_level": "Employee",
+            "periods": [
+              "2026-08",
+              "2026-09"
+            ]
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "get_score_trend",
+            "tool_arguments": {
+              "subject": "Outbound",
+              "metric": "outbound:bookings_count",
+              "period_start": "2026-08",
+              "period_end": "2026-09",
+              "metric_id": "outbound:bookings_count",
+              "team": "Outbound",
+              "branch": null,
+              "period": "2026-09",
+              "performance_level": "Employee",
+              "periods": [
+                "2026-08",
+                "2026-09"
+              ]
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "outbound:reachability",
+          "kpi_key": "Other",
+          "display_name": "Reachability (Outbound)",
+          "team": "Outbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 85.0,
+          "target": 90.0,
+          "actual_display": "85.0%",
+          "target_display": "90.0%",
+          "achievement_percent": 94.4,
+          "weight_percent": 10.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/team/outbound?month=September&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Month-over-month scoring basis changed",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "outbound:attendance_rate",
+          "kpi_key": "Attendance",
+          "display_name": "Attendance Rate (Patient Attended / Bookings)",
+          "team": "Outbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 86.76,
+          "target": 65.0,
+          "actual_display": "86.8%",
+          "target_display": "65.0%",
+          "achievement_percent": 100.0,
+          "weight_percent": 70.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/team/outbound?month=September&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Month-over-month scoring basis changed",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "outbound:bookings_count",
+          "kpi_key": "TotalBookings",
+          "display_name": "Bookings (Count)",
+          "team": "Outbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "August 2026",
+          "actual": 370.0,
+          "target": null,
+          "actual_display": "370 count",
+          "target_display": "Volume Count",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "count",
+          "direction": "higher_better",
+          "contributes_to_score": false,
+          "tracking_only_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "sample_size": 1,
+          "source_link": "/team/outbound?month=August&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "employee_id": null,
+          "employee_name": null
+        },
+        {
+          "metric_id": "outbound:bookings_count",
+          "kpi_key": "TotalBookings",
+          "display_name": "Bookings (Count)",
+          "team": "Outbound",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 370.0,
+          "target": null,
+          "actual_display": "370 count",
+          "target_display": "Volume Count",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "count",
+          "direction": "higher_better",
+          "contributes_to_score": false,
+          "tracking_only_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "sample_size": 1,
+          "source_link": "/team/outbound?month=September&year=2026&function=Call+Center&team=Outbound&position=Outbound+Specialist&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).",
+          "employee_id": null,
+          "employee_name": null
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.get_score_trend",
+        "department.Call_Center",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "get_score_trend"
+      ],
+      "raw_semantic_failures": [
+        "intent 'current_value' != 'trend'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [
+        "legacy intent resolved through canonical operation metadata 'trend'"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 9870.22,
+          "usage": {
+            "prompt_tokens": 613,
+            "completion_tokens": 537,
+            "total_tokens": 1150,
+            "neurons": 22.918300000000002
+          },
+          "estimated_cost_usd": 0.0002521,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 9870.18,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 613,
+              "output_tokens": 537,
+              "neurons": 22.918300000000002
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99997900001472
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 537,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 23618.58,
+          "usage": {
+            "prompt_tokens": 280,
+            "completion_tokens": 756,
+            "total_tokens": 1036,
+            "neurons": 29.0584
+          },
+          "estimated_cost_usd": 0.00031964,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 23618.54,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 280,
+              "output_tokens": 756,
+              "neurons": 29.0584
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.999976599996444
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 756,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "split": "frozen_eval",
+      "turn_id": "p506_t1",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "What is the Quality Errors rate for Coding in the UAE in September 2026?",
+      "passed": false,
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding:quality_errors' != 'QualityErrors'"
+      ],
+      "semantic_failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding:quality_errors' != 'QualityErrors'"
+      ],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 41405.8,
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "answer_source": "deterministic",
+      "provider_calls": 0,
+      "provider_call_attempts": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "In Coding · UAE (September 2026 · All Branches), Quality Errors is at 2.5% vs target 3.0% (100.0% achievement, 20% weight).",
+      "narrative_bullets": [],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "actual_vs_target",
+        "requested_parts": [
+          "actual_vs_target"
+        ],
+        "team": "Coding",
+        "function": "RCM",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "coding:quality_errors",
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": false,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "actual_vs_target",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": null,
+        "model_led_tool_calls": [],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "coding:quality_errors",
+          "kpi_key": "QualityErrors",
+          "display_name": "Quality Errors",
+          "team": "Coding",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 2.5,
+          "target": 3.0,
+          "actual_display": "2.5%",
+          "target_display": "3.0%",
+          "achievement_percent": 100.0,
+          "weight_percent": 20.0,
+          "unit": "%",
+          "direction": "lower_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/team/coding?month=September&year=2026&function=RCM&team=Coding&performance_level=Employee",
+          "scoring_basis_status": "changed",
+          "scoring_basis_note": "Month-over-month scoring basis changed",
+          "employee_id": null,
+          "employee_name": null
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.read_employee_metric",
+        "department.Coding",
+        "country.UAE"
+      ],
+      "tool_names": [
+        "get_kpi_diagnosis_and_trends"
+      ],
+      "raw_semantic_failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding:quality_errors' != 'QualityErrors'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 40759.53,
+          "usage": {
+            "prompt_tokens": 602,
+            "completion_tokens": 738,
+            "total_tokens": 1340,
+            "neurons": 30.174200000000003
+          },
+          "estimated_cost_usd": 0.00033192,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 40759.46,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 602,
+              "output_tokens": 738,
+              "neurons": 30.174200000000003
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99995209998451
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 738,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "split": "frozen_eval",
+      "turn_id": "p506_t2",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "Switch to Egypt instead.",
+      "passed": false,
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "semantic_failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 60721.1,
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "answer_source": "deterministic",
+      "provider_calls": 0,
+      "provider_call_attempts": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Quality Errors Rate for Coding · Egypt in September 2026 was 1.8 % from one published record.",
+      "narrative_bullets": [],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "actual_vs_target",
+        "requested_parts": [
+          "actual_vs_target"
+        ],
+        "team": "Coding EGY",
+        "function": "RCM",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": false,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "actual_vs_target",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": null,
+        "model_led_tool_calls": [],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+          "kpi_key": "QualityErrors",
+          "display_name": "Quality Errors Rate",
+          "team": "Coding EGY",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 1.8,
+          "target": 3.0,
+          "actual_display": "1.8 %",
+          "target_display": "3 %",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "lower_better",
+          "contributes_to_score": false,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": null,
+          "employee_name": null
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "edge.country_correction",
+        "operation.read_employee_metric",
+        "department.Coding",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "get_kpi_diagnosis_and_trends"
+      ],
+      "raw_semantic_failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "none",
+          "engine_model": "none",
+          "outcome": "provider_unavailable",
+          "latency_ms": 60163.89,
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "estimated_cost_usd": null,
+          "error": "Primary provider failed and fallback is disabled",
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "timeout",
+              "latency_ms": 60163.69,
+              "http_code": 408,
+              "error_detail": "Cloudflare call timed out after 60.0s",
+              "retry_count": 0,
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99996629997622
+            }
+          ],
+          "http_responses": []
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "split": "frozen_eval",
+      "turn_id": "p506_t3",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "And the rate?",
+      "passed": false,
+      "failures": [
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "semantic_failures": [
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 31186.77,
+      "provider_used": "cloudflare",
+      "model_used": "@cf/zai-org/glm-4.7-flash",
+      "answer_source": "model_synthesis",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Coding · Egypt's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 % (for Quality Errors Rate, lower is better).",
+      "narrative_bullets": [
+        "Coding EGY's Quality Errors Rate was 1.8 % in September 2026, meeting the target of 3.0 %."
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "actual_vs_target"
+        ],
+        "team": "Coding EGY",
+        "function": "RCM",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": false,
+        "employee_id": null,
+        "employee_name": null,
+        "employee_placeholder": null,
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "actual_vs_target",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "get_kpi_diagnosis",
+          "tool_arguments": {
+            "team": "Coding EGY",
+            "function": "RCM",
+            "period": "2026-09",
+            "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+            "branch": null,
+            "performance_level": "Employee"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "get_kpi_diagnosis",
+            "tool_arguments": {
+              "team": "Coding EGY",
+              "function": "RCM",
+              "period": "2026-09",
+              "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+              "branch": null,
+              "performance_level": "Employee"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "coding_egy:rcm_shj_op_coding:quality_errors_rate",
+          "kpi_key": "QualityErrors",
+          "display_name": "Quality Errors Rate",
+          "team": "Coding EGY",
+          "position": null,
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 1.8,
+          "target": 3.0,
+          "actual_display": "1.8 %",
+          "target_display": "3 %",
+          "achievement_percent": null,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "lower_better",
+          "contributes_to_score": false,
+          "tracking_only_note": null,
+          "sample_size": 1,
+          "source_link": "/team/coding-egy?month=September&year=2026&function=RCM&team=Coding+EGY&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": null,
+          "employee_name": null
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.read_employee_metric",
+        "department.Coding",
+        "country.EGY"
+      ],
+      "tool_names": [
+        "get_kpi_diagnosis"
+      ],
+      "raw_semantic_failures": [
+        "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 15429.37,
+          "usage": {
+            "prompt_tokens": 617,
+            "completion_tokens": 520,
+            "total_tokens": 1137,
+            "neurons": 22.3215
+          },
+          "estimated_cost_usd": 0.00024554,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 15429.32,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 617,
+              "output_tokens": 520,
+              "neurons": 22.3215
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99996970000211
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 520,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 15713.61,
+          "usage": {
+            "prompt_tokens": 325,
+            "completion_tokens": 839,
+            "total_tokens": 1164,
+            "neurons": 32.3271
+          },
+          "estimated_cost_usd": 0.0003556,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 15713.56,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 325,
+              "output_tokens": 839,
+              "neurons": 32.3271
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99997349997284
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 839,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "split": "frozen_eval",
+      "turn_id": "p507_t1",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+      "passed": false,
+      "failures": [
+        "metric None != 'waitingtime'"
+      ],
+      "semantic_failures": [
+        "metric None != 'waitingtime'"
+      ],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 764.42,
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "answer_source": "deterministic",
+      "provider_calls": 0,
+      "provider_call_attempts": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Nadia Fadel's Waiting Time was 6.20 min in September 2026.",
+      "narrative_bullets": [],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "current_value",
+        "requested_parts": [
+          "current_value"
+        ],
+        "team": "Pharmacy",
+        "function": null,
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": "EMP701",
+        "employee_name": "Nadia Fadel",
+        "employee_placeholder": "[EMPLOYEE_ID]",
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "person_summary",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": null,
+        "model_led_tool_calls": [],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "pharmacy:WaitingTime",
+          "kpi_key": "WaitingTime",
+          "display_name": "Waiting Time",
+          "team": "Pharmacy",
+          "position": "Call Center Agent",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 6.2,
+          "target": 5.0,
+          "actual_display": "6.20 min",
+          "target_display": "5.0 min",
+          "achievement_percent": 80.0,
+          "weight_percent": 0.0,
+          "unit": "min",
+          "direction": "lower_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP701",
+          "employee_name": "Nadia Fadel"
+        },
+        {
+          "metric_id": "pharmacy:overall_score",
+          "kpi_key": "overall_score",
+          "display_name": "Overall PMS Score",
+          "team": "Pharmacy",
+          "position": "Call Center Agent",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 87.5,
+          "target": 100.0,
+          "actual_display": "87.5%",
+          "target_display": "100.0%",
+          "achievement_percent": 87.5,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP701",
+          "employee_name": "Nadia Fadel"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.read_employee_metric",
+        "department.Pharmacy",
+        "country.UAE"
+      ],
+      "tool_names": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "raw_semantic_failures": [
+        "metric None != 'waitingtime'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "none",
+          "engine_model": "none",
+          "outcome": "provider_unavailable",
+          "latency_ms": 706.07,
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+          },
+          "estimated_cost_usd": null,
+          "error": "Primary provider failed and fallback is disabled",
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "transient_error",
+              "latency_ms": 705.87,
+              "http_code": 500,
+              "error_detail": "Cloudflare server error (HTTP 500)",
+              "retry_count": 0,
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.99989020003704
+            }
+          ],
+          "http_responses": []
+        }
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "split": "frozen_eval",
+      "turn_id": "p507_t2",
+      "reload_from_service": false,
+      "delete_before_turn": false,
+      "prompt": "Why did Nadia Fadel's Waiting Time miss the 5 minute target in September 2026?",
+      "passed": true,
+      "failures": [],
+      "semantic_failures": [],
+      "critical_failures": [],
+      "critical_check_required": true,
+      "elapsed_ms": 41190.38,
+      "provider_used": "cloudflare",
+      "model_used": "@cf/zai-org/glm-4.7-flash",
+      "answer_source": "model_synthesis",
+      "provider_calls": 2,
+      "provider_call_attempts": 2,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_cost_usd": 0.0,
+      "fallback_outcome": "none",
+      "headline": "Nadia Fadel's Pharmacy Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min (did not meet target).",
+      "narrative_bullets": [
+        "Nadia Fadel's Pharmacy Waiting Time was 6.2 min in September 2026.",
+        "The target was 5.0 min, and the actual time exceeded the target by 1.2 min."
+      ],
+      "detail_bullets": [],
+      "outcome": "answer",
+      "capability_mode": "performance_query",
+      "structured_query": {
+        "intent": "score_drivers",
+        "requested_parts": [
+          "score_drivers"
+        ],
+        "team": "Pharmacy",
+        "function": null,
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "branches": [],
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ],
+        "ranking_direction": "best",
+        "single_person": true,
+        "employee_id": "EMP701",
+        "employee_name": "Nadia Fadel",
+        "employee_placeholder": "[EMPLOYEE_ID]",
+        "turn_kind_v2": "analytical",
+        "operation_kind_v2": "score_drivers",
+        "clarification_code": "NONE",
+        "asks_decisions": false,
+        "model_led_tool_call": {
+          "tool_name": "get_kpi_diagnosis",
+          "tool_arguments": {
+            "employee_id": "EMP701",
+            "period": "2026-09",
+            "metric_id": "pharmacy:waiting_time",
+            "employee_name": "Nadia Fadel",
+            "team": "Pharmacy",
+            "branch": null,
+            "performance_level": "Employee"
+          }
+        },
+        "model_led_tool_calls": [
+          {
+            "tool_name": "get_kpi_diagnosis",
+            "tool_arguments": {
+              "employee_id": "EMP701",
+              "period": "2026-09",
+              "metric_id": "pharmacy:waiting_time",
+              "employee_name": "Nadia Fadel",
+              "team": "Pharmacy",
+              "branch": null,
+              "performance_level": "Employee"
+            }
+          }
+        ],
+        "model_led_direct_response": null,
+        "model_led_clarification": null
+      },
+      "typed_evidence": [
+        {
+          "metric_id": "pharmacy:WaitingTime",
+          "kpi_key": "WaitingTime",
+          "display_name": "Pharmacy Waiting Time",
+          "team": "Pharmacy",
+          "position": "Call Center Agent",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 6.2,
+          "target": 5.0,
+          "actual_display": "6.20 min",
+          "target_display": "5.0 min",
+          "achievement_percent": 80.0,
+          "weight_percent": 0.0,
+          "unit": "min",
+          "direction": "lower_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP701",
+          "employee_name": "Nadia Fadel"
+        },
+        {
+          "metric_id": "pharmacy:overall_score",
+          "kpi_key": "overall_score",
+          "display_name": "Overall PMS Score",
+          "team": "Pharmacy",
+          "position": "Call Center Agent",
+          "performance_level": "Employee",
+          "branch": "all",
+          "period": "September 2026",
+          "actual": 87.5,
+          "target": 100.0,
+          "actual_display": "87.5%",
+          "target_display": "100.0%",
+          "achievement_percent": 87.5,
+          "weight_percent": 0.0,
+          "unit": "%",
+          "direction": "higher_better",
+          "contributes_to_score": true,
+          "tracking_only_note": null,
+          "sample_size": 0,
+          "source_link": "/employee/EMP701?month=September&year=2026&function=Pharmacy&team=Pharmacy&position=Call+Center+Agent&performance_level=Employee",
+          "scoring_basis_status": "unchanged",
+          "scoring_basis_note": null,
+          "employee_id": "EMP701",
+          "employee_name": "Nadia Fadel"
+        }
+      ],
+      "clarification": null,
+      "coverage_tags": [
+        "operation.get_kpi_diagnosis",
+        "department.Pharmacy",
+        "country.UAE"
+      ],
+      "tool_names": [
+        "get_kpi_diagnosis"
+      ],
+      "raw_semantic_failures": [
+        "metric None != 'waitingtime'"
+      ],
+      "raw_critical_failures": [],
+      "normalizations": [
+        "legacy metric metadata resolved by matching tool argument and typed evidence for waitingtime"
+      ],
+      "provider_stages": [
+        {
+          "stage": "model_led_router",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 14194.88,
+          "usage": {
+            "prompt_tokens": 630,
+            "completion_tokens": 586,
+            "total_tokens": 1216,
+            "neurons": 24.7954
+          },
+          "estimated_cost_usd": 0.00027275,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 14194.82,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 630,
+              "output_tokens": 586,
+              "neurons": 24.7954
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.999958399974275
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 586,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        },
+        {
+          "stage": "model_led_synthesis",
+          "max_tokens": null,
+          "provider": "cloudflare",
+          "engine_model": "@cf/zai-org/glm-4.7-flash",
+          "outcome": "success",
+          "latency_ms": 26837.65,
+          "usage": {
+            "prompt_tokens": 369,
+            "completion_tokens": 1042,
+            "total_tokens": 1411,
+            "neurons": 39.9583
+          },
+          "estimated_cost_usd": 0.00043954,
+          "error": null,
+          "attempts": [
+            {
+              "provider": "cloudflare",
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "status": "success",
+              "latency_ms": 26837.59,
+              "http_code": null,
+              "error_detail": null,
+              "retry_count": 0,
+              "input_tokens": 369,
+              "output_tokens": 1042,
+              "neurons": 39.9583
+            }
+          ],
+          "http_requests": [
+            {
+              "model": "@cf/zai-org/glm-4.7-flash",
+              "body_keys": [
+                "chat_template_kwargs",
+                "messages",
+                "model",
+                "response_format",
+                "temperature"
+              ],
+              "output_cap_fields": [],
+              "thinking_enabled": true,
+              "response_format": "json_object",
+              "timeout_seconds": 59.9999705000082
+            }
+          ],
+          "http_responses": [
+            {
+              "http_status": 200,
+              "reported_model": "@cf/zai-org/glm-4.7-flash",
+              "finish_reason": "stop",
+              "completion_tokens": 1042,
+              "reasoning_tokens": null,
+              "has_reasoning_content": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "run_id": "phase5_deadline_glm_60s_v1_r2",
+  "contract_version": "pms-ai-metadata-units-v1",
+  "run_bound": {
+    "max_turns": 10,
+    "actual_turns": 10
+  },
+  "actual_cost_status": "unknown",
+  "rescore_audit": {
+    "raw_failures_preserved": true,
+    "normalized_turns": 6,
+    "turns": {
+      "p501_t1": {
+        "raw_semantic_failures": [
+          "intent 'current_value' != 'trend'"
+        ],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [
+          "legacy intent resolved through compare_periods operation with required period and movement evidence"
+        ],
+        "raw_critical_failures": [
+          "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101', 'employee_name': 'Sara Mahmoud'}"
+        ],
+        "rescored_critical_failures": [],
+        "critical_normalizations": [
+          "count-unit alias 'bookings' accepted for 'count' under raw catalog metric ranking:EMP101:bookings_count"
+        ]
+      },
+      "p502_t1": {
+        "raw_semantic_failures": [
+          "intent 'current_value' != 'ranking'"
+        ],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [
+          "legacy intent resolved through canonical operation metadata 'ranking'"
+        ],
+        "raw_critical_failures": [
+          "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+        ],
+        "rescored_critical_failures": [],
+        "critical_normalizations": [
+          "count-unit alias 'bookings' accepted for 'count' under raw catalog metric ranking:EMP201:bookings_count"
+        ]
+      },
+      "p502_t2": {
+        "raw_semantic_failures": [
+          "metric None != 'overall_score'"
+        ],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [
+          "legacy metric metadata resolved by matching tool argument and typed evidence for overall_score"
+        ],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p502_t3": {
+        "raw_semantic_failures": [],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [],
+        "raw_critical_failures": [
+          "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+        ],
+        "rescored_critical_failures": [],
+        "critical_normalizations": [
+          "count-unit alias 'bookings' accepted for 'count' under raw catalog metric outbound:bookings_count"
+        ]
+      },
+      "p502_t4": {
+        "raw_semantic_failures": [
+          "intent 'current_value' != 'trend'"
+        ],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [
+          "legacy intent resolved through canonical operation metadata 'trend'"
+        ],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p506_t1": {
+        "raw_semantic_failures": [
+          "intent 'actual_vs_target' != 'current_value'",
+          "metric 'coding:quality_errors' != 'QualityErrors'"
+        ],
+        "rescored_semantic_failures": [
+          "intent 'actual_vs_target' != 'current_value'",
+          "metric 'coding:quality_errors' != 'QualityErrors'"
+        ],
+        "semantic_normalizations": [],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p506_t2": {
+        "raw_semantic_failures": [
+          "intent 'actual_vs_target' != 'current_value'",
+          "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+        ],
+        "rescored_semantic_failures": [
+          "intent 'actual_vs_target' != 'current_value'",
+          "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+        ],
+        "semantic_normalizations": [],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p506_t3": {
+        "raw_semantic_failures": [
+          "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+        ],
+        "rescored_semantic_failures": [
+          "metric 'coding_egy:rcm_shj_op_coding:quality_errors_rate' != 'QualityErrors'"
+        ],
+        "semantic_normalizations": [],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p507_t1": {
+        "raw_semantic_failures": [
+          "metric None != 'waitingtime'"
+        ],
+        "rescored_semantic_failures": [
+          "metric None != 'waitingtime'"
+        ],
+        "semantic_normalizations": [],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      },
+      "p507_t2": {
+        "raw_semantic_failures": [
+          "metric None != 'waitingtime'"
+        ],
+        "rescored_semantic_failures": [],
+        "semantic_normalizations": [
+          "legacy metric metadata resolved by matching tool argument and typed evidence for waitingtime"
+        ],
+        "raw_critical_failures": [],
+        "rescored_critical_failures": [],
+        "critical_normalizations": []
+      }
+    }
+  },
+  "experiment": {
+    "schema_version": "1.0",
+    "selection_basis": "Previously timed-out turns in phase5_exposed_glm_v3_r3, with full preceding context in each selected conversation. Covers compound booking totals, booking trend follow-up, country switch and KPI continuation, and a Waiting Time target diagnosis.",
+    "model": "@cf/zai-org/glm-4.7-flash",
+    "deadline_seconds": [
+      30,
+      60
+    ],
+    "expectations": "ai_phase5_expectations_v2.json",
+    "previous_result": "phase5_exposed_glm_v3_r3.json",
+    "turn_prefixes": [
+      [
+        "p501_t1"
+      ],
+      [
+        "p502_t1",
+        "p502_t2",
+        "p502_t3",
+        "p502_t4"
+      ],
+      [
+        "p506_t1",
+        "p506_t2",
+        "p506_t3"
+      ],
+      [
+        "p507_t1",
+        "p507_t2"
+      ]
+    ],
+    "previous_timeout_turns": [
+      "p501_t1",
+      "p502_t2",
+      "p502_t3",
+      "p502_t4",
+      "p506_t2",
+      "p507_t2"
+    ],
+    "sample_sha256": "fc288062e1e784bc5cc89c231548b5b20a612aee08a643d6079423bd3d751ba8",
+    "expectations_sha256": "fcd15dcba511b9716b0137e969877791e735435c9e24f6f62ed7b53c9422de65"
+  },
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 8,
+      "model_led_synthesis": 7
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 8,
+      "model_led_synthesis:success": 7,
+      "model_led_router:provider_unavailable": 2
+    },
+    "engine_calls": 17,
+    "provider_attempts_by_status": {
+      "success": 15,
+      "timeout": 1,
+      "transient_error": 1
+    },
+    "estimated_cost_usd_known_subtotal": 0.00540999,
+    "engine_calls_without_cost_estimate": 2,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {
+      "claim_validation_failed:mismatched_period": 1,
+      "claim_validation_failed:unsupported_temporal_comparison": 1
+    },
+    "answer_sources": {
+      "fallback": 2,
+      "model_synthesis": 5,
+      "deterministic": 3
+    }
+  }
+}

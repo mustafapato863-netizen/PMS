@@ -1,0 +1,47 @@
+{
+  "run_id": "phase5_exposed_granite_v3_r2",
+  "created_at_utc": "2026-11-17T20:29:47.916717+00:00",
+  "requested_provider": "cloudflare",
+  "timeout_seconds": 30,
+  "synthesis_max_tokens_override": 1024,
+  "application_source_sha256": "cc88446eebc2b2faeff7e65b9e84259adca8e032045efbbf5c6cd0b2cdee9c2d",
+  "runner_sha256": "bda6413edcfcba2190a4d5207710301af6e2b0641052f3a25e75b57dafd934aa",
+  "v2_runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "scoring_helper_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "reference_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "reference_freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb",
+  "scoring_version": "pms-ai-metadata-units-v1",
+  "result_sha256": "c636107dec3cfc7e75355f144c2dea7964c3b950e88286f2eb8babf8af5ff3fe",
+  "telemetry": {
+    "requested_model": "@cf/ibm-granite/granite-4.0-h-micro",
+    "api_response_confirmed_stages": {
+      "model_led_router": 63,
+      "model_led_synthesis": 56
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 63,
+      "model_led_synthesis:success": 56
+    },
+    "engine_calls": 119,
+    "provider_attempts_by_status": {
+      "success": 119
+    },
+    "estimated_cost_usd_known_subtotal": 0.00174595,
+    "engine_calls_without_cost_estimate": 0,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {
+      "claim_validation_failed:missing_compound_component": 1,
+      "claim_validation_failed:missing_value": 1,
+      "claim_validation_failed:mismatched_branch": 2,
+      "unavailable_data": 7,
+      "claim_validation_failed:missing_fact_value": 2
+    },
+    "answer_sources": {
+      "fallback": 6,
+      "model_synthesis": 50,
+      "deterministic": 24
+    }
+  }
+}

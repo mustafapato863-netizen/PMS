@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL REFERENCE ONLY**
+> This exploration report is preserved for adapter findings and security isolation patterns.
+> The active architecture is defined by the authoritative [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # Local Assistant Data Exploration Report — 7 November 2026
 
 ## 1. Executive Summary

@@ -19,6 +19,7 @@ from services.ai.llm_client import (
     record_fallback_reason,
     synthesis_timeout_seconds,
 )
+from services.ai.config import get_ai_runtime_config
 from services.ai.provider_engine import (
     ProviderMessage,
     ProviderRequest,
@@ -49,6 +50,9 @@ class OverallScoreFacts:
 def extract_branch_booking_facts(question: str, digests: list[dict[str, Any]]) -> BranchBookingFacts | None:
     """Extract a narrow, fully specified comparison; never guess a team or metric."""
     lower = question.casefold()
+    # Phase 2: When model-led pilot is enabled, allow employee-level queries to reach model synthesis
+    if get_ai_runtime_config().model_led_pilot_enabled:
+        return None
     if not re.search(r"\bbookings?\b", lower) or re.search(r"\b(?:rate|ratio|conversion|attendance|attended|percent|percentage|target|trend|change|score|lowest|least|fewest|employee|person|agent|who|why|cause|reason|recommend|action|revenue)\b|%", lower):
         return None
     for digest in digests:

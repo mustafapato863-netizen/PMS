@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "rescore_id": "pms-ai-phase5-postfix-rescore-v1",
+  "created_at_utc": "2026-11-17T17:32:17.726691+00:00",
+  "runner": "Backend/scripts/rescore_phase5_frozen_outputs_v1.py",
+  "runner_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator": "Backend/scripts/run_unseen_eval.py",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "method": "read-only rescore of saved first-run outputs; no application/provider execution",
+  "source_frozen_evaluation_label": "exposed_regression",
+  "source_artifacts": {
+    "fixture": {
+      "path": "Backend/tests/fixtures/ai_phase5_final_frozen.json",
+      "sha256": "9e939f0d393acca689c6f715589c0e8d144a9d8c354c8084c5eb1292bd46f2e8"
+    },
+    "freeze_manifest": {
+      "path": "Backend/tests/fixtures/ai_phase5_final_frozen.manifest.json",
+      "sha256": "72eb979ec2cb479a461b4b8aad943aab514072933819e91402b1fee8427528be"
+    },
+    "source_data_sha256": "6bf79419ded46da9644e7bb0498a3a5da550a99bda494f8b3ac6acc977dbb68a",
+    "original_runner_sha256": "3fb496f60d26e55a198f5cfad6a7d8fab3c9906acf2399a56c8a05da1a01e03e",
+    "first_run_results": {
+      "deterministic": {
+        "path": "Backend/scripts/phase5_final_deterministic_20261117.json",
+        "sha256": "af99b0d5bb2370ee74987e7d6af73959054ec4f873739bf9e069f90fb4204859"
+      },
+      "mocked": {
+        "path": "Backend/scripts/phase5_final_mocked_failure_20261117.json",
+        "sha256": "68cf4fa948683e05de8728f29f017edadc0697ffa9eeb03b04f1ee4cdae0e00c"
+      },
+      "live": {
+        "path": "Backend/scripts/phase5_final_live_20261117.json",
+        "sha256": "7b8924d2cf03bb2dfb64a8acea8a4c86c1b42f3ebd91bfc6920e4d0bc970e5be"
+      }
+    }
+  },
+  "contract_version": "pms-ai-metadata-units-v1",
+  "contract_rules": [
+    "Use operation_kind_v2/requested_parts when legacy structured_query.intent conflicts; map compare_periods to trend only when the turn also meets its frozen minimum-period and movement-evidence checks.",
+    "Resolve missing legacy metric metadata only when a recorded model-led tool metric argument and typed evidence both match the frozen expected metric; the typed evidence remains mandatory.",
+    "Treat count/bookings/calls/leads/claims as equivalent count labels only when the resolved catalog metric is raw and declares a unit in that same count family; retain and report the source evidence unit.",
+    "Retain catalog-guarded ratio_0_1-to-display-% comparison from the reference evaluator.",
+    "Do not normalize outcome, capability, textual content, periods, identity, scope, unit dimension, source links, authorization, tools, or no-evidence violations.",
+    "Preserve all original failures and report unclassified failures; missing source fields remain unverified."
+  ],
+  "thresholds": {
+    "min_conversations": 20,
+    "min_prompts": 80,
+    "critical_accuracy_pct": 100.0,
+    "semantic_accuracy_pct": 95.0
+  },
+  "output_files": {
+    "manifest": "Backend/scripts/phase5_postfix_rescore_v1.manifest.json",
+    "result": "Backend/scripts/phase5_postfix_rescore_v1.json"
+  }
+}

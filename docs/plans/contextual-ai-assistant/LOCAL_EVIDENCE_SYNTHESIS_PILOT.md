@@ -1,3 +1,8 @@
+> [!NOTE]
+> **HISTORICAL REFERENCE ONLY**
+> This pilot document is preserved for historical reference and findings analysis.
+> The active architecture is defined by the authoritative [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # Local evidence synthesis pilot
 
 ## Purpose and status

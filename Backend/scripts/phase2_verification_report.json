@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-11-17 01:25:10 UTC",
+  "baseline_run": [
+    {
+      "turn": 1,
+      "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+      "outcome": "answer",
+      "headline": "Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) scored 91.0% (Grade B, Rank #3 of 3 in Inbound) in September 2026, moving +2.5 pp vs August (+2.5 pp since August).",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 98,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=September&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      },
+      "conversation_id": "615ed9e6-4cc7-49ee-bceb-a6cff4045a8f"
+    },
+    {
+      "turn": 2,
+      "prompt": "And in August?",
+      "outcome": "answer",
+      "headline": "Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) scored 88.5% (Grade C, Rank #1 of 1 in Inbound) in August 2026, moving +0.0 pp vs August (+0.0 pp since August).",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 24,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent&performance_level=Employee",
+        "icon_key": "employee"
+      }
+    },
+    {
+      "turn": 3,
+      "prompt": "How did her Waiting Time change across the available months?",
+      "outcome": "answer",
+      "headline": "Across August 2026 to September 2026 (2 months), Nadia Fadel (EMP501 \u00b7 Senior Call Center Agent) recorded 6.20 min on Waiting Time in September 2026 (from 6.80 min in August 2026, -0.6 min) in Inbound.",
+      "answer_source": "deterministic",
+      "provider_used": "deterministic",
+      "model_used": "pms-local-router-v1",
+      "tool_calls": [
+        "get_agent_spotlight_and_trend"
+      ],
+      "latency_ms": 27,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent&performance_level=Employee",
+        "icon_key": "employee"
+      }
+    }
+  ],
+  "pilot_run": [
+    {
+      "turn": 1,
+      "prompt": "What was Nadia Fadel's Waiting Time in September 2026?",
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time was 6.2 min in September 2026, exceeding the target limit of 5.0 min by 1.2 min (did not meet target)",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "read_employee_metric"
+      ],
+      "latency_ms": 5011,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=September&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      },
+      "conversation_id": "64ef135c-bb88-458f-a2af-03aab3e27264"
+    },
+    {
+      "turn": 2,
+      "prompt": "And in August?",
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time was 6.8 min in August 2026, exceeding the target limit of 5.0 min by 1.8 min (did not meet target)",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "read_employee_metric"
+      ],
+      "latency_ms": 5408,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      }
+    },
+    {
+      "turn": 3,
+      "prompt": "How did her Waiting Time change across the available months?",
+      "outcome": "answer",
+      "headline": "Nadia Fadel's Waiting Time improved from 6.8 min in August 2026 to 6.2 min in September 2026, a change of -0.6 min indicating an improvement.",
+      "answer_source": "model_synthesis",
+      "provider_used": "cloudflare",
+      "model_used": "@cf/ibm-granite/granite-4.0-h-micro",
+      "tool_calls": [
+        "get_score_trend"
+      ],
+      "latency_ms": 6188,
+      "fallback_outcome": "none",
+      "primary_source_link": {
+        "label": "Open Nadia Fadel Profile \u2192",
+        "route": "/employee/EMP501?month=August&year=2026&function=Call+Center&team=Inbound&position=Senior+Call+Center+Agent",
+        "icon_key": "employee"
+      }
+    }
+  ],
+  "security_and_edge_cases": {
+    "non_admin_denied": true,
+    "ambiguous_clarification": true,
+    "selection_resolved": true
+  }
+}

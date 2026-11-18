@@ -273,7 +273,7 @@ def test_focused_agent_and_team_trend_spotlight(monkeypatch):
     )
     assert "Sara Mahmoud" in resp.headline
     assert "95.4%" in resp.headline
-    assert "+6.9% vs August" in resp.headline
+    assert "+6.9 pp vs August" in resp.headline
     assert resp.narrative_bullets == []
     assert len(resp.visual_cards) == 1
     assert resp.visual_cards[0].card_type == "trend_spotlight"

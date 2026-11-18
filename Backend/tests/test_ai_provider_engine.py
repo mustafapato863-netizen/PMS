@@ -120,6 +120,61 @@ def sample_request():
     )
 
 
+@pytest.mark.parametrize("purpose", ["model_led_router", "model_led_synthesis", "general"])
+@pytest.mark.parametrize(
+    ("provider", "model", "reasoning"),
+    [
+        ("cloudflare", "@cf/zai-org/glm-4.7-flash", {"enable_thinking": True}),
+        ("cloudflare", "@cf/ibm-granite/granite-4.0-h-micro", None),
+        ("gemini", "gemini-3.5-flash", {"thinkingLevel": "HIGH"}),
+        ("gemini", "gemini-2.5-flash", {"thinkingBudget": 24576}),
+        ("gemini", "gemini-2.5-pro", {"thinkingBudget": 32768}),
+        ("gemini", "gemini-1.5-flash", None),
+    ],
+)
+def test_model_led_output_limit_and_reasoning_wire_settings(
+    sample_config, purpose, provider, model, reasoning,
+):
+    model_led = purpose != "general"
+    request = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="Return a JSON result.")],
+        purpose=purpose,
+        response_format="json",
+        max_tokens=None if model_led else 300,
+    )
+    bodies = []
+    if provider == "cloudflare":
+        adapter_class = CloudflareAIProviderAdapter
+        response = {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}
+    else:
+        adapter_class = GeminiProviderAdapter
+        response = {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "{}"}]}}]}
+
+    def transport(http_request, *, timeout):
+        bodies.append(json.loads(http_request.data))
+        return io.BytesIO(json.dumps(response).encode())
+
+    adapter_class(transport).execute(request, sample_config, timeout=5, model=model)
+    assert len(bodies) == 1
+    body = bodies[0]
+    if provider == "cloudflare":
+        assert body["response_format"] == {"type": "json_object"}
+        assert "max_completion_tokens" not in body
+        if model_led:
+            assert "max_tokens" not in body
+        else:
+            assert body["max_tokens"] == 300
+        assert body.get("chat_template_kwargs") == (reasoning if model_led else None)
+    else:
+        config = body["generationConfig"]
+        assert config["responseMimeType"] == "application/json"
+        if model_led:
+            assert "maxOutputTokens" not in config
+        else:
+            assert config["maxOutputTokens"] == 300
+        assert config.get("thinkingConfig") == (reasoning if model_led else None)
+
+
 # ---------------------------------------------------------------------------
 # Core Happy Path & Hierarchy Tests
 # ---------------------------------------------------------------------------

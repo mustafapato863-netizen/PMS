@@ -612,15 +612,16 @@ export default function AiResponseCard({
   const secondaryDeepLinks = primarySourceLink
     ? response.deep_links.filter((d) => d.route !== primarySourceLink.route)
     : response.deep_links;
+  const detailBullets = response.detail_bullets ?? [];
   const hasExpandableDetails =
     primaryCards.length > 0 ||
     playbookCards.length > 0 ||
     secondaryDeepLinks.length > 0 ||
-    response.narrative_bullets.length > 1;
+    detailBullets.length > 0;
 
-  const visibleBullets = detailsExpanded
-    ? response.narrative_bullets
-    : response.narrative_bullets.filter((b, idx) => idx === 0 || b.startsWith('Note:') || b.toLowerCase().includes('no evaluated score') || b.toLowerCase().includes('no published'));
+  // Brief answers must already be complete in headline + narrative_bullets; never hide
+  // narrative_bullets by array index or prefix. Supporting evidence lives in detail_bullets / visual_cards.
+  const visibleBullets = response.narrative_bullets;
 
   const handleFeedback = async (
     rating: 'up' | 'down',
@@ -847,6 +848,25 @@ export default function AiResponseCard({
         {/* Expandable Details Region (Zero additional model calls on toggle) */}
         {detailsExpanded && (
           <>
+            {detailBullets.length > 0 && (
+              <div
+                data-testid="ai-detail-bullets"
+                className="mt-2.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2"
+              >
+                <ul
+                  dir="auto"
+                  className="space-y-1 text-xs font-medium leading-relaxed text-slate-600"
+                >
+                  {detailBullets.map((bullet, idx) => (
+                    <li key={idx} className="flex items-start gap-1.5">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Primary Visual Cards */}
             {primaryCards.map((card, index) => (
               <VisualBlock key={`${card.card_type}-${index}`} card={card} />

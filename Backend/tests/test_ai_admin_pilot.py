@@ -183,6 +183,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "GET /api/ai/watching",
         "POST /api/ai/chat",
         "POST /api/ai/conversations",
+        "POST /api/ai/conversations/{conversation_id}/promote",
         "POST /api/ai/feedback",
         "POST /api/ai/proposals/confirm",
         "POST /api/ai/traces/purge",
@@ -480,3 +481,107 @@ def test_compose_and_deploy_use_only_cloudflare_primary_gemini_fallback():
 @pytest.mark.parametrize("role", NON_ADMIN_ROLES)
 def test_previously_allowed_roles_are_not_in_the_workspace_role_list(role):
     assert role not in ai_workspace.AI_WORKSPACE_ROLES
+
+
+def test_model_led_pilot_rejects_unknown_tool_before_data_access(monkeypatch):
+    import json
+    import os
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    from services.ai.orchestrator import PmsAiOrchestrator
+    from services.ai.provider_engine import ProviderResponse
+    from models.ai_schemas import AiChatRequest
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from config.database import Base
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+
+    data_tool_executed = []
+    from services.ai.tool_registry import DeterministicToolRegistry
+    monkeypatch.setattr(
+        DeterministicToolRegistry,
+        "execute_agent_spotlight_and_trend",
+        lambda *args, **kwargs: data_tool_executed.append("spotlight")
+    )
+
+    class MockEngine:
+        def generate(self, req):
+            return ProviderResponse(
+                content=json.dumps({
+                    "response_type": "tool_call",
+                    "tool_name": "unauthorized_custom_tool",
+                    "tool_arguments": {"employee_name": "Nadia Fadel", "metric_id": "waitingtime"}
+                }),
+                provider="mock",
+                model="mock-v1",
+                latency_ms=10.0,
+                outcome="success",
+            )
+
+    monkeypatch.setattr("services.ai.provider_engine.get_unified_provider_engine", lambda: MockEngine())
+
+    orch = PmsAiOrchestrator(db, {"role": "Admin", "user_id": "admin-1", "has_unrestricted_team_access": True})
+    resp = orch.run_chat_turn(AiChatRequest(prompt="What was Nadia Fadel's Waiting Time in September 2026?"))
+
+    assert len(data_tool_executed) == 0, f"Expected zero data tools executed, got {data_tool_executed}"
+    assert resp.tool_calls == []
+    assert resp.provider_usage.fallback_outcome == "unknown_tool"
+    assert resp.outcome == "clarification"
+    assert "not supported" in resp.headline
+    assert resp.answer_source == "deterministic"
+
+
+def test_model_led_pilot_rejects_missing_required_arguments_before_data_access(monkeypatch):
+    import json
+    import os
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    from services.ai.orchestrator import PmsAiOrchestrator
+    from services.ai.provider_engine import ProviderResponse
+    from models.ai_schemas import AiChatRequest
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from config.database import Base
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+
+    data_tool_executed = []
+    from services.ai.tool_registry import DeterministicToolRegistry
+    monkeypatch.setattr(
+        DeterministicToolRegistry,
+        "execute_agent_spotlight_and_trend",
+        lambda *args, **kwargs: data_tool_executed.append("spotlight")
+    )
+
+    class MockEngine:
+        def generate(self, req):
+            return ProviderResponse(
+                content=json.dumps({
+                    "response_type": "tool_call",
+                    "tool_name": "read_employee_metric",
+                    "tool_arguments": {"employee_name": "Nadia Fadel"}
+                }),
+                provider="mock",
+                model="mock-v1",
+                latency_ms=10.0,
+                outcome="success",
+            )
+
+    monkeypatch.setattr("services.ai.provider_engine.get_unified_provider_engine", lambda: MockEngine())
+
+    orch = PmsAiOrchestrator(db, {"role": "Admin", "user_id": "admin-1", "has_unrestricted_team_access": True})
+    resp = orch.run_chat_turn(AiChatRequest(prompt="What was Nadia Fadel's Waiting Time in September 2026?"))
+
+    assert len(data_tool_executed) == 0, f"Expected zero data tools executed, got {data_tool_executed}"
+    assert resp.tool_calls == []
+    assert resp.provider_usage.fallback_outcome == "invalid_tool_arguments"
+    assert resp.outcome == "clarification"
+    assert "missing required metric argument" in resp.headline
+    assert resp.answer_source == "deterministic"

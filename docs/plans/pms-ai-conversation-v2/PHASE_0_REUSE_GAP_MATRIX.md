@@ -1,3 +1,7 @@
+> [!NOTE]
+> **HISTORICAL AUDIT MATRIX / REFERENCE ONLY**
+> This reuse and gap matrix is preserved as historical reference. Active execution is governed by [PMS AI Model-Led Implementation Plan](../PMS_AI_MODEL_LED_IMPLEMENTATION_PLAN.md).
+
 # Phase 0 — Reuse & Gap Matrix (PMS AI Conversation v2)
 
 **Baseline Commit:** `92de228` (`feat/pms-ai-chatbot-upgrade`)  

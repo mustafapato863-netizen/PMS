@@ -500,3 +500,230 @@ def test_validate_claims_rejects_invented_hr_facts():
     )
     assert not bad_hr.valid
     assert "invented_hr_fact" in bad_hr.errors
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Temporal Comparison & Derived Numbers Tests
+# ---------------------------------------------------------------------------
+
+
+def test_validate_claims_allows_grounded_target_diff_and_pairwise_deltas():
+    # Single fact with value 6.2 and target 5.0 -> allows target diff 1.2
+    ledger_single = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="September 2026",
+            value=6.2,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        )
+    ]
+    res_target_diff = validate_claims(
+        headline="Nadia Fadel's Waiting Time was 6.2 min in September 2026.",
+        bullets=["Target was 5.0 min.", "Value exceeded the target by 1.2 min."],
+        ledger=ledger_single,
+    )
+    assert res_target_diff.valid, f"Expected valid, got errors: {res_target_diff.errors}"
+
+    # Two facts (August 6.8 and September 6.2) -> allows pairwise delta 0.6
+    ledger_trend = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="August 2026",
+            value=6.8,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        ),
+        ClaimFact(
+            fact_id="T2",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="September 2026",
+            value=6.2,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        ),
+    ]
+    res_trend_delta = validate_claims(
+        headline="Nadia Fadel's Waiting Time changed from 6.8 min in August 2026 to 6.2 min in September 2026 (0.6 min improvement).",
+        bullets=["August: 6.8 min", "September: 6.2 min"],
+        ledger=ledger_trend,
+    )
+    assert res_trend_delta.valid, f"Expected valid, got errors: {res_trend_delta.errors}"
+
+
+def test_validate_claims_rejects_temporal_comparison_for_single_period():
+    ledger = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="August 2026",
+            value=6.8,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        )
+    ]
+    # Wording says "increased" with only August in ledger -> unsupported_temporal_comparison
+    bad = validate_claims(
+        headline="Nadia Fadel's Waiting Time increased to 6.8 min in August 2026.",
+        ledger=ledger,
+    )
+    assert not bad.valid
+    assert "unsupported_temporal_comparison" in bad.errors
+
+    # Exceeding target without temporal comparison is valid
+    good = validate_claims(
+        headline="Nadia Fadel's Waiting Time was 6.8 min in August 2026, exceeding the target of 5.0 min.",
+        ledger=ledger,
+    )
+    assert good.valid
+
+
+def test_validate_claims_trend_direction_and_polarity_for_lower_better():
+    ledger = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="August 2026",
+            value=6.8,
+            unit="min",
+            direction="lower_better",
+        ),
+        ClaimFact(
+            fact_id="T2",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="September 2026",
+            value=6.2,
+            unit="min",
+            direction="lower_better",
+        ),
+    ]
+
+    # Valid: drop in Waiting Time is an improvement
+    res_good = validate_claims(
+        headline="Nadia Fadel's Waiting Time decreased from 6.8 min in August 2026 to 6.2 min in September 2026, representing an improvement of 0.6 min.",
+        ledger=ledger,
+    )
+    assert res_good.valid
+
+    # Contradictory: saying it increased when it dropped
+    res_contra = validate_claims(
+        headline="Nadia Fadel's Waiting Time increased from 6.8 min in August 2026 to 6.2 min in September 2026.",
+        ledger=ledger,
+    )
+    assert not res_contra.valid
+    assert "contradictory_comparison" in res_contra.errors
+
+    # Inverted polarity: saying a drop in Waiting Time worsened
+    res_pol = validate_claims(
+        headline="Nadia Fadel's Waiting Time worsened from 6.8 min in August 2026 to 6.2 min in September 2026.",
+        ledger=ledger,
+    )
+    assert not res_pol.valid
+    assert "inverted_polarity" in res_pol.errors
+
+
+def test_target_comparison_validation_lower_better():
+    # Value 6.2 min > target 5.0 min (lower_better): missed / exceeded target
+    ledger = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="September 2026",
+            value=6.2,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        )
+    ]
+
+    # Contradictory: claiming meeting target when 6.2 > 5.0 for lower_better
+    res_bad = validate_claims(
+        headline="Nadia Fadel's Waiting Time in September 2026 was 6.2 minutes, meeting the target of 5.0 minutes.",
+        ledger=ledger,
+    )
+    assert not res_bad.valid
+    assert "contradictory_target_comparison" in res_bad.errors
+
+    # Valid: stating it exceeded target by 1.2 min
+    res_good = validate_claims(
+        headline="Nadia Fadel's Waiting Time in September 2026 was 6.2 minutes, exceeding the target limit of 5.0 minutes by 1.2 minutes.",
+        ledger=ledger,
+    )
+    assert res_good.valid
+
+    # Met target case: 4.5 <= 5.0
+    ledger_met = [
+        ClaimFact(
+            fact_id="T2",
+            subject="Nadia Fadel",
+            metric_key="waitingtime",
+            metric_name="Waiting Time",
+            period="September 2026",
+            value=4.5,
+            target=5.0,
+            unit="min",
+            direction="lower_better",
+        )
+    ]
+    res_met = validate_claims(
+        headline="Nadia Fadel's Waiting Time in September 2026 was 4.5 minutes, meeting the target of 5.0 minutes.",
+        ledger=ledger_met,
+    )
+    assert res_met.valid
+
+    res_met_bad = validate_claims(
+        headline="Nadia Fadel's Waiting Time in September 2026 was 4.5 minutes, missing the target of 5.0 minutes.",
+        ledger=ledger_met,
+    )
+    assert not res_met_bad.valid
+    assert "contradictory_target_comparison" in res_met_bad.errors
+
+
+def test_target_comparison_validation_higher_better():
+    # Value 78.0% < target 85.0% (higher_better): missed target
+    ledger_miss = [
+        ClaimFact(
+            fact_id="T1",
+            subject="Mariam Ali",
+            metric_key="overall_score",
+            metric_name="Overall Score",
+            period="September 2026",
+            value=78.0,
+            target=85.0,
+            unit="%",
+            direction="higher_better",
+        )
+    ]
+
+    res_miss_bad = validate_claims(
+        headline="Mariam Ali achieved an overall score of 78.0% in September 2026, meeting the target of 85.0%.",
+        ledger=ledger_miss,
+    )
+    assert not res_miss_bad.valid
+    assert "contradictory_target_comparison" in res_miss_bad.errors
+
+    res_miss_good = validate_claims(
+        headline="Mariam Ali achieved an overall score of 78.0% in September 2026, falling short of the target of 85.0% by 7.0%.",
+        ledger=ledger_miss,
+    )
+    assert res_miss_good.valid

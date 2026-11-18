@@ -340,6 +340,37 @@ class AiConversationRepository:
             self.db.refresh(row)
         return row
 
+    def list_recent_completed_turns_for_summary(
+        self,
+        *,
+        conversation_id: str,
+        limit: int = 20,
+        before_turn_index: int | None = None,
+    ) -> list[Any]:
+        """Fetch recent completed turns in descending order with only summary/auth fields."""
+        self._require_schema_ready()
+        safe_limit = max(1, min(int(limit), 50))
+        query = (
+            self.db.query(
+                AiTurn.turn_index.label("turn_index"),
+                AiTurn.outcome.label("outcome"),
+                AiTurn.validated_plan.label("validated_plan"),
+                AiTurn.evidence_summary.label("evidence_summary"),
+                AiTurn.response_payload.label("response_payload"),
+            )
+            .filter(
+                AiTurn.conversation_id == str(conversation_id),
+                AiTurn.status == "completed",
+            )
+        )
+        if before_turn_index is not None:
+            query = query.filter(AiTurn.turn_index < int(before_turn_index))
+        return (
+            query.order_by(AiTurn.turn_index.desc(), AiTurn.created_at.desc())
+            .limit(safe_limit)
+            .all()
+        )
+
     def list_turns_for_conversation(self, *, conversation_id: str) -> list[AiTurn]:
         self._require_schema_ready()
         return (

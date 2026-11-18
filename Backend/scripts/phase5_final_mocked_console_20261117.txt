@@ -1,0 +1,724 @@
+{
+  "fixture": "ai_phase5_final_frozen.json",
+  "mode": "mocked",
+  "fixture_sha256": "9e939f0d393acca689c6f715589c0e8d144a9d8c354c8084c5eb1292bd46f2e8",
+  "source_data_sha256": "6bf79419ded46da9644e7bb0498a3a5da550a99bda494f8b3ac6acc977dbb68a",
+  "runner_sha256": "3fb496f60d26e55a198f5cfad6a7d8fab3c9906acf2399a56c8a05da1a01e03e",
+  "conversation_count": 20,
+  "prompt_count": 80,
+  "coverage_counts": {
+    "role.Admin": 17,
+    "operation.get_score_trend": 2,
+    "operation.rank_employees": 10,
+    "department.Call_Center": 38,
+    "country.EGY": 59,
+    "operation.read_employee_metric": 52,
+    "operation.get_employee_history": 2,
+    "operation.compare_branches": 3,
+    "edge.ambiguous_name": 1,
+    "edge.person_correction": 1,
+    "edge.tie": 1,
+    "department.Coding": 7,
+    "country.UAE": 17,
+    "edge.country_correction": 1,
+    "department.Pharmacy": 12,
+    "operation.get_kpi_diagnosis": 2,
+    "department.Pre_Approvals_IP_Offshore": 5,
+    "department.Finance": 5,
+    "department.Human_Resources": 4,
+    "department.IT": 4,
+    "department.Sales": 5,
+    "role.Manager": 1,
+    "role.Employee": 1,
+    "edge.missing_period": 3,
+    "country.KSA_missing": 4,
+    "role.Branch_Director": 1,
+    "provider.failure": 3,
+    "conversation.reload": 1,
+    "conversation.delete": 1
+  },
+  "coverage_missing_tags": [],
+  "quality_gate": {
+    "structural_pass": true,
+    "critical_target_pct": 100.0,
+    "critical_pass": false,
+    "semantic_target_pct": 95.0,
+    "semantic_pass": false,
+    "passed": false
+  },
+  "summary": {
+    "frozen_eval": {
+      "total": 80,
+      "passed": 9,
+      "accuracy_pct": 11.25,
+      "semantic_passed": 12,
+      "semantic_accuracy_pct": 15.0,
+      "critical_check_passed_turns": 38,
+      "critical_check_required_turns": 74,
+      "critical_check_pass_rate_pct": 51.35,
+      "avg_ms": 34.98,
+      "p50_ms": 24.74,
+      "p95_ms": 38.74,
+      "total_provider_calls": 1,
+      "total_provider_call_attempts": 63,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_estimated_cost_usd": 0.0,
+      "fallback_turns": 1
+    },
+    "overall": {
+      "total": 80,
+      "passed": 9,
+      "accuracy_pct": 11.25,
+      "semantic_passed": 12,
+      "semantic_accuracy_pct": 15.0,
+      "critical_check_passed_turns": 38,
+      "critical_check_required_turns": 74,
+      "critical_check_pass_rate_pct": 51.35,
+      "avg_ms": 34.98,
+      "p50_ms": 24.74,
+      "p95_ms": 38.74,
+      "total_provider_calls": 1,
+      "total_provider_call_attempts": 63,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_estimated_cost_usd": 0.0,
+      "fallback_turns": 1
+    }
+  },
+  "failed_turns": [
+    {
+      "conversation": "phase5_01_inbound_compound_and_history",
+      "turn_id": "p501_t1",
+      "failures": [
+        "intent 'compare_periods' != 'trend'",
+        "trend periods mentioned ['september 2026'] < required 2",
+        "missing content '635' in 'Sara Mahmoud (EMP101 \u00b7 Senior Call Center Agent) is the #1 top performer in Inbound (All Branches) for September 2026 by Bookings (Count) at 205 bookings (Overall Score 94.0%) (Rank #1 of 4), moving +3.0 pp vs August (+11.0 pp since April).' | []",
+        "missing content '665' in 'Sara Mahmoud (EMP101 \u00b7 Senior Call Center Agent) is the #1 top performer in Inbound (All Branches) for September 2026 by Bookings (Count) at 205 bookings (Overall Score 94.0%) (Rank #1 of 4), moving +3.0 pp vs August (+11.0 pp since April).' | []",
+        "missing content 'August 2026' in 'Sara Mahmoud (EMP101 \u00b7 Senior Call Center Agent) is the #1 top performer in Inbound (All Branches) for September 2026 by Bookings (Count) at 205 bookings (Overall Score 94.0%) (Rank #1 of 4), moving +3.0 pp vs August (+11.0 pp since April).' | []",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 635, 'unit': 'count', 'source_required': True, 'require_aggregate': True}",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101', 'employee_name': 'Sara Mahmoud'}"
+      ]
+    },
+    {
+      "conversation": "phase5_01_inbound_compound_and_history",
+      "turn_id": "p501_t2",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "entity employee missing 'Sara Mahmoud'",
+        "missing content 'Sara Mahmoud' in 'In Inbound (September 2026 \u00b7 All Branches), Bookings (Count) reached 665 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing content '205' in 'In Inbound (September 2026 \u00b7 All Branches), Bookings (Count) reached 665 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_01_inbound_compound_and_history",
+      "turn_id": "p501_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "entity employee missing 'Sara Mahmoud'",
+        "missing content 'Sara Mahmoud' in 'In Inbound (August 2026 \u00b7 All Branches), Bookings (Count) reached 635 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing content '175' in 'In Inbound (August 2026 \u00b7 All Branches), Bookings (Count) reached 635 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 175, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_01_inbound_compound_and_history",
+      "turn_id": "p501_t4",
+      "failures": [
+        "intent 'current_value' != 'trend'",
+        "metric None != 'overall_score'",
+        "trend periods mentioned ['september 2026'] < required 2",
+        "missing content '91' in 'Sara Mahmoud (EMP101 \u00b7 Senior Call Center Agent) scored 94.0% (Grade B, Rank #1 of 4 in Inbound) in September 2026, moving +3.0 pp vs August (+11.0 pp since April).' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "turn_id": "p502_t1",
+      "failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "turn_id": "p502_t2",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "turn_id": "p502_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "entity employee missing 'Omar Khalid'",
+        "missing content 'Omar Khalid' in 'In Outbound (August 2026 \u00b7 All Branches), Bookings (Count) reached 370 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Booking Rate (Weight 10%) at 93.3% achievement (1 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 370, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP201'}"
+      ]
+    },
+    {
+      "conversation": "phase5_02_outbound_rank_and_periods",
+      "turn_id": "p502_t4",
+      "failures": [
+        "intent 'compare_periods' != 'trend'",
+        "missing content '370' in 'Outbound (All Branches) moved from 89.0% in August 2026 to 89.0% in September 2026 (+0.0 pp change).' | ['Lowest KPI: Booking Rate (Weight 10%) at 93.3% achievement (1 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 370, 'unit': 'count', 'source_required': True, 'require_aggregate': True}"
+      ]
+    },
+    {
+      "conversation": "phase5_03_branch_comparison",
+      "turn_id": "p503_t1",
+      "failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 350, 'unit': 'count', 'source_required': True, 'require_aggregate': True, 'branch': 'dubai'}",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 180, 'unit': 'count', 'source_required': True, 'require_aggregate': True, 'branch': 'sharjah'}"
+      ]
+    },
+    {
+      "conversation": "phase5_03_branch_comparison",
+      "turn_id": "p503_t2",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'"
+      ]
+    },
+    {
+      "conversation": "phase5_03_branch_comparison",
+      "turn_id": "p503_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'"
+      ]
+    },
+    {
+      "conversation": "phase5_04_ambiguous_name_and_correction",
+      "turn_id": "p504_t2",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_04_ambiguous_name_and_correction",
+      "turn_id": "p504_t3",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_04_ambiguous_name_and_correction",
+      "turn_id": "p504_t4",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_05_tied_rankings",
+      "turn_id": "p505_t1",
+      "failures": [
+        "entity team None != 'Call Center'",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 62, 'unit': '%', 'source_required': True, 'employee_id': 'EMP302'}"
+      ]
+    },
+    {
+      "conversation": "phase5_05_tied_rankings",
+      "turn_id": "p505_t2",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_05_tied_rankings",
+      "turn_id": "p505_t3",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_05_tied_rankings",
+      "turn_id": "p505_t4",
+      "failures": [
+        "entity team 'Support Positions' != 'Call Center'"
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "turn_id": "p506_t1",
+      "failures": [
+        "metric None != 'QualityErrors'",
+        "missing content 'Tariq Mansoor' in 'In Coding (September 2026 \u00b7 All Branches), Quality Errors is at 2.5% vs target 3.0% (100.0% achievement, 20% weight).' | []",
+        "missing typed evidence contract {'kpi_key': 'QualityErrors', 'period': '2026-09', 'actual': 2.5, 'unit': '%', 'source_required': True, 'employee_id': 'EMP502'}"
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "turn_id": "p506_t2",
+      "failures": [
+        "outcome 'unsupported_request' != 'answer'",
+        "intent 'unsupported' != 'current_value'",
+        "metric None != 'QualityErrors'",
+        "entity region 'UAE' != 'EGY'",
+        "missing content 'Salma Youssef' in 'I can only help with PMS performance scorecards, KPIs, trends, comparisons, and corrective actions.' | ['Try asking about overall performance, a team or KPI target, or branch comparisons.']",
+        "missing content '1.8' in 'I can only help with PMS performance scorecards, KPIs, trends, comparisons, and corrective actions.' | ['Try asking about overall performance, a team or KPI target, or branch comparisons.']",
+        "missing typed evidence contract {'kpi_key': 'QualityErrors', 'period': '2026-09', 'actual': 1.8, 'unit': '%', 'source_required': True, 'employee_id': 'EMP501'}"
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "turn_id": "p506_t3",
+      "failures": [
+        "metric None != 'QualityErrors'",
+        "entity region 'UAE' != 'EGY'",
+        "missing content 'Salma Youssef' in 'In September 2026 (All Branches), Coding has the lowest score at 92.0%, with 0 of 1 agents below target.' | ['Top contributing factor: Quality Errors is a positive score driver.']",
+        "missing content '1.8' in 'In September 2026 (All Branches), Coding has the lowest score at 92.0%, with 0 of 1 agents below target.' | ['Top contributing factor: Quality Errors is a positive score driver.']",
+        "missing typed evidence contract {'kpi_key': 'QualityErrors', 'period': '2026-09', 'actual': 1.8, 'unit': '%', 'source_required': True, 'employee_id': 'EMP501'}"
+      ]
+    },
+    {
+      "conversation": "phase5_06_coding_country_correction",
+      "turn_id": "p506_t4",
+      "failures": [
+        "metric None != 'overall_score'",
+        "entity region 'UAE' != 'EGY'",
+        "entity employee missing 'Salma Youssef'",
+        "missing content 'Salma Youssef' in 'No performance records matched the selected filters (Coding \u00b7 UAE \u00b7 September 2026).' | []",
+        "missing content '89' in 'No performance records matched the selected filters (Coding \u00b7 UAE \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP501'}"
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "turn_id": "p507_t1",
+      "failures": [
+        "metric None != 'waitingtime'",
+        "missing content '6.2' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []",
+        "missing content 'min' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "turn_id": "p507_t2",
+      "failures": [
+        "missing content '6.2' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []",
+        "missing content 'min' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []",
+        "tool names ['get_agent_spotlight_and_trend'] contain none of ['get_kpi_diagnosis', 'kpi_diagnosis']"
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "turn_id": "p507_t3",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_07_pharmacy_metric_and_diagnosis",
+      "turn_id": "p507_t4",
+      "failures": [
+        "entity employee missing 'Nadia Fadel'",
+        "missing typed evidence contract {'kpi_key': 'waitingtime', 'period': '2026-09', 'actual': 6.2, 'unit': 'min', 'source_required': True, 'employee_id': 'EMP701'}"
+      ]
+    },
+    {
+      "conversation": "phase5_08_rcm_rejection_rate",
+      "turn_id": "p508_t1",
+      "failures": [
+        "metric None != 'RejectionRate'",
+        "missing content '12' in 'Heba Nabil (EMP401) scored 86.0% (Grade C, Rank #1 of 1 in Pre-Approvals IP Offshore) in September 2026, moving -4.0 pp vs August (-4.0 pp since August).' | []",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-09', 'actual': 0.12, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}"
+      ]
+    },
+    {
+      "conversation": "phase5_08_rcm_rejection_rate",
+      "turn_id": "p508_t2",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "metric 'pre_approvals_ip_offshore:rejection' != 'RejectionRate'",
+        "missing content '8' in 'Heba Nabil (EMP401) scored 90.0% (Grade B, Rank #1 of 1 in Pre-Approvals IP Offshore) in August 2026, moving +0.0 pp vs August (+0.0 pp since August).' | []",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-08', 'actual': 0.08, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}"
+      ]
+    },
+    {
+      "conversation": "phase5_08_rcm_rejection_rate",
+      "turn_id": "p508_t3",
+      "failures": [
+        "intent 'compare_periods' != 'trend'",
+        "metric 'pre_approvals_ip_offshore:rejection' != 'RejectionRate'",
+        "trend periods mentioned ['september 2026'] < required 2",
+        "missing content '12' in 'Heba Nabil (EMP401) scored 86.0% (Grade C, Rank #1 of 1 in Pre-Approvals IP Offshore) in September 2026, moving -4.0 pp vs August (-4.0 pp since August).' | []",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-08', 'actual': 0.08, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-09', 'actual': 0.12, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}"
+      ]
+    },
+    {
+      "conversation": "phase5_08_rcm_rejection_rate",
+      "turn_id": "p508_t4",
+      "failures": [
+        "metric 'pre_approvals_ip_offshore:rejection' != 'RejectionRate'",
+        "entity employee missing 'Heba Nabil'",
+        "missing content '12' in 'Pre-Approvals IP Offshore average performance in September 2026 (All Branches) is 86.0% (-4.0 pp) across 1 evaluated records.' | []",
+        "missing content '5' in 'Pre-Approvals IP Offshore average performance in September 2026 (All Branches) is 86.0% (-4.0 pp) across 1 evaluated records.' | []",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-09', 'actual': 0.12, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}",
+        "tool names ['get_kpi_diagnosis_and_trends', 'get_people_contribution_and_rankings'] contain none of ['get_kpi_diagnosis', 'kpi_diagnosis']"
+      ]
+    },
+    {
+      "conversation": "phase5_09_finance_department",
+      "turn_id": "p509_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_09_finance_department",
+      "turn_id": "p509_t3",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_09_finance_department",
+      "turn_id": "p509_t4",
+      "failures": [
+        "missing content 'Layla Sami' in 'No performance records matched the selected filters (Finance \u00b7 September 2026).' | []",
+        "missing content '86' in 'No performance records matched the selected filters (Finance \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 86, 'unit': '%', 'source_required': True, 'employee_id': 'EMP901'}"
+      ]
+    },
+    {
+      "conversation": "phase5_10_human_resources_department",
+      "turn_id": "p510_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_10_human_resources_department",
+      "turn_id": "p510_t4",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_11_it_department",
+      "turn_id": "p511_t1",
+      "failures": [
+        "metric None != 'overall_score'",
+        "entity employee missing 'Mina Fawzi'",
+        "missing content 'Mina Fawzi' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing content '90' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 90, 'unit': '%', 'source_required': True, 'employee_id': 'EMP903'}"
+      ]
+    },
+    {
+      "conversation": "phase5_11_it_department",
+      "turn_id": "p511_t2",
+      "failures": [
+        "missing content 'Mina Fawzi' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing content 'IT Director' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_11_it_department",
+      "turn_id": "p511_t3",
+      "failures": [
+        "entity employee missing 'Mina Fawzi'",
+        "missing content 'Mina Fawzi' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing content '90' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 90, 'unit': '%', 'source_required': True, 'employee_id': 'EMP903'}"
+      ]
+    },
+    {
+      "conversation": "phase5_11_it_department",
+      "turn_id": "p511_t4",
+      "failures": [
+        "metric None != 'overall_score'",
+        "entity employee missing 'Mina Fawzi'",
+        "missing content 'Mina Fawzi' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing content '90' in 'No performance records matched the selected filters (IT \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 90, 'unit': '%', 'source_required': True, 'employee_id': 'EMP903'}"
+      ]
+    },
+    {
+      "conversation": "phase5_12_sales_managerial_level",
+      "turn_id": "p512_t1",
+      "failures": [
+        "outcome 'clarification' != 'answer'",
+        "intent 'clarify' != 'current_value'",
+        "metric None != 'overall_score'",
+        "scope performance_level None != 'Managerial'",
+        "entity employee missing 'Nour El-Sayed'",
+        "missing content 'Nour El-Sayed' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']",
+        "missing content '89' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP904'}"
+      ]
+    },
+    {
+      "conversation": "phase5_12_sales_managerial_level",
+      "turn_id": "p512_t2",
+      "failures": [
+        "outcome 'clarification' != 'answer'",
+        "missing content 'Nour El-Sayed' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']",
+        "missing content 'Sales Manager' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']"
+      ]
+    },
+    {
+      "conversation": "phase5_12_sales_managerial_level",
+      "turn_id": "p512_t3",
+      "failures": [
+        "scope performance_level 'Employee' != 'Managerial'",
+        "entity employee missing 'Nour El-Sayed'",
+        "missing content 'Nour El-Sayed' in 'No performance records matched the selected filters (Sales \u00b7 September 2026).' | []",
+        "missing content '89' in 'No performance records matched the selected filters (Sales \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP904'}"
+      ]
+    },
+    {
+      "conversation": "phase5_12_sales_managerial_level",
+      "turn_id": "p512_t4",
+      "failures": [
+        "outcome 'clarification' != 'answer'",
+        "intent 'clarify' != 'current_value'",
+        "metric None != 'overall_score'",
+        "entity employee missing 'Nour El-Sayed'",
+        "missing content 'Nour El-Sayed' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']",
+        "missing content '89' in 'Which Sayed would you like to review? Please specify their team or full name.' | ['Multiple employees may match the name Sayed. Please specify their team or full name.']",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP904'}"
+      ]
+    },
+    {
+      "conversation": "phase5_13_manager_authorization",
+      "turn_id": "p513_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_13_manager_authorization",
+      "turn_id": "p513_t2",
+      "failures": [
+        "metric None != 'overall_score'",
+        "entity employee missing 'Omar Khalid'",
+        "missing content 'Omar Khalid' in 'No performance records matched the selected filters (Inbound \u00b7 September 2026).' | []",
+        "missing content '89' in 'No performance records matched the selected filters (Inbound \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP201'}"
+      ]
+    },
+    {
+      "conversation": "phase5_13_manager_authorization",
+      "turn_id": "p513_t4",
+      "failures": [
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_14_employee_self_only",
+      "turn_id": "p514_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_14_employee_self_only",
+      "turn_id": "p514_t2",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "entity employee missing 'Sara Mahmoud'",
+        "missing content 'Sara Mahmoud' in 'In Inbound (September 2026 \u00b7 All Branches), Bookings (Count) reached 205 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (1 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_14_employee_self_only",
+      "turn_id": "p514_t4",
+      "failures": [
+        "outcome 'answer' != 'restricted_access'",
+        "missing content 'Access restricted' in 'Sara Mahmoud (EMP101 \u00b7 Senior Call Center Agent) is the #1 top performer in Inbound (All Branches) for September 2026 by Bookings (Count) at 205 bookings (Overall Score 94.0%) (Rank #1 of 1), moving +3.0 pp vs August (+11.0 pp since April).' | []",
+        "tool_calls 1 > 0",
+        "expected no typed evidence, received 13 item(s)",
+        "restricted response returned typed evidence",
+        "restricted response executed a data tool"
+      ]
+    },
+    {
+      "conversation": "phase5_15_missing_period_data",
+      "turn_id": "p515_t1",
+      "failures": [
+        "outcome 'answer' not in ['clarification', 'unavailable_data']",
+        "missing content 'Nadia Fadel' in 'No performance records matched the selected filters (Pharmacy \u00b7 January 2020).' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_15_missing_period_data",
+      "turn_id": "p515_t2",
+      "failures": [
+        "outcome 'answer' not in ['clarification', 'unavailable_data']",
+        "missing content 'Nadia Fadel' in 'No performance records matched the selected filters (Pharmacy \u00b7 August 2026).' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_15_missing_period_data",
+      "turn_id": "p515_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "missing content '6.2' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []",
+        "missing content 'min' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_15_missing_period_data",
+      "turn_id": "p515_t4",
+      "failures": [
+        "missing content 'Nadia Fadel' in 'No published PMS evaluation records are available for October 2026 (2026-10).' | ['The latest published period with verified PMS data is September 2026 (2026-09).']"
+      ]
+    },
+    {
+      "conversation": "phase5_16_ksa_no_data",
+      "turn_id": "p516_t1",
+      "failures": [
+        "outcome 'answer' not in ['clarification', 'unavailable_data']"
+      ]
+    },
+    {
+      "conversation": "phase5_16_ksa_no_data",
+      "turn_id": "p516_t2",
+      "failures": [
+        "period '2026-09' not in []"
+      ]
+    },
+    {
+      "conversation": "phase5_16_ksa_no_data",
+      "turn_id": "p516_t3",
+      "failures": [
+        "outcome 'answer' not in ['clarification', 'unavailable_data']"
+      ]
+    },
+    {
+      "conversation": "phase5_16_ksa_no_data",
+      "turn_id": "p516_t4",
+      "failures": [
+        "outcome 'answer' not in ['clarification', 'unavailable_data']",
+        "expected no typed evidence, received 4 item(s)"
+      ]
+    },
+    {
+      "conversation": "phase5_17_branch_scope_permission",
+      "turn_id": "p517_t1",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "missing content 'Dubai' in 'No performance records matched the selected filters (Inbound \u00b7 September 2026).' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_17_branch_scope_permission",
+      "turn_id": "p517_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "missing content '350' in 'In Inbound (September 2026 \u00b7 Dubai), Bookings (Count) reached Data Missing or Unpublished.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 350, 'unit': 'count', 'source_required': True, 'require_aggregate': True, 'branch': 'dubai'}"
+      ]
+    },
+    {
+      "conversation": "phase5_18_provider_failure_fallback",
+      "turn_id": "p518_t1",
+      "failures": [
+        "answer_source 'deterministic' != 'fallback'",
+        "fallback_outcome 'none' != 'timeout'",
+        "metric None != 'waitingtime'",
+        "missing content '6.2' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []",
+        "missing content 'min' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_18_provider_failure_fallback",
+      "turn_id": "p518_t2",
+      "failures": [
+        "answer_source 'deterministic' != 'fallback'",
+        "fallback_outcome 'none' != 'provider_error'",
+        "missing content 'Sara Mahmoud' in 'No performance records matched the selected filters (Pharmacy \u00b7 September 2026).' | []",
+        "missing content '94' in 'No performance records matched the selected filters (Pharmacy \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-09', 'actual': 94, 'unit': '%', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_18_provider_failure_fallback",
+      "turn_id": "p518_t3",
+      "failures": [
+        "answer_source 'deterministic' != 'fallback'",
+        "fallback_outcome 'none' != 'timeout'",
+        "missing content 'Heba Nabil' in 'No performance records matched the selected filters (Pharmacy \u00b7 September 2026).' | []",
+        "missing content '12' in 'No performance records matched the selected filters (Pharmacy \u00b7 September 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'RejectionRate', 'period': '2026-09', 'actual': 0.12, 'unit': '%', 'source_required': True, 'employee_id': 'EMP401'}"
+      ]
+    },
+    {
+      "conversation": "phase5_18_provider_failure_fallback",
+      "turn_id": "p518_t4",
+      "failures": [
+        "metric None != 'QualityErrors'",
+        "missing content '1.8' in 'Salma Youssef (EMP501) scored 89.0% (Grade C, Rank #1 of 1 in Coding EGY) in September 2026.' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_19_service_reload",
+      "turn_id": "p519_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_19_service_reload",
+      "turn_id": "p519_t2",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "missing content 'Sara Mahmoud' in 'In Inbound (August 2026 \u00b7 All Branches), Bookings (Count) reached 635 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing content '175' in 'In Inbound (August 2026 \u00b7 All Branches), Bookings (Count) reached 635 count.' | ['Bookings (Count) measures total bookings by destination branch or agent and is distinct from Booking Rate (Bookings / Handled Calls).', 'Lowest KPI: Abandon Rate (Inbound) (Weight 10%) at 83.3% achievement (4 agents below target).']",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-08', 'actual': 175, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_19_service_reload",
+      "turn_id": "p519_t3",
+      "failures": [
+        "intent 'actual_vs_target' != 'current_value'",
+        "missing typed evidence contract {'kpi_key': 'bookings_count', 'period': '2026-09', 'actual': 205, 'unit': 'count', 'source_required': True, 'employee_id': 'EMP101'}"
+      ]
+    },
+    {
+      "conversation": "phase5_19_service_reload",
+      "turn_id": "p519_t4",
+      "failures": [
+        "metric None != 'overall_score'",
+        "missing content 'Omar Khalid' in 'No performance records matched the selected filters (Inbound \u00b7 August 2026).' | []",
+        "missing content '89' in 'No performance records matched the selected filters (Inbound \u00b7 August 2026).' | []",
+        "missing typed evidence contract {'kpi_key': 'overall_score', 'period': '2026-08', 'actual': 89, 'unit': '%', 'source_required': True, 'employee_id': 'EMP201'}"
+      ]
+    },
+    {
+      "conversation": "phase5_20_service_delete_and_fresh_chat",
+      "turn_id": "p520_t1",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_20_service_delete_and_fresh_chat",
+      "turn_id": "p520_t2",
+      "failures": [
+        "metric None != 'waitingtime'",
+        "missing content '6.2' in 'Nadia Fadel (EMP701) scored 87.5% (Grade C, Rank #1 of 1 in Pharmacy) in September 2026.' | []"
+      ]
+    },
+    {
+      "conversation": "phase5_20_service_delete_and_fresh_chat",
+      "turn_id": "p520_t3",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    },
+    {
+      "conversation": "phase5_20_service_delete_and_fresh_chat",
+      "turn_id": "p520_t4",
+      "failures": [
+        "metric None != 'overall_score'"
+      ]
+    }
+  ],
+  "full_result_path": "D:\\Projects\\PMS_Dashboard\\Backend\\scripts\\phase5_final_mocked_failure_20261117.json"
+}

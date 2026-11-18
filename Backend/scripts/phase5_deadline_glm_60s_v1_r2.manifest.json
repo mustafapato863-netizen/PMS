@@ -1,0 +1,89 @@
+{
+  "run_id": "phase5_deadline_glm_60s_v1_r2",
+  "created_at_utc": "2026-11-18T01:47:09.197028+00:00",
+  "requested_provider": "cloudflare",
+  "timeout_seconds": 60,
+  "model_led_output_cap_omitted": true,
+  "application_source_sha256": "9cc86d15c4c7b31ff5b8688c319bd83fc5bc4d3b8e8a3a21d52914f341ca4eff",
+  "runner_sha256": "2a14fcbd2df3a6cfc74948e5083e4f19d3a446b97f3a6b7750859ff9d1f9c9f0",
+  "v2_runner_sha256": "353ddaeb4521a442a92a4282352abe0ecf90e9b5f4bf1dabb0ab05ba40ab3b9d",
+  "validator_harness_sha256": "056aba43dcc7239f841a07517cfa36827d20ab2433356df384ea405e522e8b8c",
+  "scoring_helper_sha256": "7bff3b174052080edf8a623f3dea70957660c748af94c2d2cad7fda9f4a055db",
+  "reference_evaluator_sha256": "e4ecf1f2a9688cf08a6c983ffd8d118be6353a7c6c2dfaedd0bd0ddaf1971b18",
+  "reference_fixture_sha256": "e232af7a685957fe5178efa46a88a1157cc6046349a51e99d166bc61c1abbc11",
+  "reference_freeze_manifest_sha256": "184f32e2fca67d55afb69ede9d569f88e0e7435f7e0cf8edf389b35b37d1e7eb",
+  "scoring_version": "pms-ai-metadata-units-v1",
+  "experiment": {
+    "schema_version": "1.0",
+    "selection_basis": "Previously timed-out turns in phase5_exposed_glm_v3_r3, with full preceding context in each selected conversation. Covers compound booking totals, booking trend follow-up, country switch and KPI continuation, and a Waiting Time target diagnosis.",
+    "model": "@cf/zai-org/glm-4.7-flash",
+    "deadline_seconds": [
+      30,
+      60
+    ],
+    "expectations": "ai_phase5_expectations_v2.json",
+    "previous_result": "phase5_exposed_glm_v3_r3.json",
+    "turn_prefixes": [
+      [
+        "p501_t1"
+      ],
+      [
+        "p502_t1",
+        "p502_t2",
+        "p502_t3",
+        "p502_t4"
+      ],
+      [
+        "p506_t1",
+        "p506_t2",
+        "p506_t3"
+      ],
+      [
+        "p507_t1",
+        "p507_t2"
+      ]
+    ],
+    "previous_timeout_turns": [
+      "p501_t1",
+      "p502_t2",
+      "p502_t3",
+      "p502_t4",
+      "p506_t2",
+      "p507_t2"
+    ],
+    "sample_sha256": "fc288062e1e784bc5cc89c231548b5b20a612aee08a643d6079423bd3d751ba8",
+    "expectations_sha256": "fcd15dcba511b9716b0137e969877791e735435c9e24f6f62ed7b53c9422de65"
+  },
+  "evaluated_fixture_sha256": "9717d9b00869c3ee47ca132308dbfb84945893a36ba0b5d3137f806e3dae34ab",
+  "result_sha256": "406a547faa0c8bb842dbad5d4740cee7c2457417adcd22704a6a01842d421a7c",
+  "telemetry": {
+    "requested_model": "@cf/zai-org/glm-4.7-flash",
+    "api_response_confirmed_stages": {
+      "model_led_router": 8,
+      "model_led_synthesis": 7
+    },
+    "stage_outcomes": {
+      "model_led_router:success": 8,
+      "model_led_synthesis:success": 7,
+      "model_led_router:provider_unavailable": 2
+    },
+    "engine_calls": 17,
+    "provider_attempts_by_status": {
+      "success": 15,
+      "timeout": 1,
+      "transient_error": 1
+    },
+    "estimated_cost_usd_known_subtotal": 0.00540999,
+    "engine_calls_without_cost_estimate": 2,
+    "actual_provider_cost_status": "unknown",
+    "application_fallbacks": {
+      "claim_validation_failed:mismatched_period": 1,
+      "claim_validation_failed:unsupported_temporal_comparison": 1
+    },
+    "answer_sources": {
+      "fallback": 2,
+      "model_synthesis": 5,
+      "deterministic": 3
+    }
+  }
+}
