@@ -13,6 +13,19 @@ def mock_db():
     return db
 
 
+def test_user_memory_and_conversations_use_separate_orm_tables():
+    """Adding user memory must not replace the existing AI conversations mapping."""
+    from config.database import Base
+    from models.models import AiConversation, AiUserMemory
+
+    assert AiUserMemory.__tablename__ == "ai_user_memory"
+    assert AiConversation.__tablename__ == "ai_conversations"
+    assert Base.metadata.tables["ai_user_memory"] is AiUserMemory.__table__
+    assert Base.metadata.tables["ai_conversations"] is AiConversation.__table__
+    assert "user_id" in AiUserMemory.__table__.c
+    assert "owner_user_id" in AiConversation.__table__.c
+
+
 def test_load_memory_returns_none_when_empty(mock_db):
     svc = UserMemoryService(mock_db)
     result = svc.load_memory("user-1")

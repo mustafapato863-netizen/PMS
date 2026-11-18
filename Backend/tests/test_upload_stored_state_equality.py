@@ -105,7 +105,12 @@ def test_the_upload_stores_the_same_state_as_before_the_change(tmp_path, monkeyp
     engine.dispose()
 
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert state.keys() == golden.keys()
+    # AI user memory was added after this upload fixture was frozen. It is an
+    # unrelated, additive table: the upload must not write to it, and the
+    # original upload-state golden still has to match every existing table.
+    assert set(state) - set(golden) <= {"ai_user_memory"}
+    assert set(golden) <= set(state)
+    assert state.get("ai_user_memory", []) == []
     for table in golden:
         assert state[table] == golden[table], table
     assert list(tmp_path.iterdir()) == []

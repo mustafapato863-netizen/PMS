@@ -2081,7 +2081,7 @@
           "field": "joiner_flag",
           "value": "no_join_date_source",
           "unit": "date",
-          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@51ced7c8267edc9ed2ac12be9da0a246ca12990a | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@ce48d5d96e42da44a1cc064a426ea53d0abd65bf | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "HR owner binds fixture identity Nour in Outbound and supplies an authorized join date, or confirms none exists.",
           "derivation": {
@@ -2094,7 +2094,7 @@
               },
               {
                 "path": "Backend/models/models.py",
-                "commit": "51ced7c8267edc9ed2ac12be9da0a246ca12990a"
+                "commit": "ce48d5d96e42da44a1cc064a426ea53d0abd65bf"
               }
             ],
             "notes": "Value means the checked-in schema has no join-date column. It is not a calendar date and not a yes/no joiner flag for a named person."
@@ -2165,7 +2165,7 @@
           "field": "joiner_flag",
           "value": "no_join_date_source",
           "unit": "date",
-          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@51ced7c8267edc9ed2ac12be9da0a246ca12990a | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@ce48d5d96e42da44a1cc064a426ea53d0abd65bf | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Nour join-date binding as ho-028.",
           "derivation": {
@@ -2178,7 +2178,7 @@
               },
               {
                 "path": "Backend/models/models.py",
-                "commit": "51ced7c8267edc9ed2ac12be9da0a246ca12990a"
+                "commit": "ce48d5d96e42da44a1cc064a426ea53d0abd65bf"
               }
             ],
             "notes": "Value means the checked-in schema has no join-date column. It is not a calendar date and not a yes/no joiner flag for a named person."

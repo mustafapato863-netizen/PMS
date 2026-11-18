@@ -209,62 +209,7 @@ export default function AiResponseCard({
 
         <ExecutiveKpiStrip tiles={response.summary_tiles ?? []} compact={compact} />
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              {isPerformanceAnswer && onRegenerateAngle && (
-                <button
-                  type="button"
-                  data-testid="ai-regenerate-angle-btn"
-                  aria-label="Get a different reply angle"
-                  disabled={isSending}
-                  onClick={() => onRegenerateAngle((variationSeed ?? 0) + 1)}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
-                >
-                  <RefreshCw size={12} />
-                  <span>Different angle</span>
-                </button>
-              )}
-              {showCopyButton && (
-                <button
-                  type="button"
-                  data-testid="ai-copy-summary-btn"
-                  aria-label={copied ? 'Summary copied' : 'Copy summary'}
-                  onClick={() => void handleCopySummary()}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-                >
-                  {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
-                </button>
-              )}
-              {copyError && (
-                <span role="status" className="text-xs font-medium text-amber-700">
-                  Copy unavailable. Select the text to copy manually.
-                </span>
-              )}
-              {copied && (
-                <span role="status" className="sr-only">Summary copied to clipboard.</span>
-              )}
-              {hasExpandableDetails && (
-                <button
-                  type="button"
-                  aria-expanded={detailsExpanded}
-                  onClick={() =>
-                    setDetailsOverride({
-                      traceId: response.trace_id ?? '',
-                      answerDetail: response.answer_detail,
-                      expanded: !detailsExpanded,
-                    })
-                  }
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
-                >
-                  <span>{detailsExpanded ? 'Hide details' : 'View details'}</span>
-                  {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */
+        {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
         {visibleBullets.length > 0 && (
           <ul
             dir="auto"
@@ -489,6 +434,12 @@ export default function AiResponseCard({
           feedbackError={feedbackError}
           onSubmitFeedback={(rating, category, reason) => void handleFeedback(rating, category, reason)}
         />
+        {copyError && (
+          <p role="status" className="mt-1.5 text-xs font-medium text-amber-700">
+            Copy unavailable. Select the text to copy manually.
+          </p>
+        )}
+        {copied && <span role="status" className="sr-only">Summary copied to clipboard.</span>}
       </div>
     </div>
   );
