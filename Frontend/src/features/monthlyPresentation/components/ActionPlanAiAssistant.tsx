@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
+import { ApiError } from '../../../lib/apiClient';
 import { formatScoreChangeLabel } from './scoreChangeLabel';
 import type { AgentKpiEvidenceItem, PriorActionSummary, WeakKpiContext } from '../teamDeepDiveData';
 import {

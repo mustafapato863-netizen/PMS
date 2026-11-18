@@ -589,6 +589,7 @@ export default function AiResponseCard({
   const [submitting, setSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
   const primaryCards = response.visual_cards.filter((c) => c.card_type !== 'decision_playbook');
   const playbookCards = response.visual_cards.filter((c) => c.card_type === 'decision_playbook');
@@ -655,14 +656,18 @@ export default function AiResponseCard({
   const handleCopySummary = async () => {
     const lines = [response.headline, ...response.narrative_bullets.map((b) => `- ${b}`)].filter(Boolean);
     const text = lines.join('\n');
+    setCopyError(false);
     try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
+      if (typeof navigator === 'undefined' || typeof navigator.clipboard?.writeText !== 'function') {
+        throw new Error('Clipboard API unavailable');
       }
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard may be restricted in headless contexts; still provide clean UI no-op fallback.
+      // In insecure contexts or when clipboard permission is denied, never claim success.
+      setCopied(false);
+      setCopyError(true);
     }
   };
 
@@ -768,13 +773,21 @@ export default function AiResponseCard({
                 <button
                   type="button"
                   data-testid="ai-copy-summary-btn"
-                  aria-label="Copy summary"
+                  aria-label={copied ? 'Summary copied' : 'Copy summary'}
                   onClick={() => void handleCopySummary()}
                   className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
                 >
                   {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
                   <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
+              )}
+              {copyError && (
+                <span role="status" className="text-xs font-medium text-amber-700">
+                  Copy unavailable. Select the text to copy manually.
+                </span>
+              )}
+              {copied && (
+                <span role="status" className="sr-only">Summary copied to clipboard.</span>
               )}
               {hasExpandableDetails && (
                 <button
