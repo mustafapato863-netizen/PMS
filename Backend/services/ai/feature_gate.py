@@ -26,6 +26,22 @@ AI_CORRECTIVE_ACTION_PILOT_KEY = "ai_corrective_action_pilot_enabled"
 AI_PILOT_ROLE = "Admin"
 
 
+AI_ACCESS_TIER_KEY = "ai_access_tier"
+
+
+def read_ai_access_tier(db: Session) -> str:
+    """Read the current AI access tier from product settings."""
+    try:
+        row = db.query(ProductSetting).filter(ProductSetting.key == AI_ACCESS_TIER_KEY).one_or_none()
+        if row is not None and getattr(row, "value_str", None):
+            return str(row.value_str)
+        if row is not None and row.enabled:
+            return "all_authenticated_users"
+    except SQLAlchemyError:
+        db.rollback()
+        logger.warning("AI access tier could not be read; defaulting to admin_only")
+    return "admin_only"
+
 def _legacy_role_header_allowed() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return True
@@ -167,7 +183,22 @@ def require_ai_admin(request: Request) -> str:
     return role
 
 
-def require_ai_diagnostic_session(request: Request) -> None:
+def require_ai_access(request: Request, db: Session = Depends(get_db)) -> str:
+    """Tier-aware AI access gate. Replaces require_ai_admin for user-facing endpoints."""
+    tier = read_ai_access_tier(db)
+    role = request_role(request)
+    if tier == "admin_only" and role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PMS AI is currently limited to administrators.",
+        )
+    if tier == "managers_and_admins" and role not in ("Admin", "Manager", "Executive"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PMS AI is currently limited to managers and administrators.",
+        )
+    # all_authenticated_users → any authenticated user passes
+    return role
     """Reject callers with no session (or legacy test header when permitted).
 
     The Admin decision itself stays in ``require_ai_admin``. This only separates
