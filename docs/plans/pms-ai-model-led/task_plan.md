@@ -49,3 +49,13 @@ Acceptance verified on 18 November 2026 (`PHASE_5_REVIEW_REPORT.md`: `VERDICT: A
 - [x] Ticket 05: Resync deterministic manifests, pass full CI/replay/provenance/hygiene gates, update handoff docs, complete independent EGM Goldfish audit (`VERDICT: ACCEPTED`), and create final local Phase 6 commit (no `git push`).
 
 Phases 0–6 complete & accepted (`PHASE_6_REVIEW_REPORT.md`: `VERDICT: ACCEPTED`, 0 Blocker, 0 Major); halted before Phase 7.
+
+## Phase 7 — Staging, Budgets & Governance Readiness (2026-11-18)
+
+- [x] Ticket 01: Token/Cost/Trace & Truthful Fallback — Added `neurons`, `cost_status` to `AiProviderUsageMetrics`, propagated `user_id`/`user_role` through router/orchestrator, post-synthesis live RBAC re-verification, `TrainingTraceLogger.record_turn(...)`, truthful `answer_source` attribution across all response paths, frontend `AiResponseCard` provenance badge guard.
+- [x] Ticket 02: Server Budgets, Timeouts & Diagnostics — Created `Backend/services/ai/usage_budget.py` (363 lines) with `AiBudgetExceededError`, concurrency slots (default 8), unconfigured-default (`0`) daily caps, per-request input token ceiling (8192), Redis-backed counters + in-process fallback, idempotent replay detection, budget health snapshot. Wired into `post_ai_chat_turn` with HTTP 429 + Retry-After. Extended `AiDiagnosticsPayload`. Updated env docs and `compose.production.yml`.
+- [x] Ticket 03: Ops Runbooks & Readiness Rehearsal — Reconciled provider verification and pilot release checklist docs, refreshed test type inventory, generated readiness rehearsal (`technical_gates_passed: true`, `pilot_ready_for_rollout: false`).
+- [x] Ticket 04: Live Staging Servers & Playwright E2E — Created staging DB seeder (`.tmp/phase7-staging/seed_staging_db.py`), Backend staging on `app:app` (port 8000, isolated SQLite), Frontend staging on Vite (port 4173). Created 6 Playwright E2E scenarios (`Frontend/e2e/ai_phase7_staging.spec.ts`): live provider telemetry + feedback, truthful provenance badge, account isolation, mid-conversation permission narrowing, idempotent replay, fresh chat + reload + delete + mobile viewport. All 6 passed.
+- [x] Ticket 05: Full Verification Matrix, Documentation & Local Commit — SHA-256 immutable check, rescore dry-run, pilot readiness, full Backend/Frontend test suites, docker compose, diff hygiene, secret scan. Wrote `PHASE_7_STAGING_AND_HANDOFF.md`, updated `task_plan.md`, `progress.md`, `README.md`. Local commit on `fix/pre-approvals-ip-single-team` (no `git push`).
+
+Phases 0–7 complete; production flags remain `false`; human gates `#97` and `Vi` `#103` remain `PENDING`.

@@ -109,6 +109,11 @@ class LocalIntentResult:
     reason: str
     model: str = ""
     provider: str = "cloudflare"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    neurons: int = 0
+    estimated_cost_usd: float = 0.0
+    cost_status: str = "not_applicable"
 
 
 def _fallback_provider_name() -> str:
@@ -144,12 +149,25 @@ def call_suggest_intent(
     fn: Callable[..., LocalIntentResult],
     question: str,
     context: BoundedIntentContext | None = None,
+    *,
+    user_id: str | None = None,
+    user_role: str | None = None,
 ) -> LocalIntentResult:
     """Invoke suggest_intent (or a 1-arg test double) cleanly with optional bounded context."""
     try:
         sig = inspect.signature(fn)
-        if "context" in sig.parameters:
-            return fn(question, context=context)
+        kwargs: dict[str, object] = {}
+        accepts_var_kw = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if accepts_var_kw or "context" in sig.parameters:
+            kwargs["context"] = context
+        if accepts_var_kw or "user_id" in sig.parameters:
+            kwargs["user_id"] = user_id
+        if accepts_var_kw or "user_role" in sig.parameters:
+            kwargs["user_role"] = user_role
+        if kwargs:
+            return fn(question, **kwargs)
     except (ValueError, TypeError):
         pass
     return fn(question)
@@ -158,6 +176,9 @@ def call_suggest_intent(
 def suggest_intent(
     question: str,
     context: BoundedIntentContext | None = None,
+    *,
+    user_id: str | None = None,
+    user_role: str | None = None,
 ) -> LocalIntentResult:
     """Ask the configured model for an intent only, never scores, identities or SQL.
 
@@ -210,23 +231,83 @@ def suggest_intent(
         max_tokens=32,
         timeout_seconds=routing_timeout_seconds(),
         purpose="intent",
+        user_id=user_id,
+        user_role=user_role,
     )
     engine = get_unified_provider_engine()
     resp = engine.generate(req)
     prov_used = _resolve_provider(resp.provider)
+    from services.ai.providers import metrics_from_provider_response
+
+    pm = metrics_from_provider_response(resp)
     if not resp.is_success:
         reason = resp.outcome or "unavailable_or_invalid"
         record_fallback_reason(reason)
-        return result(None, reason, resp.latency_ms, prov=prov_used)
+        return LocalIntentResult(
+            None,
+            resp.latency_ms,
+            reason,
+            model,
+            provider=prov_used,
+            input_tokens=pm.input_tokens,
+            output_tokens=pm.output_tokens,
+            neurons=pm.neurons,
+            estimated_cost_usd=pm.estimated_cost_usd,
+            cost_status=pm.cost_status,
+        )
 
     try:
         cleaned = _JSON_FENCE_RE.sub("", resp.content.strip() if resp.content else "").strip()
         suggestion = json.loads(cleaned)
         if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
-            return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
+            return LocalIntentResult(
+                None,
+                resp.latency_ms,
+                "invalid_response",
+                model,
+                provider=prov_used,
+                input_tokens=pm.input_tokens,
+                output_tokens=pm.output_tokens,
+                neurons=pm.neurons,
+                estimated_cost_usd=pm.estimated_cost_usd,
+                cost_status=pm.cost_status,
+            )
         intent = suggestion["intent"]
         if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
-            return result(None, "invalid_intent", resp.latency_ms, prov=prov_used)
-        return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or model, provider=prov_used)
+            return LocalIntentResult(
+                None,
+                resp.latency_ms,
+                "invalid_intent",
+                model,
+                provider=prov_used,
+                input_tokens=pm.input_tokens,
+                output_tokens=pm.output_tokens,
+                neurons=pm.neurons,
+                estimated_cost_usd=pm.estimated_cost_usd,
+                cost_status=pm.cost_status,
+            )
+        return LocalIntentResult(
+            intent,
+            resp.latency_ms,
+            "ok",
+            resp.model or model,
+            provider=prov_used,
+            input_tokens=pm.input_tokens,
+            output_tokens=pm.output_tokens,
+            neurons=pm.neurons,
+            estimated_cost_usd=pm.estimated_cost_usd,
+            cost_status=pm.cost_status,
+        )
     except (ValueError, TypeError, AttributeError):
-        return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
+        return LocalIntentResult(
+            None,
+            resp.latency_ms,
+            "invalid_response",
+            model,
+            provider=prov_used,
+            input_tokens=pm.input_tokens,
+            output_tokens=pm.output_tokens,
+            neurons=pm.neurons,
+            estimated_cost_usd=pm.estimated_cost_usd,
+            cost_status=pm.cost_status,
+        )

@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 54,
-  "case_count": 749,
+  "file_count": 55,
+  "case_count": 761,
   "files_by_label": {
     "synthetic": 16,
-    "mocked": 35,
+    "mocked": 36,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -312,6 +312,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_phase7_budgets_and_telemetry.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 11,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_phase7_eval_gates.py",
       "kind": "test",
       "labels": [
@@ -499,7 +509,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 6,
+      "cases": 7,
       "evidence_status": "partial",
       "note": ""
     },

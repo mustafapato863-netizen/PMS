@@ -29,7 +29,7 @@ from services.ai.provider_engine import (
     ProviderRequest,
     get_unified_provider_engine,
 )
-from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics
+from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics, metrics_from_provider_response
 
 _number = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _dangerous = re.compile(r"[<>`\n\r]|\b(?:less|fewer|lower|lowest|least|equal|same|tied|tie|not|no|never|without|neither|declin(?:e|ed)|dropped|increased|decreased|difference|gap|percent|percentage)\b|%", re.I)
@@ -192,6 +192,8 @@ def _generate_local_answer(
     validator: Callable[[Any], bool],
     fallback: str,
     fallback_model: str,
+    user_id: str | None = None,
+    user_role: str | None = None,
 ) -> NarrativeSynthesisResult:
     metrics = ProviderCallMetrics(provider_used="deterministic", model_used=fallback_model, fallback_outcome="not_called")
 
@@ -229,10 +231,18 @@ def _generate_local_answer(
         max_tokens=120,
         timeout_seconds=synthesis_timeout_seconds(),
         purpose="synthesis",
+        user_id=user_id,
+        user_role=user_role,
     )
     engine = get_unified_provider_engine()
     resp = engine.generate(req)
-    metrics.provider_ms = resp.latency_ms
+    resp_metrics = metrics_from_provider_response(resp)
+    metrics.provider_ms = resp_metrics.provider_ms
+    metrics.input_tokens = resp_metrics.input_tokens
+    metrics.output_tokens = resp_metrics.output_tokens
+    metrics.neurons = resp_metrics.neurons
+    metrics.estimated_cost_usd = resp_metrics.estimated_cost_usd
+    metrics.cost_status = resp_metrics.cost_status
 
     if not resp.is_success:
         metrics.fallback_outcome = resp.outcome or "unavailable"
@@ -272,7 +282,13 @@ def _generate_local_answer(
     )
 
 
-def synthesize_overall_score(question: str, digests: list[dict[str, Any]]) -> NarrativeSynthesisResult | None:
+def synthesize_overall_score(
+    question: str,
+    digests: list[dict[str, Any]],
+    *,
+    user_id: str | None = None,
+    user_role: str | None = None,
+) -> NarrativeSynthesisResult | None:
     if not local_synthesis_enabled():
         return None
     facts = extract_overall_score_facts(question, digests)
@@ -301,10 +317,18 @@ def synthesize_overall_score(question: str, digests: list[dict[str, Any]]) -> Na
         validator=lambda answer: _validated_score_answer(answer, facts) and validate_claims(headline=str(answer), ledger=claim_ledger).valid,
         fallback=fallback,
         fallback_model="pms-score-fallback",
+        user_id=user_id,
+        user_role=user_role,
     )
 
 
-def synthesize_branch_bookings(question: str, digests: list[dict[str, Any]]) -> NarrativeSynthesisResult | None:
+def synthesize_branch_bookings(
+    question: str,
+    digests: list[dict[str, Any]],
+    *,
+    user_id: str | None = None,
+    user_role: str | None = None,
+) -> NarrativeSynthesisResult | None:
     if not local_synthesis_enabled():
         return None
     facts = extract_branch_booking_facts(question, digests)
@@ -338,6 +362,8 @@ def synthesize_branch_bookings(question: str, digests: list[dict[str, Any]]) -> 
         validator=lambda answer: _validated_answer(answer, facts) and validate_claims(headline=str(answer), ledger=claim_ledger).valid,
         fallback=_safe_fallback(facts),
         fallback_model="pms-branch-booking-fallback",
+        user_id=user_id,
+        user_role=user_role,
     )
 
 
@@ -354,6 +380,8 @@ def synthesize_validated_executive_variation(
     digests: list[dict[str, Any]],
     typed_evidence: list[Any],
     variant_idx: int = 0,
+    user_id: str | None = None,
+    user_role: str | None = None,
 ) -> NarrativeSynthesisResult | None:
     """Synthesize a grounded, multi-angle executive summary via UnifiedProviderEngine.
 
@@ -420,6 +448,8 @@ def synthesize_validated_executive_variation(
             max_tokens=260,
             timeout_seconds=synthesis_timeout_seconds(),
             purpose="synthesis",
+            user_id=user_id,
+            user_role=user_role,
         )
         resp = get_unified_provider_engine().generate(req)
     except Exception:
@@ -453,18 +483,10 @@ def synthesize_validated_executive_variation(
 
     provider_used = resp.provider
     model_used = resp.model or configured_model_name()
-    usage = getattr(resp, "usage", None)
-    in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
-    out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
-    metrics = ProviderCallMetrics(
-        provider_used=provider_used,
-        model_used=model_used,
-        provider_calls=1,
-        provider_ms=float(resp.latency_ms or 0.0),
-        input_tokens=in_tok,
-        output_tokens=out_tok,
-        fallback_outcome="none",
-    )
+    metrics = metrics_from_provider_response(resp, provider_calls=1)
+    metrics.provider_used = provider_used
+    metrics.model_used = model_used
+    metrics.fallback_outcome = "none"
     return NarrativeSynthesisResult(
         headline=headline,
         narrative_bullets=bullets,

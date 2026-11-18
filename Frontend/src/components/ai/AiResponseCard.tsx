@@ -667,7 +667,9 @@ export default function AiResponseCard({
   };
 
   const isLiveSynthesis =
-    response.provider_used === 'cloudflare' || response.provider_used === 'gemini';
+    (response.provider_used === 'cloudflare' || response.provider_used === 'gemini') &&
+    response.answer_source !== 'fallback' &&
+    response.answer_source !== 'deterministic';
   const capabilityMode = response.capability_mode ?? 'performance_query';
   const isPerformanceAnswer =
     capabilityMode === 'performance_query' && response.outcome === 'answer';

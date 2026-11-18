@@ -411,7 +411,9 @@ export interface AiProviderUsageMetrics {
   provider_calls: number;
   input_tokens: number;
   output_tokens: number;
+  neurons?: number;
   estimated_cost_usd: number;
+  cost_status?: 'measured_usd' | 'measured_neurons' | 'unknown' | 'not_applicable';
   fallback_outcome: string;
   shadow_plan?: Record<string, unknown> | null;
 }

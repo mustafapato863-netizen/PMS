@@ -30,6 +30,14 @@ Expected assertions:
 - `bounded_concurrency_and_timeout_fallback.concurrent_live_verify_status == 429`
 - `pilot_ready_for_rollout == false` until blocking human gates (`#97`, `Vi`) are cleared.
 
+### Phase 7 Diagnostics, Budget & Truthful Fallback Pre-Flight
+Verify `GET /api/ai/diagnostics` (Admin-only, 0 tokens) exposes accurate, secret-free budget & timeout controls:
+- `model_led_pilot_enabled`: `false` by default in production templates (`PMS_AI_MODEL_LED_PILOT_ENABLED=false`); `true` only in isolated Admin staging/canary when authorized.
+- `max_concurrent_requests` (`8` default), `active_concurrent_requests`, `rejected_budget_requests`.
+- `daily_user_request_limit` (`0` default / unset until operator sets an agreed cap) and `daily_user_token_limit` (`0` default / unset).
+- `max_request_input_tokens` (`8192` default), `router_timeout_seconds` (`10.0`), `synthesis_timeout_seconds` (`15.0`).
+- **Truthful Fallback Check:** Confirm that any turn answered by deterministic fallback reports `provider_used="deterministic"`, `answer_source="fallback"`, `AiChatResponse.message="Deterministic fallback response generated"`, and renders `Verified PMS · Deterministic` (never `Verified PMS · Live Synthesis`).
+
 ## 2. Emergency 1-Command Kill Switch
 
 Disable the corrective-action pilot immediately via authenticated Admin API call (persisted in `product_settings` and audited):
@@ -69,7 +77,7 @@ WHERE key IN ('ai_enabled', 'ai_corrective_action_pilot_enabled');
    - Set `PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false`
    - Clear `CLOUDFLARE_API_TOKEN` / `CF_API_TOKEN` / `CLOUDFLARE_API_KEY` and `GEMINI_API_KEY` / `GOOGLE_API_KEY` if full external provider cutoff is desired, then **Redeploy** in Dokploy.
 2. **Container image rollback**:
-   - In Dokploy -> `performance-managment-system-backend-pwhfoc` -> Deployments, select the prior known-good `main` deployment SHA and trigger **Rollback / Redeploy**.
+   - In Dokploy -> `performance-managment-system-backend-pwhfoc` -> Deployments, select the prior known-good `main` deployment SHA (e.g., Phase 6 checkpoint `96d8db7a2847275335b559d6d70388b45ab73e57` or Phase 1–2 baseline `eb502a7f017d31ad7123077c6629d01f46406c35`) and trigger **Rollback / Redeploy**.
    - Verify `/api/health` returns `200` and `/api/ai/diagnostics` confirms `feature_enabled: false` and `inference_verified: false`.
 
 ## 4. Staged Rollout Governance (Stages 1–4)

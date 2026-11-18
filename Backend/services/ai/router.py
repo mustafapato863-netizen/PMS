@@ -55,6 +55,7 @@ from services.ai.providers import (
     ProviderCallMetrics,
     ProviderUnavailableError,
     is_prompt_safe_for_external_projection,
+    metrics_from_provider_response,
 )
 from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import function_for_team, user_can_access_team_level
@@ -3799,6 +3800,8 @@ class HybridQueryRouter:
                 max_tokens=None,
                 timeout_seconds=max(cfg.provider_timeout_seconds, 15.0),
                 purpose="model_led_router",
+                user_id=str(self.scope.get("user_id") or "") or None,
+                user_role=str(self.scope.get("role") or "") or None,
             )
 
             try:
@@ -3807,14 +3810,9 @@ class HybridQueryRouter:
                     import json
                     model_output = json.loads(resp.content)
                     route_used = "model_led_pilot"
-                    provider_metrics = ProviderCallMetrics(
-                        provider_used=resp.provider,
-                        model_used=resp.model,
-                        provider_calls=resp.usage.total_tokens > 0 and 1 or 0,
-                        provider_ms=resp.latency_ms,
-                        input_tokens=resp.usage.prompt_tokens,
-                        output_tokens=resp.usage.completion_tokens,
-                        estimated_cost_usd=resp.estimated_cost_usd,
+                    provider_metrics = metrics_from_provider_response(
+                        resp,
+                        provider_calls=1 if resp.usage.total_tokens > 0 else 0,
                     )
 
                     confirmed_ctx = prior.model_copy() if prior else ConfirmedQueryContext()
@@ -4004,6 +4002,11 @@ class HybridQueryRouter:
                 model_used=precomputed_intent.model or configured_model_name(),
                 provider_calls=1,
                 provider_ms=precomputed_intent.elapsed_ms,
+                input_tokens=int(getattr(precomputed_intent, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(precomputed_intent, "output_tokens", 0) or 0),
+                neurons=int(getattr(precomputed_intent, "neurons", 0) or 0),
+                estimated_cost_usd=float(getattr(precomputed_intent, "estimated_cost_usd", 0.0) or 0.0),
+                cost_status=getattr(precomputed_intent, "cost_status", "not_applicable"),
                 fallback_outcome="none" if precomputed_intent.reason == "ok" else precomputed_intent.reason,
             )
             if precomputed_intent.intent in ("trend", "ranking", "score_drivers", "actual_vs_target") and plan.intent in ("current_value", "actual_vs_target"):
@@ -4026,12 +4029,23 @@ class HybridQueryRouter:
             and len(plan.periods) <= 1
             and not any(word in lower for word in ("worst", "lowest", "best", "highest", "compare", "versus", " vs ", "why", "target", "trend"))
         ):
-            local_result = call_suggest_intent(suggest_intent, text, context=bounded_context)
+            local_result = call_suggest_intent(
+                suggest_intent,
+                text,
+                context=bounded_context,
+                user_id=str(self.scope.get("user_id") or "") or None,
+                user_role=str(self.scope.get("role") or "") or None,
+            )
             provider_metrics = ProviderCallMetrics(
                 provider_used=getattr(local_result, "provider", None) or "cloudflare",
                 model_used=local_result.model or configured_model_name(),
                 provider_calls=1,
                 provider_ms=local_result.elapsed_ms,
+                input_tokens=int(getattr(local_result, "input_tokens", 0) or 0),
+                output_tokens=int(getattr(local_result, "output_tokens", 0) or 0),
+                neurons=int(getattr(local_result, "neurons", 0) or 0),
+                estimated_cost_usd=float(getattr(local_result, "estimated_cost_usd", 0.0) or 0.0),
+                cost_status=getattr(local_result, "cost_status", "not_applicable"),
                 fallback_outcome="none" if local_result.reason == "ok" else local_result.reason,
             )
             if local_result.intent == "trend":

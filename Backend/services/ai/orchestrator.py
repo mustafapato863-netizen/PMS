@@ -86,7 +86,14 @@ from services.ai.local_evidence_synthesis import (
 from services.ai.llm_client import active_provider_name, configured_model_name, local_exploration_enabled
 from services.ai.local_model_router import BoundedIntentContext
 from services.ai.prompt_versions import ACTIVE_PROMPT_VERSIONS, MODEL_LED_SYNTHESIS_PROMPT_VERSION
-from services.ai.providers import DeterministicLocalProviderAdapter, ProviderUnavailableError, resolve_variation_index
+from services.ai.providers import (
+    DeterministicLocalProviderAdapter,
+    ProviderCallMetrics,
+    ProviderUnavailableError,
+    combine_cost_statuses,
+    metrics_from_provider_response,
+    resolve_variation_index,
+)
 from services.ai.router import (
     AiProviderUnavailableError,
     HybridQueryRouter,
@@ -112,6 +119,57 @@ from utils.regions import ksa_region_hint_from_prompt
 logger = logging.getLogger(__name__)
 
 REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
+
+
+def _build_aggregated_usage(
+    *,
+    router_mode: str,
+    route_used: str,
+    router_metrics: ProviderCallMetrics,
+    synth_metrics: ProviderCallMetrics | None = None,
+    fallback_outcome_override: str | None = None,
+) -> AiProviderUsageMetrics:
+    """Aggregate router and synthesis token, neuron, cost, and cost_status metrics safely."""
+    s_calls = int(synth_metrics.provider_calls or 0) if synth_metrics else 0
+    s_in = int(synth_metrics.input_tokens or 0) if synth_metrics else 0
+    s_out = int(synth_metrics.output_tokens or 0) if synth_metrics else 0
+    s_neu = int(synth_metrics.neurons or 0) if synth_metrics else 0
+    s_cost = float(synth_metrics.estimated_cost_usd or 0.0) if synth_metrics else 0.0
+    r_cost = float(router_metrics.estimated_cost_usd or 0.0)
+    total_in = int(router_metrics.input_tokens or 0) + s_in
+    total_out = int(router_metrics.output_tokens or 0) + s_out
+    total_neu = int(router_metrics.neurons or 0) + s_neu
+    total_cost = round(r_cost + s_cost, 8)
+    statuses = [router_metrics.cost_status]
+    if synth_metrics is not None:
+        statuses.append(synth_metrics.cost_status)
+    cost_status = combine_cost_statuses(
+        statuses,
+        input_tokens=total_in,
+        output_tokens=total_out,
+        neurons=total_neu,
+        estimated_cost_usd=total_cost,
+    )
+    fallback_outcome = (
+        fallback_outcome_override
+        if fallback_outcome_override is not None
+        else (
+            synth_metrics.fallback_outcome
+            if synth_metrics and synth_metrics.fallback_outcome not in ("none", "", None)
+            else router_metrics.fallback_outcome
+        )
+    )
+    return AiProviderUsageMetrics(
+        router_mode=router_mode,  # type: ignore[arg-type]
+        route_used=route_used,
+        provider_calls=int(router_metrics.provider_calls or 0) + s_calls,
+        input_tokens=total_in,
+        output_tokens=total_out,
+        neurons=total_neu,
+        estimated_cost_usd=total_cost,
+        cost_status=cost_status,
+        fallback_outcome=fallback_outcome,
+    )
 
 
 def _build_bounded_intent_context(session_state: SessionFilterContext) -> BoundedIntentContext:
@@ -1085,6 +1143,7 @@ class PmsAiOrchestrator:
                 tool_calls=[],
                 provider_used=routed.provider_metrics.provider_used or "cloudflare",
                 model_used=routed.provider_metrics.model_used or "granite-4.0-h-micro",
+                answer_source="deterministic",
                 latency_ms=max(0, int(round(tot_ms))),
                 timings=AiTurnTimingBreakdown(
                     resolution_ms=round((time.perf_counter() - t_res_start) * 1000.0, 2),
@@ -1093,11 +1152,11 @@ class PmsAiOrchestrator:
                     trace_ms=0.0,
                     total_ms=tot_ms,
                 ),
-                provider_usage=AiProviderUsageMetrics(
+                provider_usage=_build_aggregated_usage(
                     router_mode=cfg.router_mode,
                     route_used="model_led_pilot",
-                    provider_calls=routed.provider_metrics.provider_calls,
-                    fallback_outcome="none",
+                    router_metrics=routed.provider_metrics,
+                    fallback_outcome_override="none",
                 ),
             )
             if conv_service and active_conversation_id and claimed_turn:
@@ -2335,10 +2394,11 @@ class PmsAiOrchestrator:
             max_tokens=None,
             timeout_seconds=cfg.provider_timeout_seconds,
             purpose="model_led_synthesis",
+            user_id=str(self.scope.get("user_id") or "") or None,
+            user_role=role or None,
         )
 
-        synth_provider_calls = 0
-        synth_ms = 0.0
+        synth_metrics = ProviderCallMetrics(provider_used="deterministic", model_used="deterministic-fallback")
         final_headline = fallback_headline
         final_bullets = fallback_bullets
         final_provider = "deterministic"
@@ -2348,9 +2408,15 @@ class PmsAiOrchestrator:
 
         try:
             resp_synth = engine.generate(req_synth)
-            synth_ms = resp_synth.latency_ms
+            attempts = getattr(resp_synth, "attempts", None) or []
+            synth_calls = (
+                1
+                if (resp_synth.is_success or any(a.status not in ("missing_key", "disabled") for a in attempts))
+                else 0
+            )
+            synth_metrics = metrics_from_provider_response(resp_synth, provider_calls=synth_calls)
             if resp_synth.is_success and resp_synth.content:
-                synth_provider_calls = 1
+                synth_metrics.provider_calls = 1
                 parsed = json.loads(resp_synth.content)
                 cand_h = str(parsed.get("headline") or "").strip()
                 cand_b = [str(b).strip() for b in (parsed.get("narrative_bullets") or []) if str(b).strip()]
@@ -2411,6 +2477,126 @@ class PmsAiOrchestrator:
         except Exception:
             final_fallback_outcome = "synthesis_exception"
             final_answer_source = "fallback"
+
+        synth_metrics.fallback_outcome = final_fallback_outcome
+
+        # Post-synthesis live RBAC re-verification before logging traces or returning evidence
+        try:
+            self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
+        except Exception:
+            if conv_service and claimed_turn and claimed_token:
+                conv_service.repo.release_turn_claim(turn_id=str(claimed_turn.id), claim_token=claimed_token)
+            raise
+
+        post_exec_authorized = live_auth_service.is_plan_and_context_authorized(
+            scope=self.scope,
+            team=requested_team or team,
+            function=requested_function or routed.confirmed_context.function,
+            branch=branch,
+            branches=list(routed.plan.branches or []),
+            performance_level=routed.plan.performance_level or req.session_state.performance_level,
+            region=current_region,
+            employee_id=emp_id,
+            employee_name=emp_name or None,
+        )
+        if post_exec_authorized:
+            post_exec_authorized = live_auth_service.is_returned_evidence_authorized(
+                scope=self.scope,
+                typed_evidence=tool_result.typed_evidence,
+                tool_digests=all_tool_digests,
+                fallback_branch=branch,
+                fallback_level=routed.plan.performance_level,
+            )
+
+        provider_usage = _build_aggregated_usage(
+            router_mode=cfg.router_mode,
+            route_used="model_led_pilot",
+            router_metrics=routed.provider_metrics,
+            synth_metrics=synth_metrics,
+        )
+        total_provider_calls = provider_usage.provider_calls
+        total_provider_ms = round(float(routed.provider_metrics.provider_ms or 0.0) + float(synth_metrics.provider_ms or 0.0), 2)
+
+        if not post_exec_authorized:
+            routed.confirmed_context.team = None
+            routed.confirmed_context.branch = None
+            routed.confirmed_context.branches = []
+            routed.confirmed_context.performance_level = None
+            routed.confirmed_context.last_subject_employee_id = None
+            routed.confirmed_context.last_subject_employee_name = None
+            routed.confirmed_context.candidate_employees = []
+            routed.confirmed_context.single_person = False
+            restricted_state = req.session_state.model_copy(
+                update={
+                    "team": None,
+                    "branch": None,
+                    "performance_level": None,
+                    "employee_id": None,
+                    "last_confirmed_query": routed.confirmed_context,
+                }
+            )
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            restricted_resp = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="restricted_access",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline="Access restricted: your permissions changed during execution and no longer allow viewing this scope.",
+                narrative_bullets=[
+                    "Live permission revalidation detected that access to the requested team, level, branch, function, or employee was revoked."
+                ],
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=["Show performance summary for my authorized scope"],
+                resolved_session_state=restricted_state,
+                scope_banner="All Authorized Departments",
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="deterministic",
+                model_used="deterministic-access-gate",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(
+                    resolution_ms=round((time.perf_counter() - t_res_start) * 1000.0, 2),
+                    provider_ms=total_provider_ms,
+                    database_ms=t_tool_ms,
+                    trace_ms=0.0,
+                    total_ms=tot_ms,
+                ),
+                provider_usage=provider_usage,
+            )
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = restricted_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
+                new_ver = conv_service.complete_turn(
+                    conversation_id=active_conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
+                    scope=self.scope,
+                    outcome="restricted_access",
+                    turn_kind="clarification",
+                    route_used="model_led_pilot",
+                    validated_plan=validated_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=payload_for_store,
+                    session_state=restricted_state,
+                    confirmed_context=routed.confirmed_context,
+                    provider_calls=total_provider_calls,
+                    total_ms=tot_ms,
+                )
+                restricted_resp.context_version = new_ver
+            return restricted_resp
 
         # Update confirmed context
         final_headline = _format_country_scope_text(
@@ -2489,14 +2675,43 @@ class PmsAiOrchestrator:
             tool_digests=all_tool_digests,
         )
 
+        t_trace_start = time.perf_counter()
+        pre_trace_ms = int((t_trace_start - t0) * 1000)
+        known_emp_names = [c.employee_name for c in employee_candidates if c.employee_name]
+        if emp_name and emp_name not in known_emp_names:
+            known_emp_names.append(emp_name)
+        trace_id = TrainingTraceLogger(self.db).record_turn(
+            user_id=str(self.scope.get("user_id") or ""),
+            role=role,
+            prompt=req.prompt,
+            session_state=resolved_session_state,
+            tool_calls=[tc.model_dump() for tc in tool_records],
+            tool_digest={"digests": all_tool_digests},
+            structured_response={
+                "headline": final_headline,
+                "narrative_bullets": final_bullets,
+                "citations": [c.model_dump() for c in tool_result.citations],
+                "typed_evidence": [ev.model_dump() for ev in tool_result.typed_evidence],
+                "structured_query": routed.plan.model_dump(),
+                "resolved_session_state": resolved_session_state.model_dump(),
+                "provider_usage": provider_usage.model_dump(),
+                "answer_source": final_answer_source,
+                "prompt_version": MODEL_LED_SYNTHESIS_PROMPT_VERSION,
+            },
+            provider_name=final_provider,
+            model_name=final_model,
+            latency_ms=pre_trace_ms,
+            non_empty_evidence=tool_result.records_evaluated > 0,
+            guardrail_triggered=bool(tool_result.guardrail_triggered),
+            turn_id=str(claimed_turn.id) if claimed_turn else None,
+            known_employee_names=known_emp_names,
+        )
+        trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
         tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
         primary_link = tool_result.deep_links[0] if tool_result.deep_links else None
 
-        total_provider_calls = routed.provider_metrics.provider_calls + synth_provider_calls
-        total_provider_ms = round(routed.provider_metrics.provider_ms + synth_ms, 2)
-
         resp_payload = AiChatResponsePayload(
-            trace_id="",
+            trace_id=trace_id,
             conversation_id=active_conversation_id,
             turn_id=str(claimed_turn.id) if claimed_turn else None,
             context_version=active_context_version,
@@ -2526,15 +2741,10 @@ class PmsAiOrchestrator:
                 resolution_ms=round((time.perf_counter() - t_res_start) * 1000.0, 2),
                 provider_ms=total_provider_ms,
                 database_ms=t_tool_ms,
-                trace_ms=0.0,
+                trace_ms=trace_ms,
                 total_ms=tot_ms,
             ),
-            provider_usage=AiProviderUsageMetrics(
-                router_mode=cfg.router_mode,
-                route_used="model_led_pilot",
-                provider_calls=total_provider_calls,
-                fallback_outcome=final_fallback_outcome if final_fallback_outcome != "none" else routed.provider_metrics.fallback_outcome,
-            ),
+            provider_usage=provider_usage,
         )
 
         if conv_service and active_conversation_id and claimed_turn:
@@ -3375,6 +3585,11 @@ class PmsAiOrchestrator:
                 tool_calls=[],
                 provider_used=routed.provider_metrics.provider_used or "cloudflare",
                 model_used=routed.provider_metrics.model_used or "granite-4.0-h-micro",
+                answer_source=(
+                    "model_synthesis"
+                    if routed.provider_metrics.provider_used in ("cloudflare", "gemini")
+                    else "deterministic"
+                ),
                 latency_ms=max(0, int(round(tot_ms))),
                 timings=AiTurnTimingBreakdown(
                     resolution_ms=resolution_ms,
@@ -3383,11 +3598,11 @@ class PmsAiOrchestrator:
                     trace_ms=0.0,
                     total_ms=tot_ms,
                 ),
-                provider_usage=AiProviderUsageMetrics(
+                provider_usage=_build_aggregated_usage(
                     router_mode=cfg.router_mode,
                     route_used="model_led_pilot",
-                    provider_calls=routed.provider_metrics.provider_calls,
-                    fallback_outcome="none",
+                    router_metrics=routed.provider_metrics,
+                    fallback_outcome_override="none",
                 ),
             )
             if conv_service and active_conversation_id and claimed_turn:
@@ -3472,14 +3687,10 @@ class PmsAiOrchestrator:
                 trace_ms=trace_ms,
                 total_ms=total_ms,
             )
-            provider_usage = AiProviderUsageMetrics(
+            provider_usage = _build_aggregated_usage(
                 router_mode=cfg.router_mode,
-                route_used=routed.route_used,  # type: ignore[arg-type]
-                provider_calls=routed.provider_metrics.provider_calls,
-                input_tokens=routed.provider_metrics.input_tokens,
-                output_tokens=routed.provider_metrics.output_tokens,
-                estimated_cost_usd=routed.provider_metrics.estimated_cost_usd,
-                fallback_outcome=routed.provider_metrics.fallback_outcome,
+                route_used=routed.route_used,
+                router_metrics=routed.provider_metrics,
             )
             short_resp = AiChatResponsePayload(
                 trace_id=trace_id,
@@ -3507,6 +3718,7 @@ class PmsAiOrchestrator:
                 tool_calls=[],
                 provider_used="gemini" if routed.route_used == "gemini_router" else "local",
                 model_used=cfg.gemini_model if routed.route_used == "gemini_router" else "deterministic-router-v2",
+                answer_source="deterministic",
                 latency_ms=max(0, int(round(total_ms))),
                 timings=timings,
                 provider_usage=provider_usage,
@@ -3963,9 +4175,19 @@ class PmsAiOrchestrator:
             ):
                 release_read_transaction(self.db)
                 local_synthesis = (
-                    synthesize_branch_bookings(req.prompt, tool_digests)
+                    synthesize_branch_bookings(
+                        req.prompt,
+                        tool_digests,
+                        user_id=str(self.scope.get("user_id") or "") or None,
+                        user_role=role or None,
+                    )
                     if routed.plan.intent == "compare_branches"
-                    else synthesize_overall_score(req.prompt, tool_digests)
+                    else synthesize_overall_score(
+                        req.prompt,
+                        tool_digests,
+                        user_id=str(self.scope.get("user_id") or "") or None,
+                        user_role=role or None,
+                    )
                 )
                 self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
                 if local_synthesis is not None:
@@ -4133,6 +4355,8 @@ class PmsAiOrchestrator:
                             req.history,
                             req.variation_seed,
                         ),
+                        user_id=str(self.scope.get("user_id") or "") or None,
+                        user_role=role or None,
                     )
                     self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
                     if var_syn is not None:
@@ -4435,16 +4659,13 @@ class PmsAiOrchestrator:
             trace_ms=trace_ms,
             total_ms=total_ms,
         )
-        total_provider_calls = routed.provider_metrics.provider_calls + synthesis.metrics.provider_calls
-        provider_usage = AiProviderUsageMetrics(
+        provider_usage = _build_aggregated_usage(
             router_mode=cfg.router_mode,
             route_used=routed.route_used,
-            provider_calls=total_provider_calls,
-            input_tokens=routed.provider_metrics.input_tokens + synthesis.metrics.input_tokens,
-            output_tokens=routed.provider_metrics.output_tokens + synthesis.metrics.output_tokens,
-            estimated_cost_usd=round(routed.provider_metrics.estimated_cost_usd + synthesis.metrics.estimated_cost_usd, 6),
-            fallback_outcome=synthesis.metrics.fallback_outcome if synthesis.metrics.fallback_outcome != "none" else routed.provider_metrics.fallback_outcome,
+            router_metrics=routed.provider_metrics,
+            synth_metrics=synthesis.metrics,
         )
+        total_provider_calls = provider_usage.provider_calls
 
         eff_ctx_label_final = build_effective_context_label(
             page_context=req.page_context,
@@ -4504,6 +4725,16 @@ class PmsAiOrchestrator:
                 "tool_arguments": {"metric_id": "overall_score"},
             }
 
+        final_answer_source = (
+            "model_synthesis"
+            if routed.outcome == "answer" and synthesis.provider_used in ("cloudflare", "gemini")
+            else (
+                "fallback"
+                if routed.outcome == "answer"
+                and provider_usage.fallback_outcome not in ("none", "", "not_called")
+                else "deterministic"
+            )
+        )
         final_resp = AiChatResponsePayload(
             trace_id=trace_id,
             conversation_id=active_conversation_id,
@@ -4530,6 +4761,7 @@ class PmsAiOrchestrator:
             tool_calls=tool_call_records,
             provider_used=synthesis.provider_used,
             model_used=synthesis.model_used,
+            answer_source=final_answer_source,
             latency_ms=latency_ms,
             timings=timings,
             provider_usage=provider_usage,

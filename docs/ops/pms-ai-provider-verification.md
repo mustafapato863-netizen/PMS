@@ -387,3 +387,34 @@ Before promoting PR #110 from Draft to Merged and enabling AI in Dokploy product
 - Both synthetic Cloudflare calls share one monotonic overall timeout, with bounded reads and remaining-time checks. Blocking DNS/OS operations are not hard wall-clock cancellable.
 - The documented rollback creates a new review branch first; use the correct revert command for the merge method, not a hard reset or direct push to main.
 - Google documents Gemini 2.5 Flash automatic routing to 3.5 Flash-Lite **starting 1 December 2026**: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
+
+---
+
+## I. Phase 2–7 Architecture, Budgets & Truthful Telemetry Reconciliation
+
+### 1. Active `model_led_pilot` Two-Pass Architecture
+When `PMS_AI_MODEL_LED_PILOT_ENABLED=true` (Admin-only pilot), analytical chat turns follow a strictly governed two-pass pipeline:
+1. **Pass 1 (`router.py`):** `HybridQueryRouter` calls `UnifiedProviderEngine` (`purpose="model_led_router"`) to select an authorized tool and bounded arguments from `DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS`.
+2. **Server Tool Execution (`tool_registry.py`):** PMS executes the deterministic read tool against authorized scope-filtered evaluation records, enforcing `validate_live_account_and_scope` and `is_returned_evidence_authorized`.
+3. **Pass 2 & Claim Verification (`orchestrator.py` + `claim_validator.py`):** `PmsAiOrchestrator._handle_model_led_turn` calls `UnifiedProviderEngine` (`purpose="model_led_synthesis"`) with only verified facts, validates every numeric/subject/period claim via `validate_claims`, re-verifies live RBAC post-synthesis (`validate_live_account_and_scope` + `is_returned_evidence_authorized`) before persisting a governed `TrainingTraceLogger` record (`trace_id`).
+
+### 2. Verified Model Tradeoffs & `cost_status` Attribution
+- **Primary Default (`@cf/ibm-granite/granite-4.0-h-micro`):** Lowest latency (~0.8s–1.2s) and neuron footprint (~0.13 Neurons/completion).
+- **Opt-In Alternative (`@cf/zai-org/glm-4.7-flash`):** Reasoning-capable model with significantly higher latency (~3.5s–5.2s) and ~44x neuron consumption; opt-in only via `use_alter_model=True` or explicit `CLOUDFLARE_AI_MODEL`.
+- **Fallback Provider (`gemini-3.5-flash-lite` / `gemini-3.5-flash` / `gemini-2.5-flash`):** `resolve_provider_model` explicitly allows `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash`, and `gemini-1.5-flash`.
+- **Truthful `cost_status` (`AiProviderUsageMetrics.cost_status`):**
+  - `"measured_neurons"` when Cloudflare reports `usage.neurons > 0` (converted via `$0.011 / 1,000 Neurons`).
+  - `"measured_usd"` when token-billed models (e.g. Gemini) report verified USD pricing.
+  - `"unknown"` when live tokens were consumed without USD/neuron conversion (`estimated_cost_usd` coerced safely to `0.0` so Pydantic never crashes on `None`).
+  - `"not_applicable"` for deterministic turns with zero live provider tokens.
+
+### 3. Server-Side Budgets, Timeouts & Unconfigured Daily Cap Policy
+Implemented in `Backend/services/ai/usage_budget.py` (Redis-backed with 48h TTL when healthy, thread-safe in-process fallback):
+- **Concurrency Limit (`PMS_AI_MAX_CONCURRENT_CHAT_REQUESTS`):** Defaults to `8`. Overflow requests return HTTP `429` with `Retry-After` and increment `rejected_budget_requests`.
+- **Per-Request Input Token Limit (`PMS_AI_MAX_REQUEST_INPUT_TOKENS`):** Defaults to `8192`. Blocks oversized prompts before external HTTP execution (`429` on `/api/ai/chat`, `outcome="context_overflow"` in `UnifiedProviderEngine.generate`).
+- **Configurable Per-User UTC-Day Caps (`PMS_AI_DAILY_USER_REQUEST_LIMIT`, `PMS_AI_DAILY_USER_TOKEN_LIMIT`):** Both **default to `0` (unset/unlimited)** until the operator sets an agreed cap. Enforced strictly only when configured `> 0`; idempotent `client_request_id` replays do not consume request quota.
+- **Provider Timeouts:** `router_timeout_seconds` defaults to `10.0s` (hard cap `30.0s`) and `synthesis_timeout_seconds` defaults to `15.0s` (hard cap `60.0s`), surfaced alongside budget health in `GET /api/ai/diagnostics`.
+
+### 4. Truthful Fallback Provenance Policy
+- When Pass 2 synthesis fails, times out, or fails `validate_claims`, `_handle_model_led_turn` falls back to deterministic synthesis with `provider_used="deterministic"`, `answer_source="fallback"`, and `AiChatResponse.message="Deterministic fallback response generated"`.
+- `AiResponseCard.tsx` guards the `Verified PMS · Live Synthesis` badge so any response with `answer_source === 'fallback'` or `answer_source === 'deterministic'` strictly renders `Verified PMS · Deterministic` even if an upstream router provider was consulted.

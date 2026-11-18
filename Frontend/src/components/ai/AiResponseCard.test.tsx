@@ -252,4 +252,23 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     expect(screen.getByText(/Verified performer evidence/)).toBeInTheDocument();
     expect(screen.getByText(/Scope basis: Call Center support cohort/)).toBeInTheDocument();
   });
+
+  it('renders Verified PMS · Deterministic when answer_source is fallback or deterministic even if provider_used is cloudflare', () => {
+    for (const source of ['fallback', 'deterministic'] as const) {
+      const resp: AiChatResponsePayload = {
+        ...responseWithBarCard(),
+        outcome: 'answer',
+        provider_used: 'cloudflare',
+        answer_source: source,
+      };
+      const view = render(
+        <MemoryRouter>
+          <AiResponseCard response={resp} />
+        </MemoryRouter>,
+      );
+      expect(screen.getByTestId('ai-provenance-badge')).toHaveTextContent('Verified PMS · Deterministic');
+      expect(screen.queryByText(/Live Synthesis/i)).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
 });

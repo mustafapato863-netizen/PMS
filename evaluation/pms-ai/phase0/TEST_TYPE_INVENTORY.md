@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 54. Test functions or `it` blocks: 749.
+Test files: 55. Test functions or `it` blocks: 761.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
 | `synthetic` | 16 | not applicable |
-| `mocked` | 35 | partial |
+| `mocked` | 36 | partial |
 | `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -52,6 +52,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_phase5_postfix_rescore.py` | test | `synthetic` | 6 | not applicable |
 | `Backend/tests/test_ai_phase6_feedback_governance.py` | test | `mocked` | 19 | partial |
 | `Backend/tests/test_ai_phase6_prompt_versions_and_guards.py` | test | `mocked` | 4 | partial |
+| `Backend/tests/test_ai_phase7_budgets_and_telemetry.py` | test | `mocked` | 11 | partial |
 | `Backend/tests/test_ai_phase7_eval_gates.py` | test | `live-model` | 12 | blocked |
 | `Backend/tests/test_ai_pilot_readiness_script.py` | test | `mocked` | 13 | partial |
 | `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 66 | partial |
@@ -70,7 +71,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 12 | partial |
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
 | `Backend/tests/test_pms_ai_phase0_eval_schema.py` | test | `synthetic` | 6 | not applicable |
-| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 6 | partial |
+| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
 | `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |

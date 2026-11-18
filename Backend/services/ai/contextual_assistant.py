@@ -751,7 +751,13 @@ def detect_contextual_capability(
         and has_contextual_cue
         and not has_analytical_kw
     ):
-        local_res = call_suggest_intent(suggest_intent, prompt, context=intent_context)
+        local_res = call_suggest_intent(
+            suggest_intent,
+            prompt,
+            context=intent_context,
+            user_id=str(scope.get("user_id") or "") or None,
+            user_role=str(scope.get("role") or "") or None,
+        )
         if out_intent_result is not None:
             out_intent_result.append(local_res)
         if local_res.reason == "ok" and local_res.intent in (
@@ -774,7 +780,13 @@ def detect_contextual_capability(
     # Unrecognized prompt with zero PMS signals and zero grounded follow-up cues:
     # ask the configured intent classifier (with bounded context) once; never default to current_value.
     if (req.provider_override or "auto") == "auto" and local_intent_enabled():
-        local_res = call_suggest_intent(suggest_intent, prompt, context=intent_context)
+        local_res = call_suggest_intent(
+            suggest_intent,
+            prompt,
+            context=intent_context,
+            user_id=str(scope.get("user_id") or "") or None,
+            user_role=str(scope.get("role") or "") or None,
+        )
         if out_intent_result is not None:
             out_intent_result.append(local_res)
         if local_res.reason == "ok" and local_res.intent is not None:

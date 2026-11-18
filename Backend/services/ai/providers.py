@@ -7,7 +7,9 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+CostStatusType = Literal["measured_usd", "measured_neurons", "unknown", "not_applicable"]
 
 from models.ai_schemas import StructuredQueryPlan
 from services.ai.config import get_ai_runtime_config, redact_secrets
@@ -35,9 +37,94 @@ class ProviderCallMetrics:
     provider_ms: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    neurons: int = 0
     estimated_cost_usd: float = 0.0
+    cost_status: CostStatusType = "not_applicable"
     fallback_outcome: str = "none"
     outbound_payload: dict[str, Any] | None = None
+
+
+def resolve_cost_status(
+    *,
+    provider_calls: int,
+    input_tokens: int,
+    output_tokens: int,
+    neurons: int,
+    raw_estimated_cost_usd: float | None,
+) -> CostStatusType:
+    """Compute truthful cost attribution status without fabricating zero-dollar claims."""
+    if neurons > 0:
+        return "measured_neurons"
+    if raw_estimated_cost_usd is not None:
+        return "measured_usd"
+    if input_tokens > 0 or output_tokens > 0:
+        return "unknown"
+    if provider_calls > 0:
+        return "not_applicable"
+    return "not_applicable"
+
+
+def combine_cost_statuses(
+    statuses: list[str],
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    neurons: int,
+    estimated_cost_usd: float,
+) -> CostStatusType:
+    """Aggregate cost_status across multiple provider calls (e.g. router + synthesis)."""
+    if input_tokens == 0 and output_tokens == 0 and neurons == 0 and estimated_cost_usd == 0.0:
+        return "not_applicable"
+    if "unknown" in statuses:
+        return "unknown"
+    if neurons > 0 or "measured_neurons" in statuses:
+        return "measured_neurons"
+    if "measured_usd" in statuses:
+        return "measured_usd"
+    return "not_applicable"
+
+
+def metrics_from_provider_response(
+    resp: Any,
+    *,
+    provider_calls: int | None = None,
+    fallback_outcome: str = "none",
+    outbound_payload: dict[str, Any] | None = None,
+) -> ProviderCallMetrics:
+    """Build null-safe ProviderCallMetrics from a ProviderResponse."""
+    usage = getattr(resp, "usage", None)
+    in_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
+    out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
+    raw_neurons = getattr(resp, "neurons", None)
+    if raw_neurons is None and usage is not None:
+        raw_neurons = getattr(usage, "neurons", None)
+    neurons_int = int(round(float(raw_neurons or 0)))
+    raw_cost = getattr(resp, "estimated_cost_usd", None)
+    cost_usd = round(float(raw_cost or 0.0), 8)
+    calls = (
+        int(provider_calls)
+        if provider_calls is not None
+        else (1 if (in_tok + out_tok > 0 or getattr(resp, "is_success", False)) else 0)
+    )
+    return ProviderCallMetrics(
+        provider_used=str(getattr(resp, "provider", None) or "deterministic"),
+        model_used=str(getattr(resp, "model", None) or ""),
+        provider_calls=calls,
+        provider_ms=float(getattr(resp, "latency_ms", 0.0) or 0.0),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        neurons=neurons_int,
+        estimated_cost_usd=cost_usd,
+        cost_status=resolve_cost_status(
+            provider_calls=calls,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            neurons=neurons_int,
+            raw_estimated_cost_usd=raw_cost,
+        ),
+        fallback_outcome=fallback_outcome,
+        outbound_payload=outbound_payload,
+    )
 
 
 @dataclass
@@ -244,7 +331,8 @@ class GeminiStructuredRouterAdapter:
                         provider_ms=elapsed_ms,
                         input_tokens=in_tok,
                         output_tokens=out_tok,
-                        estimated_cost_usd=cost_usd,
+                        estimated_cost_usd=float(cost_usd or 0.0),
+                        cost_status="measured_usd" if cost_usd is not None else "unknown",
                         fallback_outcome="none",
                         outbound_payload=minimized_input,
                     ),

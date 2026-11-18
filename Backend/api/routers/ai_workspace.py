@@ -68,6 +68,16 @@ from services.ai.conversation_service import (
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.providers import ProviderUnavailableError
 from services.ai.router import AiProviderUnavailableError
+from services.ai.usage_budget import (
+    AiBudgetExceededError,
+    acquire_chat_concurrency_slot,
+    check_request_token_budget,
+    check_user_daily_budget,
+    estimate_tokens,
+    get_budget_health_snapshot,
+    is_existing_completed_replay,
+    record_user_tokens,
+)
 from services.ai.trace_logger import TraceOwnershipError, TrainingTraceLogger
 from services.corrective_action_service import (
     CorrectiveActionAccessError,
@@ -274,8 +284,27 @@ def post_ai_chat_turn(
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiChatResponse:
     scope = require_authenticated_scope(db, request)
+    user_id = str(scope.get("user_id") or "") or None
+    user_role = str(scope.get("role") or "") or None
+    is_replay = is_existing_completed_replay(
+        db,
+        conversation_id=body.conversation_id,
+        client_request_id=body.client_request_id,
+        owner_user_id=user_id,
+    )
     try:
-        payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
+        with acquire_chat_concurrency_slot():
+            if not is_replay:
+                check_request_token_budget(estimate_tokens(body.prompt))
+                check_user_daily_budget(user_id, user_role, increment_request=True)
+            payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
+    except AiBudgetExceededError as exc:
+        release_read_transaction(db)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.detail,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except (ConversationOwnershipError, ConversationDeletedError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -296,7 +325,18 @@ def post_ai_chat_turn(
     except InsightValidationError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    return AiChatResponse(success=True, message="AI analytical response generated", data=payload)
+    if not is_replay and not getattr(payload, "cache_hit", False):
+        usage = getattr(payload, "provider_usage", None)
+        total_tokens = int(getattr(usage, "input_tokens", 0) or 0) + int(getattr(usage, "output_tokens", 0) or 0)
+        if total_tokens > 0:
+            record_user_tokens(user_id, total_tokens)
+    if payload.answer_source == "model_synthesis":
+        resp_msg = "AI analytical response generated"
+    elif payload.answer_source == "fallback":
+        resp_msg = "Deterministic fallback response generated"
+    else:
+        resp_msg = "Deterministic PMS response generated"
+    return AiChatResponse(success=True, message=resp_msg, data=payload)
 
 
 @router.post("/proposals/confirm", response_model=AiCorrectiveActionConfirmResponse)
@@ -930,6 +970,7 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     live_ver = model_health.get("live_verification") or {}
     status_code = str(model_health.get("status_code") or "unavailable")
     is_live_verified = bool(model_health.get("live_verified"))
+    budget_snapshot = get_budget_health_snapshot()
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
@@ -954,5 +995,14 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         provider_timeout_seconds=cfg.provider_timeout_seconds,
         recent_fallback_reason=get_recent_fallback_reason(),
         fallback_scope="process_local",
+        model_led_pilot_enabled=bool(cfg.model_led_pilot_enabled),
+        max_concurrent_requests=int(budget_snapshot["max_concurrent_requests"]),
+        active_concurrent_requests=int(budget_snapshot["active_concurrent_requests"]),
+        daily_user_request_limit=int(budget_snapshot["daily_user_request_limit"]),
+        daily_user_token_limit=int(budget_snapshot["daily_user_token_limit"]),
+        max_request_input_tokens=int(budget_snapshot["max_request_input_tokens"]),
+        router_timeout_seconds=float(budget_snapshot["router_timeout_seconds"]),
+        synthesis_timeout_seconds=float(budget_snapshot["synthesis_timeout_seconds"]),
+        rejected_budget_requests=int(budget_snapshot["rejected_budget_requests"]),
         data_freshness=freshness,
     )

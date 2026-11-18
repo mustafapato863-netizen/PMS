@@ -546,7 +546,7 @@ def resolve_provider_model(
         req_model = getattr(request, "model", None) if request else None
         if req_model:
             req_model_clean = str(req_model).strip()
-            if req_model_clean in (default_model, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"):
+            if req_model_clean in (default_model, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"):
                 return req_model_clean
             logger.warning(
                 "Rejected unapproved Gemini model override %r; using server default %r",
@@ -1318,6 +1318,25 @@ class UnifiedProviderEngine:
                 error_detail="Per-user AI usage limit exceeded",
             )
 
+        # 2b. Per-request input token ceiling before external HTTP execution
+        from services.ai.usage_budget import AiBudgetExceededError, check_request_token_budget, estimate_tokens
+
+        combined_text = (request.system_instruction or "") + "\n" + "\n".join(
+            m.content or "" for m in request.messages
+        )
+        try:
+            check_request_token_budget(estimate_tokens(combined_text))
+        except AiBudgetExceededError as exc:
+            total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
+            return ProviderResponse(
+                content="",
+                provider="none",
+                model="none",
+                outcome="context_overflow",
+                latency_ms=total_ms,
+                error_detail=exc.detail,
+            )
+
         attempts: list[ProviderAttempt] = []
 
         # 3. Primary Provider Loop
@@ -1758,8 +1777,14 @@ class UnifiedProviderEngine:
     # -- Phase 7 Stubs & Observability ----------------------------------
 
     def _check_user_limits(self, user_id: str | None, user_role: str | None) -> bool:
-        """Hook for per-user rate limiting and cost controls (Phase 7)."""
-        return True
+        """Enforce configurable per-user daily request and token budgets (Phase 7)."""
+        from services.ai.usage_budget import AiBudgetExceededError, check_user_daily_budget
+
+        try:
+            check_user_daily_budget(user_id, user_role, increment_request=False)
+            return True
+        except AiBudgetExceededError:
+            return False
 
     def _record_observability(self, request: ProviderRequest, response: ProviderResponse) -> None:
         """Structured observability recording without logging sensitive content or secrets."""

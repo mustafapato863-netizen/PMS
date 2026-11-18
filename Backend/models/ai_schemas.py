@@ -749,7 +749,9 @@ class AiProviderUsageMetrics(BaseModel):
     provider_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    neurons: int = 0
     estimated_cost_usd: float = 0.0
+    cost_status: Literal["measured_usd", "measured_neurons", "unknown", "not_applicable"] = "not_applicable"
     fallback_outcome: str = "none"
     shadow_plan: dict[str, Any] | None = None
 
@@ -1252,6 +1254,15 @@ class AiDiagnosticsPayload(BaseModel):
     provider_timeout_seconds: float
     recent_fallback_reason: str | None = None
     fallback_scope: str = "process_local"
+    model_led_pilot_enabled: bool = False
+    max_concurrent_requests: int = 8
+    active_concurrent_requests: int = 0
+    daily_user_request_limit: int = 0
+    daily_user_token_limit: int = 0
+    max_request_input_tokens: int = 8192
+    router_timeout_seconds: float = 10.0
+    synthesis_timeout_seconds: float = 15.0
+    rejected_budget_requests: int = 0
     data_freshness: dict[str, Any] = Field(default_factory=dict)
 
 

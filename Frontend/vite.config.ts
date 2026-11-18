@@ -14,6 +14,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: SECURITY_HEADERS,
+    watch: {
+      ignored: ['**/e2e/artifacts/**'],
+    },
   },
   preview: {
     headers: SECURITY_HEADERS,
