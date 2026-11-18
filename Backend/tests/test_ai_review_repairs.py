@@ -900,7 +900,7 @@ def test_live_grant_revocation_between_steps_and_during_synthesis_with_and_witho
         import services.ai.orchestrator as orch_mod
         from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics
 
-        def _revoke_during_synth(question, digests):
+        def _revoke_during_synth(question, digests, **kwargs):
             db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == mgr_user.id).delete()
             db.commit()
             return NarrativeSynthesisResult(

@@ -5,11 +5,11 @@ import {
   AiRecommendationBanner,
   AiRecommendIconButton,
   AiStatusInline,
-  formatScoreChangeLabel,
   IndividualEvidenceDrawer,
   TeamEvidenceDrawer,
   ViewEvidenceToggleButton,
 } from './ActionPlanAiAssistant';
+import { formatScoreChangeLabel } from './scoreChangeLabel';
 import {
   buildAiScopeKey,
   parseMonthYearFromLabel,

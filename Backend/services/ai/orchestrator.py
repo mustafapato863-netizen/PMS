@@ -2872,6 +2872,7 @@ class PmsAiOrchestrator:
             capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(
                 req,
                 intent_context=bounded_intent_context,
+                scope=self.scope,
             )
             is_gate_non_perf = capability_mode in (
                 "greeting",
@@ -2909,6 +2910,7 @@ class PmsAiOrchestrator:
             capability_mode, cap_source, cap_provider_ms = detect_contextual_capability(
                 req,
                 intent_context=bounded_intent_context,
+                scope=self.scope,
             )
 
         social_kind = is_greeting_or_thanks_prompt(req.prompt)

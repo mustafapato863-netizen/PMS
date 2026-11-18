@@ -243,7 +243,9 @@ export function ContextualAssistantPanel({
   const historyFetchSeqRef = useRef(0);
   const deletedConvIdsRef = useRef<Set<string>>(new Set());
   const confirmDeleteIdRef = useRef<string | null>(null);
-  confirmDeleteIdRef.current = confirmDeleteId;
+  useEffect(() => {
+    confirmDeleteIdRef.current = confirmDeleteId;
+  });
   const cancelDeleteBtnRef = useRef<HTMLButtonElement>(null);
 
   const confirmDeleteConv = confirmDeleteId
@@ -284,7 +286,10 @@ export function ContextualAssistantPanel({
 
   useEffect(() => {
     if (isOpen && showHistory) {
-      void refreshPageAssistantHistory();
+      const timer = setTimeout(() => {
+        void refreshPageAssistantHistory();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, showHistory, refreshPageAssistantHistory]);
 

@@ -103,7 +103,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const activeMonth = useAppStore((s) => s.activeMonth);
   const [searchParams, setSearchParams] = useSearchParams();
   const setSearchParamsRef = useRef(setSearchParams);
-  setSearchParamsRef.current = setSearchParams;
+  useEffect(() => {
+    setSearchParamsRef.current = setSearchParams;
+  });
   const storageKey = `pms_ai_last_conversation_${currentUser?.id ?? 'anonymous'}`;
 
   const [selectedTeam, setSelectedTeam] = useState<string>(
@@ -138,7 +140,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const [deletingConvId, setDeletingConvId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmDeleteIdRef = useRef<string | null>(null);
-  confirmDeleteIdRef.current = confirmDeleteId;
+  useEffect(() => {
+    confirmDeleteIdRef.current = confirmDeleteId;
+  });
   const historyFetchSeqRef = useRef<number>(0);
   const deletedConvIdsRef = useRef<Set<string>>(new Set());
   const [showHistoryPanel, setShowHistoryPanel] = useState<boolean>(() =>
@@ -165,11 +169,13 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   }, [showGuardrailsInfo]);
 
   const sessionsRef = useRef<Record<string, ChatSessionState>>(sessionsByKey);
-  sessionsRef.current = sessionsByKey;
   const activeChatKeyRef = useRef<string>(activeChatKey);
-  activeChatKeyRef.current = activeChatKey;
   const searchParamsRef = useRef(searchParams);
-  searchParamsRef.current = searchParams;
+  useEffect(() => {
+    sessionsRef.current = sessionsByKey;
+    activeChatKeyRef.current = activeChatKey;
+    searchParamsRef.current = searchParams;
+  });
   const userInteractedRef = useRef<boolean>(false);
   const streamEndRef = useRef<HTMLDivElement>(null);
 
@@ -1099,7 +1105,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
               description: 'PMS AI reads scores, targets, and employee records.',
             },
           ],
-    [watchingData?.guardrails],
+    [watchingData],
   );
 
   const latestSuggestedChips: string[] = useMemo(() => {

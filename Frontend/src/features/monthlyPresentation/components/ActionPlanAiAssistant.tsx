@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
-import { ApiError } from '../../../lib/apiClient';
+import { formatScoreChangeLabel } from './scoreChangeLabel';
 import type { AgentKpiEvidenceItem, PriorActionSummary, WeakKpiContext } from '../teamDeepDiveData';
 import {
   collectSuggestionNotices,
@@ -623,17 +623,6 @@ export function AiRecommendationBanner({
       )}
     </div>
   );
-}
-
-export function formatScoreChangeLabel(
-  changeVsPrev: number | null | undefined,
-  previousPeriodLabel: string | null | undefined,
-): string {
-  if (changeVsPrev === null || changeVsPrev === undefined || !Number.isFinite(changeVsPrev)) {
-    return 'No prior period score';
-  }
-  const signed = `${changeVsPrev >= 0 ? '+' : ''}${changeVsPrev.toFixed(1)} pts`;
-  return previousPeriodLabel ? `${signed} vs ${previousPeriodLabel}` : `${signed} vs prior period`;
 }
 
 export interface IndividualEvidenceDrawerProps {

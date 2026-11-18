@@ -107,7 +107,6 @@ export default function CorrectiveActionSuggestionCard({
     setData(null);
     setErrorMessage(null);
     setErrorStatus(null);
-    inFlightScopeRef.current = null;
   }
 
   // Abort active in-flight request when context changes or on unmount
