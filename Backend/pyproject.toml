@@ -21,5 +21,9 @@ dependencies = [
     "psycopg[binary]==3.3.6",
     "greenlet==3.2.3",
     "python-pptx==1.0.2",
+    # HTTP client and fuzzy matching are used by the runtime and are required
+    # by the Docker requirements profile as well.
+    "httpx>=0.27.0",
+    "rapidfuzz>=3.6.0",
 ]
 requires-python = ">=3.11"
