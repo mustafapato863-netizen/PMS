@@ -2,7 +2,7 @@ import datetime as dt
 import uuid
 from sqlalchemy import Column, String, Integer, SmallInteger, Float, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index, Uuid as UUID
 from sqlalchemy.dialects.postgresql import JSONB, INET
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func, false, text, true
 from models.evaluation_history_schema import (
     REVISION_CHECKS,
@@ -1523,7 +1523,7 @@ class AiUserMemory(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_accessed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    user = relationship("User", backref="ai_memory", passive_deletes=True)
+    user = relationship("User", backref=backref("ai_memory", passive_deletes=True), passive_deletes=True)
 
     __table_args__ = (
         Index("idx_ai_user_memory_user_id", "user_id"),
