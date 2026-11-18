@@ -7,6 +7,7 @@ import {
   ChevronDown,
   History,
   Info,
+  Lock,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
@@ -21,6 +22,7 @@ import AiResponseCard from '../components/ai/AiResponseCard';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
 import ConversationHistoryPanel from '../components/ai/ConversationHistoryPanel';
 import ScopeFilterBar from '../components/ai/ScopeFilterBar';
+import { Agent360Scorecard } from '../components/ai/agent360/Agent360Scorecard';
 import AiComposerDock from '../components/ai/workspace/AiComposerDock';
 import AiMorningBriefingHome from '../components/ai/workspace/AiMorningBriefingHome';
 import AiThinkingProgressCard from '../components/ai/workspace/AiThinkingProgressCard';
@@ -99,6 +101,7 @@ export default function PmsAiWorkspaceView() {
 }
 
 function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
+  const isSelfOnly = Boolean(currentUser?.is_self_only || currentUser?.role === 'Agent' || currentUser?.role === 'Employee');
   const activeMonth = useAppStore((s) => s.activeMonth);
   const [searchParams, setSearchParams] = useSearchParams();
   const setSearchParamsRef = useRef(setSearchParams);
@@ -1264,6 +1267,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
                 {/* Unified Scope Popover Trigger + Active Filter Chips + Actions */}
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  {isSelfOnly ? (
+                    <span data-testid="ai-self-only-pill" className="inline-flex cursor-default items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs font-semibold text-blue-800">
+                      <Lock size={13} className="text-blue-600" />
+                      My 360°
+                    </span>
+                  ) : (
                   <button
                     type="button"
                     aria-expanded={showFilters}
@@ -1282,8 +1291,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       className={`transition-transform ${showFilters ? 'rotate-180' : ''}`}
                     />
                   </button>
+                  )}
 
-                  {activeFilterChips.map((chip) => (
+                  {!isSelfOnly && activeFilterChips.map((chip) => (
                     <button
                       key={`${chip.key}-${chip.label}`}
                       type="button"
@@ -1370,7 +1380,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 </div>
               </div>
 
-              {/* Collapsible Scope Filter Tray */}
+              {/* Collapsible Scope Filter Tray — hidden for self-only users */}
+              {!isSelfOnly && (
               <ScopeFilterBar
                 availableRegions={catalogData?.eligible_regions ?? []}
                 selectedRegion={regionParam}
@@ -1393,7 +1404,14 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     : 'hidden'
                 }
               />
+              )}
 
+              {/* First-person pronoun auto-binding hint for self-only users */}
+              {isSelfOnly && turns.length === 0 && (
+                <p className="mt-2 text-center text-xs text-slate-500">
+                  Ask about your own numbers — e.g. “How am I doing this month?”
+                </p>
+              )}
               {showGuardrailsInfo && (
                 <>
                   <button
@@ -1460,17 +1478,23 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   <div className="h-28 w-full animate-pulse rounded-2xl bg-slate-100" />
                 </div>
               ) : turns.length === 0 ? (
-                <AiMorningBriefingHome
-                  firstName={firstName}
-                  periodLabel={fullPeriodLabel}
-                  scopeSummaryLabel={activeScopeSummary}
-                  summaryScore={watchingData?.summary_score}
-                  summaryScoreChange={watchingData?.summary_score_change}
-                  measuredRecords={watchingData?.measured_records}
-                  alerts={showWatchingPanel ? [] : (watchingData?.alerts ?? [])}
-                  starterCards={homeStarters}
-                  onSelectPrompt={(prompt) => void sendPrompt(prompt)}
-                />
+                isSelfOnly ? (
+                  <div className="mx-auto max-w-3xl py-4">
+                    <Agent360Scorecard onAskAboutKpi={(kpi) => void sendPrompt(`Tell me about my ${kpi}`)} />
+                  </div>
+                ) : (
+                  <AiMorningBriefingHome
+                    firstName={firstName}
+                    periodLabel={fullPeriodLabel}
+                    scopeSummaryLabel={activeScopeSummary}
+                    summaryScore={watchingData?.summary_score}
+                    summaryScoreChange={watchingData?.summary_score_change}
+                    measuredRecords={watchingData?.measured_records}
+                    alerts={showWatchingPanel ? [] : (watchingData?.alerts ?? [])}
+                    starterCards={homeStarters}
+                    onSelectPrompt={(prompt) => void sendPrompt(prompt)}
+                  />
+                )
               ) : (
                 <div className="mx-auto max-w-4xl space-y-5">
                   {turns.map((turn) => (
