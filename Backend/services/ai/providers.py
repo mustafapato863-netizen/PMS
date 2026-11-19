@@ -1763,6 +1763,12 @@ class DeterministicLocalProviderAdapter:
                         headline = (
                             f"In {period} ({branch}), {worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
                         )
+                if is_multi_team and merged.get("best_team"):
+                    best_team_data = merged["best_team"]
+                    b_score = best_team_data.get("current_score") or 0.0
+                    b_change = best_team_data.get("score_change")
+                    b_change_txt = f" ({b_change:+.1f} pts vs prior month)" if b_change is not None else ""
+                    bullets.append(f"Top performing department: {best_team_data['team']} leads at {b_score:.1f}%{b_change_txt}.")
                 if worst.get("main_cause"):
                     bullets.append(f"Primary score driver in {worst['team']}: {worst['main_cause']}.")
             elif lowest_kpi:

@@ -75,7 +75,7 @@ def daily_user_request_limit() -> int:
 # is widened beyond admin_only, so non-Admin users get progressively smaller caps.
 TIER_BUDGETS: dict[str, dict[str, int]] = {
     "global_exec": {"daily_turns": 100, "daily_tokens": 50_000},
-    "scoped_manager": {"daily_turns": 50, "daily_tokens": 25_000},
+    "scoped_manager": {"daily_turns": 200, "daily_tokens": 100_000},
     "self_only": {"daily_turns": 20, "daily_tokens": 10_000},
 }
 

@@ -4221,8 +4221,8 @@ def test_composable_spec_parser_handles_shorthand_typos_and_followups():
     assert parse_query_rankings_spec("Show me the Inbound score") is None
 
 
-def _composable_record(emp_id: str, name: str, team: str, region: str, score: float):
-    record = _make_call_center_record(emp_id, name, team, score, 20, 30, 40, 50)
+def _composable_record(emp_id: str, name: str, team: str, region: str, score: float, month: str = "September"):
+    record = _make_call_center_record(emp_id, name, team, score, 20, 30, 40, 50, month=month)
     record.region = region
     return record
 
@@ -4361,5 +4361,52 @@ def test_composable_lowest_n_in_same_dep_ranks_employees(monkeypatch):
     assert "Sami Low" in combined_text
     assert "Tariq Mid" in combined_text
     assert "Other Dep" not in combined_text
+
+
+def test_review_performance_typo_and_shorthand_answers_directly_without_redundancy(monkeypatch):
+    """Verify 'we need review perormance for sep in uae' (with typo and month shorthand):
+    1. Corrects typo 'perormance' and recognizes 'sep' as September (never an employee name).
+    2. Directly answers with an executive overview for UAE in September 2026.
+    3. Returns outcome == 'answer' with verified data cards and no redundant duplicate bullets.
+    """
+    records = [
+        _composable_record("UAE-1", "Agent 1", "Inbound", "UAE", 92.0, month="September"),
+        _composable_record("UAE-2", "Agent 2", "Outbound", "UAE", 84.0, month="September"),
+        _composable_record("UAE-3", "Agent 3", "Sales", "UAE", 95.0, month="September"),
+        _composable_record("UAE-4", "Agent 4", "Pharmacy", "UAE", 89.0, month="September"),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    # Verify signal extraction never misidentifies 'sep' as an employee
+    sig = extract_prompt_signals("we need review perormance for sep in uae", SessionFilterContext())
+    assert sig.detected_employee_query is None
+    assert sig.detected_month == "September"
+    assert "executive_insights" in sig.primary_intents
+
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-review", "has_unrestricted_team_access": True, "accessible_regions": ["UAE"]},
+    )
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="we need review perormance for sep in uae",
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+
+    assert resp.outcome == "answer"
+    assert "Which team, KPI, person" not in resp.headline
+    assert "September" in resp.headline
+    # Verify non-redundancy: no bullet duplicates the headline
+    normalized_h = resp.headline.strip().casefold()
+    for b in resp.narrative_bullets:
+        assert b.strip().casefold() != normalized_h
+    # Verify visual card present
+    assert len(resp.visual_cards) > 0
+    bar_card = next((c for c in resp.visual_cards if c.card_type == "horizontal_bar"), None)
+    assert bar_card is not None
+
 
 

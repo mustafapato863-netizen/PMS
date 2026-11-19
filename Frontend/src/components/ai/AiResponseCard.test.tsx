@@ -378,4 +378,64 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     expect(screen.queryByText('Basis Shift Note')).not.toBeInTheDocument();
     expect(screen.queryByText('Period · October 2026')).not.toBeInTheDocument();
   });
+
+  it('eliminates redundancy: deduplicates bullets matching headline and suppresses empty clarification cards', () => {
+    const qText = 'Which team, KPI, person, or performance overview would you like me to inspect?';
+    const respEmptyChoices: AiChatResponsePayload = {
+      ...responseWithBarCard(),
+      outcome: 'clarification',
+      headline: qText,
+      narrative_bullets: [
+        qText, // verbatim duplicate bullet
+        'Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.',
+      ],
+      clarification: {
+        code: 'AMBIGUOUS_TEAM_SCOPE',
+        question: qText,
+        choices: [],
+      },
+    };
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <AiResponseCard response={respEmptyChoices} />
+      </MemoryRouter>,
+    );
+
+    // Headline is shown once
+    const matches = screen.getAllByText(qText);
+    expect(matches).toHaveLength(1);
+    // Verbatim bullet was filtered out; non-duplicate bullet is present
+    expect(
+      screen.getByText(
+        'Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.',
+      ),
+    ).toBeInTheDocument();
+    // Empty choices box is NOT rendered
+    expect(screen.queryByTestId(/ai-clarification-choice-/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Suggested options:')).not.toBeInTheDocument();
+
+    // Now test with choices present and matching question: shows "Suggested options:" instead of repeating question
+    const respWithChoices: AiChatResponsePayload = {
+      ...respEmptyChoices,
+      clarification: {
+        code: 'AMBIGUOUS_TEAM_SCOPE',
+        question: qText,
+        choices: [
+          { id: 'c1', label: 'UAE Overall Performance', prompt_to_send: 'UAE performance in Sep' },
+        ],
+      },
+    };
+
+    rerender(
+      <MemoryRouter>
+        <AiResponseCard response={respWithChoices} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Suggested options:')).toBeInTheDocument();
+    expect(screen.getByTestId('ai-clarification-choice-c1')).toHaveTextContent('UAE Overall Performance');
+    // Headline still appears only once as the headline, not repeated inside the choices box
+    expect(screen.getAllByText(qText)).toHaveLength(1);
+  });
 });

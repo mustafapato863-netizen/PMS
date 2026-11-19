@@ -99,8 +99,17 @@ export default function AiResponseCard({
     auditCitations.length > 0;
 
   // Brief answers must already be complete in headline + narrative_bullets;
-  // never slice narrative_bullets by index.
-  const visibleBullets = response.narrative_bullets;
+  // filter out bullets that are verbatim or substring duplicates of the headline to eliminate redundancy.
+  const normalizedHeadline = (response.headline || '').trim().toLowerCase();
+  const visibleBullets = (response.narrative_bullets || []).filter((bullet) => {
+    const trimmed = (bullet || '').trim();
+    if (!trimmed) return false;
+    const lower = trimmed.toLowerCase();
+    if (lower === normalizedHeadline) return false;
+    if (normalizedHeadline.length > 20 && normalizedHeadline.includes(lower)) return false;
+    if (lower.length > 20 && lower.includes(normalizedHeadline)) return false;
+    return true;
+  });
 
   const handleFeedback = async (
     rating: 'up' | 'down',
@@ -134,7 +143,7 @@ export default function AiResponseCard({
   };
 
   const handleCopySummary = async () => {
-    const lines = [response.headline, ...response.narrative_bullets.map((b) => `- ${b}`)].filter(
+    const lines = [response.headline, ...visibleBullets.map((b) => `- ${b}`)].filter(
       Boolean,
     );
     const text = lines.join('\n');
@@ -265,28 +274,37 @@ export default function AiResponseCard({
           </div>
         )}
 
-        {/* Interactive Clarification Choices */}
-        {response.outcome === 'clarification' && response.clarification && (
+        {/* Interactive Clarification Choices (rendered only when interactive choices exist to avoid redundant empty containers) */}
+        {response.outcome === 'clarification' &&
+          response.clarification &&
+          response.clarification.choices &&
+          response.clarification.choices.length > 0 && (
           <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 p-3.5">
-            <p className="text-sm font-bold text-slate-900">
-              {response.clarification.question}
-            </p>
-            {response.clarification.choices.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-2">
-                {response.clarification.choices.map((choice) => (
-                  <button
-                    key={choice.id}
-                    type="button"
-                    data-testid={`ai-clarification-choice-${choice.id}`}
-                    onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label, choice.id)}
-                    className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
-                  >
-                    <span>{choice.label}</span>
-                    <ArrowRight size={12} />
-                  </button>
-                ))}
-              </div>
+            {response.clarification.question &&
+            response.clarification.question.trim().toLowerCase() !==
+              response.headline.trim().toLowerCase() ? (
+              <p className="text-sm font-bold text-slate-900">
+                {response.clarification.question}
+              </p>
+            ) : (
+              <p className="text-xs font-bold uppercase tracking-wider text-sky-800">
+                Suggested options:
+              </p>
             )}
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {response.clarification.choices.map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  data-testid={`ai-clarification-choice-${choice.id}`}
+                  onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label, choice.id)}
+                  className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+                >
+                  <span>{choice.label}</span>
+                  <ArrowRight size={12} />
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

@@ -560,7 +560,7 @@ When `ai_access_tier != 'admin_only'`, non-Admin users need usage limits:
 # usage_budget.py
 TIER_BUDGETS = {
     PersonaTier.GLOBAL_EXEC: {"daily_turns": 100, "daily_tokens": 50_000},
-    PersonaTier.SCOPED_MANAGER: {"daily_turns": 50, "daily_tokens": 25_000},
+    PersonaTier.SCOPED_MANAGER: {"daily_turns": 200, "daily_tokens": 100_000},
     PersonaTier.SELF_ONLY: {"daily_turns": 20, "daily_tokens": 10_000},
 }
 ```

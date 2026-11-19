@@ -9,6 +9,44 @@ from models.ai_schemas import AiGuardrailItem, AiStarterPrompt, QueryRankingsArg
 
 ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF]")
 
+_LEXICAL_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Common typos in "performance"
+    (re.compile(r"\b(?:per[fo]{1,2}rm[ea]nce|peformance|preformance|perfromance|perfomance)\b", re.I), "performance"),
+    # Common typos in "review"
+    (re.compile(r"\b(?:re[iv]{2}ew|reveiw|reivew)\b", re.I), "review"),
+    # Common typos in "employees" / "employee"
+    (re.compile(r"\b(?:employes|emplyees|employe|emplyee)\b", re.I), "employees"),
+    # Common typos in "agents" / "agent"
+    (re.compile(r"\b(?:agnts|agnt)\b", re.I), "agents"),
+    # Common typos in "departments" / "department"
+    (re.compile(r"\b(?:deparments|departmnts|deparment|departmnt)\b", re.I), "departments"),
+    # Common typos in "overview" / "summary"
+    (re.compile(r"\b(?:ovreview|overveiw)\b", re.I), "overview"),
+    (re.compile(r"\b(?:sumary|summarry)\b", re.I), "summary"),
+    # Common month shorthands when preceded by prepositions
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+sep(?:t)?\b", re.I), r"\1 September"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+oct\b", re.I), r"\1 October"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+nov\b", re.I), r"\1 November"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+dec\b", re.I), r"\1 December"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+jan\b", re.I), r"\1 January"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+feb\b", re.I), r"\1 February"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+mar\b", re.I), r"\1 March"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+apr\b", re.I), r"\1 April"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+jun\b", re.I), r"\1 June"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+jul\b", re.I), r"\1 July"),
+    (re.compile(r"\b(for|in|of|during|about|from|to)\s+aug\b", re.I), r"\1 August"),
+)
+
+
+def normalize_prompt_lexical(prompt: str) -> str:
+    """Pre-routing lexical cleaner correcting typos in common analytical words and shorthand months."""
+    if not prompt:
+        return prompt
+    cleaned = prompt
+    for pat, repl in _LEXICAL_REPLACEMENTS:
+        cleaned = pat.sub(repl, cleaned)
+    return cleaned
+
 MONTH_ALIASES: dict[str, str] = {
     "january": "January", "jan": "January", "يناير": "January", "شهر 1": "January",
     "february": "February", "feb": "February", "فبراير": "February", "شهر 2": "February",
@@ -152,7 +190,7 @@ class ParsedPromptSignals:
 
 def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> ParsedPromptSignals:
     """Deterministic bilingual (Arabic + English) signal extractor for hybrid local routing."""
-    text = (prompt or "").strip()
+    text = normalize_prompt_lexical((prompt or "").strip())
     lower = text.casefold()
     signals = ParsedPromptSignals(is_arabic=is_arabic_text(text))
 
@@ -362,12 +400,13 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         ]
         stop_words = {
             "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
-            "dxb", "shj", "ajm", "uae", "egy", "egypt", "emirates",
+            "dxb", "shj", "ajm", "uae", "egy", "egypt", "emirates", "ksa", "saudi",
             "all", "team", "teams", "branch", "branches", "the", "his", "her", "him", "me", "their", "its", "this", "that", "and", "in", "instead",
             "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
             "lowest", "weakest", "strongest", "top", "bottom", "most", "fewest", "more", "less",
             "trend", "month", "months", "overall", "summary", "january", "february", "march", "april",
             "may", "june", "july", "august", "september", "october", "november", "december",
+            "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
             "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading", "leader", "leaders",
             "generated", "achieved", "recorded", "delivered", "scored", "scores", "scoring",
             "performed", "performing", "performance", "score", "rate", "by", "for", "of",
@@ -379,6 +418,9 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             "person", "people", "someone", "anyone", "everyone", "individual",
             "workforce", "analyst", "trainer", "assurance", "company", "everything", "things", "we", "they",
             "let", "lets", "she", "he", "there", "here", "where", "how", "when", "why",
+            "review", "reveiw", "reivew", "reviewing", "need", "needs", "want", "wants", "overview", "standing",
+            "status", "result", "results", "department", "departments", "dep", "deps", "dept", "depts",
+            "perormance", "preformance", "perfromance", "peformance", "performence",
             "pharmacy", "marketing", "coding", "submission", "resubmission", "rcm", "finance", "sales", "nursing", "pmo", "crm", "csr", "media", "buyer", "waiting", "time", "cpl",
         }
         import difflib
@@ -481,7 +523,9 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             k in lower
             for k in (
                 "team", "teams", "which team", "dropped", "worst", "overview", "summary", "call center",
+                "performance", "review", "standing", "all authorized",
                 "تيم", "فريق", "فرق", "أكتر تيم", "اكتر تيم", "واقع", "ملخص", "كول سنتر", "الكول سنتر",
+                "مراجعة", "الاداء", "الأداء",
             )
         ) or not intents:
             intents.insert(0, "executive_insights")
@@ -872,6 +916,30 @@ _BROAD_OVERVIEW_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"\b(?:all\s+authorized\s+departments?|authorized\s+scope)\b", re.I),
     re.compile(r"^\s*show\s+(?:my\s+)?performance\s+summary\b", re.I),
+    re.compile(
+        r"\b(?:we\s+need\s+(?:to\s+)?)?(?:review|examine|analyze|check|see|inspect)\s+(?:the\s+)?performance(?:\s+(?:for|in|of)\b|\s*[?.!]*$)",
+        re.I,
+    ),
+    re.compile(
+        r"\bperformance\s+(?:review|summary|overview|status|standing|report)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:review|overview|summary)\s+(?:of\s+)?performance(?:\s+(?:for|in|of)\b|\s*[?.!]*$)",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:we\s+need\s+(?:to\s+)?)?(?:review|examine|analyze|check|see)\s+(?:the\s+)?scores?\s+(?:for|in|of)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:مراجعة|تقييم|فحص|عرض|ملخص)\s+(?:الاداء|الأداء|النتائج|نتائج)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:محتاجين|عايزين|بدنا)\s+(?:نراجع|نشوف|نراجع)\s+(?:الاداء|الأداء)\b",
+        re.I,
+    ),
 )
 
 _VAGUE_DATALESS_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -1026,21 +1094,21 @@ def is_self_service_prompt(prompt: str) -> bool:
 
 
 def is_broad_overview_prompt(prompt: str) -> bool:
-    text = (prompt or "").strip()
+    text = normalize_prompt_lexical((prompt or "").strip())
     if not text:
         return False
     return any(pat.search(text) for pat in _BROAD_OVERVIEW_PATTERNS)
 
 
 def is_vague_dataless_prompt(prompt: str) -> bool:
-    text = (prompt or "").strip()
+    text = normalize_prompt_lexical((prompt or "").strip())
     if not text:
         return False
     return any(pat.match(text) for pat in _VAGUE_DATALESS_PATTERNS)
 
 
 def has_pms_performance_signal(prompt: str) -> bool:
-    text = (prompt or "").strip()
+    text = normalize_prompt_lexical((prompt or "").strip())
     if not text or is_off_topic_prompt(text) or is_capabilities_help_prompt(text) or is_explain_previous_prompt(text):
         return False
     if is_bare_scope_or_period_refinement(text):

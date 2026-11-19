@@ -45,6 +45,7 @@ from services.ai.domain_policies import (
     is_off_topic_prompt,
     is_topic_switch_prompt,
     is_vague_dataless_prompt,
+    normalize_prompt_lexical,
 )
 from services.ai.entity_resolver import (
     EmployeeHistoryCandidate,
@@ -857,7 +858,7 @@ class HybridQueryRouter:
         history: list[Any] | None = None,
     ) -> RouterValidationResult:
         cfg = get_ai_runtime_config()
-        text = (prompt or "").strip()
+        text = normalize_prompt_lexical((prompt or "").strip())
         prior = session_state.last_confirmed_query
         if prior and prior.periods:
             from services.ai.contextual_assistant import parse_period_to_month_year
@@ -3370,9 +3371,11 @@ class HybridQueryRouter:
                 or is_broad_overview_prompt(text)
                 or has_pms_performance_signal(text)
                 or (
-                    session_state.team
-                    and session_state.team not in ("All", "all")
-                    and any(w in lower for w in ("score", "performance", "summary", "overview", "status", "result", "analyze", "review"))
+                    (
+                        (session_state.team and session_state.team not in ("All", "all"))
+                        or eff_region is not None
+                    )
+                    and any(w in lower for w in ("score", "scores", "performance", "summary", "overview", "status", "result", "results", "analyze", "review"))
                 )
                 or (
                     is_short_followup
