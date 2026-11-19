@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 56,
-  "case_count": 768,
+  "file_count": 58,
+  "case_count": 774,
   "files_by_label": {
     "synthetic": 16,
-    "mocked": 37,
+    "mocked": 39,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -177,7 +177,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 2,
+      "cases": 3,
       "evidence_status": "partial",
       "note": ""
     },
@@ -550,6 +550,26 @@
         "mocked"
       ],
       "cases": 22,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/agent360/Agent360Scorecard.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/memory/UserMemoryDrawer.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 3,
       "evidence_status": "partial",
       "note": ""
     },

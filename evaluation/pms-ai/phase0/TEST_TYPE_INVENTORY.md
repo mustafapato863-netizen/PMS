@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 56. Test functions or `it` blocks: 768.
+Test files: 58. Test functions or `it` blocks: 774.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
 | `synthetic` | 16 | not applicable |
-| `mocked` | 37 | partial |
+| `mocked` | 39 | partial |
 | `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -38,7 +38,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_data_access.py` | test | `synthetic` | 27 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 20 | partial |
 | `Backend/tests/test_ai_executive_pulse_formatting.py` | test | `mocked` | 4 | partial |
-| `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
+| `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 3 | partial |
 | `Backend/tests/test_ai_feedback_learning.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_intent_gate_and_origin.py` | test | `mocked` | 9 | partial |
@@ -76,6 +76,8 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
 | `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |
+| `Frontend/src/components/ai/agent360/Agent360Scorecard.test.tsx` | test | `mocked` | 2 | partial |
+| `Frontend/src/components/ai/memory/UserMemoryDrawer.test.tsx` | test | `mocked` | 3 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 4 | not applicable |
 | `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 23 | partial |
