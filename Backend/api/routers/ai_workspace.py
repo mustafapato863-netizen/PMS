@@ -25,6 +25,8 @@ from models.ai_schemas import (
     AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
+    AiClusterAnalysisResponse,
+    AiClusterAnalyzeRequest,
     AiConversationCreateRequest,
     AiConversationDetailResponse,
     AiConversationListResponse,
@@ -35,21 +37,25 @@ from models.ai_schemas import (
     AiDiagnosticsPayload,
     AiDiagnosticsResponse,
     AiDistillationExportResponse,
+    AiFeedbackAnalyzerStatusResponse,
     AiFeedbackClustersResponse,
     AiFeedbackPurgeRequest,
     AiFeedbackPurgeResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
     AiPilotFeedbackRequest,
+    AiTraceAnalyzeRequest,
     AiTraceReviewRequest,
     AiTraceReviewResponse,
     AiWatchingResponse,
+    NemotronFeedbackAnalysisResult,
     SessionFilterContext,
 )
 from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
 from services.ai.approved_patterns import ApprovedPatternMatcher
 from services.ai.feedback_service import FeedbackGovernanceService, FeedbackIdempotencyConflictError
+from services.ai.nemotron_analyzer import NemotronFeedbackAnalyzerService, get_analyzer_status
 from services.ai.llm_client import (
     get_recent_fallback_reason,
     local_exploration_enabled,
@@ -722,6 +728,90 @@ def get_ai_feedback_clusters(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     release_read_transaction(db)
     return payload
+
+
+@admin_governance_router.get("/feedback/analyzer/status", response_model=AiFeedbackAnalyzerStatusResponse)
+def get_ai_feedback_analyzer_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiFeedbackAnalyzerStatusResponse:
+    require_authenticated_scope(db, request)
+    release_read_transaction(db)
+    return get_analyzer_status()
+
+
+@admin_governance_router.post("/traces/{trace_id}/analyze", response_model=NemotronFeedbackAnalysisResult)
+def post_analyze_ai_trace(
+    trace_id: str,
+    request: Request,
+    body: AiTraceAnalyzeRequest | None = None,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> NemotronFeedbackAnalysisResult:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    caller_user_id = str(scope.get("user_id") or "") or None
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    req_body = body or AiTraceAnalyzeRequest()
+    try:
+        result = NemotronFeedbackAnalyzerService(db).analyze_trace(
+            trace_id=trace_id,
+            caller_role=caller_role,
+            caller_user_id=caller_user_id,
+            force_refresh=req_body.force_refresh,
+            screenshot_data_url=req_body.screenshot_data_url,
+            screenshot_pii_free_attested=req_body.screenshot_pii_free_attested,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except LookupError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if result.outcome == "rate_limited":
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=result.message or "Daily budget reached")
+    return result
+
+
+@admin_governance_router.post("/feedback/clusters/analyze", response_model=AiClusterAnalysisResponse)
+def post_analyze_ai_feedback_cluster(
+    request: Request,
+    body: AiClusterAnalyzeRequest | None = None,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiClusterAnalysisResponse:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    caller_user_id = str(scope.get("user_id") or "") or None
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
+    req_body = body or AiClusterAnalyzeRequest()
+    try:
+        result = NemotronFeedbackAnalyzerService(db).analyze_cluster(
+            caller_role=caller_role,
+            caller_user_id=caller_user_id,
+            surface=req_body.surface,
+            operation_family=req_body.operation_family,
+            scope_team=req_body.scope_team,
+            reason_tag=req_body.reason_tag,
+            rating=req_body.rating,
+            review_status=req_body.review_status,
+            ip_address=client_host,
+            request_id=req_id,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if result.outcome == "rate_limited":
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=result.message or "Daily budget reached")
+    return result
 
 
 @admin_governance_router.get("/feedback/patterns", response_model=AiApprovedPatternListResponse)

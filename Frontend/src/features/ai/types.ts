@@ -826,3 +826,67 @@ export interface AiApprovePatternResponse {
   pattern: AiApprovedPatternItem;
   trace_review?: AiTraceReviewResponse | null;
 }
+
+export type NemotronRootCauseCategory =
+  | 'intent_misclassification'
+  | 'wrong_tool'
+  | 'missing_kpi_alias'
+  | 'scope_confusion'
+  | 'prompt_ambiguity'
+  | 'synthesis_hallucination'
+  | 'formatting_issue'
+  | 'data_gap';
+
+export interface NemotronSuggestedPattern {
+  corrected_pattern_prompt: string;
+  intent: string;
+  operation_kind?: string | null;
+  metric_hint?: string | null;
+  persona_tier?: 'self_only' | 'scoped_manager' | 'global_exec' | null;
+}
+
+export interface NemotronFeedbackAnalysisResult {
+  success: boolean;
+  trace_id: string;
+  outcome: 'analyzed' | 'blocked_pii_quarantine' | 'disabled' | 'rate_limited' | 'provider_error';
+  root_cause_category?: NemotronRootCauseCategory | null;
+  root_cause_summary?: string | null;
+  why_answer_failed: string[];
+  recommended_system_fix?: string | null;
+  suggested_pattern?: NemotronSuggestedPattern | null;
+  suggested_dpo_chosen_outline?: string | null;
+  confidence: number;
+  analyzed_at?: string | null;
+  cached: boolean;
+  quarantine_reasons: string[];
+  message?: string | null;
+}
+
+export interface AiClusterAnalysisResponse {
+  success: boolean;
+  outcome:
+    | 'analyzed'
+    | 'blocked_pii_quarantine'
+    | 'disabled'
+    | 'rate_limited'
+    | 'provider_error'
+    | 'no_samples';
+  traces_analyzed: number;
+  traces_quarantined: number;
+  primary_root_cause?: NemotronRootCauseCategory | null;
+  executive_summary?: string | null;
+  recurring_issues: string[];
+  recommended_engineering_fixes: string[];
+  suggested_pattern?: NemotronSuggestedPattern | null;
+  confidence: number;
+  analyzed_at?: string | null;
+  message?: string | null;
+}
+
+export interface AiFeedbackAnalyzerStatusResponse {
+  success: boolean;
+  enabled: boolean;
+  configured: boolean;
+  daily_used: number;
+  daily_limit: number;
+}

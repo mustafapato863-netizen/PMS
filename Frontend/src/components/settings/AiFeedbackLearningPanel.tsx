@@ -5,12 +5,17 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Eye,
+  ImagePlus,
+  Layers,
   MessageSquareWarning,
   RotateCcw,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
@@ -18,9 +23,13 @@ import type {
   AiApprovedPatternItem,
   AiApprovedPatternListResponse,
   AiApprovePatternResponse,
+  AiClusterAnalysisResponse,
+  AiFeedbackAnalyzerStatusResponse,
   AiFeedbackClusterItem,
   AiFeedbackClustersResponse,
   AiFeedbackTraceSample,
+  NemotronFeedbackAnalysisResult,
+  NemotronSuggestedPattern,
 } from '../../features/ai/types';
 
 const INTENT_OPTIONS = [
@@ -45,8 +54,26 @@ const FAILURE_BADGE_LABELS: Record<string, string> = {
   unspecified: 'General',
 };
 
+const ROOT_CAUSE_LABELS: Record<string, string> = {
+  intent_misclassification: 'Intent misclassification',
+  wrong_tool: 'Wrong tool selected',
+  missing_kpi_alias: 'Missing KPI alias',
+  scope_confusion: 'Scope confusion',
+  prompt_ambiguity: 'Prompt ambiguity',
+  synthesis_hallucination: 'Synthesis hallucination',
+  formatting_issue: 'Formatting issue',
+  data_gap: 'Data gap',
+};
+
+const MAX_SCREENSHOT_BYTES = 1_500_000;
+
 function formatFailureLabel(code: string): string {
   return FAILURE_BADGE_LABELS[code] || code.replace(/_/g, ' ');
+}
+
+function formatRootCauseLabel(code?: string | null): string {
+  if (!code) return 'General diagnosis';
+  return ROOT_CAUSE_LABELS[code] || code.replace(/_/g, ' ');
 }
 
 const CLUSTERS_PAGE_SIZE = 10;
@@ -96,6 +123,49 @@ export function AiFeedbackLearningPanel() {
 
   const [confirmRemovePatternId, setConfirmRemovePatternId] = useState<string | null>(null);
   const [removingPatternId, setRemovingPatternId] = useState<string | null>(null);
+
+  // Admin AI Root-Cause Analyzer state
+  const [analyzerStatus, setAnalyzerStatus] = useState<AiFeedbackAnalyzerStatusResponse | null>(null);
+  const statusLoadedRef = useRef<boolean>(false);
+  const [traceAnalyses, setTraceAnalyses] = useState<Record<string, NemotronFeedbackAnalysisResult>>({});
+  const [analyzingTraceId, setAnalyzingTraceId] = useState<string | null>(null);
+  const [traceAnalyzeError, setTraceAnalyzeError] = useState<string | null>(null);
+
+  const [showScreenshotAttach, setShowScreenshotAttach] = useState<boolean>(false);
+  const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
+  const [screenshotFileName, setScreenshotFileName] = useState<string | null>(null);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+  const [screenshotPiiAttested, setScreenshotPiiAttested] = useState<boolean>(false);
+
+  const [clusterAnalysis, setClusterAnalysis] = useState<AiClusterAnalysisResponse | null>(null);
+  const [analyzingCluster, setAnalyzingCluster] = useState<boolean>(false);
+  const [clusterAnalyzeError, setClusterAnalyzeError] = useState<string | null>(null);
+  const [copiedClusterBrief, setCopiedClusterBrief] = useState<boolean>(false);
+
+  const fetchAnalyzerStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch<AiFeedbackAnalyzerStatusResponse>('/api/ai/feedback/analyzer/status');
+      if (res && typeof res.enabled === 'boolean' && typeof res.configured === 'boolean') {
+        setAnalyzerStatus(res);
+      } else {
+        setAnalyzerStatus({
+          success: true,
+          enabled: false,
+          configured: false,
+          daily_used: 0,
+          daily_limit: 50,
+        });
+      }
+    } catch {
+      setAnalyzerStatus({
+        success: false,
+        enabled: false,
+        configured: false,
+        daily_used: 0,
+        daily_limit: 50,
+      });
+    }
+  }, []);
 
   const buildCacheKey = useCallback(
     (targetPage: number) =>
@@ -224,13 +294,17 @@ export function AiFeedbackLearningPanel() {
           setPatterns(Array.isArray(patternRes?.patterns) ? patternRes.patterns : []);
           patternsLoadedRef.current = true;
         }
+        if (!statusLoadedRef.current || forceRefresh) {
+          statusLoadedRef.current = true;
+          void fetchAnalyzerStatus();
+        }
       } catch {
         setLoadError('Unable to load AI feedback clusters and approved patterns.');
       } finally {
         setIsLoading(false);
       }
     },
-    [applyClusterResponse, buildCacheKey, fetchClusterPage, page],
+    [applyClusterResponse, buildCacheKey, fetchAnalyzerStatus, fetchClusterPage, page],
   );
 
   useEffect(() => {
@@ -253,6 +327,14 @@ export function AiFeedbackLearningPanel() {
     );
   }, [selectedCluster, selectedTraceId]);
 
+  const resetScreenshotState = () => {
+    setShowScreenshotAttach(false);
+    setScreenshotDataUrl(null);
+    setScreenshotFileName(null);
+    setScreenshotError(null);
+    setScreenshotPiiAttested(false);
+  };
+
   const selectCluster = (cluster: AiFeedbackClusterItem) => {
     setSelectedClusterKey(clusterKey(cluster));
     const firstTrace = cluster.traces[0] ?? null;
@@ -264,6 +346,11 @@ export function AiFeedbackLearningPanel() {
     setCorrectedPrompt(firstTrace?.prompt_redacted || '');
     setReviewNotes('');
     setActionBanner(null);
+    setTraceAnalyzeError(null);
+    setClusterAnalysis(null);
+    setClusterAnalyzeError(null);
+    setCopiedClusterBrief(false);
+    resetScreenshotState();
   };
 
   const selectTrace = (trace: AiFeedbackTraceSample) => {
@@ -274,6 +361,150 @@ export function AiFeedbackLearningPanel() {
     setCorrectedPrompt(trace.prompt_redacted || '');
     setReviewNotes('');
     setActionBanner(null);
+    setTraceAnalyzeError(null);
+    resetScreenshotState();
+  };
+
+  const analyzerReady = Boolean(analyzerStatus?.enabled && analyzerStatus?.configured);
+  const currentTraceAnalysis = selectedTrace ? traceAnalyses[selectedTrace.trace_id] ?? null : null;
+
+  const handleScreenshotFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setScreenshotError(null);
+    setScreenshotPiiAttested(false);
+    const file = e.target.files?.[0];
+    if (!file) {
+      setScreenshotDataUrl(null);
+      setScreenshotFileName(null);
+      return;
+    }
+    const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+    if (!allowedTypes.has(file.type)) {
+      setScreenshotError('Only PNG, JPEG, or WEBP screenshots are supported.');
+      setScreenshotDataUrl(null);
+      setScreenshotFileName(null);
+      return;
+    }
+    if (file.size > MAX_SCREENSHOT_BYTES) {
+      setScreenshotError('Screenshot must be 1.5 MB or smaller.');
+      setScreenshotDataUrl(null);
+      setScreenshotFileName(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : null;
+      if (result && result.startsWith('data:image/')) {
+        setScreenshotDataUrl(result);
+        setScreenshotFileName(file.name);
+      } else {
+        setScreenshotError('Could not read the selected image file.');
+      }
+    };
+    reader.onerror = () => {
+      setScreenshotError('Could not read the selected image file.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAnalyzeTrace = async (trace: AiFeedbackTraceSample, forceRefresh = false) => {
+    if (screenshotDataUrl && !screenshotPiiAttested) {
+      setTraceAnalyzeError('Confirm the screenshot is free of personal data before analyzing.');
+      return;
+    }
+    setAnalyzingTraceId(trace.trace_id);
+    setTraceAnalyzeError(null);
+    try {
+      const res = await apiFetch<NemotronFeedbackAnalysisResult>(
+        `/api/ai/traces/${encodeURIComponent(trace.trace_id)}/analyze`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            force_refresh: forceRefresh,
+            screenshot_data_url: screenshotDataUrl || undefined,
+            screenshot_pii_free_attested: Boolean(screenshotDataUrl && screenshotPiiAttested),
+          }),
+        },
+      );
+      setTraceAnalyses((prev) => ({ ...prev, [trace.trace_id]: res }));
+      if (!res.cached && res.outcome === 'analyzed') {
+        void fetchAnalyzerStatus();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to analyze feedback trace right now.';
+      setTraceAnalyzeError(msg);
+    } finally {
+      setAnalyzingTraceId(null);
+    }
+  };
+
+  const handleAnalyzeCluster = async (cluster: AiFeedbackClusterItem) => {
+    setAnalyzingCluster(true);
+    setClusterAnalyzeError(null);
+    setCopiedClusterBrief(false);
+    try {
+      const res = await apiFetch<AiClusterAnalysisResponse>('/api/ai/feedback/clusters/analyze', {
+        method: 'POST',
+        body: JSON.stringify({
+          surface: cluster.surface || undefined,
+          operation_family: cluster.operation_family || undefined,
+          scope_team: cluster.scope_team !== 'unspecified' ? cluster.scope_team : undefined,
+          reason_tag: cluster.reason_tag !== 'unspecified' ? cluster.reason_tag : undefined,
+          rating: ratingFilter || undefined,
+          review_status: statusFilter || undefined,
+        }),
+      });
+      setClusterAnalysis(res);
+      if (res.outcome === 'analyzed') {
+        void fetchAnalyzerStatus();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to summarize this feedback cluster right now.';
+      setClusterAnalyzeError(msg);
+    } finally {
+      setAnalyzingCluster(false);
+    }
+  };
+
+  const applySuggestedPattern = (
+    suggestion: NemotronSuggestedPattern,
+    summaryNote?: string | null,
+  ) => {
+    setCorrectedPrompt(suggestion.corrected_pattern_prompt);
+    if ((INTENT_OPTIONS as readonly string[]).includes(suggestion.intent)) {
+      setPatternIntent(suggestion.intent);
+    }
+    setPatternOperationKind(suggestion.operation_kind || '');
+    setPatternMetricHint(suggestion.metric_hint || '');
+    if (summaryNote) {
+      setReviewNotes(summaryNote.slice(0, 220));
+    }
+    // Never auto-verify: Admin must still verify against live PMS records.
+    setVerifiedAgainstPms(false);
+    setActionBanner({
+      kind: 'success',
+      text: 'Suggested pattern applied to the form. Verify against live PMS data before saving.',
+    });
+  };
+
+  const handleCopyClusterBrief = async (analysis: AiClusterAnalysisResponse) => {
+    const lines = [
+      `# Feedback Cluster Diagnosis`,
+      analysis.primary_root_cause ? `Primary Root Cause: ${formatRootCauseLabel(analysis.primary_root_cause)}` : '',
+      analysis.executive_summary ? `\nSummary: ${analysis.executive_summary}` : '',
+      analysis.recurring_issues.length
+        ? `\nRecurring Issues:\n${analysis.recurring_issues.map((i) => `- ${i}`).join('\n')}`
+        : '',
+      analysis.recommended_engineering_fixes.length
+        ? `\nRecommended Engineering Fixes:\n${analysis.recommended_engineering_fixes.map((f) => `- ${f}`).join('\n')}`
+        : '',
+    ].filter(Boolean);
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopiedClusterBrief(true);
+      setTimeout(() => setCopiedClusterBrief(false), 2000);
+    } catch {
+      setActionBanner({ kind: 'error', text: 'Could not copy fix brief to clipboard.' });
+    }
   };
 
   const summary = useMemo(() => {
@@ -675,9 +906,25 @@ export function AiFeedbackLearningPanel() {
 
           {/* Cluster & Trace Inspection Detail Pane */}
           <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
-            <h3 className="text-sm font-extrabold text-slate-900">
-              Trace Inspection &amp; Pattern Approval
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-extrabold text-slate-900">
+                Trace Inspection &amp; Pattern Approval
+              </h3>
+              {analyzerStatus && (
+                <span
+                  data-testid="analyzer-status-pill"
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums ${
+                    analyzerReady
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {analyzerReady
+                    ? `AI Diagnosis: ${analyzerStatus.daily_used} / ${analyzerStatus.daily_limit} today`
+                    : 'AI Diagnosis offline'}
+                </span>
+              )}
+            </div>
             {!selectedCluster || !selectedTrace ? (
               <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center text-xs font-medium text-slate-500">
                 Select a feedback cluster on the left and click <strong>Inspect</strong> to verify against PMS data or approve a pattern.
@@ -723,6 +970,383 @@ export function AiFeedbackLearningPanel() {
                     <p className="text-slate-600">
                       User note: <em>{selectedTrace.feedback_reason}</em>
                     </p>
+                  )}
+                </div>
+
+                {/* AI Root-Cause Diagnosis Action Bar */}
+                <div className="space-y-2.5 rounded-xl border border-slate-200/90 bg-slate-50/40 p-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={
+                          !analyzerReady ||
+                          analyzingTraceId === selectedTrace.trace_id ||
+                          Boolean(screenshotDataUrl && !screenshotPiiAttested)
+                        }
+                        onClick={() => void handleAnalyzeTrace(selectedTrace, false)}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Wand2 size={12} />
+                        <span>
+                          {analyzingTraceId === selectedTrace.trace_id
+                            ? 'Analyzing...'
+                            : 'Analyze Root Cause'}
+                        </span>
+                      </button>
+
+                      {currentTraceAnalysis?.outcome === 'analyzed' && (
+                        <button
+                          type="button"
+                          disabled={
+                            !analyzerReady ||
+                            analyzingTraceId === selectedTrace.trace_id ||
+                            Boolean(screenshotDataUrl && !screenshotPiiAttested)
+                          }
+                          onClick={() => void handleAnalyzeTrace(selectedTrace, true)}
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <RotateCcw size={12} />
+                          <span>Re-analyze</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={!analyzerReady || analyzingCluster}
+                        onClick={() => void handleAnalyzeCluster(selectedCluster)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Layers size={12} />
+                        <span>{analyzingCluster ? 'Summarizing...' : 'Summarize Cluster'}</span>
+                      </button>
+                    </div>
+
+                    {analyzerReady && (
+                      <button
+                        type="button"
+                        onClick={() => setShowScreenshotAttach((prev) => !prev)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-blue-700"
+                      >
+                        <ImagePlus size={13} />
+                        <span>
+                          {showScreenshotAttach
+                            ? 'Hide screenshot'
+                            : 'Attach redacted screenshot (optional)'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {analyzerStatus && !analyzerReady && (
+                    <p className="text-xs text-slate-500">
+                      AI feedback diagnosis is disabled on this server. Configure{' '}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs text-slate-700">
+                        PMS_AI_FEEDBACK_ANALYZER_ENABLED=true
+                      </code>{' '}
+                      and{' '}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs text-slate-700">
+                        NVIDIA_API_KEY
+                      </code>{' '}
+                      to enable on-demand diagnosis.
+                    </p>
+                  )}
+
+                  {/* Optional Redacted Screenshot Uploader */}
+                  {analyzerReady && showScreenshotAttach && (
+                    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="text-xs font-bold text-slate-700">
+                          Redacted UI screenshot (PNG/JPEG/WEBP, max 1.5 MB)
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={handleScreenshotFileChange}
+                            className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:rounded-full file:border-0 file:bg-slate-100 file:px-2.5 file:py-1 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-slate-200"
+                          />
+                        </label>
+                        {screenshotDataUrl && (
+                          <button
+                            type="button"
+                            onClick={resetScreenshotState}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                          >
+                            <X size={11} />
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
+                      {screenshotFileName && (
+                        <p className="text-xs font-medium text-slate-600">
+                          Attached: <strong>{screenshotFileName}</strong>
+                        </p>
+                      )}
+                      {screenshotError && (
+                        <p role="alert" className="text-xs font-semibold text-rose-700">
+                          {screenshotError}
+                        </p>
+                      )}
+                      {screenshotDataUrl && (
+                        <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-2">
+                          <input
+                            type="checkbox"
+                            checked={screenshotPiiAttested}
+                            onChange={(e) => setScreenshotPiiAttested(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600"
+                          />
+                          <span className="text-xs font-semibold text-amber-900">
+                            I confirm no employee names, IDs, or personal data appear in this screenshot
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Trace Diagnosis Loading Skeleton */}
+                  {analyzingTraceId === selectedTrace.trace_id && (
+                    <div
+                      aria-label="Analyzing feedback root cause"
+                      className="space-y-2 rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="h-4 w-1/3 animate-pulse rounded bg-slate-100" />
+                      <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+                      <div className="h-3 w-5/6 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  )}
+
+                  {/* Trace Diagnosis Error */}
+                  {traceAnalyzeError && analyzingTraceId !== selectedTrace.trace_id && (
+                    <div
+                      role="alert"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
+                    >
+                      <span className="font-semibold">{traceAnalyzeError}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleAnalyzeTrace(selectedTrace, false)}
+                        className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-white px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                      >
+                        <RotateCcw size={11} />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Trace Diagnosis Result */}
+                  {currentTraceAnalysis && analyzingTraceId !== selectedTrace.trace_id && (
+                    <div data-testid="trace-diagnosis-card">
+                      {currentTraceAnalysis.outcome === 'blocked_pii_quarantine' ? (
+                        <div
+                          role="alert"
+                          className="space-y-1.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"
+                        >
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <ShieldAlert size={14} className="text-amber-700" />
+                            <span>Blocked by privacy quarantine — no data left PMS</span>
+                          </div>
+                          <p>
+                            {currentTraceAnalysis.message ||
+                              'Residual personal or sensitive identifiers were detected in this trace.'}
+                          </p>
+                          {currentTraceAnalysis.quarantine_reasons.length > 0 && (
+                            <p className="font-mono text-xs text-amber-800">
+                              Flags: {currentTraceAnalysis.quarantine_reasons.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : currentTraceAnalysis.outcome !== 'analyzed' ? (
+                        <div
+                          role="alert"
+                          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900"
+                        >
+                          {currentTraceAnalysis.message ||
+                            'Diagnosis could not be completed right now.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 rounded-xl border border-blue-200/80 bg-white p-3.5 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                                {formatRootCauseLabel(currentTraceAnalysis.root_cause_category)}
+                              </span>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700">
+                                {Math.round((currentTraceAnalysis.confidence || 0) * 100)}% confidence
+                              </span>
+                              {currentTraceAnalysis.cached && (
+                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                                  Cached
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {currentTraceAnalysis.root_cause_summary && (
+                            <p className="font-semibold text-slate-800">
+                              {currentTraceAnalysis.root_cause_summary}
+                            </p>
+                          )}
+
+                          {currentTraceAnalysis.why_answer_failed.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-700">Why the answer missed</p>
+                              <ul className="list-disc space-y-0.5 pl-4 text-slate-600">
+                                {currentTraceAnalysis.why_answer_failed.map((reason, idx) => (
+                                  <li key={idx}>{reason}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {currentTraceAnalysis.recommended_system_fix && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                              <p className="font-bold text-slate-700">Recommended system fix</p>
+                              <p className="mt-0.5 text-slate-700">
+                                {currentTraceAnalysis.recommended_system_fix}
+                              </p>
+                            </div>
+                          )}
+
+                          {currentTraceAnalysis.suggested_pattern && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 p-2.5">
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <p className="font-bold text-blue-900">
+                                  Suggested routing pattern ({currentTraceAnalysis.suggested_pattern.intent})
+                                </p>
+                                <p className="truncate text-blue-800">
+                                  {currentTraceAnalysis.suggested_pattern.corrected_pattern_prompt}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  applySuggestedPattern(
+                                    currentTraceAnalysis.suggested_pattern!,
+                                    currentTraceAnalysis.root_cause_summary,
+                                  )
+                                }
+                                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white hover:bg-blue-700"
+                              >
+                                <Sparkles size={12} />
+                                <span>Apply suggestion to form</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Cluster Summary Loading Skeleton */}
+                  {analyzingCluster && (
+                    <div
+                      aria-label="Summarizing feedback cluster"
+                      className="space-y-2 rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="h-4 w-2/5 animate-pulse rounded bg-slate-100" />
+                      <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+                      <div className="h-3 w-3/4 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  )}
+
+                  {/* Cluster Summary Error */}
+                  {clusterAnalyzeError && !analyzingCluster && (
+                    <div
+                      role="alert"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"
+                    >
+                      <span className="font-semibold">{clusterAnalyzeError}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleAnalyzeCluster(selectedCluster)}
+                        className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-white px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                      >
+                        <RotateCcw size={11} />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Cluster Summary Result */}
+                  {clusterAnalysis && !analyzingCluster && (
+                    <div data-testid="cluster-diagnosis-card">
+                      {clusterAnalysis.outcome !== 'analyzed' ? (
+                        <div
+                          role="alert"
+                          className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900"
+                        >
+                          {clusterAnalysis.message ||
+                            'Cluster diagnosis could not be completed right now.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 rounded-xl border border-emerald-200/80 bg-white p-3.5 text-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-extrabold text-slate-900">Cluster Diagnosis</span>
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
+                                {formatRootCauseLabel(clusterAnalysis.primary_root_cause)}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                {clusterAnalysis.traces_analyzed} traces analyzed
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyClusterBrief(clusterAnalysis)}
+                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700"
+                            >
+                              {copiedClusterBrief ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copiedClusterBrief ? 'Copied' : 'Copy Fix Brief'}</span>
+                            </button>
+                          </div>
+
+                          {clusterAnalysis.executive_summary && (
+                            <p className="font-semibold text-slate-800">
+                              {clusterAnalysis.executive_summary}
+                            </p>
+                          )}
+
+                          {clusterAnalysis.recurring_issues.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-700">Recurring issues</p>
+                              <ul className="list-disc space-y-0.5 pl-4 text-slate-600">
+                                {clusterAnalysis.recurring_issues.map((issue, idx) => (
+                                  <li key={idx}>{issue}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {clusterAnalysis.recommended_engineering_fixes.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-700">Recommended engineering fixes</p>
+                              <ul className="list-disc space-y-0.5 pl-4 text-slate-600">
+                                {clusterAnalysis.recommended_engineering_fixes.map((fix, idx) => (
+                                  <li key={idx}>{fix}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {clusterAnalysis.suggested_pattern && (
+                            <div className="pt-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  applySuggestedPattern(
+                                    clusterAnalysis.suggested_pattern!,
+                                    clusterAnalysis.executive_summary,
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                              >
+                                <Sparkles size={12} />
+                                <span>Apply cluster pattern</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 

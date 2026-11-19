@@ -1193,6 +1193,94 @@ class AiApprovePatternResponse(BaseModel):
     trace_review: AiTraceReviewResponse | None = None
 
 
+NemotronRootCauseCategory = Literal[
+    "intent_misclassification",
+    "wrong_tool",
+    "missing_kpi_alias",
+    "scope_confusion",
+    "prompt_ambiguity",
+    "synthesis_hallucination",
+    "formatting_issue",
+    "data_gap",
+]
+
+NemotronPatternIntent = Literal[
+    "current_value",
+    "actual_vs_target",
+    "score_drivers",
+    "trend",
+    "compare_periods",
+    "compare_branches",
+    "compare_teams",
+    "ranking",
+    "scorecard_structure",
+    "corrective_actions",
+]
+
+
+class NemotronSuggestedPattern(BaseModel):
+    corrected_pattern_prompt: str = Field(..., min_length=1, max_length=300)
+    intent: NemotronPatternIntent
+    operation_kind: str | None = Field(default=None, max_length=64)
+    metric_hint: str | None = Field(default=None, max_length=120)
+    persona_tier: Literal["self_only", "scoped_manager", "global_exec"] | None = None
+
+
+class NemotronFeedbackAnalysisResult(BaseModel):
+    success: bool = True
+    trace_id: str
+    outcome: Literal["analyzed", "blocked_pii_quarantine", "disabled", "rate_limited", "provider_error"]
+    root_cause_category: NemotronRootCauseCategory | None = None
+    root_cause_summary: str | None = Field(default=None, max_length=600)
+    why_answer_failed: list[str] = Field(default_factory=list, max_length=4)
+    recommended_system_fix: str | None = Field(default=None, max_length=500)
+    suggested_pattern: NemotronSuggestedPattern | None = None
+    suggested_dpo_chosen_outline: str | None = Field(default=None, max_length=600)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    analyzed_at: str | None = None
+    cached: bool = False
+    quarantine_reasons: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
+class AiTraceAnalyzeRequest(BaseModel):
+    force_refresh: bool = False
+    screenshot_data_url: str | None = Field(default=None, max_length=2_100_000)
+    screenshot_pii_free_attested: bool = False
+
+
+class AiClusterAnalyzeRequest(BaseModel):
+    surface: str | None = Field(default=None, max_length=64)
+    operation_family: str | None = Field(default=None, max_length=80)
+    scope_team: str | None = Field(default=None, max_length=120)
+    reason_tag: str | None = Field(default=None, max_length=64)
+    rating: str | None = Field(default=None, max_length=16)
+    review_status: str | None = Field(default=None, max_length=24)
+
+
+class AiClusterAnalysisResponse(BaseModel):
+    success: bool = True
+    outcome: Literal["analyzed", "blocked_pii_quarantine", "disabled", "rate_limited", "provider_error", "no_samples"]
+    traces_analyzed: int = 0
+    traces_quarantined: int = 0
+    primary_root_cause: NemotronRootCauseCategory | None = None
+    executive_summary: str | None = Field(default=None, max_length=700)
+    recurring_issues: list[str] = Field(default_factory=list, max_length=5)
+    recommended_engineering_fixes: list[str] = Field(default_factory=list, max_length=5)
+    suggested_pattern: NemotronSuggestedPattern | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    analyzed_at: str | None = None
+    message: str | None = None
+
+
+class AiFeedbackAnalyzerStatusResponse(BaseModel):
+    success: bool = True
+    enabled: bool = False
+    configured: bool = False
+    daily_used: int = 0
+    daily_limit: int = 50
+
+
 class AiFeedbackPurgeRequest(BaseModel):
     retention_days: int | None = Field(default=None, ge=1, le=365)
     dry_run: bool = False
@@ -1226,6 +1314,8 @@ class AiDeidentifiedExportItem(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     review_status: str
     proposed_action: str | None = None
+    root_cause_category: str | None = None
+    suggested_dpo_chosen_outline: str | None = None
 
 
 class AiDeidentifiedExportBundleResponse(BaseModel):

@@ -1061,6 +1061,26 @@ class FeedbackGovernanceService:
             )
             clean_action = self._sanitize_text(meta.get("proposed_action"), tokens=tokens, max_len=_NOTES_MAX_LEN)
 
+            root_cause_category: str | None = None
+            suggested_dpo_chosen_outline: str | None = None
+            structured = row.structured_response if isinstance(row.structured_response, dict) else {}
+            analysis = structured.get("nemotron_analysis") if isinstance(structured.get("nemotron_analysis"), dict) else None
+            if analysis and analysis.get("outcome") == "analyzed":
+                raw_cat = str(analysis.get("root_cause_category") or "").strip()
+                if raw_cat:
+                    root_cause_category = raw_cat[:64]
+                raw_outline = analysis.get("suggested_dpo_chosen_outline")
+                if raw_outline:
+                    clean_outline = self._sanitize_text(str(raw_outline), tokens=tokens, max_len=600)
+                    if clean_outline:
+                        outline_q, outline_reasons = assess_pii_quarantine(
+                            clean_outline,
+                            original_text=str(raw_outline),
+                            _precomputed_tokens=tokens,
+                        )
+                        if not outline_q and not any(r.startswith("residual_") for r in outline_reasons):
+                            suggested_dpo_chosen_outline = clean_outline
+
             items.append(
                 AiDeidentifiedExportItem(
                     trace_id=str(row.id),
@@ -1081,6 +1101,8 @@ class FeedbackGovernanceService:
                     evidence_ids=clean_evidence,
                     review_status="approved",
                     proposed_action=clean_action,
+                    root_cause_category=root_cause_category,
+                    suggested_dpo_chosen_outline=suggested_dpo_chosen_outline,
                 )
             )
 

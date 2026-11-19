@@ -255,4 +255,164 @@ describe('AiFeedbackLearningPanel', () => {
     // Page 2 was fetched only once (during background prefetch)
     expect(fetchedPages.filter((p) => p === 2)).toHaveLength(1);
   });
+
+  it('runs root-cause diagnosis, applies suggestion to form while keeping PMS verification unchecked', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/ai/feedback/clusters') && !path.endsWith('/analyze')) {
+        return Promise.resolve(SAMPLE_CLUSTERS);
+      }
+      if (path === '/api/ai/feedback/patterns') {
+        return Promise.resolve(SAMPLE_PATTERNS);
+      }
+      if (path === '/api/ai/feedback/analyzer/status') {
+        return Promise.resolve({
+          success: true,
+          enabled: true,
+          configured: true,
+          daily_used: 4,
+          daily_limit: 50,
+        });
+      }
+      if (path === '/api/ai/traces/trace-111/analyze' && init?.method === 'POST') {
+        return Promise.resolve({
+          success: true,
+          trace_id: 'trace-111',
+          outcome: 'analyzed',
+          root_cause_category: 'intent_misclassification',
+          root_cause_summary: 'MVP badge phrasing was routed to current_value instead of ranking.',
+          why_answer_failed: [
+            'Router treated mvp badge as a team metric snapshot.',
+            'Expected top agent leaderboard for the Inbound team.',
+          ],
+          recommended_system_fix: 'Map mvp badge phrasing to ranking intent.',
+          suggested_pattern: {
+            corrected_pattern_prompt: 'Who holds the <TEAM> mvp badge in <MONTH> <YEAR>?',
+            intent: 'ranking',
+            operation_kind: 'ranking',
+            metric_hint: 'final_score',
+          },
+          confidence: 0.91,
+          cached: false,
+          quarantine_reasons: [],
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    render(<AiFeedbackLearningPanel />);
+
+    expect(await screen.findByText('Who holds the Inbound mvp badge in September 2026?')).toBeInTheDocument();
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 4 / 50 today');
+
+    fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
+    // First check the PMS checkbox manually to verify Apply Suggestion resets it back to unchecked
+    const pmsCheckbox = screen.getByLabelText('I verified this behavior against live PMS data') as HTMLInputElement;
+    fireEvent.click(pmsCheckbox);
+    expect(pmsCheckbox.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /Analyze Root Cause/i }));
+
+    const diagnosisCard = await screen.findByTestId('trace-diagnosis-card');
+    expect(diagnosisCard).toHaveTextContent('Intent misclassification');
+    expect(diagnosisCard).toHaveTextContent('91% confidence');
+    expect(diagnosisCard).toHaveTextContent('MVP badge phrasing was routed to current_value instead of ranking.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Apply suggestion to form/i }));
+
+    // Form fields prefilled from suggestion
+    expect(screen.getByDisplayValue('Who holds the <TEAM> mvp badge in <MONTH> <YEAR>?')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('final_score')).toBeInTheDocument();
+    // Critical safety gate: PMS verification checkbox MUST be reset to unchecked
+    expect(pmsCheckbox.checked).toBe(false);
+    expect(screen.getByRole('button', { name: /Approve & save pattern/i })).toBeDisabled();
+  });
+
+  it('displays privacy quarantine notice when trace diagnosis is blocked for residual PII', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/ai/feedback/clusters') && !path.endsWith('/analyze')) {
+        return Promise.resolve(SAMPLE_CLUSTERS);
+      }
+      if (path === '/api/ai/feedback/patterns') {
+        return Promise.resolve(SAMPLE_PATTERNS);
+      }
+      if (path === '/api/ai/feedback/analyzer/status') {
+        return Promise.resolve({
+          success: true,
+          enabled: true,
+          configured: true,
+          daily_used: 1,
+          daily_limit: 50,
+        });
+      }
+      if (path === '/api/ai/traces/trace-111/analyze' && init?.method === 'POST') {
+        return Promise.resolve({
+          success: false,
+          trace_id: 'trace-111',
+          outcome: 'blocked_pii_quarantine',
+          why_answer_failed: [],
+          confidence: 0,
+          cached: false,
+          quarantine_reasons: ['residual_email'],
+          message: 'Blocked before outbound transmission due to residual PII.',
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    render(<AiFeedbackLearningPanel />);
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 1 / 50 today');
+
+    fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Analyze Root Cause/i }));
+
+    const diagnosisCard = await screen.findByTestId('trace-diagnosis-card');
+    expect(diagnosisCard).toHaveTextContent('Blocked by privacy quarantine — no data left PMS');
+    expect(diagnosisCard).toHaveTextContent('residual_email');
+  });
+
+  it('summarizes a selected cluster with recurring issues and engineering fixes', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/ai/feedback/clusters') && !path.endsWith('/analyze')) {
+        return Promise.resolve(SAMPLE_CLUSTERS);
+      }
+      if (path === '/api/ai/feedback/patterns') {
+        return Promise.resolve(SAMPLE_PATTERNS);
+      }
+      if (path === '/api/ai/feedback/analyzer/status') {
+        return Promise.resolve({
+          success: true,
+          enabled: true,
+          configured: true,
+          daily_used: 2,
+          daily_limit: 50,
+        });
+      }
+      if (path === '/api/ai/feedback/clusters/analyze' && init?.method === 'POST') {
+        return Promise.resolve({
+          success: true,
+          outcome: 'analyzed',
+          traces_analyzed: 2,
+          traces_quarantined: 0,
+          primary_root_cause: 'missing_kpi_alias',
+          executive_summary: 'Users frequently ask for mvp badge which maps to final_score ranking.',
+          recurring_issues: ['mvp badge alias missing from router dictionary'],
+          recommended_engineering_fixes: ['Add mvp badge alias to ranking intent patterns'],
+          confidence: 0.88,
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    render(<AiFeedbackLearningPanel />);
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 2 / 50 today');
+
+    fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Summarize Cluster/i }));
+
+    const clusterCard = await screen.findByTestId('cluster-diagnosis-card');
+    expect(clusterCard).toHaveTextContent('Missing KPI alias');
+    expect(clusterCard).toHaveTextContent('2 traces analyzed');
+    expect(clusterCard).toHaveTextContent('mvp badge alias missing from router dictionary');
+    expect(clusterCard).toHaveTextContent('Add mvp badge alias to ranking intent patterns');
+  });
 });

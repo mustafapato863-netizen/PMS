@@ -139,6 +139,8 @@ def _body_for(path: str) -> dict | None:
         return {"kpi_name": "Booking Rate", "improvement_pct": 5.0}
     if path.endswith("/memory/me"):
         return {"preferences": {"detail_level": "brief"}}
+    if path.endswith("/analyze"):
+        return {}
     return None
 
 
@@ -159,6 +161,8 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "AiConversationService", Boom)
     monkeypatch.setattr(ai_workspace, "TrainingTraceLogger", Boom)
     monkeypatch.setattr(ai_workspace, "FeedbackGovernanceService", Boom)
+    monkeypatch.setattr(ai_workspace, "NemotronFeedbackAnalyzerService", Boom)
+    monkeypatch.setattr(ai_workspace, "get_analyzer_status", boom)
     monkeypatch.setattr(ai_workspace, "ApprovedPatternMatcher", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
@@ -190,6 +194,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "GET /api/ai/conversations",
         "GET /api/ai/conversations/{conversation_id}",
         "GET /api/ai/conversations/{conversation_id}/context",
+        "GET /api/ai/feedback/analyzer/status",
         "GET /api/ai/feedback/clusters",
         "GET /api/ai/feedback/export-bundle",
         "GET /api/ai/feedback/patterns",
@@ -203,14 +208,19 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "POST /api/ai/conversations",
         "POST /api/ai/conversations/{conversation_id}/promote",
         "POST /api/ai/feedback",
+        "POST /api/ai/feedback/clusters/analyze",
         "POST /api/ai/proposals/confirm",
         "POST /api/ai/traces/purge",
+        "POST /api/ai/traces/{trace_id}/analyze",
         "POST /api/ai/traces/{trace_id}/approve-pattern",
         "POST /api/ai/traces/{trace_id}/review",
         "PUT /api/ai/memory/me",
     ]
     assert ai_workspace.AI_WORKSPACE_ROLES == ["Admin"]
     admin_only_paths = {
+        "/ai/feedback/analyzer/status",
+        "/ai/feedback/clusters/analyze",
+        "/ai/traces/{trace_id}/analyze",
         "/ai/traces/{trace_id}/review",
         "/ai/feedback/clusters",
         "/ai/feedback/patterns",

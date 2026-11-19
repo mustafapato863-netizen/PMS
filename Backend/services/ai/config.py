@@ -77,7 +77,7 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
 )
 
 _API_KEY_PATTERN = re.compile(
-    r"(?:cfut_[0-9A-Za-z\-_]{20,}|Bearer\s+[0-9A-Za-z\-_]{20,}|AIza[0-9A-Za-z\-_]{20,}|AQ\.[0-9A-Za-z\-_]{20,}|oc_sk_[0-9A-Za-z\-_]{16,}|sk-[0-9A-Za-z\-_]{16,})",
+    r"(?:nvapi-[0-9A-Za-z\-_]{16,}|cfut_[0-9A-Za-z\-_]{20,}|Bearer\s+[0-9A-Za-z\-_]{20,}|AIza[0-9A-Za-z\-_]{20,}|AQ\.[0-9A-Za-z\-_]{20,}|oc_sk_[0-9A-Za-z\-_]{16,}|sk-[0-9A-Za-z\-_]{16,})",
     flags=re.IGNORECASE,
 )
 
