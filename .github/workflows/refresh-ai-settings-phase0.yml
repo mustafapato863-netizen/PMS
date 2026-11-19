@@ -1,0 +1,40 @@
+name: Refresh Phase 0 evidence for AI settings migration PR
+on:
+  push:
+    branches:
+      - fix/ai-settings-product-value-migration
+permissions:
+  contents: write
+jobs:
+  refresh-phase0:
+    if: github.repository == 'mustafapato863-netizen/PMS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/ai-settings-product-value-migration
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Derive unsigned Phase 0 evaluation from checked-in sources
+        run: |
+          python3 evaluation/pms-ai/phase0/derive_expected.py
+          python3 evaluation/pms-ai/phase0/inventory_test_types.py
+      - name: Commit regenerated evidence only on PR branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add evaluation/pms-ai/phase0/frozen_v1.json
+          git add evaluation/pms-ai/phase0/heldout_v1.json
+          git add evaluation/pms-ai/phase0/derivation_report.json
+          git add evaluation/pms-ai/phase0/DERIVATION.md
+          git add evaluation/pms-ai/phase0/test_type_inventory.json
+          git add evaluation/pms-ai/phase0/TEST_TYPE_INVENTORY.md
+          if git diff --cached --quiet; then
+            echo 'Phase 0 evidence already current'
+            exit 0
+          fi
+          git commit -m 'test(ai): refresh unsigned Phase 0 source provenance'
+          git push origin HEAD:fix/ai-settings-product-value-migration
