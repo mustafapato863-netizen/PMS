@@ -8,7 +8,7 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 59. Test functions or `it` blocks: 806.
+Test files: 59. Test functions or `it` blocks: 808.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
@@ -66,14 +66,14 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
 | `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 32 | not applicable |
 | `Backend/tests/test_ai_synthesis_and_routing_unified.py` | test | `mocked` | 7 | partial |
-| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 36 | partial |
+| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 37 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
 | `Backend/tests/test_local_evidence_synthesis.py` | test | `live-model`, `mocked` | 13 | partial |
 | `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 12 | partial |
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
 | `Backend/tests/test_pms_ai_phase0_eval_schema.py` | test | `synthetic` | 6 | not applicable |
-| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 10 | partial |
+| `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 11 | partial |
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
 | `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |
