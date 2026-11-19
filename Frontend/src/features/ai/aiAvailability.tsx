@@ -35,6 +35,7 @@ export function AiAvailabilityProvider({ children }: { children: ReactNode }) {
 function AiAvailabilitySession({ userId, children }: { userId: string | undefined; children: ReactNode }) {
   const [enabled, setEnabledState] = useState(false);
   const [accessTier, setAccessTierState] = useState<AiAccessTier>('admin_only');
+  const [accessTierLoaded, setAccessTierLoaded] = useState(false);
   const [correctiveActionPilotEnabled, setCorrectiveActionPilotEnabledState] = useState(false);
   const [ready, setReady] = useState(!userId);
   const [saving, setSaving] = useState(false);
@@ -48,6 +49,7 @@ function AiAvailabilitySession({ userId, children }: { userId: string | undefine
         if (active) {
           setEnabledState(response.data?.enabled === true);
           setAccessTierState(normalizeTier(response.data?.access_tier));
+          setAccessTierLoaded(Boolean(response.data?.access_tier));
           setCorrectiveActionPilotEnabledState(response.data?.corrective_action_pilot_enabled === true);
         }
       })
@@ -55,6 +57,7 @@ function AiAvailabilitySession({ userId, children }: { userId: string | undefine
         if (active) {
           setEnabledState(false);
           setAccessTierState('admin_only');
+          setAccessTierLoaded(false);
           setCorrectiveActionPilotEnabledState(false);
         }
       })
@@ -102,6 +105,7 @@ function AiAvailabilitySession({ userId, children }: { userId: string | undefine
       });
       setEnabledState(response.data?.enabled === true);
       setAccessTierState(normalizeTier(response.data?.access_tier ?? nextTier));
+      setAccessTierLoaded(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not update PMS AI access tier';
       setError(message);
@@ -135,6 +139,7 @@ function AiAvailabilitySession({ userId, children }: { userId: string | undefine
       value={{
         enabled,
         accessTier,
+        accessTierLoaded,
         correctiveActionPilotEnabled,
         ready,
         saving,

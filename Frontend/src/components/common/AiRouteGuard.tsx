@@ -3,12 +3,15 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 import { hasAiAccess } from '../../utils/aiAccess';
 
 export function AiRouteGuard({ children, redirectTo = '/executive' }: { children: ReactNode; redirectTo?: string }) {
   const { currentUser } = useAuth();
+  const { accessTier, accessTierLoaded } = useAiAvailability();
   const role = currentUser?.role;
-  if (!hasAiAccess(role, currentUser?.ai_access_tier)) {
+  const effectiveTier = accessTierLoaded ? accessTier : currentUser?.ai_access_tier;
+  if (!hasAiAccess(role, effectiveTier)) {
     return <Navigate to={redirectTo} replace />;
   }
   return <>{children}</>;

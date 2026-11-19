@@ -25,8 +25,8 @@ describe('UserMemoryDrawer', () => {
       },
     } as never);
     render(<UserMemoryDrawer isOpen onClose={() => undefined} />);
-    await waitFor(() => expect(screen.getByText('My Profile & Memory')).toBeInTheDocument());
-    expect(screen.getByText('Asks about Inbound often')).toBeInTheDocument();
+    expect(await screen.findByText('Asks about Inbound often')).toBeInTheDocument();
+    expect(screen.getByText('My Profile & Memory')).toBeInTheDocument();
     expect(screen.getByText(/item\(s\) stored/)).toBeInTheDocument();
   });
 

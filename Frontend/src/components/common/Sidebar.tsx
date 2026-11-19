@@ -120,7 +120,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     };
   }, [drawerOpen, setIsOpen]);
   const { pathname } = useLocation();
-  const { enabled: aiEnabled } = useAiAvailability();
+  const { enabled: aiEnabled, accessTier: liveAiTier, accessTierLoaded } = useAiAvailability();
   const [searchParams] = useSearchParams();
   const selectedLevel = searchParams.get('performance_level');
   const { role } = useUserRole();
@@ -338,11 +338,12 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       : { name: isManager ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
     : [];
   const planningItem = { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> };
+  const effectiveAiTier = accessTierLoaded ? liveAiTier : currentUser?.ai_access_tier;
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean; drawerOnly?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
-        ...(aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
+        ...(aiEnabled && canAccessPmsAi(role, effectiveAiTier) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
@@ -357,7 +358,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       ]
     : [
         { name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> },
-        ...(aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier)
+        ...(aiEnabled && canAccessPmsAi(role, effectiveAiTier)
           ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true }]
           : []),
       ];
@@ -452,7 +453,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                 catalogTeams={(performanceCatalog?.scopes || []).map((scope) => scope.team)}
                 renderLink={(item, nested) => renderLink(item, undefined, nested, true)}
                 isCollapsed={isCollapsed}
-                showAiLink={aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier)}
+                showAiLink={aiEnabled && canAccessPmsAi(role, effectiveAiTier)}
               />
             </Suspense>
           )

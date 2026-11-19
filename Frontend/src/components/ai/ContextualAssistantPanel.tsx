@@ -194,9 +194,10 @@ export function ContextualAssistantPanel({
 }: ContextualAssistantPanelProps) {
   const { role } = useUserRole();
   const { currentUser } = useAuth();
-  const { enabled: aiEnabled } = useAiAvailability();
+  const { enabled: aiEnabled, accessTier: liveAiTier, accessTierLoaded } = useAiAvailability();
+  const effectiveAiTier = accessTierLoaded ? liveAiTier : currentUser?.ai_access_tier;
   const navigate = useNavigate();
-  const pilotVisible = aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier);
+  const pilotVisible = aiEnabled && canAccessPmsAi(role, effectiveAiTier);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
@@ -436,7 +437,7 @@ export function ContextualAssistantPanel({
   const sendPrompt = useCallback(
     async (promptText: string, opts?: { variationSeed?: number }) => {
       const trimmed = promptText.trim();
-      if (!trimmed || !canAccessPmsAi(role, currentUser?.ai_access_tier) || !aiEnabled) return;
+      if (!trimmed || !canAccessPmsAi(role, effectiveAiTier) || !aiEnabled) return;
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -547,7 +548,7 @@ export function ContextualAssistantPanel({
         );
       }
     },
-    [aiEnabled, conversationId, currentUser?.ai_access_tier, pageContext, role, turns],
+    [aiEnabled, conversationId, effectiveAiTier, pageContext, role, turns],
   );
 
   const openProposalReview = useCallback((turnId: string, proposal: AiCorrectiveActionProposal) => {

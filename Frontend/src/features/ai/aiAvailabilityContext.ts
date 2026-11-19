@@ -5,6 +5,8 @@ export interface AiAvailability {
   enabled: boolean;
   /** Rollout stage controlling which roles can use PMS AI. */
   accessTier: AiAccessTier;
+  /** True once accessTier has been loaded or updated by AiAvailabilityProvider. */
+  accessTierLoaded: boolean;
   /** Separate default-off pilot switch for contextual corrective-action suggestions. */
   correctiveActionPilotEnabled: boolean;
   ready: boolean;
@@ -18,6 +20,7 @@ export interface AiAvailability {
 export const AiAvailabilityContext = createContext<AiAvailability>({
   enabled: true,
   accessTier: 'admin_only',
+  accessTierLoaded: false,
   correctiveActionPilotEnabled: false,
   ready: true,
   saving: false,

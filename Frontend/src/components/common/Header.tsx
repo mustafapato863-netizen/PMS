@@ -245,8 +245,9 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const navigate = useNavigate();
 
   const { role } = useUserRole();
-  const { enabled: aiEnabled } = useAiAvailability();
+  const { enabled: aiEnabled, accessTier: liveAiTier, accessTierLoaded } = useAiAvailability();
   const { currentUser, logout } = useAuth();
+  const effectiveAiTier = accessTierLoaded ? liveAiTier : currentUser?.ai_access_tier;
   const { data: performanceCatalog } = usePerformanceCatalog();
   const uniqueMonths = performanceCatalog?.months || [];
 
@@ -364,7 +365,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
         {/* ── Right: controls ── */}
         <div className="app-header-actions flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
-          {aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier) && pathname !== '/ai' && (
+          {aiEnabled && canAccessPmsAi(role, effectiveAiTier) && pathname !== '/ai' && (
             <button
               type="button"
               onClick={handleOpenAskAi}

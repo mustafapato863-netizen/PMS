@@ -54,9 +54,11 @@ function RedirectToExecutiveSummary() {
 function AnimatedRoutes() {
   const location = useLocation();
   const { currentUser } = useAuth();
+  const { accessTier, accessTierLoaded } = useAiAvailability();
+  const effectiveAiTier = accessTierLoaded ? accessTier : currentUser?.ai_access_tier;
 
   if (currentUser?.role === 'Agent' || currentUser?.role === 'Employee') {
-    const aiAllowed = hasAiAccess(currentUser.role, currentUser.ai_access_tier);
+    const aiAllowed = hasAiAccess(currentUser.role, effectiveAiTier);
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>

@@ -37,6 +37,8 @@ const GRADE_STYLE: Record<string, string> = {
   E: 'bg-rose-500/10 text-rose-700 border-rose-500/20',
 };
 
+const ONBOARDING_DISMISSED_KEY = 'pms_ai_agent360_welcome_dismissed';
+
 export function Agent360Scorecard({
   employeeCode,
   canSwitchEmployee = false,
@@ -48,6 +50,23 @@ export function Agent360Scorecard({
   const [profile, setProfile] = useState<Agent360Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    if (canSwitchEmployee || compact) return false;
+    try {
+      return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const dismissOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+    try {
+      window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1');
+    } catch {
+      // Ignore storage errors in private browsing modes
+    }
+  }, []);
 
   // What-If interactive simulator state
   const [selectedKpi, setSelectedKpi] = useState<string>('');
@@ -193,6 +212,28 @@ export function Agent360Scorecard({
 
   return (
     <section className={`space-y-4 ${compact ? '' : 'max-w-3xl'}`} data-testid="agent-360-scorecard">
+      {/* First-Time Self-Service Agent Onboarding Walkthrough (Spec Phase 3.4) */}
+      {showOnboarding && !canSwitchEmployee && (
+        <div
+          data-testid="agent-360-onboarding"
+          className="flex flex-col gap-2 rounded-2xl border border-blue-200/80 bg-blue-50/60 p-4 text-xs text-slate-700 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="space-y-1">
+            <p className="font-bold text-slate-900">Welcome to your 360° AI Coach</p>
+            <p className="leading-relaxed text-slate-600">
+              Review your monthly score and KPIs, test targets in the What-If simulator, or click <strong>Ask AI</strong> on any metric. Your chats and Memory preferences are private to you.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissOnboarding}
+            className="shrink-0 self-start rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 sm:self-center"
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
       {/* Manager / Admin Direct-Report Switcher */}
       {canSwitchEmployee && directory.length > 0 && (
         <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">

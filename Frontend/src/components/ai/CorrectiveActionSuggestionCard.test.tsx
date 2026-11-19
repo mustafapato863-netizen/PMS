@@ -200,7 +200,10 @@ function renderModalWithProviders({
     ready,
     saving: false,
     error: null,
+    accessTier: 'admin_only' as const,
+    accessTierLoaded: false,
     setEnabled: vi.fn(),
+    setAccessTier: vi.fn(),
     setCorrectiveActionPilotEnabled: vi.fn(),
   };
 
