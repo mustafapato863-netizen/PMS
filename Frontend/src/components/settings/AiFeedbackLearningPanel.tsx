@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   MessageSquareWarning,
   RotateCcw,
@@ -47,6 +49,8 @@ function formatFailureLabel(code: string): string {
   return FAILURE_BADGE_LABELS[code] || code.replace(/_/g, ' ');
 }
 
+const CLUSTERS_PAGE_SIZE = 10;
+
 function clusterKey(c: AiFeedbackClusterItem): string {
   return `${c.surface}::${c.intent || c.operation_family}::${c.failure_category || c.reason_tag}::${c.scope_team}`;
 }
@@ -58,10 +62,20 @@ export function AiFeedbackLearningPanel() {
   const [surfaceFilter, setSurfaceFilter] = useState<string>('');
   const [ratingFilter, setRatingFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
 
   const [clusters, setClusters] = useState<AiFeedbackClusterItem[]>([]);
   const [totalTraces, setTotalTraces] = useState<number>(0);
+  const [totalClusters, setTotalClusters] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [pendingTotal, setPendingTotal] = useState<number | null>(null);
+  const [flaggedTotal, setFlaggedTotal] = useState<number | null>(null);
+  const [nextPageCached, setNextPageCached] = useState<boolean>(false);
   const [patterns, setPatterns] = useState<AiApprovedPatternItem[]>([]);
+
+  const pageCacheRef = useRef<Map<string, AiFeedbackClustersResponse>>(new Map());
+  const inflightRef = useRef<Map<string, Promise<AiFeedbackClustersResponse>>>(new Map());
+  const patternsLoadedRef = useRef<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -83,37 +97,148 @@ export function AiFeedbackLearningPanel() {
   const [confirmRemovePatternId, setConfirmRemovePatternId] = useState<string | null>(null);
   const [removingPatternId, setRemovingPatternId] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
+  const buildCacheKey = useCallback(
+    (targetPage: number) =>
+      `${surfaceFilter}|${ratingFilter}|${statusFilter}|${targetPage}|${CLUSTERS_PAGE_SIZE}`,
+    [surfaceFilter, ratingFilter, statusFilter],
+  );
+
+  const buildClustersUrl = useCallback(
+    (targetPage: number) => {
       const qs = new URLSearchParams();
       if (surfaceFilter) qs.set('surface', surfaceFilter);
       if (ratingFilter) qs.set('rating', ratingFilter);
       if (statusFilter) qs.set('review_status', statusFilter);
-      const querySuffix = qs.toString() ? `?${qs.toString()}` : '';
+      qs.set('page', String(targetPage));
+      qs.set('page_size', String(CLUSTERS_PAGE_SIZE));
+      return `/api/ai/feedback/clusters?${qs.toString()}`;
+    },
+    [surfaceFilter, ratingFilter, statusFilter],
+  );
 
-      const [clusterRes, patternRes] = await Promise.all([
-        apiFetch<AiFeedbackClustersResponse>(`/api/ai/feedback/clusters${querySuffix}`),
-        apiFetch<AiApprovedPatternListResponse>('/api/ai/feedback/patterns'),
-      ]);
-      const nextClusters = Array.isArray(clusterRes?.clusters) ? clusterRes.clusters : [];
-      setClusters(nextClusters);
+  const fetchClusterPage = useCallback(
+    async (targetPage: number, forceRefresh = false): Promise<AiFeedbackClustersResponse> => {
+      const key = buildCacheKey(targetPage);
+      if (!forceRefresh) {
+        const cached = pageCacheRef.current.get(key);
+        if (cached) return cached;
+        const pending = inflightRef.current.get(key);
+        if (pending) return pending;
+      }
+      const req = apiFetch<AiFeedbackClustersResponse>(buildClustersUrl(targetPage))
+        .then((res) => {
+          pageCacheRef.current.set(key, res);
+          inflightRef.current.delete(key);
+          return res;
+        })
+        .catch((err) => {
+          inflightRef.current.delete(key);
+          throw err;
+        });
+      inflightRef.current.set(key, req);
+      return req;
+    },
+    [buildCacheKey, buildClustersUrl],
+  );
+
+  const applyClusterResponse = useCallback(
+    (clusterRes: AiFeedbackClustersResponse, requestedPage: number) => {
+      const rawClusters = Array.isArray(clusterRes?.clusters) ? clusterRes.clusters : [];
+      const serverPaginated =
+        typeof clusterRes?.total_clusters === 'number' && typeof clusterRes?.total_pages === 'number';
+      const resolvedTotalClusters = serverPaginated ? clusterRes.total_clusters! : rawClusters.length;
+      const resolvedTotalPages = serverPaginated
+        ? Math.max(1, clusterRes.total_pages!)
+        : Math.max(1, Math.ceil(rawClusters.length / CLUSTERS_PAGE_SIZE));
+      const visibleClusters = serverPaginated
+        ? rawClusters
+        : rawClusters.slice(
+            (requestedPage - 1) * CLUSTERS_PAGE_SIZE,
+            requestedPage * CLUSTERS_PAGE_SIZE,
+          );
+
+      setClusters(visibleClusters);
       setTotalTraces(Number(clusterRes?.total_traces ?? 0));
-      setPatterns(Array.isArray(patternRes?.patterns) ? patternRes.patterns : []);
-    } catch {
-      setLoadError('Unable to load AI feedback clusters and approved patterns.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [surfaceFilter, ratingFilter, statusFilter]);
+      setTotalClusters(resolvedTotalClusters);
+      setTotalPages(resolvedTotalPages);
+      setPendingTotal(typeof clusterRes?.pending_total === 'number' ? clusterRes.pending_total : null);
+      setFlaggedTotal(typeof clusterRes?.flagged_total === 'number' ? clusterRes.flagged_total : null);
+
+      // Always prefetch & cache the next 10 clusters in background for instant navigation
+      const nextPage = requestedPage + 1;
+      const hasNext =
+        typeof clusterRes?.has_next === 'boolean'
+          ? clusterRes.has_next
+          : requestedPage < resolvedTotalPages;
+      if (hasNext) {
+        const nextKey = buildCacheKey(nextPage);
+        if (pageCacheRef.current.has(nextKey)) {
+          setNextPageCached(true);
+        } else {
+          setNextPageCached(false);
+          void fetchClusterPage(nextPage)
+            .then(() => {
+              setNextPageCached(true);
+            })
+            .catch(() => {
+              // Silent background prefetch failure — user can still load on click
+            });
+        }
+      } else {
+        setNextPageCached(false);
+      }
+    },
+    [buildCacheKey, fetchClusterPage],
+  );
+
+  const loadData = useCallback(
+    async (opts?: { forceRefresh?: boolean; targetPage?: number }) => {
+      const targetPage = opts?.targetPage ?? page;
+      const forceRefresh = Boolean(opts?.forceRefresh);
+      if (forceRefresh) {
+        pageCacheRef.current.clear();
+        inflightRef.current.clear();
+        patternsLoadedRef.current = false;
+      }
+
+      const cachedPage = !forceRefresh ? pageCacheRef.current.get(buildCacheKey(targetPage)) : undefined;
+      if (cachedPage && patternsLoadedRef.current) {
+        // Instant zero-flicker transition from prefetched cache
+        setLoadError(null);
+        setIsLoading(false);
+        applyClusterResponse(cachedPage, targetPage);
+        return;
+      }
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [clusterRes, patternRes] = await Promise.all([
+          fetchClusterPage(targetPage, forceRefresh),
+          patternsLoadedRef.current && !forceRefresh
+            ? Promise.resolve(null)
+            : apiFetch<AiApprovedPatternListResponse>('/api/ai/feedback/patterns'),
+        ]);
+        applyClusterResponse(clusterRes, targetPage);
+        if (patternRes !== null) {
+          setPatterns(Array.isArray(patternRes?.patterns) ? patternRes.patterns : []);
+          patternsLoadedRef.current = true;
+        }
+      } catch {
+        setLoadError('Unable to load AI feedback clusters and approved patterns.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [applyClusterResponse, buildCacheKey, fetchClusterPage, page],
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      void loadData();
+      void loadData({ targetPage: page });
     }, 0);
     return () => clearTimeout(timer);
-  }, [loadData]);
+  }, [loadData, page]);
 
   const selectedCluster = useMemo(
     () => clusters.find((c) => clusterKey(c) === selectedClusterKey) ?? null,
@@ -160,11 +285,11 @@ export function AiFeedbackLearningPanel() {
     }
     return {
       totalFeedback: totalTraces,
-      pendingReview: pending,
-      flaggedIssues: flagged,
+      pendingReview: pendingTotal ?? pending,
+      flaggedIssues: flaggedTotal ?? flagged,
       activePatterns: patterns.length,
     };
-  }, [clusters, totalTraces, patterns.length]);
+  }, [clusters, totalTraces, pendingTotal, flaggedTotal, patterns.length]);
 
   const handleReviewDecision = async (traceId: string, decision: 'approved' | 'rejected') => {
     setSubmittingTraceId(traceId);
@@ -185,7 +310,7 @@ export function AiFeedbackLearningPanel() {
             ? 'Trace verified against PMS data.'
             : 'Trace marked as rejected.',
       });
-      await loadData();
+      await loadData({ forceRefresh: true });
     } catch {
       setActionBanner({
         kind: 'error',
@@ -221,7 +346,7 @@ export function AiFeedbackLearningPanel() {
         text: res?.message || 'Approved pattern verified and saved.',
       });
       setVerifiedAgainstPms(false);
-      await loadData();
+      await loadData({ forceRefresh: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to approve pattern.';
       setActionBanner({ kind: 'error', text: msg });
@@ -266,7 +391,7 @@ export function AiFeedbackLearningPanel() {
         </div>
         <button
           type="button"
-          onClick={() => void loadData()}
+          onClick={() => void loadData({ forceRefresh: true })}
           className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-600"
         >
           <RotateCcw size={13} />
@@ -334,7 +459,10 @@ export function AiFeedbackLearningPanel() {
           <select
             aria-label="Filter feedback by surface"
             value={surfaceFilter}
-            onChange={(e) => setSurfaceFilter(e.target.value)}
+            onChange={(e) => {
+              setSurfaceFilter(e.target.value);
+              setPage(1);
+            }}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
           >
             <option value="">All surfaces</option>
@@ -348,7 +476,10 @@ export function AiFeedbackLearningPanel() {
           <select
             aria-label="Filter feedback by rating"
             value={ratingFilter}
-            onChange={(e) => setRatingFilter(e.target.value)}
+            onChange={(e) => {
+              setRatingFilter(e.target.value);
+              setPage(1);
+            }}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
           >
             <option value="">All ratings</option>
@@ -362,7 +493,10 @@ export function AiFeedbackLearningPanel() {
           <select
             aria-label="Filter feedback by review status"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800"
           >
             <option value="">All statuses</option>
@@ -379,6 +513,7 @@ export function AiFeedbackLearningPanel() {
               setSurfaceFilter('');
               setRatingFilter('');
               setStatusFilter('');
+              setPage(1);
             }}
             className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100"
           >
@@ -399,7 +534,7 @@ export function AiFeedbackLearningPanel() {
           <p className="font-bold">{loadError}</p>
           <button
             type="button"
-            onClick={() => void loadData()}
+            onClick={() => void loadData({ forceRefresh: true })}
             className="mt-2 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
           >
             <RotateCcw size={12} />
@@ -410,16 +545,22 @@ export function AiFeedbackLearningPanel() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_1fr]">
           {/* Clusters Table */}
           <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs">
-            <div className="border-b border-slate-100 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
               <h3 className="text-sm font-extrabold text-slate-900">
                 Feedback Clusters by Intent &amp; Failure Category
               </h3>
+              {totalClusters > 0 && (
+                <span className="text-xs font-semibold tabular-nums text-slate-500">
+                  Showing {(page - 1) * CLUSTERS_PAGE_SIZE + 1}–{Math.min(page * CLUSTERS_PAGE_SIZE, totalClusters)} of {totalClusters}
+                </span>
+              )}
             </div>
             {clusters.length === 0 ? (
               <div className="p-6 text-center text-xs font-medium text-slate-500">
                 No feedback clusters match the selected filters yet.
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead className="sticky top-0 bg-slate-50 text-slate-600">
@@ -441,11 +582,11 @@ export function AiFeedbackLearningPanel() {
                           key={key}
                           className={isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}
                         >
-                          <td className="px-4 py-3 align-top">
-                            <p className="font-bold text-slate-900">
+                          <td className="max-w-[190px] px-4 py-3 align-top">
+                            <p className="break-words font-bold text-slate-900">
                               {cluster.intent || cluster.operation_family}
                             </p>
-                            <p className="mt-0.5 text-slate-500">{cluster.scope_team}</p>
+                            <p className="mt-0.5 truncate text-slate-500">{cluster.scope_team}</p>
                           </td>
                           <td className="px-3 py-3 align-top">
                             <span
@@ -463,7 +604,7 @@ export function AiFeedbackLearningPanel() {
                               {sample?.prompt_redacted || 'Redacted prompt'}
                             </p>
                             {sample?.tool_choice && (
-                              <p className="mt-0.5 text-slate-500">Tool: {sample.tool_choice}</p>
+                              <p className="mt-0.5 truncate text-slate-500">Tool: {sample.tool_choice}</p>
                             )}
                           </td>
                           <td className="px-3 py-3 text-right align-top tabular-nums">
@@ -488,6 +629,47 @@ export function AiFeedbackLearningPanel() {
                   </tbody>
                 </table>
               </div>
+              {totalPages > 1 && (
+                <div
+                  data-testid="feedback-clusters-pagination"
+                  className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs"
+                >
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <span className="font-semibold tabular-nums">
+                      Page {page} of {totalPages}
+                    </span>
+                    {nextPageCached && page < totalPages && (
+                      <span
+                        data-testid="next-page-cached-badge"
+                        className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"
+                      >
+                        Next 10 ready
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft size={13} />
+                      <span>Prev 10</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <span>Next 10</span>
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              </>
             )}
           </div>
 

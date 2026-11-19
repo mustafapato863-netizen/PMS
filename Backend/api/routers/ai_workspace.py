@@ -702,6 +702,8 @@ def get_ai_feedback_clusters(
     surface: str | None = Query(default=None),
     rating: str | None = Query(default=None),
     review_status: str | None = Query(default=None),
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=50),
     _role: str = Depends(require_role(["Admin"])),
 ) -> AiFeedbackClustersResponse:
     scope = require_authenticated_scope(db, request)
@@ -712,6 +714,8 @@ def get_ai_feedback_clusters(
             surface=surface,
             rating=rating,
             review_status=review_status,
+            page=page,
+            page_size=page_size,
         )
     except PermissionError as exc:
         release_read_transaction(db)

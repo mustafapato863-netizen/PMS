@@ -761,6 +761,14 @@ export interface AiFeedbackClusterItem {
 export interface AiFeedbackClustersResponse {
   success: boolean;
   total_traces: number;
+  total_clusters?: number;
+  pending_total?: number;
+  flagged_total?: number;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
+  has_next?: boolean;
+  has_prev?: boolean;
   clusters: AiFeedbackClusterItem[];
 }
 

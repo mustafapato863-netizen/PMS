@@ -1140,6 +1140,14 @@ class AiFeedbackClusterItem(BaseModel):
 class AiFeedbackClustersResponse(BaseModel):
     success: bool = True
     total_traces: int
+    total_clusters: int = 0
+    pending_total: int = 0
+    flagged_total: int = 0
+    page: int = 1
+    page_size: int = 10
+    total_pages: int = 1
+    has_next: bool = False
+    has_prev: bool = False
     clusters: list[AiFeedbackClusterItem] = Field(default_factory=list)
 
 

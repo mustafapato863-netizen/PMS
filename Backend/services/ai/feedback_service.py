@@ -616,6 +616,8 @@ class FeedbackGovernanceService:
         surface: str | None = None,
         rating: str | None = None,
         review_status: str | None = None,
+        page: int | None = None,
+        page_size: int | None = None,
     ) -> AiFeedbackClustersResponse:
         """Deterministic failure clustering by (surface, fallback_reason, operation_family, scope_team, reason_tag) with redacted trace samples."""
         if str(caller_role or "") != "Admin":
@@ -746,7 +748,7 @@ class FeedbackGovernanceService:
                 )
             matched_total += 1
 
-        clusters = [
+        all_clusters = [
             AiFeedbackClusterItem(
                 surface=key[0],
                 fallback_reason=key[1],
@@ -768,10 +770,34 @@ class FeedbackGovernanceService:
                 key=lambda item: (-item[1]["total"], item[0]),
             )
         ]
+        total_clusters = len(all_clusters)
+        pending_total = sum(c.pending_count for c in all_clusters)
+        flagged_total = sum(c.down_count for c in all_clusters)
+
+        if page is not None or page_size is not None:
+            eff_page_size = max(1, min(int(page_size or 10), 50))
+            total_pages = max(1, (total_clusters + eff_page_size - 1) // eff_page_size)
+            eff_page = max(1, min(int(page or 1), total_pages))
+            start = (eff_page - 1) * eff_page_size
+            paged_clusters = all_clusters[start : start + eff_page_size]
+        else:
+            eff_page = 1
+            eff_page_size = max(10, total_clusters)
+            total_pages = 1
+            paged_clusters = all_clusters
+
         return AiFeedbackClustersResponse(
             success=True,
             total_traces=matched_total,
-            clusters=clusters,
+            total_clusters=total_clusters,
+            pending_total=pending_total,
+            flagged_total=flagged_total,
+            page=eff_page,
+            page_size=eff_page_size,
+            total_pages=total_pages,
+            has_next=eff_page < total_pages,
+            has_prev=eff_page > 1,
+            clusters=paged_clusters,
         )
 
     def purge_expired_feedback(

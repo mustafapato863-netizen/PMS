@@ -184,4 +184,75 @@ describe('AiFeedbackLearningPanel', () => {
       );
     });
   });
+
+  it('paginates clusters 10 by 10 and automatically prefetches and caches the next 10 page', async () => {
+    const makeCluster = (idx: number) => ({
+      ...SAMPLE_CLUSTERS.clusters[0],
+      scope_team: `Team-${idx}`,
+      traces: [
+        {
+          ...SAMPLE_CLUSTERS.clusters[0].traces[0],
+          trace_id: `trace-${idx}`,
+          prompt_redacted: `Cluster prompt #${idx}`,
+        },
+      ],
+    });
+    const allClusters = Array.from({ length: 25 }, (_, i) => makeCluster(i + 1));
+
+    const fetchedPages: number[] = [];
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path.startsWith('/api/ai/feedback/clusters')) {
+        const url = new URL(`http://localhost${path}`);
+        const p = Number(url.searchParams.get('page') || '1');
+        const ps = Number(url.searchParams.get('page_size') || '10');
+        fetchedPages.push(p);
+        const start = (p - 1) * ps;
+        const slice = allClusters.slice(start, start + ps);
+        const totalPages = Math.ceil(allClusters.length / ps);
+        return Promise.resolve({
+          success: true,
+          total_traces: 50,
+          total_clusters: allClusters.length,
+          pending_total: 25,
+          flagged_total: 15,
+          page: p,
+          page_size: ps,
+          total_pages: totalPages,
+          has_next: p < totalPages,
+          has_prev: p > 1,
+          clusters: slice,
+        });
+      }
+      if (path === '/api/ai/feedback/patterns') {
+        return Promise.resolve(SAMPLE_PATTERNS);
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    render(<AiFeedbackLearningPanel />);
+
+    // Page 1 shows items 1..10 and automatically prefetches page 2 in background
+    expect(await screen.findByText('Cluster prompt #1')).toBeInTheDocument();
+    expect(screen.getByText('Cluster prompt #10')).toBeInTheDocument();
+    expect(screen.queryByText('Cluster prompt #11')).not.toBeInTheDocument();
+    expect(screen.getByText('Showing 1–10 of 25')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchedPages).toEqual([1, 2]);
+      expect(screen.getByTestId('next-page-cached-badge')).toHaveTextContent('Next 10 ready');
+    });
+
+    // Click Next 10 -> serves page 2 immediately from cache (NO second fetch for page 2) and prefetches page 3
+    fireEvent.click(screen.getByRole('button', { name: /Next 10/i }));
+
+    expect(await screen.findByText('Cluster prompt #11')).toBeInTheDocument();
+    expect(screen.getByText('Cluster prompt #20')).toBeInTheDocument();
+    expect(screen.getByText('Showing 11–20 of 25')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchedPages).toEqual([1, 2, 3]);
+    });
+    // Page 2 was fetched only once (during background prefetch)
+    expect(fetchedPages.filter((p) => p === 2)).toHaveLength(1);
+  });
 });
