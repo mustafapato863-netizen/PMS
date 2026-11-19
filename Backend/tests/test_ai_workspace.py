@@ -4330,3 +4330,36 @@ def test_composable_threshold_filters_departments(monkeypatch):
     assert "Inbound" in resp.headline
     assert "Coding" not in resp.headline
 
+
+def test_composable_lowest_n_in_same_dep_ranks_employees(monkeypatch):
+    records = [
+        _composable_record("UAE-1", "Nadia Top", "Inbound", "UAE", 96.0),
+        _composable_record("UAE-2", "Tariq Mid", "Inbound", "UAE", 82.0),
+        _composable_record("UAE-3", "Sami Low", "Inbound", "UAE", 64.0),
+        _composable_record("UAE-4", "Other Dep", "Coding", "UAE", 55.0),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-composable", "has_unrestricted_team_access": True},
+    )
+    history = [
+        AiChatMessage(role="user", content="Show Inbound performance"),
+        AiChatMessage(role="assistant", content="Inbound averaged 80.7% in September 2026."),
+    ]
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="lowest 2 in same dep",
+            history=history,
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.outcome == "answer"
+    combined_text = resp.headline + " " + " ".join(resp.narrative_bullets)
+    assert "Sami Low" in combined_text
+    assert "Tariq Mid" in combined_text
+    assert "Other Dep" not in combined_text
+
+

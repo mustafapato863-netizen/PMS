@@ -1181,8 +1181,13 @@ def parse_query_rankings_spec(
         if pattern.search(text):
             group_by = candidate
             break
+    # "top 5 in every dep" / "lowest 3 per team" ranks employees inside each group
+    if group_by != "none" and entity == group_by:
+        entity = "employee"
+
+    is_full_arrange = bool(re.search(r"\b(?:arrange|order|sort|all)\b", lower))
     per_group_limit = min(max(n or 3, 1), 20) if group_by != "none" else 5
-    limit = n or (per_group_limit if group_by != "none" else 10)
+    limit = n or (per_group_limit if group_by != "none" else (50 if is_full_arrange else 10))
 
     region: str | None = None
     for candidate, pattern in _REGION_PATTERNS:
@@ -1200,6 +1205,17 @@ def parse_query_rankings_spec(
         ):
             department = name
             break
+
+    # "lowest 3 in same dep" / "top 5 in Sales" ranks employees inside that single department
+    if department and entity in {"department", "team"} and group_by == "none":
+        container_ref = re.search(
+            r"\b(?:in|within|inside|from|of)\s+(?:the\s+)?(?:same|that|this|previous)\s+(?:departments?|deps?|depts?|teams?)\b"
+            rf"|\b(?:in|within|inside|from|of)\s+(?:the\s+)?{re.escape(department)}\b",
+            text,
+            re.I,
+        )
+        if container_ref:
+            entity = "employee"
 
     metric_id: str | None = None
     for name in known_metrics or []:

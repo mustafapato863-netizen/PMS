@@ -3773,10 +3773,16 @@ class PmsAiOrchestrator:
         # the prompt plus conversation memory. Only replace the standard tool
         # dispatch when this is clearly a composable ranking question.
         catalog = get_ai_catalog()
+        known_dep_names = list(
+            dict.fromkeys(
+                list(getattr(catalog, "teams", {}) or {})
+                + list(getattr(catalog, "functions", {}) or {})
+            )
+        )
         composable_spec = routed.plan.query_rankings_args or parse_query_rankings_spec(
             req.prompt,
             history=req.history,
-            known_departments=list(getattr(catalog, "teams", {}) or {}),
+            known_departments=known_dep_names,
             known_metrics=list(getattr(catalog, "metrics", {}) or {}),
         )
         explicit_arrange = bool(
@@ -3785,6 +3791,11 @@ class PmsAiOrchestrator:
                 req.prompt,
                 re.I,
             )
+        )
+        same_dep_followup = bool(
+            composable_spec is not None
+            and composable_spec.department
+            and re.search(r"\b(?:same|that|this|previous)\s+(?:departments?|deps?|depts?|teams?)\b", req.prompt, re.I)
         )
         is_comparison_prompt = bool(
             re.search(r"\b(?:compare|versus|vs\.?|compared\s+to|difference\s+between)\b", req.prompt, re.I)
@@ -3798,11 +3809,13 @@ class PmsAiOrchestrator:
             and not routed.plan.single_person
             and not signals.asks_single_person
             and (
-                composable_spec.group_by != "none"
+                routed.plan.query_rankings_args is not None
+                or composable_spec.group_by != "none"
                 or composable_spec.entity in {"department", "team", "branch"}
                 or bool(composable_spec.region)
                 or (composable_spec.score_threshold is not None and composable_spec.entity in {"department", "team", "branch"})
                 or explicit_arrange
+                or same_dep_followup
             )
         )
 
