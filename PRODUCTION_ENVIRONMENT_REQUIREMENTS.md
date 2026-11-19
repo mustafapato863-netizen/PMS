@@ -9,6 +9,7 @@ Date: 2026-07-29
 | `APP_ENV` | Must be `production` |
 | `DATABASE_URL` | Required PostgreSQL/pooler URL; no SQLite fallback |
 | `JWT_SECRET` | Required strong secret; no repository/default value |
+| `PMS_SECRETS_ENCRYPTION_KEY` | Recommended dedicated secret for encrypting Admin-managed AI provider keys; falls back to `JWT_SECRET` with domain separation when unset |
 | `JWT_ALGORITHM` | Explicitly approved algorithm |
 | `JWT_EXPIRE_MINUTES` | Explicit bounded lifetime |
 | `AUTH_REFRESH_SESSION_HOURS` | Non-remembered refresh-session lifetime; default `8` |
