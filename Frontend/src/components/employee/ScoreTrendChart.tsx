@@ -46,6 +46,10 @@ export interface ScoreTrendPoint {
   basisDetail?: string;
   benchmarkScore?: number;
   isPeak?: boolean;
+  /** Month-over-month score delta in percentage points vs the immediately preceding month. */
+  momChange?: number | null;
+  /** Label of the prior month used to compute momChange (e.g. "Aug"). */
+  prevMonth?: string | null;
 }
 
 interface ScoreTrendChartProps {
@@ -84,15 +88,18 @@ export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) =>
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="bg-[var(--bg-surface-elevated)] border border-[var(--border-medium)] rounded-2xl px-4 py-3 shadow-xl text-sm min-w-[160px] backdrop-blur-md">
-      <div className="text-xs text-[var(--text-muted)] font-extrabold uppercase tracking-widest mb-2 border-b border-[var(--border-light)] pb-1.5">
+    <div
+      data-testid="score-trend-tooltip"
+      className="w-max min-w-[180px] max-w-[240px] whitespace-normal rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface-elevated)] px-3 py-2.5 text-xs shadow-lg backdrop-blur-md"
+    >
+      <div className="mb-1.5 border-b border-[var(--border-light)] pb-1 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </div>
       {payload.map((entry, index) => {
         const score = entry.value;
         if (score == null || Number.isNaN(score)) {
           return (
-            <div key={index} className="py-0.5 text-xs font-semibold text-[var(--text-secondary)]">
+            <div key={index} className="py-0.5 text-xs font-semibold leading-snug text-[var(--text-secondary)]">
               {entry.payload?.basisDetail ?? 'No data'}
             </div>
           );
@@ -101,19 +108,46 @@ export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) =>
         if (entry.dataKey === 'score') {
           color = getGradeTone(score).text;
         }
+        const mom = entry.dataKey === 'score' ? entry.payload?.momChange : undefined;
+        const prevMonth = entry.dataKey === 'score' ? entry.payload?.prevMonth : undefined;
+        const hasMom = typeof mom === 'number' && !Number.isNaN(mom);
+        const momTone =
+          hasMom && mom > 0.05
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : hasMom && mom < -0.05
+              ? 'text-rose-600 dark:text-rose-400'
+              : 'text-[var(--text-muted)]';
+        const momArrow = hasMom && mom > 0.05 ? '↑ ' : hasMom && mom < -0.05 ? '↓ ' : '';
+        const momSign = hasMom && mom > 0 ? '+' : '';
 
         return (
           <div key={index} className="py-0.5">
-            <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-              {entry.name}:
-            </span>
-            <span className="font-mono font-black text-sm ml-4" style={{ color }}>
-              {score.toFixed(1)}%
-            </span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)]">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} />
+                {entry.name}:
+              </span>
+              <span className="font-mono text-sm font-black tabular-nums" style={{ color }}>
+                {score.toFixed(1)}%
+              </span>
             </div>
-            {entry.dataKey === 'score' && entry.payload?.basisDetail && <div className="mt-1 text-xs text-[var(--text-secondary)]">{entry.payload.basisDetail}</div>}
+            {hasMom && (
+              <div className="mt-1 flex items-center justify-between gap-3" data-testid="tooltip-mom-change">
+                <span className="text-xs font-medium text-[var(--text-muted)]">
+                  MoM{prevMonth ? ` vs ${prevMonth}` : ''}:
+                </span>
+                <span className={`font-mono text-xs font-bold tabular-nums ${momTone}`}>
+                  {momArrow}
+                  {momSign}
+                  {mom.toFixed(1)} pts
+                </span>
+              </div>
+            )}
+            {entry.dataKey === 'score' && entry.payload?.basisDetail && (
+              <div className="mt-1.5 border-t border-[var(--border-light)] pt-1.5 text-xs leading-snug text-[var(--text-secondary)]">
+                {entry.payload.basisDetail}
+              </div>
+            )}
           </div>
         );
       })}
@@ -834,9 +868,34 @@ const ScoreTrendChart = ({
     );
   }
 
-  const hasBenchmark = data.some((d) => d.benchmarkScore !== undefined);
-  const textAlternative = data
-    .map((point) => `${point.month}: ${point.score == null || Number.isNaN(point.score) ? point.basisDetail ?? 'No data' : `${point.score.toFixed(1)}%`}${point.selected ? ' (selected)' : ''}${point.score != null && point.basisDetail ? ` (${point.basisDetail})` : ''}`)
+  const enrichedData: ScoreTrendPoint[] = data.map((point, idx) => {
+    if (point.momChange !== undefined) return point;
+    const prev = idx > 0 ? data[idx - 1] : null;
+    const hasCurr = point.score != null && !Number.isNaN(point.score);
+    const hasPrev = prev?.score != null && !Number.isNaN(prev.score);
+    if (!hasCurr || !hasPrev) {
+      return { ...point, momChange: null, prevMonth: prev?.month ?? null };
+    }
+    return {
+      ...point,
+      momChange: Number(((point.score as number) - (prev!.score as number)).toFixed(1)),
+      prevMonth: prev!.month,
+    };
+  });
+
+  const hasBenchmark = enrichedData.some((d) => d.benchmarkScore !== undefined);
+  const textAlternative = enrichedData
+    .map((point) => {
+      const scoreText =
+        point.score == null || Number.isNaN(point.score)
+          ? point.basisDetail ?? 'No data'
+          : `${point.score.toFixed(1)}%`;
+      const momText =
+        typeof point.momChange === 'number' && !Number.isNaN(point.momChange)
+          ? ` (${point.momChange > 0 ? '+' : ''}${point.momChange.toFixed(1)} pts MoM)`
+          : '';
+      return `${point.month}: ${scoreText}${momText}${point.selected ? ' (selected)' : ''}${point.score != null && point.basisDetail ? ` (${point.basisDetail})` : ''}`;
+    })
     .join(', ');
 
   return (
@@ -846,7 +905,7 @@ const ScoreTrendChart = ({
         {targetLabel ?? `Target ${targetScore}%`}. {textAlternative}
       </p>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} margin={{ top: 16, right: 8, left: -18, bottom: 0 }}>
+        <LineChart data={enrichedData} margin={{ top: 18, right: 8, left: -18, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
           <XAxis
             dataKey="month"
@@ -861,7 +920,13 @@ const ScoreTrendChart = ({
             tickLine={false}
             domain={[0, 100]}
           />
-          <Tooltip filterNull={false} content={<CustomTooltip />} />
+          <Tooltip
+            filterNull={false}
+            offset={14}
+            allowEscapeViewBox={{ x: false, y: true }}
+            wrapperStyle={{ zIndex: 30, pointerEvents: 'none', maxWidth: 248 }}
+            content={<CustomTooltip />}
+          />
 
           {hasBenchmark && (
             <Legend

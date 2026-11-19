@@ -21,6 +21,60 @@ it('distinguishes unavailable scoring evidence from a missing month', () => {
   expect(screen.queryByText('No data')).not.toBeInTheDocument();
 });
 
+it('displays compact bounded tooltip with MoM change vs previous month', () => {
+  render(
+    <CustomTooltip
+      active
+      label="Sep"
+      payload={[
+        {
+          value: 87.0,
+          color: '#2563eb',
+          dataKey: 'score',
+          name: 'Actual Score',
+          payload: {
+            month: 'Sep',
+            score: 87.0,
+            momChange: 3.4,
+            prevMonth: 'Aug',
+            basisDetail: 'Historical settings are not verified.',
+          },
+        },
+      ]}
+    />,
+  );
+  const tooltip = screen.getByTestId('score-trend-tooltip');
+  expect(tooltip.className).toContain('max-w-[240px]');
+  expect(screen.getByText('87.0%')).toBeInTheDocument();
+  expect(screen.getByTestId('tooltip-mom-change')).toHaveTextContent('MoM vs Aug:');
+  expect(screen.getByTestId('tooltip-mom-change')).toHaveTextContent('↑ +3.4 pts');
+  expect(screen.getByText('Historical settings are not verified.')).toBeInTheDocument();
+});
+
+it('shows negative MoM change with downward arrow', () => {
+  render(
+    <CustomTooltip
+      active
+      label="Oct"
+      payload={[
+        {
+          value: 82.5,
+          color: '#2563eb',
+          dataKey: 'score',
+          name: 'Actual Score',
+          payload: {
+            month: 'Oct',
+            score: 82.5,
+            momChange: -4.5,
+            prevMonth: 'Sep',
+          },
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByTestId('tooltip-mom-change')).toHaveTextContent('↓ -4.5 pts');
+});
+
 function point(
   month: string,
   periodKey: string,

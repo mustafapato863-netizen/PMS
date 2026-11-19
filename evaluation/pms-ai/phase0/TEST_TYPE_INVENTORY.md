@@ -8,7 +8,7 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 58. Test functions or `it` blocks: 774.
+Test files: 58. Test functions or `it` blocks: 777.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
@@ -76,9 +76,9 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
 | `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |
-| `Frontend/src/components/ai/agent360/Agent360Scorecard.test.tsx` | test | `mocked` | 2 | partial |
+| `Frontend/src/components/ai/agent360/Agent360Scorecard.test.tsx` | test | `mocked` | 4 | partial |
 | `Frontend/src/components/ai/memory/UserMemoryDrawer.test.tsx` | test | `mocked` | 3 | partial |
-| `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 7 | partial |
+| `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 8 | partial |
 | `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 4 | not applicable |
 | `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 23 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |

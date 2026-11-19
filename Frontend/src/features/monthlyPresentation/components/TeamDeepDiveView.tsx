@@ -1362,23 +1362,51 @@ function TeamDeepDiveViewContent({
             </div>
 
             {/* 6-Month Team Score Trend */}
-            {data.scoreTrend && (
+            {data.scoreTrend && (() => {
+              const trendPoints = data.scoreTrend.points;
+              const selectedIdx = trendPoints.findIndex((p) => p.selected);
+              const activeIdx = selectedIdx >= 0 ? selectedIdx : trendPoints.length - 1;
+              const currPt = activeIdx >= 0 ? trendPoints[activeIdx] : null;
+              const prevPt = activeIdx > 0 ? trendPoints[activeIdx - 1] : null;
+              const headerMom =
+                currPt?.score != null && prevPt?.score != null
+                  ? Number((currPt.score - prevPt.score).toFixed(1))
+                  : null;
+              return (
               <section
                 aria-label={`${data.teamDisplayName} score trend`}
                 data-testid="team-score-trend"
                 className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs lg:col-span-7"
               >
                 <div>
-                  <div className="flex items-center justify-between pb-1">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      6-month team score
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        6-month team score
+                      </div>
+                      {headerMom !== null && (
+                        <span
+                          data-testid="team-score-trend-mom"
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
+                            headerMom > 0.05
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : headerMom < -0.05
+                                ? 'bg-rose-50 text-rose-700'
+                                : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {headerMom > 0.05 ? '↑ ' : headerMom < -0.05 ? '↓ ' : ''}
+                          {headerMom > 0 ? '+' : ''}
+                          {headerMom.toFixed(1)} pts MoM{prevPt ? ` vs ${prevPt.month}` : ''}
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs font-medium text-slate-400">
                       Target: 100%
                     </span>
                   </div>
                   <ScoreTrendChart
-                    data={data.scoreTrend.points.map((point) => ({
+                    data={trendPoints.map((point) => ({
                       month: point.month,
                       score: point.score,
                       periodKey: point.periodKey,
@@ -1393,13 +1421,14 @@ function TeamDeepDiveViewContent({
                     caption={`${data.teamDisplayName} ${data.regionName} team score, selected month and five preceding months`}
                   />
                 </div>
-                {data.scoreTrend.points.some((point) => point.basisDetail) && (
+                {trendPoints.some((point) => point.basisDetail) && (
                   <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
-                    Hover over a month to see what is known about its scoring basis. Team scores use current pooling rules.
+                    Hover over a month to see MoM change and scoring basis. Team scores use current pooling rules.
                   </p>
                 )}
               </section>
-            )}
+              );
+            })()}
           </div>
         </div>
       </header>
