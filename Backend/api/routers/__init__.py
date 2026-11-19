@@ -24,6 +24,7 @@ from .ai_corrective_actions import router as ai_corrective_actions_router
 from .agent_360 import router as agent_360_router
 from .ai_memory import admin_router as ai_memory_admin_router
 from .ai_memory import router as ai_memory_router
+from .ai_provider_config import router as ai_provider_config_router
 
 router = APIRouter()
 
@@ -52,3 +53,4 @@ router.include_router(ai_corrective_actions_router)
 router.include_router(agent_360_router)
 router.include_router(ai_memory_router)
 router.include_router(ai_memory_admin_router)
+router.include_router(ai_provider_config_router)

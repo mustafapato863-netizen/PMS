@@ -20,7 +20,14 @@ from sqlalchemy.pool import StaticPool
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from api.routers import agent_360, ai_corrective_actions, ai_memory, ai_workspace, router as api_router
+from api.routers import (
+    agent_360,
+    ai_corrective_actions,
+    ai_memory,
+    ai_provider_config,
+    ai_workspace,
+    router as api_router,
+)
 from api.routers.settings import router as settings_router
 from config.database import Base, get_db
 from models.models import ProductSetting
@@ -109,15 +116,26 @@ def _is_diagnostic_route(route: APIRoute) -> bool:
     return route in ai_workspace.diagnostics_router.routes
 
 
+def _is_provider_config_route(route: APIRoute) -> bool:
+    """Provider model/key management stays available while AI is off."""
+    return route in ai_provider_config.router.routes
+
+
 def _capability_routes() -> list[tuple[str, str, APIRoute]]:
     return [
         item for item in _ai_routes()
-        if not _is_diagnostic_route(item[2]) and not _is_pilot_route(item[2])
+        if not _is_diagnostic_route(item[2])
+        and not _is_pilot_route(item[2])
+        and not _is_provider_config_route(item[2])
     ]
 
 
 def _pilot_routes() -> list[tuple[str, str, APIRoute]]:
     return [item for item in _ai_routes() if _is_pilot_route(item[2])]
+
+
+def _provider_config_routes() -> list[tuple[str, str, APIRoute]]:
+    return [item for item in _ai_routes() if _is_provider_config_route(item[2])]
 
 
 def _body_for(path: str) -> dict | None:
@@ -252,8 +270,25 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         assert require_ai_admin in diagnostic_calls
         assert require_ai_diagnostic_session in diagnostic_calls
 
-    # Every /ai route is either a chat capability, diagnostics, or a pilot route.
-    assert len(_ai_routes()) == len(routes) + len(diagnostic) + len(_pilot_routes())
+    # Provider model/key configuration is Admin-only and deliberately remains
+    # reachable while AI is switched off: that is when an Admin configures it.
+    provider_config = _provider_config_routes()
+    assert sorted(f"{method} /api{path}" for method, path, _route in provider_config) == [
+        "GET /api/ai/admin/providers",
+        "POST /api/ai/admin/providers/{provider}/switch-key",
+        "POST /api/ai/admin/providers/{provider}/test",
+        "PUT /api/ai/admin/providers/{provider}",
+    ]
+    for _method, _path, route in provider_config:
+        provider_calls = _walk_calls(route.dependant)
+        assert require_ai_admin in provider_calls
+        assert require_ai_enabled not in provider_calls
+
+    # Every /ai route is a chat capability, diagnostics, a pilot route, or
+    # provider configuration.
+    assert len(_ai_routes()) == (
+        len(routes) + len(diagnostic) + len(_pilot_routes()) + len(provider_config)
+    )
     # The corrective-action pilot is behind session + Admin + its own switch,
     # and deliberately NOT behind the standalone chat switch.
     pilot = _pilot_routes()

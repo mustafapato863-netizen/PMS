@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ClipboardCheck, Database, LayoutDashboard, MessageSquareWarning, SlidersHorizontal, Users, type LucideIcon } from 'lucide-react';
+import { Activity, ClipboardCheck, Database, KeyRound, LayoutDashboard, MessageSquareWarning, SlidersHorizontal, Users, type LucideIcon } from 'lucide-react';
 import { settingsPathFor, type SettingsPage, type SettingsRoutePage } from './shell/settingsNavigation';
 
 /**
@@ -42,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { page: 'system_errors', label: 'System errors', icon: Activity },
       { page: 'ai_feedback', label: 'AI feedback', icon: MessageSquareWarning },
+      { page: 'ai_models', label: 'AI models & keys', icon: KeyRound },
     ],
   },
 ];

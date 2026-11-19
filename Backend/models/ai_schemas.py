@@ -1369,3 +1369,95 @@ class AiDiagnosticsResponse(BaseModel):
     success: bool = True
     message: str = "Admin AI diagnostics loaded"
     data: AiDiagnosticsPayload
+
+
+# ---------------------------------------------------------------------------
+# Admin AI provider models & encrypted keys
+# ---------------------------------------------------------------------------
+
+
+class AiProviderKeyState(BaseModel):
+    slot: Literal["primary", "alternate"]
+    configured: bool = False
+    source: Literal["db", "env", "none"] = "none"
+    masked_preview: str = ""
+
+
+class AiProviderConfigItem(BaseModel):
+    provider: Literal["cloudflare", "gemini", "nvidia"]
+    label: str
+    enabled: bool
+    enabled_source: str = "env"
+    primary_model: str
+    alternate_model: str | None = None
+    primary_model_source: str = "env"
+    account_id_masked: str = ""
+    alternate_account_id_masked: str = ""
+    account_id_source: str = "none"
+    alternate_account_id_source: str = "none"
+    primary_key: AiProviderKeyState
+    alternate_key: AiProviderKeyState
+    active_key_slot: Literal["primary", "alternate"] = "primary"
+    auto_failover_key: bool = True
+    daily_limit: int | None = None
+    updated_at: str | None = None
+
+
+class AiProviderConfigListResponse(BaseModel):
+    success: bool = True
+    providers: list[AiProviderConfigItem] = Field(default_factory=list)
+
+
+class AiProviderConfigResponse(BaseModel):
+    success: bool = True
+    message: str = "AI provider configuration saved"
+    provider: AiProviderConfigItem
+
+
+class AiProviderConfigUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    primary_model: str | None = Field(default=None, max_length=160)
+    alternate_model: str | None = Field(default=None, max_length=160)
+    active_key_slot: Literal["primary", "alternate"] | None = None
+    auto_failover_key: bool | None = None
+    daily_limit: int | None = Field(default=None, ge=0, le=500)
+    account_id: str | None = Field(default=None, max_length=200)
+    alternate_account_id: str | None = Field(default=None, max_length=200)
+    primary_api_key: str | None = Field(default=None, max_length=4000)
+    alternate_api_key: str | None = Field(default=None, max_length=4000)
+    clear_account_id: bool = False
+    clear_alternate_account_id: bool = False
+    clear_primary_api_key: bool = False
+    clear_alternate_api_key: bool = False
+
+
+class AiProviderSwitchKeyRequest(BaseModel):
+    slot: Literal["primary", "alternate"] | None = None
+
+
+class AiProviderSwitchKeyResponse(BaseModel):
+    success: bool = True
+    message: str = "Active AI provider key switched"
+    provider: AiProviderConfigItem
+
+
+class AiProviderTestRequest(BaseModel):
+    slot: Literal["primary", "alternate"] = "primary"
+    api_key: str | None = Field(default=None, max_length=4000)
+    model: str | None = Field(default=None, max_length=160)
+    account_id: str | None = Field(default=None, max_length=200)
+
+
+class AiProviderTestResult(BaseModel):
+    ok: bool
+    latency_ms: float
+    status_code: int
+    message: str
+    tested_model: str
+    tested_slot: Literal["primary", "alternate"]
+
+
+class AiProviderTestResponse(BaseModel):
+    success: bool = True
+    message: str = "AI provider key test completed"
+    data: AiProviderTestResult

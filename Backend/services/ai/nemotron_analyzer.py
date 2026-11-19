@@ -108,13 +108,43 @@ _VALID_INTENTS = {
 }
 
 
+def _nvidia_runtime_config():
+    """Effective NVIDIA config, or None when the store is unavailable."""
+    try:
+        from services.ai import provider_config_store
+
+        return provider_config_store.resolve_provider_config("nvidia")
+    except Exception:
+        return None
+
+
 def is_feedback_analyzer_enabled() -> bool:
+    runtime = _nvidia_runtime_config()
+    if runtime is not None:
+        return bool(runtime.enabled)
     raw = os.environ.get("PMS_AI_FEEDBACK_ANALYZER_ENABLED", "false").strip().casefold()
     return raw in _TRUTHY
 
 
 def _nvidia_api_key() -> str:
+    runtime = _nvidia_runtime_config()
+    if runtime is not None and runtime.active_api_key:
+        return runtime.active_api_key
     return os.environ.get("NVIDIA_API_KEY", "").strip()
+
+
+def _nvidia_standby_api_key() -> str:
+    runtime = _nvidia_runtime_config()
+    if runtime is not None:
+        return runtime.standby_api_key
+    return os.environ.get("NVIDIA_API_KEY_ALTER", "").strip()
+
+
+def _nvidia_auto_failover_key() -> bool:
+    runtime = _nvidia_runtime_config()
+    if runtime is not None:
+        return bool(runtime.auto_failover_key)
+    return os.environ.get("PMS_AI_AUTO_FAILOVER_KEY", "true").strip().casefold() in _TRUTHY
 
 
 def _nvidia_base_url() -> str:
@@ -123,7 +153,12 @@ def _nvidia_base_url() -> str:
 
 
 def _nvidia_model() -> str:
-    raw = os.environ.get("NVIDIA_FEEDBACK_MODEL", DEFAULT_NVIDIA_MODEL).strip()
+    runtime = _nvidia_runtime_config()
+    raw = (
+        runtime.primary_model
+        if runtime is not None and runtime.primary_model
+        else os.environ.get("NVIDIA_FEEDBACK_MODEL", DEFAULT_NVIDIA_MODEL).strip()
+    )
     if not raw:
         return DEFAULT_NVIDIA_MODEL
     # Strip any accidental OpenRouter :free suffix when calling NVIDIA NIM directly
@@ -142,6 +177,9 @@ def _timeout_seconds() -> float:
 
 
 def _daily_limit() -> int:
+    runtime = _nvidia_runtime_config()
+    if runtime is not None and runtime.daily_limit is not None:
+        return max(1, min(int(runtime.daily_limit), 500))
     raw = os.environ.get("PMS_AI_FEEDBACK_ANALYZER_DAILY_LIMIT", str(DEFAULT_DAILY_LIMIT)).strip()
     try:
         val = int(raw)
@@ -322,10 +360,19 @@ def _post_nvidia_chat_completions(
     *,
     max_tokens: int = 900,
 ) -> dict[str, Any]:
-    """Direct HTTP call to NVIDIA NIM Chat Completions API (no external SDK)."""
-    api_key = _nvidia_api_key()
-    if not api_key:
+    """Direct HTTP call to NVIDIA NIM Chat Completions API (no external SDK).
+
+    On HTTP 401/403/429 the request is retried exactly once with the standby
+    key when auto-failover is enabled and a standby key is configured.
+    """
+    active_key = _nvidia_api_key()
+    if not active_key:
         raise RuntimeError("NVIDIA_API_KEY is not configured")
+
+    keys = [active_key]
+    standby_key = _nvidia_standby_api_key()
+    if standby_key and _nvidia_auto_failover_key():
+        keys.append(standby_key)
 
     url = f"{_nvidia_base_url()}/chat/completions"
     body = json.dumps(
@@ -339,50 +386,61 @@ def _post_nvidia_chat_completions(
         }
     ).encode("utf-8")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
     timeout = _timeout_seconds()
     last_exc: Exception | None = None
-    for attempt in range(2):
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
-            data = json.loads(raw)
-            choices = data.get("choices") or []
-            if not choices or not isinstance(choices[0], dict):
-                raise ValueError("Empty choices in NVIDIA NIM response")
-            msg = choices[0].get("message") or {}
-            content = msg.get("content")
-            if isinstance(content, list):
-                content = "".join(
-                    str(part.get("text") or "") for part in content if isinstance(part, dict)
-                )
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("Empty message content in NVIDIA NIM response")
-            return _extract_json_object(content)
-        except urllib.error.HTTPError as exc:
-            status_code = getattr(exc, "code", 0)
-            if status_code in (500, 502, 503, 504) and attempt == 0:
-                last_exc = exc
-                time.sleep(0.5)
-                continue
-            logger.warning("NVIDIA NIM feedback analyzer HTTP error: status=%s", status_code)
-            raise RuntimeError(f"Feedback analyzer provider returned HTTP {status_code}") from None
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-            if attempt == 0:
-                last_exc = exc
-                time.sleep(0.4)
-                continue
-            logger.warning("NVIDIA NIM feedback analyzer network/timeout error: %s", redact_secrets(str(exc)))
-            raise RuntimeError("Feedback analyzer request timed out or could not reach endpoint") from None
-        except Exception as exc:
-            logger.warning("NVIDIA NIM feedback analyzer parse error: %s", redact_secrets(str(exc)))
-            raise RuntimeError("Feedback analyzer returned an unreadable response") from None
+    for key_index, api_key in enumerate(keys):
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        for attempt in range(2):
+            req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                data = json.loads(raw)
+                choices = data.get("choices") or []
+                if not choices or not isinstance(choices[0], dict):
+                    raise ValueError("Empty choices in NVIDIA NIM response")
+                msg = choices[0].get("message") or {}
+                content = msg.get("content")
+                if isinstance(content, list):
+                    content = "".join(
+                        str(part.get("text") or "") for part in content if isinstance(part, dict)
+                    )
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("Empty message content in NVIDIA NIM response")
+                return _extract_json_object(content)
+            except urllib.error.HTTPError as exc:
+                status_code = getattr(exc, "code", 0)
+                if (
+                    status_code in (401, 403, 429)
+                    and key_index == 0
+                    and len(keys) > 1
+                ):
+                    logger.warning(
+                        "NVIDIA NIM active key rejected (HTTP %s); retrying with standby key",
+                        status_code,
+                    )
+                    last_exc = exc
+                    break
+                if status_code in (500, 502, 503, 504) and attempt == 0:
+                    last_exc = exc
+                    time.sleep(0.5)
+                    continue
+                logger.warning("NVIDIA NIM feedback analyzer HTTP error: status=%s", status_code)
+                raise RuntimeError(f"Feedback analyzer provider returned HTTP {status_code}") from None
+            except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+                if attempt == 0:
+                    last_exc = exc
+                    time.sleep(0.4)
+                    continue
+                logger.warning("NVIDIA NIM feedback analyzer network/timeout error: %s", redact_secrets(str(exc)))
+                raise RuntimeError("Feedback analyzer request timed out or could not reach endpoint") from None
+            except Exception as exc:
+                logger.warning("NVIDIA NIM feedback analyzer parse error: %s", redact_secrets(str(exc)))
+                raise RuntimeError("Feedback analyzer returned an unreadable response") from None
 
     raise RuntimeError(f"Feedback analyzer failed after retry: {type(last_exc).__name__}")
 

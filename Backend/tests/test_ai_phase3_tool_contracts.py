@@ -332,6 +332,8 @@ def test_tool_catalog_contains_all_authorized_tools():
         "get_score_trend",
         "rank_employees",
         "get_kpi_diagnosis",
+        "simulate_kpi_improvement",
+        "explain_scoring_rules_and_targets",
     }
     assert expected_tools.issubset(set(tools.keys()))
     for name, schema in tools.items():
@@ -346,7 +348,9 @@ def test_router_tool_schemas_match_registry_schemas():
 
     # In router.py, tool_schemas references DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS
     assert DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS is not None
-    assert len(DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS) == 6
+    # Eight model-led tools are documented: the six original read/trend tools plus
+    # the KPI simulation and scoring-explanation helpers.
+    assert len(DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS) == 8
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,7 @@ describe('SettingsLayout rail mode', () => {
       'Users',
       'System errors',
       'AI feedback',
+      'AI models & keys',
     ]);
     for (const heading of ['Data', 'Evaluation', 'Access', 'System']) {
       expect(within(nav).getByText(heading)).toBeInTheDocument();

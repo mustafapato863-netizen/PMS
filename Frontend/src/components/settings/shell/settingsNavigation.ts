@@ -13,6 +13,7 @@ const PAGE_SLUGS: Record<SettingsRoutePage, string> = {
   users: 'users',
   system_errors: 'system-errors',
   ai_feedback: 'ai-feedback',
+  ai_models: 'ai-models',
 };
 
 const SLUG_PAGES = new Map<string, SettingsRoutePage>(
@@ -27,6 +28,7 @@ const LEGACY_TABS = new Map<string, SettingsRoutePage>([
   ['users', 'users'],
   ['system_errors', 'system_errors'],
   ['ai_feedback', 'ai_feedback'],
+  ['ai_models', 'ai_models'],
 ]);
 
 export function settingsPathFor(page: SettingsRoutePage): string {

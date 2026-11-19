@@ -1633,3 +1633,37 @@ class AiApprovedPattern(Base):
     __table_args__ = (
         Index("idx_ai_approved_patterns_active_intent", "is_active", "intent"),
     )
+
+
+class AiProviderConfig(Base):
+    """Admin-managed AI provider models and encrypted credentials.
+
+    One row per provider (``cloudflare``, ``gemini``, ``nvidia``). NULL columns
+    inherit the corresponding environment variable, so existing deployments keep
+    working without a database row. Secrets are stored only as Fernet tokens.
+    """
+
+    __tablename__ = "ai_provider_configs"
+
+    provider = Column(String(32), primary_key=True)
+    enabled = Column(Boolean, nullable=True)
+    primary_model = Column(String(160), nullable=True)
+    alternate_model = Column(String(160), nullable=True)
+    account_id_encrypted = Column(Text, nullable=True)
+    alternate_account_id_encrypted = Column(Text, nullable=True)
+    primary_api_key_encrypted = Column(Text, nullable=True)
+    alternate_api_key_encrypted = Column(Text, nullable=True)
+    active_key_slot = Column(String(16), nullable=False, default="primary", server_default="primary")
+    auto_failover_key = Column(Boolean, nullable=False, default=True, server_default=true())
+    daily_limit = Column(Integer, nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    updated_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )

@@ -393,6 +393,12 @@ class UnifiedProviderConfig:
     timeout_seconds: float = 10.0
     max_retries: int = 1
     gemini_api_key: str = ""
+    # Standby slots used for a single in-place retry on 401/403/429.
+    cloudflare_standby_api_token: str = ""
+    cloudflare_standby_account_id: str = ""
+    cloudflare_auto_failover_key: bool = True
+    gemini_standby_api_key: str = ""
+    gemini_auto_failover_key: bool = True
 
     @property
     def effective_primary_provider(self) -> str:
@@ -484,6 +490,41 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         or ""
     ).strip()
 
+    cloudflare_standby_api_token = ""
+    cloudflare_standby_account_id = ""
+    cloudflare_auto_failover_key = True
+    gemini_standby_api_key = ""
+    gemini_auto_failover_key = True
+
+    # Admin-managed database overrides win over the environment. The store is
+    # best-effort: a missing table, disabled database, or bare unit test simply
+    # leaves the environment values below untouched.
+    try:
+        from services.ai import provider_config_store
+
+        cf_runtime = provider_config_store.resolve_provider_config("cloudflare")
+        gm_runtime = provider_config_store.resolve_provider_config("gemini")
+        cloudflare_enabled = cf_runtime.enabled
+        gemini_enabled = gm_runtime.enabled
+        cloudflare_account_id = cf_runtime.active_account_id or cloudflare_account_id
+        cloudflare_api_token = cf_runtime.active_api_key or cloudflare_api_token
+        cloudflare_standby_api_token = cf_runtime.standby_api_key
+        cloudflare_standby_account_id = (
+            cf_runtime.standby_account_id or cf_runtime.active_account_id
+        )
+        cloudflare_auto_failover_key = cf_runtime.auto_failover_key
+        cloudflare_model = cf_runtime.primary_model or cloudflare_model
+        cloudflare_alter_model = cf_runtime.alternate_model or cloudflare_alter_model
+        gemini_api_key = gm_runtime.active_api_key or gemini_api_key
+        gemini_standby_api_key = gm_runtime.standby_api_key
+        gemini_auto_failover_key = gm_runtime.auto_failover_key
+        gemini_model = gm_runtime.primary_model or gemini_model
+    except Exception:
+        logger.warning(
+            "AI provider config store unavailable; using environment defaults",
+            exc_info=False,
+        )
+
     return UnifiedProviderConfig(
         primary_provider=primary_provider,
         fallback_provider=fallback_provider,
@@ -498,6 +539,11 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         gemini_api_key=gemini_api_key,
+        cloudflare_standby_api_token=cloudflare_standby_api_token,
+        cloudflare_standby_account_id=cloudflare_standby_account_id,
+        cloudflare_auto_failover_key=cloudflare_auto_failover_key,
+        gemini_standby_api_key=gemini_standby_api_key,
+        gemini_auto_failover_key=gemini_auto_failover_key,
     )
 
 
@@ -856,6 +902,20 @@ def _read_with_deadline(resp: Any, timeout: float, chunk_size: int = 65536) -> s
 # ---------------------------------------------------------------------------
 
 
+_KEY_SWITCH_STATUS_CODES = (401, 403, 429)
+
+
+def _is_key_switching_error(exc: BaseException) -> bool:
+    """True when a provider rejected the active key or exhausted its quota.
+
+    Only 401/403/429 qualify: those are the statuses where swapping to the
+    standby credential can succeed without changing the request payload.
+    """
+    if not isinstance(exc, (ProviderClientError, ProviderRateLimitError)):
+        return False
+    return getattr(exc, "http_code", None) in _KEY_SWITCH_STATUS_CODES
+
+
 def _parse_http_error(exc: urllib.error.HTTPError, provider_name: str) -> ProviderError:
     """Classify HTTP errors safely without leaking raw request/response bodies.
     
@@ -913,13 +973,51 @@ class CloudflareAIProviderAdapter:
         timeout: float,
         model: str | None = None,
     ) -> tuple[str, TokenUsage]:
-        if not config.cloudflare_account_id:
+        try:
+            return self._execute_once(
+                request,
+                config,
+                timeout=timeout,
+                model=model,
+                api_token=config.cloudflare_api_token,
+                account_id=config.cloudflare_account_id,
+            )
+        except (ProviderClientError, ProviderRateLimitError) as exc:
+            standby = config.cloudflare_standby_api_token
+            if config.cloudflare_auto_failover_key and standby and _is_key_switching_error(exc):
+                logger.warning(
+                    "Cloudflare active key rejected (HTTP %s); retrying once with the standby key",
+                    getattr(exc, "http_code", None),
+                )
+                return self._execute_once(
+                    request,
+                    config,
+                    timeout=timeout,
+                    model=model,
+                    api_token=standby,
+                    account_id=(
+                        config.cloudflare_standby_account_id or config.cloudflare_account_id
+                    ),
+                )
+            raise
+
+    def _execute_once(
+        self,
+        request: ProviderRequest,
+        config: UnifiedProviderConfig,
+        *,
+        timeout: float,
+        model: str | None = None,
+        api_token: str,
+        account_id: str,
+    ) -> tuple[str, TokenUsage]:
+        if not account_id:
             raise ProviderClientError("Cloudflare Account ID is not configured", http_code=401)
-        if not config.cloudflare_api_token:
+        if not api_token:
             raise ProviderClientError("Cloudflare API Token is not configured", http_code=401)
 
         resolved_model = model or resolve_provider_model("cloudflare", config, request)
-        url = f"https://api.cloudflare.com/client/v4/accounts/{config.cloudflare_account_id}/ai/v1/chat/completions"
+        url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
 
         messages = []
         system_content = request.system_instruction or ""
@@ -954,7 +1052,7 @@ class CloudflareAIProviderAdapter:
             data=raw_data,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {config.cloudflare_api_token}",
+                "Authorization": f"Bearer {api_token}",
             },
             method="POST",
         )
@@ -1064,7 +1162,40 @@ class GeminiProviderAdapter:
         timeout: float,
         model: str | None = None,
     ) -> tuple[str, TokenUsage]:
-        if not config.gemini_api_key:
+        try:
+            return self._execute_once(
+                request,
+                config,
+                timeout=timeout,
+                model=model,
+                api_key=config.gemini_api_key,
+            )
+        except (ProviderClientError, ProviderRateLimitError) as exc:
+            standby = config.gemini_standby_api_key
+            if config.gemini_auto_failover_key and standby and _is_key_switching_error(exc):
+                logger.warning(
+                    "Gemini active key rejected (HTTP %s); retrying once with the standby key",
+                    getattr(exc, "http_code", None),
+                )
+                return self._execute_once(
+                    request,
+                    config,
+                    timeout=timeout,
+                    model=model,
+                    api_key=standby,
+                )
+            raise
+
+    def _execute_once(
+        self,
+        request: ProviderRequest,
+        config: UnifiedProviderConfig,
+        *,
+        timeout: float,
+        model: str | None = None,
+        api_key: str,
+    ) -> tuple[str, TokenUsage]:
+        if not api_key:
             raise ProviderClientError("Gemini API key is not configured", http_code=401)
 
         resolved_model = model or resolve_provider_model("gemini", config, request)
@@ -1117,7 +1248,7 @@ class GeminiProviderAdapter:
             data=raw_data,
             headers={
                 "Content-Type": "application/json",
-                "x-goog-api-key": config.gemini_api_key,
+                "x-goog-api-key": api_key,
             },
             method="POST",
         )

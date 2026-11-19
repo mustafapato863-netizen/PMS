@@ -38,6 +38,10 @@ describe('SettingsLayout', () => {
       'href',
       '/settings/ai-feedback',
     );
+    expect(within(nav).getByRole('link', { name: 'AI models & keys' })).toHaveAttribute(
+      'href',
+      '/settings/ai-models',
+    );
     expect(screen.getByText('Panel content')).toBeInTheDocument();
   });
 
