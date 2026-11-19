@@ -69,13 +69,12 @@ function formatKpiEvidenceValue(
 function getProviderBadgeText(provider: string): string {
   switch (provider) {
     case 'cloudflare':
-      return 'Cloudflare Workers AI';
     case 'gemini':
-      return 'Google Gemini';
+      return 'PMS AI';
     case 'deterministic':
-      return 'Rule-Based Engine';
+      return 'Verified PMS';
     default:
-      return 'PMS AI Engine';
+      return 'PMS AI';
   }
 }
 

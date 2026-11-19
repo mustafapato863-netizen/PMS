@@ -315,7 +315,8 @@ describe('Monthly Presentation Editable & AI-Assisted Action Plans', () => {
     await waitFor(() => {
       expect(within(indCard).getByText(/Unapproved AI Draft/i)).toBeInTheDocument();
     });
-    expect(within(indCard).getByText('Cloudflare AI')).toBeInTheDocument();
+    expect(within(indCard).getByText('PMS AI')).toBeInTheDocument();
+    expect(within(indCard).queryByText(/cloudflare|gemini/i)).not.toBeInTheDocument();
     expect(within(indCard).getByText(/AHT at 3.12 min vs 2.50 min target/i)).toBeInTheDocument();
     expect(onSaveIndividual).not.toHaveBeenCalled();
 

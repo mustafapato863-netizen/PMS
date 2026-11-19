@@ -342,7 +342,8 @@ describe('CorrectiveActionSuggestionCard Unit Tests', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Booking Conversion Coaching')).toBeInTheDocument();
-      expect(screen.getByText('Cloudflare Workers AI')).toBeInTheDocument();
+      expect(screen.getByTestId('provider-badge')).toHaveTextContent('PMS AI');
+      expect(screen.queryByText(/cloudflare|gemini/i)).not.toBeInTheDocument();
     });
 
     // Recommended steps

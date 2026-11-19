@@ -371,11 +371,9 @@ export function AiRecommendationBanner({
   if (!payload) return null;
 
   const providerLabel =
-    payload.provider_used === 'cloudflare'
-      ? 'Cloudflare AI'
-      : payload.provider_used === 'gemini'
-        ? 'Gemini Fallback'
-        : 'Evidence Check';
+    payload.provider_used === 'cloudflare' || payload.provider_used === 'gemini'
+      ? 'PMS AI'
+      : 'Evidence Check';
 
   const measuredFacts = (Array.isArray(payload.measured_facts) ? payload.measured_facts : [])
     .map((fact) => formatMeasuredFact(fact, payload.supporting_kpis))
