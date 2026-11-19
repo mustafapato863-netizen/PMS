@@ -63,3 +63,74 @@ def test_a_missing_setting_row_stays_off():
         assert read_ai_enabled(db) is False
     finally:
         db.close()
+
+def test_ai_switch_migration_repairs_legacy_database_without_losing_settings(monkeypatch):
+    """An upgraded database must support the current ProductSetting ORM and admin toggle."""
+    import importlib.util
+    from pathlib import Path
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import inspect
+
+    from models.models import ProductSetting
+
+    migration_file = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "5d3a9b1c7e20_add_product_setting_string_value.py"
+    )
+    spec = importlib.util.spec_from_file_location("ai_settings_value_migration", migration_file)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == "c2d3e4f5a6b7"
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    try:
+        with engine.begin() as connection:
+            # Original d1a8e4c6b720 schema, before value_str existed.
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE product_settings (
+                    key VARCHAR(80) PRIMARY KEY,
+                    enabled BOOLEAN NOT NULL DEFAULT 0,
+                    updated_at DATETIME,
+                    updated_by_user_id CHAR(32)
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO product_settings (key, enabled) VALUES ('ai_enabled', 0)"
+            )
+            assert "value_str" not in {
+                column["name"] for column in inspect(connection).get_columns("product_settings")
+            }
+            monkeypatch.setattr(
+                migration, "op", Operations(MigrationContext.configure(connection))
+            )
+            migration.upgrade()
+            # Re-running the revision on an already-upgraded schema is safe.
+            migration.upgrade()
+            assert "value_str" in {
+                column["name"] for column in inspect(connection).get_columns("product_settings")
+            }
+
+        # Audit writes are tested separately; this test uses only the minimal
+        # legacy product_settings table to reproduce the original failure.
+        monkeypatch.setattr(feature_gate.AuditService, "log_operation", lambda *_args, **_kw: None)
+        with sessionmaker(bind=engine)() as db:
+            assert read_ai_enabled(db) is False
+            assert feature_gate.set_ai_enabled(db, True, None) is True
+            assert read_ai_enabled(db) is True
+            row = db.query(ProductSetting).filter(ProductSetting.key == "ai_enabled").one()
+            row.value_str = "admin_only"
+            db.commit()
+            assert db.get(ProductSetting, "ai_enabled").value_str == "admin_only"
+    finally:
+        engine.dispose()
