@@ -1,14 +1,14 @@
-"""add value_str to product_settings and seed ai_access_tier
+"""seed ai_access_tier product setting (and ensure value_str column exists)
 
 Revision ID: d4e5f6a7b8c9
-Revises: c2d3e4f5a6b7
+Revises: 5d3a9b1c7e20
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 revision = "d4e5f6a7b8c9"
-down_revision = "c2d3e4f5a6b7"
+down_revision = "5d3a9b1c7e20"
 branch_labels = None
 depends_on = None
 
@@ -43,7 +43,3 @@ def downgrade():
         sa.text("DELETE FROM product_settings WHERE key = :k"),
         {"k": "ai_access_tier"},
     )
-    inspector = sa.inspect(bind)
-    columns = {col["name"] for col in inspector.get_columns("product_settings")}
-    if "value_str" in columns:
-        op.drop_column("product_settings", "value_str")
