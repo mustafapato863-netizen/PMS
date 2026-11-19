@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 from api.routers import ai_provider_config
 from config.database import Base, get_db
 from models.models import AiProviderConfig, AuditLog
-from services.ai import provider_config_store, provider_engine
+from services.ai import nemotron_analyzer, provider_config_store, provider_engine
 from services.ai.provider_probe import probe_provider
 from services.ai.secret_crypto import decrypt_secret, encrypt_secret, mask_secret
 
@@ -269,6 +269,95 @@ def test_cloudflare_does_not_retry_when_auto_failover_is_off():
             request, config, timeout=5.0
         )
     assert len(client.calls) == 1
+
+
+def test_gemini_retries_once_with_standby_key():
+    client = _RetryOnceHttpClient(
+        {
+            "candidates": [
+                {"content": {"parts": [{"text": "OK"}]}, "finishReason": "STOP"}
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 1,
+                "totalTokenCount": 2,
+            },
+        }
+    )
+    config = provider_engine.UnifiedProviderConfig(
+        gemini_api_key="primary-key",
+        gemini_standby_api_key="standby-key",
+        gemini_auto_failover_key=True,
+    )
+    request = provider_engine.ProviderRequest(
+        messages=[provider_engine.ProviderMessage(role="user", content="hello")],
+        max_tokens=8,
+    )
+
+    text, usage = provider_engine.GeminiProviderAdapter(http_client=client).execute(
+        request, config, timeout=5.0
+    )
+
+    assert text == "OK"
+    assert usage.total_tokens == 2
+    assert len(client.calls) == 2
+    assert client.calls[0]["x-goog-api-key"] == "primary-key"
+    assert client.calls[1]["x-goog-api-key"] == "standby-key"
+
+
+def test_nvidia_analyzer_retries_once_with_standby_key(monkeypatch):
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_runtime_config", lambda: None)
+    monkeypatch.setenv("NVIDIA_API_KEY", "primary-key")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "standby-key")
+    monkeypatch.delenv("PMS_AI_AUTO_FAILOVER_KEY", raising=False)
+
+    authorizations: list[str] = []
+
+    def fake_urlopen(request, timeout=None):
+        authorizations.append(dict(request.header_items())["Authorization"])
+        if len(authorizations) == 1:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                401,
+                "unauthorized",
+                None,
+                io.BytesIO(b'{"error":"invalid key"}'),
+            )
+        return _FakeHttpResponse(
+            {"choices": [{"message": {"content": '{"summary": "ok"}'}}]}
+        )
+
+    monkeypatch.setattr(nemotron_analyzer.urllib.request, "urlopen", fake_urlopen)
+
+    assert nemotron_analyzer._post_nvidia_chat_completions([{"role": "user", "content": "hi"}], max_tokens=10) == {
+        "summary": "ok"
+    }
+    assert authorizations == ["Bearer primary-key", "Bearer standby-key"]
+
+
+def test_nvidia_analyzer_does_not_retry_when_auto_failover_is_off(monkeypatch):
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_runtime_config", lambda: None)
+    monkeypatch.setenv("NVIDIA_API_KEY", "primary-key")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "standby-key")
+    monkeypatch.setenv("PMS_AI_AUTO_FAILOVER_KEY", "false")
+
+    calls: list[int] = []
+
+    def fake_urlopen(request, timeout=None):
+        calls.append(1)
+        raise urllib.error.HTTPError(
+            request.full_url,
+            403,
+            "forbidden",
+            None,
+            io.BytesIO(b'{"error":"invalid key"}'),
+        )
+
+    monkeypatch.setattr(nemotron_analyzer.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        nemotron_analyzer._post_nvidia_chat_completions([{"role": "user", "content": "hi"}], max_tokens=10)
+    assert len(calls) == 1
 
 
 # ---------------------------------------------------------------------------
