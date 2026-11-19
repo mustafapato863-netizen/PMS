@@ -106,6 +106,30 @@ class QueryOperationV2(BaseModel):
     include_ties: bool = True
 
 
+class QueryRankingsArgs(BaseModel):
+    """Structured arguments for the composable ``query_rankings`` tool.
+
+    One engine handles department/team/branch/employee rankings, arbitrary sort
+    order, N, region, grouping and thresholds. All fields are optional so the
+    deterministic fallback can fill only what it recognizes; the model-led
+    planner may emit the full contract.
+    """
+
+    entity: Literal["department", "team", "branch", "employee", "kpi"] = "department"
+    sort_order: Literal["desc", "asc"] = "desc"
+    limit: int = Field(default=10, ge=1, le=50)
+    group_by: Literal["none", "department", "team", "branch"] = "none"
+    per_group_limit: int = Field(default=5, ge=1, le=20)
+    region: str | None = None
+    department: str | None = None
+    team: str | None = None
+    branch: str | None = None
+    metric_id: str | None = None
+    period: str | None = None
+    score_threshold: float | None = None
+    threshold_operator: str | None = None
+
+
 class ValidatedQueryPlanV2(BaseModel):
     schema_version: Literal["pms-ai-query-v2"] = "pms-ai-query-v2"
     turn_kind: TurnKindV2 = "analytical"
@@ -188,6 +212,10 @@ class StructuredQueryPlan(BaseModel):
     model_led_tool_calls: list[dict] = Field(default_factory=list, max_length=2)
     model_led_direct_response: str | None = None
     model_led_clarification: dict | None = None
+    # Optional model-emitted composable ranking intent. Present only when the
+    # planner recognizes entity/grouping/order/region; otherwise the local
+    # deterministic parser fills these from the prompt and memory.
+    query_rankings_args: QueryRankingsArgs | None = None
 
 
 class TypedMetricEvidence(BaseModel):
@@ -576,7 +604,7 @@ class AiChatRequest(BaseModel):
     session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
     page_context: PageContextV1 | None = None
     capability_hint: Literal["auto", "page_help", "navigation", "performance_query", "proposal"] | None = "auto"
-    history: list[AiChatMessage] = Field(default_factory=list, max_length=12)
+    history: list[AiChatMessage] = Field(default_factory=list, max_length=100)
     provider_override: Literal["auto", "gemini", "deterministic"] | None = "auto"
     answer_detail: Literal["auto", "brief", "details"] | None = "auto"
     conversation_id: str | None = Field(default=None, max_length=100)
@@ -1358,7 +1386,7 @@ class AiDiagnosticsPayload(BaseModel):
     active_concurrent_requests: int = 0
     daily_user_request_limit: int = 0
     daily_user_token_limit: int = 0
-    max_request_input_tokens: int = 8192
+    max_request_input_tokens: int = 262144
     router_timeout_seconds: float = 10.0
     synthesis_timeout_seconds: float = 15.0
     rejected_budget_requests: int = 0

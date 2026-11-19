@@ -64,8 +64,8 @@ from utils.regions import ksa_region_hint_from_prompt
 AiProviderUnavailableError = ProviderUnavailableError
 
 
-def build_pass1_identity_context(scope: dict[str, Any] | None, *, max_chars: int = 2000) -> str:
-    """Build compact XML identity + memory context for Pass 1 (<= 500 tokens)."""
+def build_pass1_identity_context(scope: dict[str, Any] | None, *, max_chars: int = 8000) -> str:
+    """Build compact XML identity + memory context for Pass 1 (256k budget)."""
     if not isinstance(scope, dict):
         return ""
     parts: list[str] = []
@@ -84,7 +84,7 @@ def build_pass1_identity_context(scope: dict[str, Any] | None, *, max_chars: int
 
     memory_text = str(scope.get("user_memory_text") or "").strip()
     if memory_text:
-        parts.append(memory_text[:1180])
+        parts.append(memory_text[:5800])
 
     combined = "\n".join(parts)
     if len(combined) > max_chars:
@@ -3791,9 +3791,9 @@ class HybridQueryRouter:
 
             recent_dialogue = []
             if history:
-                for msg in history[-4:]:
+                for msg in history[-40:]:
                     r_lbl = "User" if getattr(msg, "role", "") == "user" else "Assistant"
-                    c_snip = (getattr(msg, "content", "") or "")[:150].replace("\n", " ").strip()
+                    c_snip = (getattr(msg, "content", "") or "")[:400].replace("\n", " ").strip()
                     if c_snip:
                         recent_dialogue.append(f"{r_lbl}: {c_snip}")
             dialogue_str = ("\nRecent Dialogue:\n" + "\n".join(recent_dialogue)) if recent_dialogue else ""

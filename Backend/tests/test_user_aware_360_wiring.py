@@ -298,12 +298,12 @@ def test_pass1_identity_context_injects_passport_and_memory_within_cap():
     assert "<CALLER_PASSPORT" in ctx
     assert 'employee_code="EMP-360"' in ctx
     assert "<VERIFIED_USER_MEMORY>" in ctx
-    assert len(ctx) <= 2000
+    assert len(ctx) <= 8000
 
-    # Oversized memory is strictly capped at <= 2000 chars (~500 tokens)
-    huge_scope = {**scope, "user_memory_text": "X" * 5000}
+    # Oversized memory is bounded by the 256k-era 8000-char identity block.
+    huge_scope = {**scope, "user_memory_text": "X" * 12000}
     capped = build_pass1_identity_context(huge_scope)
-    assert len(capped) <= 2000
+    assert len(capped) <= 8000
 
 
 def test_manager_360_directory_and_team_scope_isolation(monkeypatch):

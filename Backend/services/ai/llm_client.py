@@ -176,13 +176,20 @@ def exploration_timeout_seconds() -> float:
 
 
 def context_token_limit() -> int:
-    """Prompt budget used to refuse oversized evidence instead of truncating it."""
-    raw = os.environ.get("PMS_AI_CONTEXT_TOKENS", "8192").strip()
+    """Prompt budget used to refuse oversized evidence instead of truncating it.
+
+    Default is 256k (262,144 tokens) so long multi-department evidence chains
+    and cross-region QA can be answered without truncation. The environment
+    variable ``PMS_AI_CONTEXT_TOKENS`` overrides the default; the hard cap is
+    also 256k so a misconfigured value cannot expand the prompt budget beyond
+    what the provider window can safely hold.
+    """
+    raw = os.environ.get("PMS_AI_CONTEXT_TOKENS", "262144").strip()
     try:
         value = int(raw)
     except ValueError:
-        value = 8192
-    return max(512, min(value, 32768))
+        value = 262144
+    return max(512, min(value, 262144))
 
 
 def estimate_tokens(text: str) -> int:

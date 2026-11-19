@@ -172,11 +172,11 @@ def test_timeouts_are_bounded(clean_env):
 
 
 def test_context_limit_and_token_estimate(clean_env):
-    assert context_token_limit() == 8192
+    assert context_token_limit() == 262144
     clean_env.setenv("PMS_AI_CONTEXT_TOKENS", "1")
     assert context_token_limit() == 512
     clean_env.setenv("PMS_AI_CONTEXT_TOKENS", "999999")
-    assert context_token_limit() == 32768
+    assert context_token_limit() == 262144
     assert estimate_tokens("") == 0
     assert estimate_tokens("abcd") == 1
     assert estimate_tokens("abcde") == 2

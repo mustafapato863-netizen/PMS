@@ -20,6 +20,7 @@ from models.ai_schemas import (
     AiSpotlightMetricTile,
     AiTrendPoint,
     DeepLinkCta,
+    QueryRankingsArgs,
     SessionFilterContext,
     SourceCitationPill,
     StructuredVisualCard,
@@ -45,6 +46,31 @@ from utils.regions import first_region
 from utils.report_scope import filter_records_by_scope, selection_team_keys, user_can_access_team
 
 logger = logging.getLogger(__name__)
+
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _period_key_to_month_year(period_key: str) -> tuple[str | None, int | None]:
+    match = re.match(r"^(\d{4})-(\d{2})$", str(period_key or "").strip())
+    if not match:
+        return None, None
+    year, month_num = int(match.group(1)), int(match.group(2))
+    return (_MONTH_NAMES[month_num - 1] if 1 <= month_num <= 12 else None), year
+
+
+def is_excluded_by_threshold(threshold: float | None, operator: str | None, value: float | None) -> bool:
+    """True when a row fails the requested score filter (unknown scores pass)."""
+    if threshold is None or value is None:
+        return False
+    op = str(operator or "").strip().casefold()
+    if op in ("<", "<=", "under", "below", "less than", "at most"):
+        return value >= threshold
+    if op in (">", ">=", "over", "above", "more than", "exceed", "exceeds", "exceeding", "at least"):
+        return value <= threshold
+    return False
 
 
 def _read_only_tool(fn):
@@ -298,6 +324,31 @@ class DeterministicToolRegistry:
     """Executes read-only domain tools and builds zero-hallucination StructuredVisualCards."""
 
     AUTHORIZED_MODEL_LED_TOOLS: dict[str, dict[str, Any]] = {
+        "query_rankings": {
+            "type": "object",
+            "description": (
+                "Composable ranking engine. Use for best/worst/top/bottom/arrange questions "
+                "about departments, teams, branches or employees, with region, grouping, "
+                "counts, sort order and score thresholds."
+            ),
+            "properties": {
+                "entity": {"type": "string", "enum": ["department", "team", "branch", "employee"]},
+                "sort_order": {"type": "string", "enum": ["desc", "asc"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "group_by": {"type": "string", "enum": ["none", "department", "team", "branch"]},
+                "per_group_limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "region": {"type": "string", "enum": ["UAE", "EGY", "KSA"]},
+                "department": {"type": "string"},
+                "team": {"type": "string"},
+                "branch": {"type": "string"},
+                "metric_id": {"type": "string"},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"},
+                "score_threshold": {"type": "number"},
+                "threshold_operator": {"type": "string", "enum": ["<", "<=", ">", ">="]},
+            },
+            "required": ["entity"],
+            "additionalProperties": False,
+        },
         "read_employee_metric": {
             "type": "object",
             "description": "Read a specific KPI metric or score for an employee in a given period.",
@@ -505,6 +556,22 @@ class DeterministicToolRegistry:
             raise PermissionError(f"Team access restriction: user cannot access team '{req_team}'.")
 
         # Dispatch
+        if tool_name == "query_rankings":
+            return self.execute_query_rankings(
+                entity=tool_arguments.get("entity") or "department",
+                sort_order=tool_arguments.get("sort_order") or "desc",
+                limit=int(tool_arguments.get("limit") or 10),
+                group_by=tool_arguments.get("group_by") or "none",
+                per_group_limit=int(tool_arguments.get("per_group_limit") or 5),
+                region=tool_arguments.get("region"),
+                department=tool_arguments.get("department"),
+                team=tool_arguments.get("team"),
+                branch=tool_arguments.get("branch"),
+                metric_id=tool_arguments.get("metric_id") or tool_arguments.get("metric"),
+                period=period_str or None,
+                score_threshold=tool_arguments.get("score_threshold"),
+                threshold_operator=tool_arguments.get("threshold_operator"),
+            )
         if tool_name == "read_employee_metric":
             emp_q = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
             return self.execute_agent_spotlight_and_trend(
@@ -887,7 +954,8 @@ class DeterministicToolRegistry:
             bars: list[AiBarItem] = []
             sorted_teams = sorted(
                 scoped_summaries,
-                key=lambda t: (t.current_score if t.current_score is not None else 999.0),
+                key=lambda t: (t.current_score if t.current_score is not None else -1.0),
+                reverse=True,
             )
             for t in sorted_teams[:8]:
                 t_disp = _display_team_name(t.team)
@@ -914,7 +982,7 @@ class DeterministicToolRegistry:
                 StructuredVisualCard(
                     card_type="horizontal_bar",
                     title=f"Team Performance Breakdown · {period_label}",
-                    subtitle=f"Scope: {scope_label} ({branch_label}) — Ordered from lowest score to highest",
+                    subtitle=f"Scope: {scope_label} ({branch_label}) — Ordered from highest score to lowest",
                     bars=bars,
                 )
             )
@@ -1113,7 +1181,11 @@ class DeterministicToolRegistry:
                     "total": t.total_employees,
                     "main_cause": t.main_cause,
                 }
-                for t in scoped_summaries[:6]
+                for t in sorted(
+                    scoped_summaries,
+                    key=lambda t: (t.current_score if t.current_score is not None else -1.0),
+                    reverse=True,
+                )[:6]
             ],
         }
 
@@ -2055,43 +2127,27 @@ class DeterministicToolRegistry:
             direct_rank_fallback = True
         cards: list[StructuredVisualCard] = []
         top_negative_rows: list[dict[str, Any]] = []
+        top_positive_rows: list[dict[str, Any]] = []
         pareto_summary: dict[str, Any] = {}
+        show_best = str(direction).strip().casefold() == "best"
 
         if pca and pca.rows:
             neg_rows = [r for r in pca.rows if r.classification in ("negative", "affected")]
             if not neg_rows:
                 neg_rows = list(pca.rows)
-            neg_rows.sort(key=lambda r: (r.weighted_impact if r.weighted_impact is not None else 0.0, r.performance_score or 100.0))
 
-            total_neg_impact = sum(abs(float(r.weighted_impact or 0.0)) for r in neg_rows)
-            top3_impact = sum(abs(float(r.weighted_impact or 0.0)) for r in neg_rows[:3])
-            pareto_share_pct = round((top3_impact / total_neg_impact) * 100.0, 0) if total_neg_impact > 0 else 0.0
-
-            entity_items: list[AiEntityListItem] = []
+            # Always build the root-cause (negative contributor) rows for the
+            # digest. Downstream headline synthesis in providers.py relies on
+            # ``top_contributors`` even for "best"/"why did it drop" answers,
+            # so this must not be gated on ``show_best``.
+            neg_rows.sort(
+                key=lambda r: (
+                    r.weighted_impact if r.weighted_impact is not None else 0.0,
+                    r.performance_score or 100.0,
+                )
+            )
             for r in neg_rows[: max(1, min(limit, 10))]:
                 clean_kpi = disambiguate_call_center_kpi_label(r.team, r.kpi_key, r.kpi_label)
-                score_txt = f"Score {r.performance_score:.1f}%" if r.performance_score is not None else ""
-                ach_txt = f"KPI Ach {r.achievement_percent:.1f}%" if r.achievement_percent is not None else ""
-                impact_txt = f"Impact {r.weighted_impact:+.2f} pts" if r.weighted_impact is not None else ""
-                sub_parts = [p for p in (r.team, clean_kpi, ach_txt, impact_txt) if p]
-                sev = "critical" if (r.performance_score or 100.0) < 82 or r.severity == "critical" else "warning"
-
-                entity_items.append(
-                    AiEntityListItem(
-                        id=r.employee_id,
-                        title=f"{r.employee_name} ({r.employee_id})",
-                        subtitle=" · ".join(sub_parts),
-                        badge_text=score_txt or r.severity.capitalize(),
-                        severity=sev,  # type: ignore[arg-type]
-                        metric_value=impact_txt or score_txt,
-                        route_link=build_verified_deep_link(
-                            f"/employee/{r.employee_id}",
-                            month=res_month,
-                            year=res_year,
-                            branch=resolved["branch"],
-                        ),
-                    )
-                )
                 top_negative_rows.append(
                     {
                         "employee_id": r.employee_id,
@@ -2104,77 +2160,206 @@ class DeterministicToolRegistry:
                     }
                 )
 
-            kpi_focus_title = disambiguate_call_center_kpi_label(resolved["team"], pca.kpi_key, pca.kpi_label)
-            cards.append(
-                StructuredVisualCard(
-                    card_type="entity_list",
-                    title=f"Root-Cause Employee Contributors · {kpi_focus_title}",
-                    subtitle=f"{pca.negative_contributors} of {pca.total_employees} employees below target in {period_label} ({branch_label})",
-                    items=entity_items,
-                )
-            )
+            if show_best:
+                # "Best" direction: rank employees by performance score, highest first.
+                pos_rows = [r for r in pca.rows if r.performance_score is not None]
+                pos_rows.sort(key=lambda r: (r.performance_score or 0.0), reverse=True)
 
-            pareto_summary = {
-                "total_negative_impact_pts": round(total_neg_impact, 2),
-                "top3_negative_impact_pts": round(top3_impact, 2),
-                "top3_pareto_share_pct": pareto_share_pct,
-            }
+                total_pos_impact = sum(float(r.weighted_impact or 0.0) for r in pos_rows)
+                top3_pos_impact = sum(float(r.weighted_impact or 0.0) for r in pos_rows[:3])
 
-            if top_negative_rows:
-                top3_names = ", ".join(r["employee_name"] for r in top_negative_rows[:3])
-                low_score_agents = [r for r in top_negative_rows if (r.get("performance_score") or 100.0) < 85.0]
-                people_decisions: list[AiDecisionItem] = [
-                    AiDecisionItem(
-                        id="dec-people-pareto",
-                        priority="immediate",
-                        priority_label=f"Pareto 80/20 Focus · {pareto_share_pct:.0f}% of Loss",
-                        title=f"Target Top 3 Contributors ({top3_names}) on {kpi_focus_title}",
-                        rationale=(
-                            f"The top 3 agents account for {pareto_share_pct:.0f}% (-{top3_impact:.2f} pts out of -{total_neg_impact:.2f} pts) "
-                            f"of the team's weighted loss on {kpi_focus_title}."
-                        ),
-                        expected_impact=(
-                            f"What-If ROI: Coaching only these 3 agents to target recovers +{top3_impact:.2f} pts "
-                            f"on the {scope_label} team score immediately."
-                        ),
-                        target_label=top3_names,
-                        route_link=build_verified_deep_link(
-                            f"/employee/{top_negative_rows[0]['employee_id']}",
-                            month=res_month,
-                            year=res_year,
-                        ),
-                        cta_label="Inspect Top Contributor →",
-                    ),
-                    AiDecisionItem(
-                        id="dec-people-coaching-tier",
-                        priority="coaching",
-                        priority_label="14-Day Coaching Plan",
-                        title=(
-                            f"Launch Call & Booking Qualification Review for {len(low_score_agents) or len(top_negative_rows[:3])} Flagged Agents"
-                        ),
-                        rationale=(
-                            f"{pca.negative_contributors} of {pca.total_employees} agents missed target on {kpi_focus_title}. "
-                            "Audit sample calls and appointment confirmation scripts to close execution gaps."
-                        ),
-                        expected_impact=f"Full team recovery to target adds +{total_neg_impact:.2f} pts across {scope_label}.",
-                        target_label=f"{pca.negative_contributors} Below-Target Agents in {scope_label}",
-                        route_link=build_verified_deep_link(
-                            "/planning",
-                            month=res_month,
-                            year=res_year,
-                            team=resolved["team"],
-                        ),
-                        cta_label="Open Coaching & Planning →",
-                    ),
-                ]
+                entity_items: list[AiEntityListItem] = []
+                for r in pos_rows[: max(1, min(limit, 10))]:
+                    clean_kpi = disambiguate_call_center_kpi_label(r.team, r.kpi_key, r.kpi_label)
+                    score_txt = f"Score {r.performance_score:.1f}%" if r.performance_score is not None else ""
+                    ach_txt = f"KPI Ach {r.achievement_percent:.1f}%" if r.achievement_percent is not None else ""
+                    impact_txt = f"Impact {r.weighted_impact:+.2f} pts" if r.weighted_impact is not None else ""
+                    sub_parts = [p for p in (r.team, clean_kpi, ach_txt, impact_txt) if p]
+                    sev = "good" if (r.performance_score or 0.0) >= 85 else ("warning" if (r.performance_score or 0.0) >= 70 else "critical")
+
+                    entity_items.append(
+                        AiEntityListItem(
+                            id=r.employee_id,
+                            title=f"{r.employee_name} ({r.employee_id})",
+                            subtitle=" · ".join(sub_parts),
+                            badge_text=score_txt,
+                            severity=sev,  # type: ignore[arg-type]
+                            metric_value=score_txt,
+                            route_link=build_verified_deep_link(
+                                f"/employee/{r.employee_id}",
+                                month=res_month,
+                                year=res_year,
+                                branch=resolved["branch"],
+                            ),
+                        )
+                    )
+                    top_positive_rows.append(
+                        {
+                            "employee_id": r.employee_id,
+                            "employee_name": r.employee_name,
+                            "team": r.team,
+                            "kpi": clean_kpi,
+                            "performance_score": r.performance_score,
+                            "achievement_percent": r.achievement_percent,
+                            "weighted_impact": r.weighted_impact,
+                        }
+                    )
+
+                kpi_focus_title = disambiguate_call_center_kpi_label(resolved["team"], pca.kpi_key, pca.kpi_label)
                 cards.append(
                     StructuredVisualCard(
-                        card_type="decision_playbook",
-                        title=f"People Coaching & What-If Playbook ({scope_label})",
-                        subtitle="Pareto impact concentration and recommended supervisory interventions",
-                        decisions=people_decisions,
+                        card_type="entity_list",
+                        title=f"Top Performing Employees · {kpi_focus_title}",
+                        subtitle=f"{min(limit, len(pos_rows))} of {pca.total_employees} employees ranked by score in {period_label} ({branch_label})",
+                        items=entity_items,
                     )
                 )
+
+                pareto_summary = {
+                    "total_positive_impact_pts": round(total_pos_impact, 2),
+                    "top3_positive_impact_pts": round(top3_pos_impact, 2),
+                }
+
+                if top_positive_rows:
+                    top3_names = ", ".join(r["employee_name"] for r in top_positive_rows[:3])
+                    people_decisions: list[AiDecisionItem] = [
+                        AiDecisionItem(
+                            id="dec-people-recognize",
+                            priority="coaching",
+                            priority_label="Recognition & Retention",
+                            title=f"Recognize Top 3 Performers ({top3_names}) on {kpi_focus_title}",
+                            rationale=(
+                                f"The top 3 agents lead the team on {kpi_focus_title} with scores "
+                                + ", ".join(
+                                    f'{r["employee_name"]} {r["performance_score"]:.1f}%'
+                                    for r in top_positive_rows[:3]
+                                )
+                                + ". "
+                                f"Protect these high performers and replicate their practices."
+                            ),
+                            expected_impact=f"Recognizing top performers supports retention across {scope_label}.",
+                            target_label=top3_names,
+                            route_link=build_verified_deep_link(
+                                f"/employee/{top_positive_rows[0]['employee_id']}",
+                                month=res_month,
+                                year=res_year,
+                            ),
+                            cta_label="Inspect Top Performer →",
+                        ),
+                    ]
+                    cards.append(
+                        StructuredVisualCard(
+                            card_type="decision_playbook",
+                            title=f"People Recognition Playbook ({scope_label})",
+                            subtitle="Top performers and recommended recognition actions",
+                            decisions=people_decisions,
+                        )
+                    )
+            else:
+                # "Worst" direction: rank negative contributors by impact, lowest first.
+                neg_rows.sort(key=lambda r: (r.weighted_impact if r.weighted_impact is not None else 0.0, r.performance_score or 100.0))
+
+                total_neg_impact = sum(abs(float(r.weighted_impact or 0.0)) for r in neg_rows)
+                top3_impact = sum(abs(float(r.weighted_impact or 0.0)) for r in neg_rows[:3])
+                pareto_share_pct = round((top3_impact / total_neg_impact) * 100.0, 0) if total_neg_impact > 0 else 0.0
+
+                entity_items: list[AiEntityListItem] = []
+                for r in neg_rows[: max(1, min(limit, 10))]:
+                    clean_kpi = disambiguate_call_center_kpi_label(r.team, r.kpi_key, r.kpi_label)
+                    score_txt = f"Score {r.performance_score:.1f}%" if r.performance_score is not None else ""
+                    ach_txt = f"KPI Ach {r.achievement_percent:.1f}%" if r.achievement_percent is not None else ""
+                    impact_txt = f"Impact {r.weighted_impact:+.2f} pts" if r.weighted_impact is not None else ""
+                    sub_parts = [p for p in (r.team, clean_kpi, ach_txt, impact_txt) if p]
+                    sev = "critical" if (r.performance_score or 100.0) < 82 or r.severity == "critical" else "warning"
+
+                    entity_items.append(
+                        AiEntityListItem(
+                            id=r.employee_id,
+                            title=f"{r.employee_name} ({r.employee_id})",
+                            subtitle=" · ".join(sub_parts),
+                            badge_text=score_txt or r.severity.capitalize(),
+                            severity=sev,  # type: ignore[arg-type]
+                            metric_value=impact_txt or score_txt,
+                            route_link=build_verified_deep_link(
+                                f"/employee/{r.employee_id}",
+                                month=res_month,
+                                year=res_year,
+                                branch=resolved["branch"],
+                            ),
+                        )
+                    )
+
+                kpi_focus_title = disambiguate_call_center_kpi_label(resolved["team"], pca.kpi_key, pca.kpi_label)
+                cards.append(
+                    StructuredVisualCard(
+                        card_type="entity_list",
+                        title=f"Root-Cause Employee Contributors · {kpi_focus_title}",
+                        subtitle=f"{pca.negative_contributors} of {pca.total_employees} employees below target in {period_label} ({branch_label})",
+                        items=entity_items,
+                    )
+                )
+
+                pareto_summary = {
+                    "total_negative_impact_pts": round(total_neg_impact, 2),
+                    "top3_negative_impact_pts": round(top3_impact, 2),
+                    "top3_pareto_share_pct": pareto_share_pct,
+                }
+
+                if top_negative_rows:
+                    top3_names = ", ".join(r["employee_name"] for r in top_negative_rows[:3])
+                    low_score_agents = [r for r in top_negative_rows if (r.get("performance_score") or 100.0) < 85.0]
+                    people_decisions: list[AiDecisionItem] = [
+                        AiDecisionItem(
+                            id="dec-people-pareto",
+                            priority="immediate",
+                            priority_label=f"Pareto 80/20 Focus · {pareto_share_pct:.0f}% of Loss",
+                            title=f"Target Top 3 Contributors ({top3_names}) on {kpi_focus_title}",
+                            rationale=(
+                                f"The top 3 agents account for {pareto_share_pct:.0f}% (-{top3_impact:.2f} pts out of -{total_neg_impact:.2f} pts) "
+                                f"of the team's weighted loss on {kpi_focus_title}."
+                            ),
+                            expected_impact=(
+                                f"What-If ROI: Coaching only these 3 agents to target recovers +{top3_impact:.2f} pts "
+                                f"on the {scope_label} team score immediately."
+                            ),
+                            target_label=top3_names,
+                            route_link=build_verified_deep_link(
+                                f"/employee/{top_negative_rows[0]['employee_id']}",
+                                month=res_month,
+                                year=res_year,
+                            ),
+                            cta_label="Inspect Top Contributor →",
+                        ),
+                        AiDecisionItem(
+                            id="dec-people-coaching-tier",
+                            priority="coaching",
+                            priority_label="14-Day Coaching Plan",
+                            title=(
+                                f"Launch Call & Booking Qualification Review for {len(low_score_agents) or len(top_negative_rows[:3])} Flagged Agents"
+                            ),
+                            rationale=(
+                                f"{pca.negative_contributors} of {pca.total_employees} agents missed target on {kpi_focus_title}. "
+                                "Audit sample calls and appointment confirmation scripts to close execution gaps."
+                            ),
+                            expected_impact=f"Full team recovery to target adds +{total_neg_impact:.2f} pts across {scope_label}.",
+                            target_label=f"{pca.negative_contributors} Below-Target Agents in {scope_label}",
+                            route_link=build_verified_deep_link(
+                                "/planning",
+                                month=res_month,
+                                year=res_year,
+                                team=resolved["team"],
+                            ),
+                            cta_label="Open Coaching & Planning →",
+                        ),
+                    ]
+                    cards.append(
+                        StructuredVisualCard(
+                            card_type="decision_playbook",
+                            title=f"People Coaching & What-If Playbook ({scope_label})",
+                            subtitle="Pareto impact concentration and recommended supervisory interventions",
+                            decisions=people_decisions,
+                        )
+                    )
 
         citations = [
             SourceCitationPill(label=f"Period · {period_label}", category="period"),
@@ -2201,11 +2386,12 @@ class DeterministicToolRegistry:
                 icon_key="insights",
             )
         ]
-        if top_negative_rows:
-            first_emp_id = top_negative_rows[0]["employee_id"]
+        ranked_rows = top_positive_rows if show_best else top_negative_rows
+        if ranked_rows:
+            first_emp_id = ranked_rows[0]["employee_id"]
             deep_links.append(
                 DeepLinkCta(
-                    label=f"Open {top_negative_rows[0]['employee_name']} Profile →",
+                    label=f"Open {ranked_rows[0]['employee_name']} Profile →",
                     route=build_verified_deep_link(f"/employee/{first_emp_id}", month=res_month, year=res_year),
                     icon_key="employee",
                 )
@@ -2217,10 +2403,30 @@ class DeterministicToolRegistry:
             "branch": branch_label,
             "kpi_analyzed": disambiguate_call_center_kpi_label(resolved["team"], pca.kpi_key, pca.kpi_label) if pca else kpi,
             "total_employees": pca.total_employees if pca else total_employees,
-            "negative_contributors": pca.negative_contributors if pca else 0,
+            "direction": direction,
+            # ``top_contributors`` keeps its original root-cause (worst-first,
+            # negative impact) meaning because downstream headline synthesis in
+            # providers.py relies on it. Best-performer results are exposed
+            # separately so "top N" answers never flip a root-cause headline.
             "top_contributors": top_negative_rows,
+            "negative_contributors": pca.negative_contributors if pca else 0,
             "pareto_summary": pareto_summary,
         }
+        if show_best:
+            digest["top_performers"] = top_positive_rows
+
+        # Per-department top-N breakdown: when no single team is filtered and the
+        # user asks for "best" employees, return the top N within each department.
+        if show_best and pca and pca.rows and not resolved["team"]:
+            by_department: dict[str, list[dict[str, Any]]] = {}
+            for row in top_positive_rows:
+                dept = row.get("team") or resolved["team"] or "All Departments"
+                by_department.setdefault(dept, []).append(row)
+            # Keep only top N per department (limit is per-department when grouped).
+            by_department = {
+                dept: rows[: max(1, min(limit, 10))] for dept, rows in by_department.items()
+            }
+            digest["by_department"] = by_department
 
         typed_evidence: list[TypedMetricEvidence] = []
         if pca and pca.rows:
@@ -2543,6 +2749,237 @@ class DeterministicToolRegistry:
             typed_evidence=typed_evidence,
             resolved_month=res_month,
             resolved_year=res_year,
+        )
+
+    @_read_only_tool
+    def execute_query_rankings(
+        self,
+        *,
+        entity: str = "department",
+        sort_order: str = "desc",
+        limit: int = 10,
+        group_by: str = "none",
+        per_group_limit: int = 5,
+        region: str | None = None,
+        department: str | None = None,
+        team: str | None = None,
+        branch: str | None = None,
+        metric_id: str | None = None,
+        period: str | None = None,
+        score_threshold: float | None = None,
+        threshold_operator: str | None = None,
+    ) -> ToolExecutionResult:
+        """One composable engine for entity/sort/N/region/grouping/threshold rankings.
+
+        All reads go through the RBAC-scoped context. "Department" is resolved
+        from the record's function (falling back to its team), so a scoped
+        manager can only ever see the departments their role authorizes.
+        """
+        spec = QueryRankingsArgs(
+            entity=entity,  # type: ignore[arg-type]
+            sort_order=sort_order,  # type: ignore[arg-type]
+            limit=max(1, min(int(limit), 50)),
+            group_by=group_by,  # type: ignore[arg-type]
+            per_group_limit=max(1, min(int(per_group_limit), 20)),
+            region=region,
+            department=department,
+            team=team,
+            branch=branch,
+            metric_id=metric_id,
+            period=period,
+            score_threshold=score_threshold,
+            threshold_operator=threshold_operator,
+        )
+        reverse = spec.sort_order == "desc"
+        month, year = _period_key_to_month_year(spec.period) if spec.period else (None, None)
+        resolved = self.ctx.resolve_filters(
+            team=spec.team or spec.department,
+            branch=spec.branch,
+            month=month,
+            year=year,
+        )
+        scope_label = spec.region or spec.department or spec.team or resolved["function"] or "All authorized departments"
+        branch_label = (spec.branch or resolved["branch"] or "all").capitalize()
+        period_label = f"{resolved['month']} {resolved['year']}" if resolved["month"] and resolved["year"] else "Latest Period"
+
+        cards: list[StructuredVisualCard] = []
+        rows: list[dict[str, Any]] = []
+        groups: dict[str, list[dict[str, Any]]] = {}
+        citations = [
+            SourceCitationPill(label=f"Scope · {scope_label}", category="scope"),
+            SourceCitationPill(label=f"Period · {period_label}", category="period"),
+            SourceCitationPill(label=f"Order · {'High → Low' if reverse else 'Low → High'}", category="metric"),
+        ]
+
+        if spec.entity == "employee":
+            people = self.execute_people_contribution_and_rankings(
+                team=spec.team or spec.department,
+                branch=spec.branch,
+                month=month,
+                year=year,
+                kpi=spec.metric_id,
+                limit=spec.limit,
+                direction="best" if reverse else "worst",
+            )
+            people_digest = people.digest
+            source_rows = list(people_digest.get("top_performers") or people_digest.get("top_contributors") or [])
+            for r in source_rows:
+                score = r.get("performance_score")
+                score_val = float(score) if score is not None else None
+                if is_excluded_by_threshold(spec.score_threshold, spec.threshold_operator, score_val):
+                    continue
+                rows.append({
+                    "id": r.get("employee_id"),
+                    "name": r.get("employee_name"),
+                    "team": r.get("team"),
+                    "score": score_val,
+                    "weighted_impact": r.get("weighted_impact"),
+                    "kpi": r.get("kpi"),
+                    "route": build_verified_deep_link(
+                        f"/employee/{r.get('employee_id')}", month=resolved["month"], year=resolved["year"]
+                    ),
+                })
+            # Re-sort by score for the requested order (source rows may be impact-ranked).
+            rows.sort(key=lambda r: (r.get("score") if r.get("score") is not None else -1.0), reverse=reverse)
+
+            if spec.group_by != "none":
+                for row in rows:
+                    key = (
+                        row.get("team")
+                        or resolved["team"]
+                        or resolved["function"]
+                        or "All Departments"
+                    )
+                    groups.setdefault(str(key), []).append(row)
+                groups = {k: v[: spec.per_group_limit] for k, v in groups.items()}
+                for gname, grows in list(groups.items())[:6]:
+                    cards.append(
+                        StructuredVisualCard(
+                            card_type="entity_list",
+                            title=f"{'Top' if reverse else 'Bottom'} {len(grows)} · {gname}",
+                            subtitle=f"{spec.entity.replace('_', ' ').title()} ranking in {gname} · {period_label}",
+                            items=[
+                                AiEntityListItem(
+                                    id=str(r.get("id") or ""),
+                                    title=str(r.get("name") or "Unknown"),
+                                    subtitle=f"Score {r['score']:.1f}%" if r.get("score") is not None else "Score unavailable",
+                                    badge_text=f"{r['score']:.1f}%" if r.get("score") is not None else None,
+                                    route_link=r.get("route"),
+                                )
+                                for r in grows
+                            ],
+                        )
+                    )
+            else:
+                rows = rows[: spec.limit]
+                cards.append(
+                    StructuredVisualCard(
+                        card_type="entity_list",
+                        title=f"{'Top' if reverse else 'Bottom'} {len(rows)} {spec.entity.replace('_', ' ').title()}s",
+                        subtitle=f"Ranked {'high → low' if reverse else 'low → high'} · {period_label} ({branch_label})",
+                        items=[
+                            AiEntityListItem(
+                                id=str(r.get("id") or ""),
+                                title=str(r.get("name") or "Unknown"),
+                                subtitle=(f"· {r.get('team')}" if r.get("team") else ""),
+                                badge_text=f"{r['score']:.1f}%" if r.get("score") is not None else None,
+                                route_link=r.get("route"),
+                            )
+                            for r in rows
+                        ],
+                    )
+                )
+        else:
+            # Department / team / branch: aggregate authoritative scores from
+            # RBAC-scoped records. "Department" = record function (or team).
+            buckets: dict[str, list[float]] = {}
+            for record in self.ctx.get_scoped_records():
+                rec_region = str(first_region(getattr(record, "region", None)) or "")
+                if spec.region and rec_region.casefold() != spec.region.casefold():
+                    continue
+                if resolved["month"] and str(getattr(record, "month", "") or "").casefold() != str(resolved["month"]).casefold():
+                    continue
+                if resolved["year"] and int(getattr(record, "year", 0) or 0) != int(resolved["year"]):
+                    continue
+                evaluation = getattr(record, "evaluation", None)
+                score = getattr(evaluation, "score", None) if evaluation is not None else None
+                if score is None:
+                    score = getattr(record, "score", None)
+                if score is None:
+                    continue
+                if spec.entity == "branch":
+                    key = str(getattr(record, "branch", None) or branch_label)
+                elif spec.entity == "team":
+                    key = str(getattr(record, "team", None) or "Unknown")
+                else:
+                    key = str(getattr(record, "function", None) or getattr(record, "team", None) or "Unknown")
+                buckets.setdefault(key, []).append(float(score))
+
+            for key, scores in buckets.items():
+                avg = min(100.0, round(sum(scores) / len(scores), 1))
+                if is_excluded_by_threshold(spec.score_threshold, spec.threshold_operator, avg):
+                    continue
+                rows.append({"id": key, "name": key, "score": avg, "total": len(scores)})
+            rows.sort(key=lambda r: r["score"], reverse=reverse)
+
+            if spec.group_by == "branch":
+                for record in self.ctx.get_scoped_records():
+                    b = str(getattr(record, "branch", None) or "all")
+                    key = str(getattr(record, "team", None) or getattr(record, "function", None) or "")
+                    bucket = groups.setdefault(b, [])
+                    for row in rows:
+                        if row.get("name") == key and row not in bucket:
+                            bucket.append(row)
+                groups = {k: v[: spec.per_group_limit] for k, v in groups.items() if v}
+
+            visible = rows[: spec.limit]
+            cards.append(
+                StructuredVisualCard(
+                    card_type="horizontal_bar",
+                    title=f"{'Best' if reverse else 'Lowest'} {spec.entity.replace('_', ' ').title()}s · {period_label}",
+                    subtitle=f"Scope: {scope_label} ({branch_label}) — ordered {'high → low' if reverse else 'low → high'}",
+                    bars=[
+                        AiBarItem(
+                            label=str(r["name"]),
+                            value=float(r["score"]),
+                            display_value=f"{r['score']:.1f}%",
+                            target_value=100.0,
+                            severity="good" if r["score"] >= 85 else ("warning" if r["score"] >= 70 else "critical"),
+                        )
+                        for r in visible
+                    ],
+                )
+            )
+            rows = visible
+
+        digest = {
+            "query_rankings": {
+                "entity": spec.entity,
+                "sort_order": spec.sort_order,
+                "limit": spec.limit,
+                "group_by": spec.group_by,
+                "per_group_limit": spec.per_group_limit,
+                "region": spec.region,
+                "scope": scope_label,
+                "period": period_label,
+                "rows": rows,
+                "groups": groups or None,
+                "total": len(rows),
+            },
+            "scope": scope_label,
+            "branch": branch_label,
+            "period": period_label,
+            "teams": [{"team": r.get("name"), "score": r.get("score")} for r in rows],
+            "best_team": rows[0] if rows and reverse else None,
+            "worst_team": rows[-1] if rows else None,
+        }
+        return ToolExecutionResult(
+            tool_name="get_query_rankings",
+            arguments=spec.model_dump(),
+            records_evaluated=len(rows),
+            digest=digest,
+            visual_cards=cards,
+            citations=citations,
         )
 
     @staticmethod

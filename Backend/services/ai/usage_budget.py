@@ -96,12 +96,19 @@ def daily_user_token_limit() -> int:
 
 
 def max_request_input_tokens() -> int:
-    """Per-request input token ceiling before external HTTP execution (default 8192)."""
+    """Per-request input token ceiling before external HTTP execution.
+
+    Defaults to 256k (262,144 tokens) so long multi-department evidence chains
+    and the expanded conversation memory fit in one request. ``PMS_AI_CONTEXT_TOKENS``
+    is accepted as a fallback alias for ``PMS_AI_MAX_REQUEST_INPUT_TOKENS`` so a
+    single 256k setting raises both this hard ceiling and the prompt budget in
+    ``llm_client.context_token_limit``.
+    """
     return _read_non_negative_int(
         ("PMS_AI_MAX_REQUEST_INPUT_TOKENS", "PMS_AI_CONTEXT_TOKENS"),
-        8192,
+        262144,
         minimum=1,
-        maximum=65536,
+        maximum=262144,
     )
 
 

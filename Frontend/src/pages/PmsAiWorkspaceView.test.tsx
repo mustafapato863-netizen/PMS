@@ -1662,4 +1662,31 @@ describe('PmsAiWorkspaceView', () => {
       expect(screen.queryByTestId('ai-legacy-chat-section')).not.toBeInTheDocument();
     });
   });
+
+  it('sends rich conversation memory up to 40 turns and shows the 256k memory pill', async () => {
+    renderWorkspace('/ai');
+    expect(screen.getByTestId('ai-memory-indicator')).toHaveTextContent('256k memory');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'What best dep in uae?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+    await waitFor(() => {
+      expect(screen.getByText(CHAT_RESPONSE.data.headline)).toBeInTheDocument();
+    });
+
+    fireEvent.change(input, { target: { value: 'Now arrange them from lowest to top' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+    await waitFor(() => {
+      const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+      expect(chatCalls.length).toBe(2);
+      const secondBody = JSON.parse(String(chatCalls[1][1]?.body || '{}'));
+      const history = secondBody.history as Array<{ role: string; content: string }>;
+      expect(history.some((m) => m.role === 'user' && m.content === 'What best dep in uae?')).toBe(true);
+      const assistantMemory = history.find((m) => m.role === 'assistant');
+      expect(assistantMemory?.content).toContain(CHAT_RESPONSE.data.headline);
+      expect(assistantMemory?.content).toContain(CHAT_RESPONSE.data.narrative_bullets[0]);
+    });
+
+    expect(screen.getByTestId('ai-memory-indicator')).toHaveTextContent('2 turns');
+  });
 });

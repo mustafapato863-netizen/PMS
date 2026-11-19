@@ -10,7 +10,7 @@
     "browser"
   ],
   "file_count": 59,
-  "case_count": 795,
+  "case_count": 805,
   "files_by_label": {
     "synthetic": 16,
     "mocked": 40,
@@ -75,7 +75,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 10,
+      "cases": 11,
       "evidence_status": "partial",
       "note": ""
     },
@@ -327,7 +327,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 11,
+      "cases": 12,
       "evidence_status": "partial",
       "note": ""
     },
@@ -437,7 +437,7 @@
       "labels": [
         "synthetic"
       ],
-      "cases": 30,
+      "cases": 32,
       "evidence_status": "not applicable",
       "note": ""
     },
@@ -457,7 +457,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 30,
+      "cases": 35,
       "evidence_status": "partial",
       "note": ""
     },
@@ -609,7 +609,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 23,
+      "cases": 24,
       "evidence_status": "partial",
       "note": ""
     }

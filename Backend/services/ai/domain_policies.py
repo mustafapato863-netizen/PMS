@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from models.ai_schemas import AiGuardrailItem, AiStarterPrompt, SessionFilterContext
+from models.ai_schemas import AiGuardrailItem, AiStarterPrompt, QueryRankingsArgs, SessionFilterContext
 
 
 ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF]")
@@ -1068,3 +1068,166 @@ def has_pms_performance_signal(prompt: str) -> bool:
     if is_arabic_text(text) and any(kw in text for kw in _ARABIC_PMS_KEYWORDS):
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Composable ranking intent (deterministic fallback for the model-led planner)
+# ---------------------------------------------------------------------------
+
+_RANKING_CUE_RE = re.compile(
+    r"\b(?:top|best|highest|lowest|bottom|worst|rank(?:ed|ing)?|arrange|order|sort)\b",
+    re.I,
+)
+_ENTITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # Employees win when both a person word and a group word are present:
+    # "top 5 employes in every dep" is an employee ranking grouped by dep.
+    ("employee", re.compile(
+        r"\b(?:employees?|employes?|agents?|staff|people|persons?|performers?|reps?|associates?)\b", re.I
+    )),
+    ("department", re.compile(r"\b(?:departments?|deps?|depts?|division(?:s)?|sections?)\b", re.I)),
+    ("team", re.compile(r"\bteams?\b", re.I)),
+    ("branch", re.compile(r"\bbranches\b|\bbranch\b", re.I)),
+)
+_GROUP_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("department", re.compile(r"\b(?:in|per|each|every|by|across)\s+(?:the\s+)?(?:departments?|deps?|depts?|divisions?)\b", re.I)),
+    ("team", re.compile(r"\b(?:in|per|each|every|by|across)\s+(?:the\s+)?teams?\b", re.I)),
+    ("branch", re.compile(r"\b(?:in|per|each|every|by|across)\s+(?:the\s+)?branches\b", re.I)),
+)
+_N_RE = re.compile(
+    r"\b(?:top|bottom|best|worst|highest|lowest|first|last)\s+(\d{1,2})\b|\b(\d{1,2})\s+(?:top|bottom|best|worst)\b",
+    re.I,
+)
+_THRESHOLD_RE = re.compile(
+    r"\b(?:under|below|less\s+than|at\s+most|<)\s*(\d{1,3}(?:\.\d+)?)\s*%?"
+    r"|\b(?:over|above|more\s+than|exceed(?:s|ing)?|>)\s*(\d{1,3}(?:\.\d+)?)\s*%?",
+    re.I,
+)
+_REGION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("UAE", re.compile(r"\b(?:uae|dubai|sharjah|ajman|abu\s+dhabi)\b", re.I)),
+    ("EGY", re.compile(r"\b(?:egy|egypt)\b", re.I)),
+    ("KSA", re.compile(r"\b(?:ksa|saudi(?:\s+arabia)?)\b", re.I)),
+)
+
+
+def _history_text(history: list[Any] | None) -> str:
+    if not history:
+        return ""
+    chunks: list[str] = []
+    for msg in history:
+        if isinstance(msg, dict):
+            chunks.append(str(msg.get("content") or ""))
+        else:
+            chunks.append(str(getattr(msg, "content", "") or ""))
+    return " \n ".join(chunks)
+
+
+def parse_query_rankings_spec(
+    prompt: str,
+    *,
+    history: list[Any] | None = None,
+    known_departments: list[str] | None = None,
+    known_metrics: list[str] | None = None,
+) -> QueryRankingsArgs | None:
+    """Derive a composable ranking spec from a prompt (and prior memory).
+
+    Returns ``None`` when the prompt has no ranking intent, so callers keep the
+    existing routing path untouched. Handles shorthand/typos ("dep", "employes",
+    "uae"), arbitrary counts, sort orders, grouping and follow-up references.
+    """
+    text = str(prompt or "")
+    if not text.strip():
+        return None
+    history_text = _history_text(history)
+    combined = f"{history_text}\n{text}"
+
+    if not _RANKING_CUE_RE.search(text) and not _THRESHOLD_RE.search(text):
+        return None
+
+    entity: str | None = None
+    for candidate, pattern in _ENTITY_PATTERNS:
+        if pattern.search(text):
+            entity = candidate
+            break
+    if entity is None:
+        for candidate, pattern in _ENTITY_PATTERNS:
+            if pattern.search(history_text):
+                entity = candidate
+                break
+    if entity is None:
+        entity = "employee" if re.search(r"\b(?:who|employe|employes|agent|people)\b", text, re.I) else "department"
+
+    lower = text.casefold()
+    explicit_low_to_high = re.search(
+        r"lowest\s+to\s+top|bottom\s+to\s+top|from\s+lowest|low\s+to\s+high|ascending", lower
+    )
+    explicit_high_to_low = re.search(
+        r"top\s+to\s+lowest|highest\s+to\s+lowest|from\s+top|high\s+to\s+low|descending", lower
+    )
+    asc_cue = re.search(r"\b(?:lowest|bottom|worst|least)\b", lower)
+    desc_cue = re.search(r"\b(?:top|best|highest|most)\b", lower)
+    if explicit_low_to_high:
+        sort_order = "asc"
+    elif explicit_high_to_low:
+        sort_order = "desc"
+    else:
+        sort_order = "asc" if asc_cue and not desc_cue else "desc"
+
+    n_match = _N_RE.search(text)
+    raw_n = next((g for g in n_match.groups() if g), None) if n_match else None
+    n = max(1, min(int(raw_n), 50)) if raw_n else None
+
+    group_by = "none"
+    for candidate, pattern in _GROUP_PATTERNS:
+        if pattern.search(text):
+            group_by = candidate
+            break
+    per_group_limit = min(max(n or 3, 1), 20) if group_by != "none" else 5
+    limit = n or (per_group_limit if group_by != "none" else 10)
+
+    region: str | None = None
+    for candidate, pattern in _REGION_PATTERNS:
+        if pattern.search(text) or pattern.search(history_text):
+            region = candidate
+            break
+
+    department: str | None = None
+    for name in known_departments or []:
+        if re.search(rf"\b{re.escape(name)}\b", text, re.I):
+            department = name
+            break
+        if re.search(rf"\b{re.escape(name)}\b", history_text, re.I) and re.search(
+            r"\b(?:same|that|previous|it)\b", text, re.I
+        ):
+            department = name
+            break
+
+    metric_id: str | None = None
+    for name in known_metrics or []:
+        if re.search(rf"\b{re.escape(name)}\b", text, re.I):
+            metric_id = name
+            break
+
+    threshold: float | None = None
+    operator: str | None = None
+    th = _THRESHOLD_RE.search(text)
+    if th:
+        if th.group(1) is not None:
+            threshold, operator = float(th.group(1)), "<"
+        elif th.group(2) is not None:
+            threshold, operator = float(th.group(2)), ">"
+
+    return QueryRankingsArgs(
+        entity=entity,  # type: ignore[arg-type]
+        sort_order=sort_order,  # type: ignore[arg-type]
+        limit=limit,
+        group_by=group_by,  # type: ignore[arg-type]
+        per_group_limit=per_group_limit,
+        region=region,
+        department=department,
+        team=None,
+        branch=None,
+        metric_id=metric_id,
+        period=None,
+        score_threshold=threshold,
+        threshold_operator=operator,
+    )

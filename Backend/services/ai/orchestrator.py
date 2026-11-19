@@ -61,6 +61,7 @@ from services.ai.domain_policies import (
     extract_prompt_signals,
     has_pms_performance_signal,
     is_greeting_or_thanks_prompt,
+    parse_query_rankings_spec,
     sanitize_untrusted_text,
 )
 from services.ai.entity_resolver import (
@@ -3174,6 +3175,22 @@ class PmsAiOrchestrator:
                 scope=self.scope,
             )
 
+        # A clearly composable ranking question must not be cut off as off-topic
+        # just because the legacy capability classifier does not know the phrasing.
+        if capability_mode in ("off_topic", "clarification"):
+            early_spec = parse_query_rankings_spec(
+                req.prompt,
+                history=req.history,
+                known_metrics=list(get_ai_catalog().metrics.keys()),
+            )
+            if early_spec is not None and (
+                early_spec.group_by != "none"
+                or early_spec.entity in {"department", "team", "branch"}
+                or bool(early_spec.region)
+                or (early_spec.score_threshold is not None and early_spec.entity in {"department", "team", "branch"})
+            ):
+                capability_mode = "performance_query"
+
         social_kind = is_greeting_or_thanks_prompt(req.prompt)
         if social_kind is not None or capability_mode == "greeting":
             is_greeting = social_kind != "thanks"
@@ -3751,6 +3768,44 @@ class PmsAiOrchestrator:
                 signals.detected_year = p_year
         signals.asks_worst_agent = routed.plan.ranking_direction == "worst"
 
+        # Composable ranking intent: the model-led planner may emit it, otherwise
+        # a deterministic parser recognizes shorthand/typos and follow-ups from
+        # the prompt plus conversation memory. Only replace the standard tool
+        # dispatch when this is clearly a composable ranking question.
+        catalog = get_ai_catalog()
+        composable_spec = routed.plan.query_rankings_args or parse_query_rankings_spec(
+            req.prompt,
+            history=req.history,
+            known_departments=list(getattr(catalog, "teams", {}) or {}),
+            known_metrics=list(getattr(catalog, "metrics", {}) or {}),
+        )
+        explicit_arrange = bool(
+            re.search(
+                r"\b(?:arrange|order|sort)\b[^.?!]*\b(?:lowest|top|highest|bottom|best|worst|ascending|descending)\b",
+                req.prompt,
+                re.I,
+            )
+        )
+        is_comparison_prompt = bool(
+            re.search(r"\b(?:compare|versus|vs\.?|compared\s+to|difference\s+between)\b", req.prompt, re.I)
+        )
+        is_count_prompt = bool(re.search(r"\b(?:how\s+many|count\s+of|number\s+of)\b", req.prompt, re.I))
+        use_composable = (
+            composable_spec is not None
+            and not is_comparison_prompt
+            and not is_count_prompt
+            and not signals.asks_branch_comparison
+            and not routed.plan.single_person
+            and not signals.asks_single_person
+            and (
+                composable_spec.group_by != "none"
+                or composable_spec.entity in {"department", "team", "branch"}
+                or bool(composable_spec.region)
+                or (composable_spec.score_threshold is not None and composable_spec.entity in {"department", "team", "branch"})
+                or explicit_arrange
+            )
+        )
+
         if routed.plan.requested_parts == ["trend", "ranking"] or (
             "trend" in routed.plan.requested_parts and "ranking" in routed.plan.requested_parts
         ):
@@ -3891,6 +3946,13 @@ class PmsAiOrchestrator:
                 )
                 direct_resp.context_version = new_ver
             return direct_resp
+
+        # A composable ranking question is answerable even when the legacy local
+        # classifier labels the phrasing unsupported (e.g. "deps under 85%").
+        if use_composable and routed.outcome == "unsupported_request":
+            routed.outcome = "answer"
+            routed.plan.intent = "ranking"
+            signals.primary_intents = ["people_contribution"]
 
         # Pre-read validation short-circuit for clarification, restricted_access, unavailable_data, unsupported_request
         if routed.outcome != "answer":
@@ -4124,6 +4186,12 @@ class PmsAiOrchestrator:
         if cached_results is not None:
             tool_results = cached_results
             cache_hit = True
+        elif use_composable and composable_spec is not None:
+            # One composable engine for best/worst/top/bottom/arrange questions,
+            # including region filters, per-department grouping and thresholds.
+            tool_results = [
+                registry.execute_query_rankings(**composable_spec.model_dump(exclude_none=True))
+            ]
         elif shared_choice_team:
             tool_results.append(
                 registry.execute_shared_region_scorecard(
@@ -4222,6 +4290,7 @@ class PmsAiOrchestrator:
                             kpi=signals.detected_kpi,
                             month=signals.detected_month,
                             year=signals.detected_year,
+                            direction=routed.plan.ranking_direction,
                             direct_rank_fallback=threshold_spec_det is not None,
                             score_threshold=threshold_spec_det[1] if threshold_spec_det is not None else None,
                             threshold_operator=threshold_spec_det[0] if threshold_spec_det is not None else None,

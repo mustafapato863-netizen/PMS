@@ -8,7 +8,7 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 59. Test functions or `it` blocks: 795.
+Test files: 59. Test functions or `it` blocks: 805.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
@@ -28,7 +28,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 18 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
-| `Backend/tests/test_ai_chat_scenarios_and_variation.py` | test | `mocked` | 10 | partial |
+| `Backend/tests/test_ai_chat_scenarios_and_variation.py` | test | `mocked` | 11 | partial |
 | `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 19 | not applicable |
 | `Backend/tests/test_ai_conversation_claim_ledger_paired.py` | test | `live-model`, `mocked` | 13 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 59 | partial |
@@ -53,7 +53,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_phase5_postfix_rescore.py` | test | `synthetic` | 6 | not applicable |
 | `Backend/tests/test_ai_phase6_feedback_governance.py` | test | `mocked` | 19 | partial |
 | `Backend/tests/test_ai_phase6_prompt_versions_and_guards.py` | test | `mocked` | 4 | partial |
-| `Backend/tests/test_ai_phase7_budgets_and_telemetry.py` | test | `mocked` | 11 | partial |
+| `Backend/tests/test_ai_phase7_budgets_and_telemetry.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_phase7_eval_gates.py` | test | `live-model` | 12 | blocked |
 | `Backend/tests/test_ai_pilot_readiness_script.py` | test | `mocked` | 13 | partial |
 | `Backend/tests/test_ai_provider_configs.py` | test | `mocked` | 18 | partial |
@@ -64,9 +64,9 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
 | `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 5 | partial |
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
-| `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 30 | not applicable |
+| `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 32 | not applicable |
 | `Backend/tests/test_ai_synthesis_and_routing_unified.py` | test | `mocked` | 7 | partial |
-| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 30 | partial |
+| `Backend/tests/test_ai_workspace.py` | test | `mocked` | 35 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
 | `Backend/tests/test_local_evidence_synthesis.py` | test | `live-model`, `mocked` | 13 | partial |
@@ -81,7 +81,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/memory/UserMemoryDrawer.test.tsx` | test | `mocked` | 3 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 8 | partial |
 | `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 4 | not applicable |
-| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 23 | partial |
+| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 24 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |
 
 ## Notes

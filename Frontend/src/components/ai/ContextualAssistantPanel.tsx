@@ -448,11 +448,18 @@ export function ContextualAssistantPanel({
       requestSeqRef.current = currentSeq;
 
       const historyPayload: AiChatMessage[] = [];
-      for (const t of turns.filter((item) => !item.loading && item.response?.headline).slice(-4)) {
-        historyPayload.push({ role: 'user', content: t.prompt });
-        if (t.response?.headline) {
-          historyPayload.push({ role: 'assistant', content: t.response.headline });
+      for (const t of turns.filter((item) => !item.loading && item.response?.headline).slice(-40)) {
+        const userContent = String(t.prompt || '').slice(0, 2000);
+        if (userContent) historyPayload.push({ role: 'user', content: userContent });
+        const r = t.response;
+        const summaryParts: string[] = [];
+        if (r?.scope_banner) summaryParts.push(`Scope: ${String(r.scope_banner).slice(0, 160)}`);
+        if (r?.headline) summaryParts.push(r.headline.slice(0, 700));
+        for (const bullet of (r?.narrative_bullets || []).slice(0, 3)) {
+          summaryParts.push(`- ${String(bullet).slice(0, 240)}`);
         }
+        const summary = summaryParts.join('\n').slice(0, 3500);
+        if (summary) historyPayload.push({ role: 'assistant', content: summary });
       }
 
       const turnId = `turn-${Date.now()}-${currentSeq}`;

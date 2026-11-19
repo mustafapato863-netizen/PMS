@@ -275,6 +275,25 @@ class GeminiStructuredRouterAdapter:
                         "ranking_direction": {"type": "STRING", "enum": ["best", "worst"]},
                         "single_person": {"type": "BOOLEAN"},
                         "clarification_code": {"type": "STRING"},
+                        "query_rankings": {
+                            "type": "OBJECT",
+                            "nullable": True,
+                            "properties": {
+                                "entity": {"type": "STRING", "enum": ["department", "team", "branch", "employee"]},
+                                "sort_order": {"type": "STRING", "enum": ["desc", "asc"]},
+                                "limit": {"type": "INTEGER"},
+                                "group_by": {"type": "STRING", "enum": ["none", "department", "team", "branch"]},
+                                "per_group_limit": {"type": "INTEGER"},
+                                "region": {"type": "STRING", "nullable": True},
+                                "department": {"type": "STRING", "nullable": True},
+                                "team": {"type": "STRING", "nullable": True},
+                                "branch": {"type": "STRING", "nullable": True},
+                                "metric_id": {"type": "STRING", "nullable": True},
+                                "period": {"type": "STRING", "nullable": True},
+                                "score_threshold": {"type": "NUMBER", "nullable": True},
+                                "threshold_operator": {"type": "STRING", "nullable": True},
+                            },
+                        },
                     },
                     "required": ["intent", "performance_level", "clarification_code"],
                 },
@@ -321,6 +340,13 @@ class GeminiStructuredRouterAdapter:
                         parsed_dict["ranking_direction"] = str(parsed_dict["ranking_direction"]).strip().casefold()
                     if not parsed_dict.get("clarification_code"):
                         parsed_dict["clarification_code"] = "NONE"
+                    qr_args = parsed_dict.pop("query_rankings", None)
+                    if isinstance(qr_args, dict) and qr_args:
+                        order = str(qr_args.get("sort_order") or "").strip().casefold()
+                        qr_args["sort_order"] = order if order in ("asc", "desc") else "desc"
+                        if qr_args.get("ranking_direction"):
+                            qr_args["sort_order"] = "desc" if qr_args.pop("ranking_direction") == "best" else "asc"
+                        parsed_dict["query_rankings_args"] = qr_args
                 plan = StructuredQueryPlan.model_validate(parsed_dict)
                 return StructuredRoutingProviderResult(
                     plan=plan,
@@ -629,8 +655,45 @@ class DeterministicLocalProviderAdapter:
         scope = merged.get("scope") or "Call Center"
         branch = merged.get("branch") or "All Branches"
 
+        # Composable rankings: a direction-aware headline from the single engine.
+        # This branch is isolated so existing worst-first fallbacks stay intact.
+        if qr := merged.get("query_rankings"):
+            qr_rows = list(qr.get("rows") or [])
+            entity_label = str(qr.get("entity") or "department").replace("_", " ")
+            order = qr.get("sort_order") or "desc"
+            groups = qr.get("groups") or {}
+            if qr_rows:
+                first_row = qr_rows[0]
+                name = first_row.get("name") or "the top group"
+                score = first_row.get("score")
+                score_txt = f"{float(score):.1f}%" if isinstance(score, (int, float)) else "score unavailable"
+                total = int(qr.get("total") or len(qr_rows))
+                if order == "desc":
+                    headline = (
+                        f"Best {entity_label} in {scope}: {name} leads at {score_txt} "
+                        f"across {total} ranked {entity_label}s."
+                    )
+                else:
+                    headline = (
+                        f"Lowest {entity_label} in {scope}: {name} sits at {score_txt} "
+                        f"across {total} ranked {entity_label}s."
+                    )
+                for row in qr_rows[:5]:
+                    row_score = row.get("score")
+                    value = f"{float(row_score):.1f}%" if isinstance(row_score, (int, float)) else "—"
+                    bullets.append(f"{row.get('name') or 'Unknown'} — {value}.")
+                for gname, grows in list(groups.items())[:8]:
+                    top = grows[0] if grows else {}
+                    top_score = top.get("score")
+                    top_txt = f"{float(top_score):.1f}%" if isinstance(top_score, (int, float)) else "—"
+                    bullets.append(
+                        f"{gname}: {len(grows)} ranked, led by {top.get('name') or 'Unknown'} at {top_txt}."
+                    )
+            else:
+                headline = f"No scored {entity_label} records matched {scope} in {period}."
+
         # 0. Multi-part Team/Metric Trend + Top/Lowest Performer OR Single Spotlight
-        if team_metric_history := merged.get("team_metric_history"):
+        elif team_metric_history := merged.get("team_metric_history"):
             metric = team_metric_history[0]["display_name"]
             first, last = team_metric_history[0], team_metric_history[-1]
             if len(team_metric_history) == 1:

@@ -4,11 +4,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from config.database import Base
-from models.ai_schemas import AiChatRequest, SessionFilterContext
+from models.ai_schemas import AiChatMessage, AiChatRequest, SessionFilterContext
 from models.schemas import CallsData, EvaluationData, GeoBreakdown, GeoData, PerformanceRecord
+from services.ai.catalog import ai_evidence_cache
 from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     extract_prompt_signals,
+    parse_query_rankings_spec,
 )
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.trace_logger import TrainingTraceLogger, sanitize_prompt_for_router_training
@@ -4179,4 +4181,152 @@ def test_list_conversations_avoids_repeated_full_dataset_reloads(monkeypatch):
         assert load_calls == 0
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Composable QA (256k memory + model-driven ranking understanding)
+# ---------------------------------------------------------------------------
+
+
+def test_composable_spec_parser_handles_shorthand_typos_and_followups():
+    spec = parse_query_rankings_spec("what best dep in uae")
+    assert spec is not None
+    assert spec.entity == "department"
+    assert spec.sort_order == "desc"
+    assert spec.region == "UAE"
+
+    spec = parse_query_rankings_spec("top 5 employes in every dep")
+    assert spec is not None
+    assert spec.entity == "employee"
+    assert spec.limit == 5
+    assert spec.group_by == "department"
+
+    followup_history = [
+        AiChatMessage(role="user", content="what best dep in uae"),
+        AiChatMessage(role="assistant", content="Best department in UAE: Coding leads."),
+    ]
+    spec = parse_query_rankings_spec("arrange them from lowest to top", history=followup_history)
+    assert spec is not None
+    assert spec.sort_order == "asc"
+    assert spec.entity == "department"
+    assert spec.region == "UAE"
+
+    spec = parse_query_rankings_spec("which deps in Egypt are under 85%?")
+    assert spec is not None
+    assert spec.entity == "department"
+    assert spec.region == "EGY"
+    assert spec.score_threshold == 85
+    assert spec.threshold_operator == "<"
+
+    assert parse_query_rankings_spec("Show me the Inbound score") is None
+
+
+def _composable_record(emp_id: str, name: str, team: str, region: str, score: float):
+    record = _make_call_center_record(emp_id, name, team, score, 20, 30, 40, 50)
+    record.region = region
+    return record
+
+
+def test_composable_best_department_in_uae_excludes_other_regions(monkeypatch):
+    records = [
+        _composable_record("UAE-1", "Hassan Zaki", "Coding", "UAE", 92.0),
+        _composable_record("EGY-1", "Mona Samir", "Inbound", "EGY", 99.0),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-composable", "has_unrestricted_team_access": True},
+    )
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="what best dep in uae",
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.outcome == "answer"
+    assert "Best department" in resp.headline
+    assert "Coding" in resp.headline
+    assert "Inbound" not in resp.headline
+
+
+def test_composable_top_n_employees_in_every_department(monkeypatch):
+    records = [
+        _composable_record("IN-1", "Inbound One", "Inbound", "EGY", 91.0),
+        _composable_record("IN-2", "Inbound Two", "Inbound", "EGY", 70.0),
+        _composable_record("OUT-1", "Outbound One", "Outbound", "EGY", 88.0),
+        _composable_record("OUT-2", "Outbound Two", "Outbound", "EGY", 60.0),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-composable", "has_unrestricted_team_access": True},
+    )
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="top 2 employes in every dep",
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.outcome == "answer"
+    group_bullets = " ".join(resp.narrative_bullets)
+    assert "Inbound:" in group_bullets
+    assert "Outbound:" in group_bullets
+    group_titles = [c.title for c in resp.visual_cards]
+    assert any("Inbound" in t for t in group_titles)
+    assert any("Outbound" in t for t in group_titles)
+
+
+def test_composable_followup_reverses_sort_order(monkeypatch):
+    records = [
+        _composable_record("UAE-1", "Hassan Zaki", "Coding", "UAE", 92.0),
+        _composable_record("UAE-2", "Omar Farouk", "Revenue", "UAE", 71.0),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-composable", "has_unrestricted_team_access": True},
+    )
+    history = [
+        AiChatMessage(role="user", content="what best dep in uae"),
+        AiChatMessage(role="assistant", content="Best department in UAE: Coding leads."),
+    ]
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="arrange them from lowest to top",
+            history=history,
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.outcome == "answer"
+    assert "Lowest department" in resp.headline
+    assert "Revenue" in resp.headline
+
+
+def test_composable_threshold_filters_departments(monkeypatch):
+    records = [
+        _composable_record("EGY-1", "Low Team", "Inbound", "EGY", 70.0),
+        _composable_record("EGY-2", "High Team", "Coding", "EGY", 95.0),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(
+        _build_in_memory_db(),
+        {"role": "Admin", "user_id": "admin-composable", "has_unrestricted_team_access": True},
+    )
+    resp = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="which deps in Egypt are under 85%?",
+            session_state=SessionFilterContext(month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.outcome == "answer"
+    assert "Inbound" in resp.headline
+    assert "Coding" not in resp.headline
 

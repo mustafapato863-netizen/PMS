@@ -411,7 +411,7 @@ When `PMS_AI_MODEL_LED_PILOT_ENABLED=true` (Admin-only pilot), analytical chat t
 ### 3. Server-Side Budgets, Timeouts & Unconfigured Daily Cap Policy
 Implemented in `Backend/services/ai/usage_budget.py` (Redis-backed with 48h TTL when healthy, thread-safe in-process fallback):
 - **Concurrency Limit (`PMS_AI_MAX_CONCURRENT_CHAT_REQUESTS`):** Defaults to `8`. Overflow requests return HTTP `429` with `Retry-After` and increment `rejected_budget_requests`.
-- **Per-Request Input Token Limit (`PMS_AI_MAX_REQUEST_INPUT_TOKENS`):** Defaults to `8192`. Blocks oversized prompts before external HTTP execution (`429` on `/api/ai/chat`, `outcome="context_overflow"` in `UnifiedProviderEngine.generate`).
+- **Per-Request Input Token Limit (`PMS_AI_MAX_REQUEST_INPUT_TOKENS`):** Defaults to `262144` (256k; `PMS_AI_CONTEXT_TOKENS` is an accepted alias). Blocks oversized prompts before external HTTP execution (`429` on `/api/ai/chat`, `outcome="context_overflow"` in `UnifiedProviderEngine.generate`).
 - **Configurable Per-User UTC-Day Caps (`PMS_AI_DAILY_USER_REQUEST_LIMIT`, `PMS_AI_DAILY_USER_TOKEN_LIMIT`):** Both **default to `0` (unset/unlimited)** until the operator sets an agreed cap. Enforced strictly only when configured `> 0`; idempotent `client_request_id` replays do not consume request quota.
 - **Provider Timeouts:** `router_timeout_seconds` defaults to `10.0s` (hard cap `30.0s`) and `synthesis_timeout_seconds` defaults to `15.0s` (hard cap `60.0s`), surfaced alongside budget health in `GET /api/ai/diagnostics`.
 

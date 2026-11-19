@@ -35,7 +35,7 @@ Verify `GET /api/ai/diagnostics` (Admin-only, 0 tokens) exposes accurate, secret
 - `model_led_pilot_enabled`: `false` by default in production templates (`PMS_AI_MODEL_LED_PILOT_ENABLED=false`); `true` only in isolated Admin staging/canary when authorized.
 - `max_concurrent_requests` (`8` default), `active_concurrent_requests`, `rejected_budget_requests`.
 - `daily_user_request_limit` (`0` default / unset until operator sets an agreed cap) and `daily_user_token_limit` (`0` default / unset).
-- `max_request_input_tokens` (`8192` default), `router_timeout_seconds` (`10.0`), `synthesis_timeout_seconds` (`15.0`).
+- `max_request_input_tokens` (`262144` / 256k default), `router_timeout_seconds` (`10.0`), `synthesis_timeout_seconds` (`15.0`).
 - **Truthful Fallback Check:** Confirm that any turn answered by deterministic fallback reports `provider_used="deterministic"`, `answer_source="fallback"`, `AiChatResponse.message="Deterministic fallback response generated"`, and renders `Verified PMS · Deterministic` (never `Verified PMS · Live Synthesis`).
 
 ## 2. Emergency 1-Command Kill Switch

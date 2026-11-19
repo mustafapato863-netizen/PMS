@@ -69,6 +69,21 @@ interface ConversationTurn {
   isPending?: boolean;
 }
 
+/** Compact, bounded summary of a prior turn sent as conversation memory. */
+function buildTurnHistorySummary(turn: ConversationTurn): string {
+  const r = turn.response;
+  if (!r) return '';
+  const parts: string[] = [];
+  const scope = r.scope_banner?.trim();
+  if (scope) parts.push(`Scope: ${scope.slice(0, 160)}`);
+  if (r.headline) parts.push(r.headline.slice(0, 700));
+  const bullets = (r.narrative_bullets || []).slice(0, 3).map((b) => `- ${String(b).slice(0, 240)}`);
+  if (bullets.length) parts.push(...bullets);
+  const metrics = (r.summary_tiles || []).slice(0, 3).map((tile) => `${tile.label}: ${tile.value}`.trim());
+  if (metrics.length) parts.push(`Metrics: ${metrics.join('; ').slice(0, 300)}`);
+  return parts.join('\n').slice(0, 3500);
+}
+
 interface ChatSessionState {
   chatKey: string;
   conversationId: string | null;
@@ -847,14 +862,14 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
       }
 
       const historySource = isRetry
-        ? originSession.turns.filter((t) => t.id !== turnId).slice(-4)
-        : originSession.turns.slice(-4);
+        ? originSession.turns.filter((t) => t.id !== turnId).slice(-40)
+        : originSession.turns.slice(-40);
       const historyPayload: AiChatMessage[] = [];
       for (const t of historySource) {
-        historyPayload.push({ role: 'user', content: t.userPrompt });
-        if (t.response?.headline) {
-          historyPayload.push({ role: 'assistant', content: t.response.headline });
-        }
+        const userContent = String(t.userPrompt || '').slice(0, 2000);
+        if (userContent) historyPayload.push({ role: 'user', content: userContent });
+        const summary = buildTurnHistorySummary(t);
+        if (summary) historyPayload.push({ role: 'assistant', content: summary });
       }
 
       updateSession(originKey, (prev) => {
@@ -1371,6 +1386,18 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       <span className="hidden sm:inline">360°</span>
                     </button>
                   )}
+
+                  <span
+                    data-testid="ai-memory-indicator"
+                    title="Conversation memory: 256k context window"
+                    className="hidden cursor-default items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/80 px-2 py-1.5 text-xs font-semibold text-slate-500 md:inline-flex"
+                  >
+                    <Brain size={12} />
+                    256k memory
+                    {turns.length > 0 && (
+                      <span className="tabular-nums text-slate-400">· {turns.length} turns</span>
+                    )}
+                  </span>
 
                   <button
                     type="button"

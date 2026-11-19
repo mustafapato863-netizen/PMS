@@ -1087,7 +1087,7 @@ def test_people_rankings_match_canonical_records():
         # |impact| driver, which is also Booking here, but pinning makes
         # the test independent of that selection rule.
         result = reg.execute_people_contribution_and_rankings(
-            team="Inbound", month="September", year=2026, kpi="Booking"
+            team="Inbound", month="September", year=2026, kpi="Booking", direction="worst"
         )
         canonical = _canonical(db, ADMIN_SCOPE, team="Inbound", month="September", year=2026)
         assert result.digest["total_employees"] == len(canonical)
@@ -1108,6 +1108,59 @@ def test_people_rankings_match_canonical_records():
             assert entry["performance_score"] == pytest.approx(
                 expected_scores[entry["employee_id"]], abs=0.05
             )
+    finally:
+        db.close()
+
+
+def test_people_rankings_best_direction_preserves_root_cause_semantics():
+    """direction='best' adds top performers without corrupting the
+    negative-contributor digest that downstream headline synthesis relies on.
+    """
+    db = _make_db()
+    try:
+        _seed_base(db)
+        reg = _registry(db, ADMIN_SCOPE)
+        result = reg.execute_people_contribution_and_rankings(
+            team="Inbound", month="September", year=2026, kpi="Booking", direction="best"
+        )
+        d = result.digest
+        assert d["direction"] == "best"
+
+        # New: top performers ranked highest score first.
+        performers = d["top_performers"]
+        assert performers
+        scores = [p["performance_score"] for p in performers if p["performance_score"] is not None]
+        assert scores == sorted(scores, reverse=True)
+
+        # Regression guard: top_contributors must still be the worst/negative
+        # contributors (Mona Ali), never the best performers.
+        assert d["top_contributors"]
+        assert d["top_contributors"][0]["employee_name"] == "Mona Ali"
+        assert d["top_contributors"][0]["weighted_impact"] == pytest.approx(-2.5, abs=0.05)
+        assert not any(p["employee_name"] == performers[0]["employee_name"] for p in d["top_contributors"][:1])
+
+        titles = [c.title for c in result.visual_cards]
+        assert any("Top Performing" in t for t in titles)
+        assert not any("Root-Cause Employee Contributors" in t for t in titles)
+    finally:
+        db.close()
+
+
+def test_people_rankings_best_direction_groups_by_department_when_unscoped():
+    db = _make_db()
+    try:
+        _seed_base(db)
+        reg = _registry(db, ADMIN_SCOPE)
+        result = reg.execute_people_contribution_and_rankings(
+            month="September", year=2026, direction="best"
+        )
+        by_department = result.digest.get("by_department")
+        assert isinstance(by_department, dict)
+        assert by_department
+        for dept, rows in by_department.items():
+            assert rows
+            scores = [r["performance_score"] for r in rows if r["performance_score"] is not None]
+            assert scores == sorted(scores, reverse=True)
     finally:
         db.close()
 

@@ -39,9 +39,9 @@ def _coerce_user_uuid(user_id: str | uuid.UUID | None) -> uuid.UUID | str | None
 class UserMemoryService:
     """Service for reading and writing governed per-user memory."""
 
-    MAX_INTERACTION_SUMMARY_CHARS = 500
-    MAX_FREQUENT_ITEMS = 10
-    MAX_MEMORY_XML_CHARS = 1200  # ~300 tokens ceiling
+    MAX_INTERACTION_SUMMARY_CHARS = 4000
+    MAX_FREQUENT_ITEMS = 25
+    MAX_MEMORY_XML_CHARS = 6000  # ~1500 tokens within the 256k budget
     DECAY_DAYS = 30
 
     def __init__(self, db: Session) -> None:
@@ -121,25 +121,25 @@ class UserMemoryService:
             if prefs.get("communication_style"):
                 lines.append(f"Communication style: {prefs['communication_style']}")
             if prefs.get("preferred_metrics"):
-                lines.append(f"Preferred metrics: {', '.join(str(m) for m in prefs['preferred_metrics'][:5])}")
+                lines.append(f"Preferred metrics: {', '.join(str(m) for m in prefs['preferred_metrics'][:10])}")
             if prefs.get("preferred_teams"):
-                lines.append(f"Preferred teams: {', '.join(str(t) for t in prefs['preferred_teams'][:5])}")
+                lines.append(f"Preferred teams: {', '.join(str(t) for t in prefs['preferred_teams'][:10])}")
             if prefs.get("goal"):
                 lines.append(f"Active goal: {prefs['goal']}")
 
         patterns = memory.get("query_patterns", {}) or {}
         if patterns.get("frequent_topics"):
-            lines.append(f"Frequent topics: {', '.join(str(t) for t in patterns['frequent_topics'][:5])}")
+            lines.append(f"Frequent topics: {', '.join(str(t) for t in patterns['frequent_topics'][:10])}")
         if patterns.get("frequent_teams"):
-            top_teams = sorted(patterns["frequent_teams"].items(), key=lambda x: -x[1])[:5]
+            top_teams = sorted(patterns["frequent_teams"].items(), key=lambda x: -x[1])[:10]
             lines.append(f"Frequently asked teams: {', '.join(str(t[0]) for t in top_teams)}")
         if patterns.get("frequent_kpis"):
-            top_kpis = sorted(patterns["frequent_kpis"].items(), key=lambda x: -x[1])[:5]
+            top_kpis = sorted(patterns["frequent_kpis"].items(), key=lambda x: -x[1])[:10]
             lines.append(f"Frequently asked KPIs: {', '.join(str(k[0]) for k in top_kpis)}")
 
         summary = memory.get("interaction_summary", "")
         if summary:
-            lines.append(f"Recent interaction summary: {summary[:300]}")
+            lines.append(f"Recent interaction summary: {summary[:2000]}")
 
         feedback = memory.get("feedback_signals", {}) or {}
         if feedback.get("positive_count", 0) > 0 or feedback.get("negative_count", 0) > 0:

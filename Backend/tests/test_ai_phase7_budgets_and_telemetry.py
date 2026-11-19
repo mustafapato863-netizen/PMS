@@ -638,6 +638,22 @@ def test_configured_daily_token_limit_blocks_chat_and_provider_engine(memory_db,
     reset_usage_budget_state_for_tests()
 
 
+def test_request_input_token_ceiling_defaults_to_256k(monkeypatch):
+    from services.ai.usage_budget import max_request_input_tokens
+
+    monkeypatch.delenv("PMS_AI_MAX_REQUEST_INPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PMS_AI_CONTEXT_TOKENS", raising=False)
+    assert max_request_input_tokens() == 262144
+
+    # A single 256k context setting now raises the hard per-request ceiling too.
+    monkeypatch.setenv("PMS_AI_CONTEXT_TOKENS", "262144")
+    assert max_request_input_tokens() == 262144
+
+    # Even an absurd override cannot exceed the hard cap.
+    monkeypatch.setenv("PMS_AI_MAX_REQUEST_INPUT_TOKENS", "999999")
+    assert max_request_input_tokens() == 262144
+
+
 def test_request_input_token_ceiling_blocks_oversized_prompt_before_http(memory_db, sample_records, monkeypatch):
     from unittest.mock import MagicMock
     from services.ai.provider_engine import UnifiedProviderEngine

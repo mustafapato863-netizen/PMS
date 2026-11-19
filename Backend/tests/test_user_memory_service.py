@@ -26,6 +26,24 @@ def test_user_memory_and_conversations_use_separate_orm_tables():
     assert "owner_user_id" in AiConversation.__table__.c
 
 
+def test_256k_memory_caps():
+    svc = UserMemoryService(MagicMock())
+    assert svc.MAX_INTERACTION_SUMMARY_CHARS == 4000
+    assert svc.MAX_FREQUENT_ITEMS == 25
+    assert svc.MAX_MEMORY_XML_CHARS == 6000
+
+    memory = {
+        "preferences": {"preferred_teams": [f"Team-{i}" for i in range(12)]},
+        "query_patterns": {"frequent_topics": [f"topic-{i}" for i in range(12)]},
+        "interaction_summary": "x" * 5000,
+    }
+    text = svc.get_memory_text(memory)
+    assert "<VERIFIED_USER_MEMORY>" in text
+    assert len(text) <= svc.MAX_MEMORY_XML_CHARS + 60
+    assert "Team-9" in text
+    assert "x" * 1999 in text  # interaction summary expanded from 300 to 2000 chars
+
+
 def test_load_memory_returns_none_when_empty(mock_db):
     svc = UserMemoryService(mock_db)
     result = svc.load_memory("user-1")

@@ -28,6 +28,21 @@ from services.ai.provider_engine import ProviderResponse, TokenUsage
 from services.ai.providers import DeterministicLocalProviderAdapter, resolve_variation_index
 
 
+def test_chat_history_supports_fifty_turns_of_memory():
+    history = [
+        AiChatMessage(role="user" if i % 2 == 0 else "assistant", content=f"message {i}")
+        for i in range(80)
+    ]
+    req = AiChatRequest(prompt="In the same department, show the bottom 3", history=history)
+    assert len(req.history) == 80
+
+    with pytest.raises(ValidationError):
+        AiChatRequest(
+            prompt="too much history",
+            history=[AiChatMessage(role="user", content="x") for _ in range(101)],
+        )
+
+
 def test_variation_seed_schema_and_fingerprint_preservation():
     req_default = AiChatRequest(prompt="Show Inbound score")
     assert req_default.variation_seed is None
