@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
+  Brain,
   Calendar,
   ChevronDown,
   History,
@@ -23,6 +24,7 @@ import AiWatchingRail from '../components/ai/AiWatchingRail';
 import ConversationHistoryPanel from '../components/ai/ConversationHistoryPanel';
 import ScopeFilterBar from '../components/ai/ScopeFilterBar';
 import { Agent360Scorecard } from '../components/ai/agent360/Agent360Scorecard';
+import { UserMemoryDrawer } from '../components/ai/memory/UserMemoryDrawer';
 import AiComposerDock from '../components/ai/workspace/AiComposerDock';
 import AiMorningBriefingHome from '../components/ai/workspace/AiMorningBriefingHome';
 import AiThinkingProgressCard from '../components/ai/workspace/AiThinkingProgressCard';
@@ -120,6 +122,8 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     () => searchParams.get('performance_level') || 'All',
   );
   const [answerDetail, setAnswerDetail] = useState<'auto' | 'brief' | 'details'>('auto');
+  const [showMemoryDrawer, setShowMemoryDrawer] = useState<boolean>(false);
+  const [showManager360, setShowManager360] = useState<boolean>(false);
   const [promptInput, setPromptInput] = useState('');
 
   const initialConvParam = searchParams.get('conversation');
@@ -1351,6 +1355,34 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     )}
                   </button>
 
+                  {!isSelfOnly && (
+                    <button
+                      type="button"
+                      data-testid="ai-manager-360-btn"
+                      aria-pressed={showManager360}
+                      onClick={() => setShowManager360((prev) => !prev)}
+                      className={`inline-flex cursor-pointer items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        showManager360
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700'
+                      }`}
+                    >
+                      <Sparkles size={13} />
+                      <span className="hidden sm:inline">360°</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    data-testid="ai-memory-drawer-btn"
+                    aria-label="Open My Profile and Memory"
+                    onClick={() => setShowMemoryDrawer(true)}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
+                  >
+                    <Brain size={13} />
+                    <span className="hidden sm:inline">Memory</span>
+                  </button>
+
                   <button
                     type="button"
                     aria-expanded={showGuardrailsInfo}
@@ -1478,9 +1510,15 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   <div className="h-28 w-full animate-pulse rounded-2xl bg-slate-100" />
                 </div>
               ) : turns.length === 0 ? (
-                isSelfOnly ? (
+                isSelfOnly || showManager360 ? (
                   <div className="mx-auto max-w-3xl py-4">
-                    <Agent360Scorecard onAskAboutKpi={(kpi) => void sendPrompt(`Tell me about my ${kpi}`)} />
+                    <Agent360Scorecard
+                      canSwitchEmployee={!isSelfOnly}
+                      onAskAboutKpi={(kpi) => {
+                        setShowManager360(false);
+                        void sendPrompt(isSelfOnly ? `Tell me about my ${kpi}` : `Analyze ${kpi} performance`);
+                      }}
+                    />
                   </div>
                 ) : (
                   <AiMorningBriefingHome
@@ -1600,6 +1638,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
           )}
         </div>
       </div>
+      <UserMemoryDrawer isOpen={showMemoryDrawer} onClose={() => setShowMemoryDrawer(false)} />
     </div>
   );
 }

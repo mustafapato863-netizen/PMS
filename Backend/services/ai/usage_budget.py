@@ -200,11 +200,21 @@ def check_user_daily_budget(
     user_role: str | None = None,
     *,
     increment_request: bool = True,
+    access_tier: str | None = None,
 ) -> None:
-    """Enforce configured (>0) UTC-day per-user request and token caps."""
-    _ = user_role
+    """Enforce configured (>0) UTC-day per-user request and token caps.
+
+    When ``access_tier`` is widened beyond ``admin_only``, falls back to
+    ``tier_budget_for_role(user_role)`` whenever explicit env caps are not set.
+    """
     req_limit = daily_user_request_limit()
     tok_limit = daily_user_token_limit()
+    if access_tier and access_tier != "admin_only":
+        tier_defaults = tier_budget_for_role(user_role)
+        if req_limit <= 0:
+            req_limit = int(tier_defaults.get("daily_turns", 0))
+        if tok_limit <= 0:
+            tok_limit = int(tier_defaults.get("daily_tokens", 0))
     if req_limit <= 0 and tok_limit <= 0 and not increment_request:
         return
 

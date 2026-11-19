@@ -64,6 +64,34 @@ from utils.regions import ksa_region_hint_from_prompt
 AiProviderUnavailableError = ProviderUnavailableError
 
 
+def build_pass1_identity_context(scope: dict[str, Any] | None, *, max_chars: int = 2000) -> str:
+    """Build compact XML identity + memory context for Pass 1 (<= 500 tokens)."""
+    if not isinstance(scope, dict):
+        return ""
+    parts: list[str] = []
+    passport_xml = str(scope.get("passport_xml") or "").strip()
+    if not passport_xml:
+        try:
+            from services.ai.identity_service import build_passport
+
+            passport_obj = scope.get("passport") or build_passport(scope)
+            if hasattr(passport_obj, "to_xml"):
+                passport_xml = str(passport_obj.to_xml()).strip()
+        except Exception:
+            passport_xml = ""
+    if passport_xml:
+        parts.append(passport_xml[:800])
+
+    memory_text = str(scope.get("user_memory_text") or "").strip()
+    if memory_text:
+        parts.append(memory_text[:1180])
+
+    combined = "\n".join(parts)
+    if len(combined) > max_chars:
+        combined = combined[:max_chars]
+    return combined
+
+
 UNAVAILABLE_FUTURE_PERIODS: frozenset[str] = frozenset(
     {"2026-10", "2026-11", "2026-12", "2027-01", "2027-02", "2027-03"}
 )
@@ -3295,10 +3323,13 @@ class HybridQueryRouter:
             and not is_multi_part_score_and_ranking
         ):
             from services.ai.approved_patterns import ApprovedPatternMatcher
+            from services.ai.identity_service import build_passport
 
+            _passport = self.scope.get("passport") or build_passport(self.scope)
             matched_pattern = ApprovedPatternMatcher(self.db).match_prompt(
                 text,
                 known_employee_names=[c.employee_name for c in self.employee_candidates if c.employee_name],
+                persona_tier=_passport.persona_tier.value if hasattr(_passport, "persona_tier") else None,
             )
         if matched_pattern is not None and matched_pattern.intent in (
             "current_value", "actual_vs_target", "score_drivers", "trend", "compare_periods",
@@ -3694,12 +3725,18 @@ class HybridQueryRouter:
             # Call provider with structured tool schemas
             from services.ai.provider_engine import ProviderMessage, ProviderRequest, get_unified_provider_engine
 
+            # Build bounded identity + memory context for Pass 1 (<= 500 tokens / 2000 chars)
+            identity_prefix = build_pass1_identity_context(self.scope)
             # Build bounded context for the model
             system_prompt = (
                 f"[PromptVersion: {MODEL_LED_PLANNER_PROMPT_VERSION}]\n"
-                "You are the PMS AI Assistant. Your role is to understand the user's question, "
+                + (f"{identity_prefix}\n" if identity_prefix else "")
+                + "You are the PMS AI Assistant. Your role is to understand the user's question, "
                 "select the appropriate tool(s) to fetch verified PMS data, and compose a concise answer. "
                 "Available tools: " + ", ".join(tool_schemas.keys()) + ". "
+                "Use 'explain_scoring_rules_and_targets' when asked how scores, weights, targets, achievement caps, or grade thresholds work. "
+                "Use 'simulate_kpi_improvement' for What-If questions ('if I improve X by N%, what score/grade will I reach?'). "
+                "For persona='self_only', bind first-person questions ('my score', 'how am I doing') to the caller's employee_code. "
                 "CRITICAL: Always return response_type 'tool_call' for ANY question asking about an employee's score, performance, KPI, metric, trend, ranking, or comparison across months/branches (including follow-ups like 'What was her score in August?' or 'How did it change?'). "
                 "Never return response_type 'conversational' for performance, score, or KPI questions; 'conversational' is ONLY for non-data greetings like 'hello'. "
                 "Follow-up handling: inherit subject employee, metric, or scope from Context, but when the user's question specifies a change (such as a new month like 'And in August?', or multi-month trend like 'how did it change over time?'), update the arguments accordingly (e.g. period '2026-08' or history tool). "

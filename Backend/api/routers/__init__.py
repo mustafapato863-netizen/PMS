@@ -21,6 +21,9 @@ from .data_snapshot import router as data_snapshot_router
 from .ai_workspace import diagnostics_router as ai_diagnostics_router
 from .ai_workspace import router as ai_workspace_router
 from .ai_corrective_actions import router as ai_corrective_actions_router
+from .agent_360 import router as agent_360_router
+from .ai_memory import admin_router as ai_memory_admin_router
+from .ai_memory import router as ai_memory_router
 
 router = APIRouter()
 
@@ -46,3 +49,6 @@ router.include_router(data_snapshot_router)
 router.include_router(ai_workspace_router)
 router.include_router(ai_diagnostics_router)
 router.include_router(ai_corrective_actions_router)
+router.include_router(agent_360_router)
+router.include_router(ai_memory_router)
+router.include_router(ai_memory_admin_router)

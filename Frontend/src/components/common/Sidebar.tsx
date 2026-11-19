@@ -355,7 +355,12 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
           : []),
         ...(canAccessPlanning(role) && isManager ? [planningItem] : []),
       ]
-    : [{ name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> }];
+    : [
+        { name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> },
+        ...(aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier)
+          ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true }]
+          : []),
+      ];
 
   let primaryDockCount = 0;
   const dockItems: NavigationDockItem[] = isFunctionViewer
@@ -447,6 +452,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                 catalogTeams={(performanceCatalog?.scopes || []).map((scope) => scope.team)}
                 renderLink={(item, nested) => renderLink(item, undefined, nested, true)}
                 isCollapsed={isCollapsed}
+                showAiLink={aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier)}
               />
             </Suspense>
           )

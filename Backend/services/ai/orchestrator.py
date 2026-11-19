@@ -611,7 +611,7 @@ class PmsAiOrchestrator:
         self.db = db
         self.scope = scope
         from services.ai.identity_service import build_passport
-        self.passport = build_passport(scope)
+        self.passport = build_passport(scope, db=db)
         self.scope["passport"] = self.passport
         self.scope["passport_xml"] = self.passport.to_xml()
         from services.ai.user_rules_spec import build_user_rules_spec
@@ -2589,8 +2589,9 @@ class PmsAiOrchestrator:
                     "target_status": tgt_clause,
                 }
                 instruction = (
-                    f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n"
-                    f"{self.scope.get('user_memory_text', '')}\n\n"
+                    f"{self.scope.get('passport_xml', '')}\n"
+                    f"{self.scope.get('user_memory_text', '')}\n"
+                    f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n\n"
                     "You are the PMS AI Assistant. State the verified performance answer directly and concisely in 1-2 sentences. "
                     "Use ONLY the exact employee name, metric name, period, value, and unit in `verified_facts`. "
                     "For single-period questions, report only the requested period's value and target (if present). "
@@ -3048,7 +3049,7 @@ class PmsAiOrchestrator:
         self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
         role = str(self.scope.get("role") or "Manager")
         from services.ai.identity_service import build_passport
-        self.passport = build_passport(self.scope)
+        self.passport = build_passport(self.scope, db=self.db)
         self.scope["passport"] = self.passport
         self.scope["passport_xml"] = self.passport.to_xml()
         from services.ai.user_rules_spec import build_user_rules_spec
@@ -4509,6 +4510,16 @@ class PmsAiOrchestrator:
                         if not claim_check.valid:
                             accepted_local = False
                             synthesis.metrics.fallback_outcome = "invalid_or_unverified_response"
+                            try:
+                                from services.ai.model_flywheel import build_dpo_structured_response
+
+                                rejected_dpo_record = build_dpo_structured_response(
+                                    accepted={"headline": synthesis.headline, "bullets": synthesis.narrative_bullets},
+                                    rejected={"headline": local_synthesis.headline, "bullets": local_synthesis.narrative_bullets},
+                                    rejection_reason="claim_validator_rejected",
+                                )
+                            except Exception:
+                                rejected_dpo_record = None
                     if accepted_local:
                         synthesis = local_synthesis
                         final_cards = []
@@ -4887,6 +4898,33 @@ class PmsAiOrchestrator:
             if routed.route_used == "model_led_pilot"
             else ACTIVE_PROMPT_VERSIONS["narrow_evidence_synthesis"],
         }
+        if "rejected_dpo_record" in locals() and locals()["rejected_dpo_record"]:
+            response_dict["dpo_pair_record"] = locals()["rejected_dpo_record"]
+
+        # Implicit friction signal: indexed check on prior turn in same conversation (<= 45s rephrase)
+        if active_conversation_id and claimed_turn is not None:
+            try:
+                from models.models import AiTurn
+                from services.ai.model_flywheel import detect_rephrase_signal
+
+                prev_turn = (
+                    self.db.query(AiTurn)
+                    .filter(
+                        AiTurn.conversation_id == active_conversation_id,
+                        AiTurn.id != claimed_turn.id,
+                    )
+                    .order_by(AiTurn.created_at.desc())
+                    .first()
+                )
+                if prev_turn is not None and getattr(prev_turn, "created_at", None) and getattr(claimed_turn, "created_at", None):
+                    friction = detect_rephrase_signal(
+                        {"created_at": prev_turn.created_at},
+                        {"created_at": claimed_turn.created_at},
+                    )
+                    if friction is not None:
+                        response_dict["friction_signal"] = friction
+            except Exception:
+                pass
 
         t_trace_start = time.perf_counter()
         pre_trace_ms = int((t_trace_start - t0) * 1000)
@@ -4907,6 +4945,18 @@ class PmsAiOrchestrator:
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
                 known_employee_names=known_emp_names,
             )
+            # Post-turn deterministic memory persistence (OUTSIDE ReadOnlySessionGuard)
+            if self.user_memory_service is not None:
+                try:
+                    self.user_memory_service.extract_and_persist_turn_signals(
+                        str(self.scope.get("user_id") or ""),
+                        req.prompt,
+                        topic=str(getattr(routed.plan, "intent", "") or "") or None,
+                        team=str(getattr(routed.plan, "team", "") or "") or None,
+                        kpi=str(getattr(routed.plan, "kpi", "") or "") or None,
+                    )
+                except Exception:
+                    pass
         else:
             trace_id = ""
         trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)

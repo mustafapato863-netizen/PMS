@@ -15,8 +15,10 @@ from models.schemas import StandardResponse, KPIWeight, Target
 from services.cache_invalidation_service import CacheInvalidationService
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
 from services.ai.feature_gate import (
+    read_ai_access_tier,
     read_ai_corrective_action_pilot_enabled,
     read_ai_enabled,
+    set_ai_access_tier,
     set_ai_corrective_action_pilot_enabled,
     set_ai_enabled,
 )
@@ -183,6 +185,7 @@ async def update_targets(
 
 class AiAssistantSettingUpdate(BaseModel):
     enabled: bool
+    access_tier: str | None = None
 
 
 def _signed_in_user(request: Request) -> dict:
@@ -202,7 +205,7 @@ def get_ai_assistant_setting(
 ):
     """Any signed-in user can see whether PMS AI is on. The value is a switch, not performance data.
 
-    The separate corrective-action pilot flag is included additively so
+    The separate corrective-action pilot flag and access tier are included additively so
     existing consumers that read only ``enabled`` keep working.
     """
     _signed_in_user(request)
@@ -211,6 +214,7 @@ def get_ai_assistant_setting(
         message="PMS AI setting retrieved",
         data={
             "enabled": read_ai_enabled(db),
+            "access_tier": read_ai_access_tier(db),
             "corrective_action_pilot_enabled": read_ai_corrective_action_pilot_enabled(db),
         },
     )
@@ -223,14 +227,22 @@ def update_ai_assistant_setting(
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(["Admin"])),
 ):
-    """Administrators turn PMS AI on or off for every user, including themselves."""
+    """Administrators turn PMS AI on or off and control the rollout access tier."""
     user = _signed_in_user(request)
     enabled = set_ai_enabled(db, payload.enabled, user.get("user_id"))
+    if payload.access_tier is not None:
+        try:
+            access_tier = set_ai_access_tier(db, payload.access_tier, user.get("user_id"))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    else:
+        access_tier = read_ai_access_tier(db)
     return StandardResponse(
         success=True,
         message="PMS AI setting updated",
         data={
             "enabled": enabled,
+            "access_tier": access_tier,
             "corrective_action_pilot_enabled": read_ai_corrective_action_pilot_enabled(db),
         },
     )

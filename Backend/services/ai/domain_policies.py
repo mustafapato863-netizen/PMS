@@ -92,10 +92,11 @@ def is_arabic_text(text: str) -> bool:
 
 
 def sanitize_untrusted_text(value: Any, max_len: int = 200) -> str:
-    """Truncate and strip control characters from untrusted Excel/DB free-text cells."""
+    """Truncate, strip control chars, and neutralize XML/fencing chars from untrusted cells."""
     if value is None:
         return ""
     cleaned = re.sub(r"[\r\n\t]+", " ", str(value)).strip()
+    cleaned = cleaned.replace("<", "&lt;").replace(">", "&gt;").replace("`", "&#96;")
     if len(cleaned) > max_len:
         cleaned = cleaned[: max_len - 1].rstrip() + "…"
     return cleaned

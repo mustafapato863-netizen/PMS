@@ -36,50 +36,72 @@ class UserIdentityPassport:
     has_unrestricted_team_access: bool = False
 
     def to_xml(self) -> str:
-        """Serialize to compact XML block (≤ 200 tokens)."""
-        teams = ",".join(self.authorized_teams) if self.authorized_teams else "none"
-        branches = ",".join(self.authorized_branches) if self.authorized_branches else "none"
-        depts = ",".join(self.authorized_departments) if self.authorized_departments else "none"
+        """Serialize to compact XML block (≤ 200 tokens) with attribute escaping."""
+        def _esc(val: str) -> str:
+            return (
+                val.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+            )
+
+        teams = ",".join(_esc(str(t)) for t in self.authorized_teams[:8]) if self.authorized_teams else "none"
+        branches = ",".join(_esc(str(b)) for b in self.authorized_branches[:8]) if self.authorized_branches else "none"
+        depts = ",".join(_esc(str(d)) for d in self.authorized_departments[:8]) if self.authorized_departments else "none"
         return (
-            f'<CALLER_PASSPORT role="{self.role}" persona="{self.persona_tier.value}" '
-            f'employee_code="{self.employee_code or "none"}" linked="{str(self.is_linked_employee).lower()}" '
+            f'<CALLER_PASSPORT role="{_esc(self.role)}" persona="{self.persona_tier.value}" '
+            f'employee_code="{_esc(self.employee_code or "none")}" linked="{str(self.is_linked_employee).lower()}" '
             f'teams="[{teams}]" branches="[{branches}]" departments="[{depts}]" '
             f'unrestricted="{str(self.has_unrestricted_team_access).lower()}"/>'
         )
 
 
-def build_passport(scope: dict[str, Any], username: str = "") -> UserIdentityPassport:
+def build_passport(
+    scope: dict[str, Any],
+    username: str = "",
+    db: Any | None = None,
+) -> UserIdentityPassport:
     """Build a UserIdentityPassport from an RBAC scope dict.
 
     PersonaTier resolution:
-    - Admin, Executive (with unrestricted) → GLOBAL_EXEC
-    - Manager, Regional Manager → SCOPED_MANAGER
-    - Agent, Employee → SELF_ONLY
+    - Admin, General Manager, Performance Team, Executive → GLOBAL_EXEC
+    - Manager, Regional Manager, Branch Director, Function Director, Function Viewer → SCOPED_MANAGER
+    - Agent, Employee (and fallback) → SELF_ONLY
+
+    When ``db`` is provided and ``employee_code`` is present, resolves
+    ``employee_pk`` (Employee.id UUID) so callers have both the String code and
+    the UUID FK required by PerformanceRecord / Action / PerformancePlan.
     """
     role = str(scope.get("role") or "").strip()
     user_id = str(scope.get("user_id") or "").strip()
     employee_code = str(scope.get("employee_id") or "").strip() or None
 
-    # Determine persona tier
-    if role in ("Admin", "General Manager", "Performance Team"):
-        persona_tier = PersonaTier.GLOBAL_EXEC
-    elif role in ("Executive",) and scope.get("has_unrestricted_team_access"):
+    # Determine persona tier (Executive is GLOBAL_EXEC read-only per spec §1.5)
+    if role in ("Admin", "General Manager", "Performance Team", "Executive"):
         persona_tier = PersonaTier.GLOBAL_EXEC
     elif role in ("Manager", "Regional Manager", "Branch Director", "Function Director", "Function Viewer"):
         persona_tier = PersonaTier.SCOPED_MANAGER
     else:
         persona_tier = PersonaTier.SELF_ONLY
 
-    # employee_pk: try to resolve from scope or leave None
-    # The spec says employee_pk is a UUID FK to Employee.id
-    # We store employee_code (String) from scope; employee_pk requires a DB lookup
-    employee_pk = None  # Resolved separately if needed
+    # Resolve employee_pk (UUID as string) from scope or DB lookup
+    raw_pk = scope.get("employee_pk")
+    employee_pk: str | None = str(raw_pk).strip() if raw_pk else None
+    if employee_pk is None and employee_code and db is not None:
+        try:
+            from models.models import Employee
 
-    is_linked = bool(employee_code) and persona_tier == PersonaTier.SELF_ONLY
+            emp = (
+                db.query(Employee.id)
+                .filter(Employee.employee_id == employee_code, Employee.is_active.is_(True))
+                .first()
+            )
+            if emp is not None and emp[0] is not None:
+                employee_pk = str(emp[0])
+        except Exception:
+            employee_pk = None
 
-    # For non-self-only, employee linkage is less critical
-    if persona_tier != PersonaTier.SELF_ONLY and employee_code:
-        is_linked = True
+    is_linked = bool(employee_pk or employee_code)
 
     return UserIdentityPassport(
         user_id=user_id,

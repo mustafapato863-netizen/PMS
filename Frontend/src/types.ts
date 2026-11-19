@@ -739,21 +739,57 @@ export interface User {
 
 export type AiAccessTier = 'admin_only' | 'managers_and_admins' | 'all_authenticated_users';
 
+export interface Agent360KpiScore {
+  kpi_key?: string;
+  name: string;
+  score: number | null;
+  actual?: number | null;
+  target: number | null;
+  weight: number | null;
+  achievement?: number | null;
+  direction?: 'higher_better' | 'lower_better' | string;
+  grade: string | null;
+  status?: string | null;
+}
+
+export interface Agent360WhatIfResult {
+  employee_code: string;
+  period: string;
+  kpi_name: string;
+  improvement_pct: number;
+  current_score: number;
+  projected_score: number;
+  current_grade: string;
+  projected_grade: string;
+  score_delta: number;
+  current_achievement: number;
+  projected_achievement: number;
+  capped: boolean;
+}
+
 export interface Agent360Profile {
   employee_code: string;
   employee_name: string;
   current_period: string | null;
   overall_score: number | null;
   overall_grade: string | null;
-  score_trend: Array<{ month: string; year: number; score: number | null }>;
-  kpi_scores: Array<{ name: string; score: number | null; grade: string | null; status: string | null; target: number | null; weight: number | null }>;
+  score_trend: Array<{ month: string; year: number; score: number | null; grade?: string | null }>;
+  kpi_scores: Agent360KpiScore[];
   top_strength: string | null;
   top_opportunity: string | null;
   active_corrective_actions: number;
   corrective_action_summary: string | null;
   performance_classification: string;
   cohort: { cohort_size: number; cohort_avg_score: number; percentile_band: string } | null;
-  what_if_suggestions: Array<{ kpi_name: string; current_value: number; suggestion: string }>;
+  what_if_suggestions: Array<{
+    kpi_name: string;
+    current_value: number | null;
+    improvement_step?: number;
+    projected_score?: number;
+    projected_grade?: string;
+    score_delta?: number;
+    suggestion: string;
+  }>;
   message?: string;
 }
 

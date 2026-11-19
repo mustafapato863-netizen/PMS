@@ -271,6 +271,7 @@ class ApprovedPatternMatcher:
         prompt: str,
         *,
         known_employee_names: list[str] | None = None,
+        persona_tier: str | None = None,
     ) -> PatternMatchResult | None:
         if self.db is None or not str(prompt or "").strip():
             return None
@@ -299,6 +300,10 @@ class ApprovedPatternMatcher:
 
         best: PatternMatchResult | None = None
         for row in rows:
+            row_tier = getattr(row, "persona_tier", None)
+            if row_tier:
+                if not persona_tier or str(row_tier) != str(persona_tier):
+                    continue
             pat_str = str(row.normalized_pattern or "").strip()
             if not pat_str:
                 continue

@@ -644,10 +644,13 @@ def ensure_trace_schema_once(db: Session) -> None:
         with _ENGINE_INIT_LOCK:
             if engine_key in _INITIALIZED_ENGINE_KEYS:
                 return
+            from models.models import AiUserMemory
+
             AiConversation.__table__.create(bind=bind, checkfirst=True)
             AiTurn.__table__.create(bind=bind, checkfirst=True)
             AiInteractionTrace.__table__.create(bind=bind, checkfirst=True)
             AiApprovedPattern.__table__.create(bind=bind, checkfirst=True)
+            AiUserMemory.__table__.create(bind=bind, checkfirst=True)
             _ensure_conversation_v2_columns(bind)
             _INITIALIZED_ENGINE_KEYS.add(engine_key)
     except Exception as exc:
@@ -993,6 +996,10 @@ class TrainingTraceLogger:
                     clean_session["last_confirmed_query"].pop("last_subject_employee_name", None)
             clean_calls = redact_nested_payload(r.tool_calls or [], _precomputed_tokens=row_tokens)
             clean_resp = redact_nested_payload(r.structured_response or {}, _precomputed_tokens=row_tokens)
+            if isinstance(clean_resp, dict):
+                from services.ai.model_flywheel import deidentify_export_row
+
+                clean_resp = deidentify_export_row(clean_resp)
 
             sanitized_prompt = sanitize_prompt_for_router_training(
                 r.sanitized_prompt or r.prompt or "",

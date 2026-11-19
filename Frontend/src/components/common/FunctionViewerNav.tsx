@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronDown, FileBarChart, LayoutGrid } from 'lucide-react';
+import { ChevronDown, FileBarChart, LayoutGrid, Sparkles } from 'lucide-react';
 import { canonicalTeamName, teamPath } from '../../types';
 import { sidebarTeamLabel } from '../../features/team/countryTeamIdentity';
 import { executiveFunctionForTeam, functionSlug, isTeamInFunctions } from '../../features/executive/functions';
@@ -14,12 +14,13 @@ type NavItem = { id?: string; name: string; path: string; icon: ReactNode };
  * read-only dashboards), then Library → Reports. No employee tree, Shared
  * Functions, Insights, Planning or Corrective Actions.
  */
-export default function FunctionViewerNav({ allowed, catalogTeams, renderLink, isCollapsed }: {
+export default function FunctionViewerNav({ allowed, catalogTeams, renderLink, isCollapsed, showAiLink = false }: {
   allowed: ExecutiveFunction[];
   /** Team names from the performance catalog (backend-scoped). */
   catalogTeams: string[];
   renderLink: (item: NavItem, nested?: boolean) => ReactNode;
   isCollapsed: boolean;
+  showAiLink?: boolean;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(allowed.map((fn, index) => [fn, index === 0])));
   const teamsByFunction = useMemo(() => {
@@ -78,6 +79,7 @@ export default function FunctionViewerNav({ allowed, catalogTeams, renderLink, i
       })}
       {section('LIBRARY')}
       {renderLink({ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> })}
+      {showAiLink && renderLink({ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} /> })}
     </div>
   );
 }

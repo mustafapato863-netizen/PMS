@@ -4,8 +4,18 @@ import type { AiAccessTier } from '../types';
 
 export const DEFAULT_AI_TIER: AiAccessTier = 'admin_only';
 
-/** Roles allowed in the managers_and_admins tier. */
-const MANAGER_TIER_ROLES = new Set(['Admin', 'General Manager', 'Manager', 'Executive']);
+/** Roles allowed in the managers_and_admins tier (mirrors backend MANAGER_AND_ADMIN_AI_ROLES). */
+const MANAGER_TIER_ROLES = new Set([
+  'Admin',
+  'General Manager',
+  'Performance Team',
+  'Manager',
+  'Executive',
+  'Regional Manager',
+  'Branch Director',
+  'Function Director',
+  'Function Viewer',
+]);
 
 export function hasAiAccess(role: string | null | undefined, aiTier?: AiAccessTier): boolean {
   const tier = aiTier ?? DEFAULT_AI_TIER;

@@ -67,7 +67,7 @@ function AnimatedRoutes() {
             element={<Suspense fallback={<RouteLoadingFallback />}><EmployeeProfileView /></Suspense>}
           />
           {aiAllowed && (
-            <Route path="/ai" element={<Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>} />
+            <Route path="/ai" element={<AiWorkspaceRoute />} />
           )}
           <Route path="*" element={<Suspense fallback={<RouteLoadingFallback />}><NotFound /></Suspense>} />
         </Routes>

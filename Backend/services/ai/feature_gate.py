@@ -27,20 +27,87 @@ AI_PILOT_ROLE = "Admin"
 
 
 AI_ACCESS_TIER_KEY = "ai_access_tier"
+VALID_AI_ACCESS_TIERS: tuple[str, ...] = (
+    "admin_only",
+    "managers_and_admins",
+    "all_authenticated_users",
+)
+MANAGER_AND_ADMIN_AI_ROLES: frozenset[str] = frozenset(
+    {
+        "Admin",
+        "General Manager",
+        "Performance Team",
+        "Manager",
+        "Executive",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director",
+        "Function Viewer",
+    }
+)
 
 
 def read_ai_access_tier(db: Session) -> str:
     """Read the current AI access tier from product settings."""
+    if db is None:
+        return "admin_only"
     try:
         row = db.query(ProductSetting).filter(ProductSetting.key == AI_ACCESS_TIER_KEY).one_or_none()
         if row is not None and getattr(row, "value_str", None):
-            return str(row.value_str)
+            val = str(row.value_str).strip()
+            if val in VALID_AI_ACCESS_TIERS:
+                return val
         if row is not None and row.enabled:
             return "all_authenticated_users"
-    except SQLAlchemyError:
-        db.rollback()
+    except (SQLAlchemyError, AttributeError):
+        if hasattr(db, "rollback"):
+            try:
+                db.rollback()
+            except Exception:
+                pass
         logger.warning("AI access tier could not be read; defaulting to admin_only")
     return "admin_only"
+
+
+def set_ai_access_tier(db: Session, tier: str, user_id: str | None) -> str:
+    """Persist the AI access rollout tier and record an audit row."""
+    normalized = str(tier or "").strip()
+    if normalized not in VALID_AI_ACCESS_TIERS:
+        raise ValueError(f"Unsupported ai_access_tier: {normalized!r}")
+    row = db.query(ProductSetting).filter(ProductSetting.key == AI_ACCESS_TIER_KEY).one_or_none()
+    previous = str(getattr(row, "value_str", None) or "admin_only") if row is not None else "admin_only"
+    actor_id = None
+    if user_id:
+        try:
+            actor_id = uuid.UUID(str(user_id))
+        except (TypeError, ValueError):
+            actor_id = None
+    if row is None:
+        row = ProductSetting(
+            key=AI_ACCESS_TIER_KEY,
+            enabled=True,
+            value_str=normalized,
+            updated_by_user_id=actor_id,
+        )
+        db.add(row)
+    else:
+        row.enabled = True
+        row.value_str = normalized
+        row.updated_by_user_id = actor_id
+    db.commit()
+    try:
+        AuditService.log_operation(
+            db,
+            "product_settings",
+            "UPDATE",
+            None,
+            {"key": AI_ACCESS_TIER_KEY, "value_str": previous},
+            {"key": AI_ACCESS_TIER_KEY, "value_str": normalized},
+            str(actor_id) if actor_id else None,
+        )
+    except Exception:
+        logger.exception("AI access tier was saved but the audit row was not")
+    return normalized
 
 def _legacy_role_header_allowed() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -184,20 +251,24 @@ def require_ai_admin(request: Request) -> str:
 
 
 def require_ai_access(request: Request, db: Session = Depends(get_db)) -> str:
-    """Tier-aware AI access gate. Replaces require_ai_admin for user-facing endpoints."""
+    """Tier-aware AI access gate for user-facing AI endpoints.
+
+    Verifies an authenticated session first so anonymous callers can never pass
+    even when ``ai_access_tier`` is ``all_authenticated_users``.
+    """
+    require_ai_diagnostic_session(request)
     tier = read_ai_access_tier(db)
     role = request_role(request)
-    if tier == "admin_only" and role != "Admin":
+    if tier == "admin_only" and role != AI_PILOT_ROLE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="PMS AI is currently limited to administrators.",
+            detail="PMS AI is limited to administrators during the pilot.",
         )
-    if tier == "managers_and_admins" and role not in ("Admin", "Manager", "Executive"):
+    if tier == "managers_and_admins" and role not in MANAGER_AND_ADMIN_AI_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PMS AI is currently limited to managers and administrators.",
         )
-    # all_authenticated_users → any authenticated user passes
     return role
 
 

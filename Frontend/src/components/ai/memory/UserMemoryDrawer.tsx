@@ -1,7 +1,7 @@
-/** "My Profile & Memory" drawer — view and clear personal AI memory. */
+/** "My Profile & Memory" drawer — view, tune preferences, and clear personal AI memory. */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Brain, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
+import { AlertCircle, Brain, Check, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../../../lib/apiClient';
 
 interface MemoryData {
@@ -19,6 +19,8 @@ interface UserMemoryDrawerProps {
 export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
   const [memory, setMemory] = useState<MemoryData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -43,6 +45,25 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
     return () => clearTimeout(timer);
   }, [isOpen, load]);
 
+  const updatePreference = useCallback(async (patch: { detail_level?: string; communication_style?: string }) => {
+    setSaving(true);
+    setError(null);
+    setSavedNotice(false);
+    try {
+      const res = await apiFetch<{ memory: MemoryData | null }>('/api/ai/memory/me', {
+        method: 'PUT',
+        body: JSON.stringify({ preferences: patch }),
+      });
+      setMemory(res.memory);
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to save preference.');
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
   const clearAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -65,8 +86,15 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
       (memory.interaction_summary ? 1 : 0)
     : 0;
 
+  const currentDetail = String(memory?.preferences?.detail_level || 'auto');
+  const currentStyle = String(memory?.preferences?.communication_style || 'auto');
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" onMouseDown={onClose} data-testid="user-memory-drawer">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/30"
+      onMouseDown={onClose}
+      data-testid="user-memory-drawer"
+    >
       <aside
         className="flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
@@ -79,12 +107,57 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
               <p className="text-xs text-slate-500">What your AI assistant remembers about you</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
             <X size={18} />
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {/* Quick Preference Controls */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Response Preferences</h3>
+              {savedNotice && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                  <Check size={12} /> Saved
+                </span>
+              )}
+            </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-2.5">
+              <label className="text-xs font-medium text-slate-600">
+                Detail level
+                <select
+                  disabled={saving}
+                  value={currentDetail}
+                  onChange={(e) => void updatePreference({ detail_level: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="brief">Brief</option>
+                  <option value="detailed">Detailed</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-600">
+                Style
+                <select
+                  disabled={saving}
+                  value={currentStyle}
+                  onChange={(e) => void updatePreference({ communication_style: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800"
+                >
+                  <option value="auto">Auto</option>
+                  <option value="formal">Formal</option>
+                  <option value="casual">Casual</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
               <Loader2 size={16} className="animate-spin" /> Loading…
@@ -97,7 +170,9 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
               <Brain size={22} className="mx-auto text-slate-300" />
               <p className="mt-2 text-sm font-semibold text-slate-700">No memory yet</p>
-              <p className="mt-1 text-xs text-slate-500">As you chat, your assistant will learn your preferences and focus areas.</p>
+              <p className="mt-1 text-xs text-slate-500">
+                As you chat, your assistant will learn your preferences and focus areas.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -117,7 +192,11 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
         <footer className="border-t border-slate-200 px-5 py-4">
           <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
             <span>{itemCount} item(s) stored</span>
-            <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline">
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
+            >
               <RefreshCw size={12} /> Refresh
             </button>
           </div>

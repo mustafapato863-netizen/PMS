@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
 import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
-import { isAdminRole } from '../../lib/access';
+import { canAccessPmsAi } from '../../lib/access';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import ExecutiveKpiStrip from './response/ExecutiveKpiStrip';
@@ -196,7 +196,7 @@ export function ContextualAssistantPanel({
   const { currentUser } = useAuth();
   const { enabled: aiEnabled } = useAiAvailability();
   const navigate = useNavigate();
-  const pilotVisible = aiEnabled && isAdminRole(role);
+  const pilotVisible = aiEnabled && canAccessPmsAi(role, currentUser?.ai_access_tier);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
@@ -436,7 +436,7 @@ export function ContextualAssistantPanel({
   const sendPrompt = useCallback(
     async (promptText: string, opts?: { variationSeed?: number }) => {
       const trimmed = promptText.trim();
-      if (!trimmed || !isAdminRole(role) || !aiEnabled) return;
+      if (!trimmed || !canAccessPmsAi(role, currentUser?.ai_access_tier) || !aiEnabled) return;
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -547,7 +547,7 @@ export function ContextualAssistantPanel({
         );
       }
     },
-    [aiEnabled, conversationId, pageContext, role, turns],
+    [aiEnabled, conversationId, currentUser?.ai_access_tier, pageContext, role, turns],
   );
 
   const openProposalReview = useCallback((turnId: string, proposal: AiCorrectiveActionProposal) => {

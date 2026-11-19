@@ -390,6 +390,26 @@ class DeterministicToolRegistry:
             "required": ["team", "period"],
             "additionalProperties": False,
         },
+        "explain_scoring_rules_and_targets": {
+            "type": "object",
+            "description": "Explain canonical KPI scoring rules, weights, targets, achievement cap, and grade thresholds scoped to the caller.",
+            "properties": {
+                "kpi_name": {"type": "string", "description": "Optional KPI name to focus on"},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        "simulate_kpi_improvement": {
+            "type": "object",
+            "description": "Deterministic What-If simulation: project score and grade change if a KPI improves by a given amount, respecting GLOBAL_KPI_ACHIEVEMENT_CAP and lower_better formulas.",
+            "properties": {
+                "employee_id": {"type": "string", "description": "Employee ID (auto-bound to caller for self-only users)"},
+                "kpi_name": {"type": "string", "description": "KPI name or key to simulate"},
+                "improvement_pct": {"type": "number", "description": "Improvement amount in KPI units / percentage points"},
+            },
+            "required": ["kpi_name", "improvement_pct"],
+            "additionalProperties": False,
+        },
     }
 
     def __init__(self, ctx: ToolExecutionContext) -> None:
@@ -447,14 +467,24 @@ class DeterministicToolRegistry:
         # 1. is_self_only check
         if scope.get("is_self_only"):
             caller_emp_id = str(scope.get("employee_id") or "").strip()
-            target_emp_id = str(tool_arguments.get("employee_id") or "").strip()
-            if not target_emp_id or target_emp_id.casefold() != caller_emp_id.casefold():
-                raise PermissionError("Self-only scope restriction: cannot access records of other employees or aggregate team metrics.")
-            if tool_name in ("compare_branches", "rank_employees") or (
-                tool_name == "get_kpi_diagnosis"
-                and not (tool_arguments.get("employee_id") or tool_arguments.get("employee_name"))
-            ):
-                raise PermissionError("Self-only scope restriction: employee cannot access organizational analytics tools.")
+            if tool_name == "explain_scoring_rules_and_targets":
+                pass  # Rules explanation is scoped via passport, never exposes peer data
+            elif tool_name == "simulate_kpi_improvement":
+                req_emp = str(tool_arguments.get("employee_id") or "").strip()
+                if req_emp and req_emp.casefold() != caller_emp_id.casefold():
+                    raise PermissionError("Self-only scope restriction: cannot simulate another employee's KPIs.")
+                if not caller_emp_id:
+                    raise PermissionError("Your account isn't linked to an employee profile yet. Please contact your manager.")
+                tool_arguments["employee_id"] = caller_emp_id
+            else:
+                target_emp_id = str(tool_arguments.get("employee_id") or "").strip()
+                if not target_emp_id or target_emp_id.casefold() != caller_emp_id.casefold():
+                    raise PermissionError("Self-only scope restriction: cannot access records of other employees or aggregate team metrics.")
+                if tool_name in ("compare_branches", "rank_employees") or (
+                    tool_name == "get_kpi_diagnosis"
+                    and not (tool_arguments.get("employee_id") or tool_arguments.get("employee_name"))
+                ):
+                    raise PermissionError("Self-only scope restriction: employee cannot access organizational analytics tools.")
 
         # 2. Branch restriction check
         acc_branches = scope.get("accessible_branches") or scope.get("allowed_branches")
@@ -583,6 +613,52 @@ class DeterministicToolRegistry:
                 month=month_str,
                 year=year_int,
                 performance_level=tool_arguments.get("performance_level"),
+            )
+        elif tool_name == "explain_scoring_rules_and_targets":
+            from services.ai.identity_service import build_passport
+            from services.ai.scoring_rules_explainer import ScoreRulesExplainer
+
+            passport = scope.get("passport") or build_passport(scope, db=self.ctx.db)
+            kpi_filter = str(tool_arguments.get("kpi_name") or "").strip() or None
+            explainer = ScoreRulesExplainer(self.ctx.db)
+            rules_data = explainer.explain(passport, kpi_name=kpi_filter)
+            return ToolExecutionResult(
+                tool_name="explain_scoring_rules_and_targets",
+                arguments={"kpi_name": kpi_filter},
+                records_evaluated=len(rules_data.get("weights") or []),
+                digest={
+                    **rules_data,
+                    "summary": f"Loaded canonical scoring rules (cap={rules_data.get('achievement_cap')}, grades={rules_data.get('grade_thresholds')}).",
+                },
+            )
+        elif tool_name == "simulate_kpi_improvement":
+            from services.ai.agent_360_service import Agent360Service
+
+            emp_code = str(tool_arguments.get("employee_id") or scope.get("employee_id") or "").strip()
+            kpi_name = str(tool_arguments.get("kpi_name") or "").strip()
+            imp_pct = float(tool_arguments.get("improvement_pct") or 0.0)
+            sim = Agent360Service(self.ctx.db).simulate_what_if(emp_code, kpi_name, imp_pct) if emp_code else None
+            if sim is None:
+                return ToolExecutionResult(
+                    tool_name="simulate_kpi_improvement",
+                    arguments={"employee_id": emp_code, "kpi_name": kpi_name, "improvement_pct": imp_pct},
+                    records_evaluated=0,
+                    digest={
+                        "error": "Unable to simulate the requested KPI for this employee profile.",
+                        "summary": f"No simulatable KPI '{kpi_name}' found for employee '{emp_code}'.",
+                    },
+                )
+            return ToolExecutionResult(
+                tool_name="simulate_kpi_improvement",
+                arguments={"employee_id": emp_code, "kpi_name": kpi_name, "improvement_pct": imp_pct},
+                records_evaluated=1,
+                digest={
+                    **sim,
+                    "summary": (
+                        f"Simulating {kpi_name} by {imp_pct}: score {sim['current_score']}% ({sim['current_grade']}) "
+                        f"-> {sim['projected_score']}% ({sim['projected_grade']}, delta {sim['score_delta']:+.2f} pts)."
+                    ),
+                },
             )
         raise ValueError(f"Unhandled tool '{tool_name}'")
 

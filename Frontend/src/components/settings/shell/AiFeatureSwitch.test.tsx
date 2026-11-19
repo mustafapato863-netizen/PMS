@@ -131,4 +131,34 @@ describe('PMS AI administrator switch', () => {
     expect(screen.getByRole('switch', { name: 'Enable PMS AI' })).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Enable PMS AI' })).toHaveAttribute('aria-checked', 'false');
   });
+
+  it('allows an administrator to change the AI access rollout tier', async () => {
+    apiFetch.mockImplementation((_url: string, options?: { method?: string; body?: string }) => {
+      if (options?.method === 'PUT') {
+        const parsed = options.body ? JSON.parse(options.body) : {};
+        return Promise.resolve({
+          success: true,
+          data: { enabled: Boolean(parsed.enabled), access_tier: parsed.access_tier ?? 'admin_only' },
+        });
+      }
+      return Promise.resolve({
+        success: true,
+        data: { enabled: true, access_tier: 'admin_only' },
+      });
+    });
+
+    renderWithAvailability(<AiFeatureSwitch />);
+    const select = await screen.findByLabelText('PMS AI access rollout tier');
+    expect(select).toHaveValue('admin_only');
+
+    await userEvent.selectOptions(select, 'managers_and_admins');
+    expect(select).toHaveValue('managers_and_admins');
+    expect(apiFetch).toHaveBeenLastCalledWith(
+      '/api/settings/ai-assistant',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ enabled: true, access_tier: 'managers_and_admins' }),
+      }),
+    );
+  });
 });

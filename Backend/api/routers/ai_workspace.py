@@ -9,7 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
+from services.ai.feature_gate import (
+    read_ai_access_tier,
+    read_ai_enabled,
+    require_ai_access,
+    require_ai_admin,
+    require_ai_diagnostic_session,
+    require_ai_enabled,
+)
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiApprovedPatternListResponse,
@@ -89,6 +96,13 @@ from services.insights_service import InsightAccessError, InsightValidationError
 router = APIRouter(
     prefix="/ai",
     tags=["PMS AI Workspace"],
+    dependencies=[Depends(require_ai_enabled), Depends(require_ai_access)],
+)
+
+# Admin-only governance routes (traces, pattern approval, exports, purges).
+# Always restricted to Admin regardless of ai_access_tier; mounted under router below.
+admin_governance_router = APIRouter(
+    tags=["PMS AI Governance"],
     dependencies=[Depends(require_ai_enabled), Depends(require_ai_admin)],
 )
 
@@ -98,8 +112,7 @@ diagnostics_router = APIRouter(
     tags=["PMS AI Diagnostics"],
 )
 
-# The router dependency is the pilot boundary. This list stays Admin-only so a
-# route-level check cannot admit a wider role if the router dependency is copied.
+# Default pilot roles (admin_only tier). Widened dynamically by require_ai_access via ai_access_tier.
 AI_WORKSPACE_ROLES = [
     "Admin",
 ]
@@ -252,7 +265,7 @@ def get_ai_watching_workspace(
     performance_level: str | None = Query(default=None),
     month: str | None = Query(default=None),
     year: int | None = Query(default=None, ge=2000, le=2100),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiWatchingResponse:
     scope = require_authenticated_scope(db, request)
     session_state = SessionFilterContext(
@@ -281,7 +294,7 @@ def post_ai_chat_turn(
     body: AiChatRequest,
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiChatResponse:
     scope = require_authenticated_scope(db, request)
     user_id = str(scope.get("user_id") or "") or None
@@ -296,7 +309,12 @@ def post_ai_chat_turn(
         with acquire_chat_concurrency_slot():
             if not is_replay:
                 check_request_token_budget(estimate_tokens(body.prompt))
-                check_user_daily_budget(user_id, user_role, increment_request=True)
+                check_user_daily_budget(
+                    user_id,
+                    user_role,
+                    increment_request=True,
+                    access_tier=read_ai_access_tier(db),
+                )
             payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
     except AiBudgetExceededError as exc:
         release_read_transaction(db)
@@ -344,7 +362,7 @@ def post_confirm_corrective_action_proposal(
     body: AiCorrectiveActionConfirmRequest,
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiCorrectiveActionConfirmResponse:
     scope = require_authenticated_scope(db, request)
     try:
@@ -368,7 +386,7 @@ def create_ai_conversation(
     request: Request,
     body: AiConversationCreateRequest | None = None,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiConversationResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -397,7 +415,7 @@ def list_ai_conversations(
     limit: int = Query(default=30, ge=1, le=50),
     origin: Literal["workspace", "page_assistant", "legacy", "all"] = Query(default="workspace"),
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiConversationListResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -423,7 +441,7 @@ def get_ai_conversation_detail(
     request: Request,
     origin: Literal["workspace", "page_assistant", "legacy"] = Query(default="workspace"),
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiConversationDetailResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -457,7 +475,7 @@ def get_ai_conversation_context(
     request: Request,
     origin: Literal["workspace", "page_assistant", "legacy"] = Query(default="workspace"),
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiConversationResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -490,7 +508,7 @@ def promote_ai_conversation(
     conversation_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiConversationResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -518,7 +536,7 @@ def delete_ai_conversation(
     conversation_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> dict[str, object]:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
@@ -547,7 +565,7 @@ def delete_ai_conversation(
 def get_ai_authorized_catalog(
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiCatalogResponse:
     scope = require_authenticated_scope(db, request)
     payload = get_ai_catalog().get_authorized_catalog_payload(scope)
@@ -564,7 +582,7 @@ def post_ai_trace_feedback(
     body: AiFeedbackRequest,
     request: Request,
     db: Session = Depends(get_db),
-    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+    _role: str = Depends(require_ai_access),
 ) -> AiFeedbackResponse:
     scope = require_authenticated_scope(db, request)
     caller_role = str(scope.get("role") or "")
@@ -640,7 +658,7 @@ def post_ai_trace_feedback(
     )
 
 
-@router.post("/traces/{trace_id}/review", response_model=AiTraceReviewResponse)
+@admin_governance_router.post("/traces/{trace_id}/review", response_model=AiTraceReviewResponse)
 def post_ai_trace_review(
     trace_id: str,
     body: AiTraceReviewRequest,
@@ -677,7 +695,7 @@ def post_ai_trace_review(
     return result
 
 
-@router.get("/feedback/clusters", response_model=AiFeedbackClustersResponse)
+@admin_governance_router.get("/feedback/clusters", response_model=AiFeedbackClustersResponse)
 def get_ai_feedback_clusters(
     request: Request,
     db: Session = Depends(get_db),
@@ -702,7 +720,7 @@ def get_ai_feedback_clusters(
     return payload
 
 
-@router.get("/feedback/patterns", response_model=AiApprovedPatternListResponse)
+@admin_governance_router.get("/feedback/patterns", response_model=AiApprovedPatternListResponse)
 def get_ai_approved_patterns(
     request: Request,
     db: Session = Depends(get_db),
@@ -715,7 +733,7 @@ def get_ai_approved_patterns(
     return AiApprovedPatternListResponse(success=True, patterns=patterns)
 
 
-@router.post("/traces/{trace_id}/approve-pattern", response_model=AiApprovePatternResponse)
+@admin_governance_router.post("/traces/{trace_id}/approve-pattern", response_model=AiApprovePatternResponse)
 def post_approve_ai_pattern(
     trace_id: str,
     body: AiApprovePatternRequest,
@@ -754,7 +772,7 @@ def post_approve_ai_pattern(
     )
 
 
-@router.delete("/feedback/patterns/{pattern_id}")
+@admin_governance_router.delete("/feedback/patterns/{pattern_id}")
 def delete_ai_approved_pattern(
     pattern_id: str,
     request: Request,
@@ -787,7 +805,7 @@ def delete_ai_approved_pattern(
     }
 
 
-@router.post("/traces/purge", response_model=AiFeedbackPurgeResponse)
+@admin_governance_router.post("/traces/purge", response_model=AiFeedbackPurgeResponse)
 def post_purge_ai_traces(
     request: Request,
     body: AiFeedbackPurgeRequest | None = None,
@@ -814,7 +832,7 @@ def post_purge_ai_traces(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.delete("/traces/{trace_id}")
+@admin_governance_router.delete("/traces/{trace_id}")
 def delete_ai_trace(
     trace_id: str,
     request: Request,
@@ -847,7 +865,7 @@ def delete_ai_trace(
     }
 
 
-@router.get("/feedback/export-bundle", response_model=AiDeidentifiedExportBundleResponse)
+@admin_governance_router.get("/feedback/export-bundle", response_model=AiDeidentifiedExportBundleResponse)
 def export_ai_feedback_bundle(
     request: Request,
     db: Session = Depends(get_db),
@@ -881,7 +899,7 @@ def export_ai_feedback_bundle(
     return bundle
 
 
-@router.get("/traces/export", response_model=AiDistillationExportResponse)
+@admin_governance_router.get("/traces/export", response_model=AiDistillationExportResponse)
 def export_ai_distillation_traces(
     request: Request,
     db: Session = Depends(get_db),
@@ -1006,3 +1024,6 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         rejected_budget_requests=int(budget_snapshot["rejected_budget_requests"]),
         data_freshness=freshness,
     )
+
+
+router.include_router(admin_governance_router)

@@ -626,6 +626,7 @@ class FeedbackGovernanceService:
         rows = (
             self.db.query(AiInteractionTrace)
             .order_by(AiInteractionTrace.created_at.desc())
+            .limit(1000)
             .all()
         )
 
@@ -792,19 +793,21 @@ class FeedbackGovernanceService:
         now_utc = datetime.now(timezone.utc)
         cutoff = now_utc - timedelta(days=days)
 
-        rows = self.db.query(AiInteractionTrace).all()
-        expired_rows = [
-            row for row in rows
-            if (created_utc := _as_utc(row.created_at)) is not None and created_utc < cutoff
-        ]
-        matched_count = len(expired_rows)
+        expired_query = self.db.query(AiInteractionTrace).filter(
+            AiInteractionTrace.created_at < cutoff
+        )
+        matched_count = int(expired_query.count() or 0)
         purged_count = 0
 
-        if not dry_run and expired_rows:
-            for row in expired_rows:
-                self.db.delete(row)
-            self.db.commit()
-            purged_count = matched_count
+        if not dry_run and matched_count > 0:
+            while True:
+                batch = expired_query.limit(500).all()
+                if not batch:
+                    break
+                for row in batch:
+                    self.db.delete(row)
+                self.db.commit()
+                purged_count += len(batch)
 
         actor_uuid = _parse_optional_uuid(caller_user_id)
         new_values: dict[str, Any] = {
