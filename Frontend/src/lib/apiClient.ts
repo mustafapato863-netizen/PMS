@@ -1,4 +1,4 @@
-import { API_BASE, API_TIMEOUT_MS, API_UPLOAD_TIMEOUT_MS } from '../config';
+import { API_AI_CHAT_TIMEOUT_MS, API_BASE, API_TIMEOUT_MS, API_UPLOAD_TIMEOUT_MS } from '../config';
 import { clearAuthenticatedQueryState } from './queryClient';
 import { RATE_LIMIT_STATUS, RateLimitError, rejectRateLimited } from './rateLimit';
 
@@ -126,9 +126,11 @@ function isAbortError(error: unknown): boolean {
  */
 async function openWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutOverride?: number): Promise<{ response: Response; release: () => void }> {
   const controller = new AbortController();
-  const timeoutMs = timeoutOverride ?? (typeof FormData !== 'undefined' && init.body instanceof FormData
+  const urlString = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+  const defaultTimeout = typeof FormData !== 'undefined' && init.body instanceof FormData
     ? API_UPLOAD_TIMEOUT_MS
-    : API_TIMEOUT_MS);
+    : (urlString.includes('/api/ai/chat') ? API_AI_CHAT_TIMEOUT_MS : API_TIMEOUT_MS);
+  const timeoutMs = timeoutOverride ?? defaultTimeout;
   const timeoutId = globalThis.setTimeout(() => {
     controller.abort(new DOMException('Request timed out', 'TimeoutError'));
   }, timeoutMs);

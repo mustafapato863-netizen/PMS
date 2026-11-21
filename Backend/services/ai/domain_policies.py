@@ -100,6 +100,7 @@ TEAM_ALIASES: dict[str, str] = {
     "pre-approvals ip": "Pre-Approvals IP",
     "pre-approvals": "Pre-Approvals", "preapprovals": "Pre-Approvals",
     "human resources": "Human Resources",
+    "hr": "Human Resources",
     "offshore admin & management": "Offshore Admin & Management",
     "finance": "Finance",
     "crm": "CRM",
@@ -972,11 +973,11 @@ _PMS_ENTITY_OR_KPI_RE = re.compile(
     r"\b(?:score|scores|scored|scoring|kpi|kpis|metric|metrics|target|targets|booking|bookings|"
     r"attended|attendance|abandon|abandoned|reachability|aht|fcr|qa|quality|sla|compliance|"
     r"resubmission|re-submission|submission|coding|pre-approvals?|collections|denial|rejection|"
-    r"revenue|sales|marketing|pharmacy|csr|finance|human\s+resources|crm|nursing|pmo|rcm|"
+    r"revenue|sales|marketing|pharmacy|csr|finance|human\s+resources|hr|crm|nursing|pmo|rcm|"
     r"inbound|outbound|call\s+center|support\s+positions?|support\s+team|scorecard|scorecards|bsc|balanced\s+scorecard|"
     r"corrective\s+actions?|action\s+plan|pip|sip|grade|grades|ranking|rank|ranks|"
     r"top\s+performers?|top\s+agents?|best\s+agents?|worst\s+agents?|lowest|highest|weakest|strongest|"
-    r"bottom\s+agents?|leader|leaders|leading|leads|driver|drivers|gap|gaps|trend|trends|trajectory|"
+    r"bottom\s+agents?|leader|leaders|leading|leads|driver|drivers|driving|drove|gap|gaps|trend|trends|trajectory|"
     r"progression|over\s+time|6-month|compare|comparison|versus|vs|diagnose|root\s+cause|dragging|"
     r"pulling|below\s+target|dropped|drop|dropping|decline|declined|fell|fall|improve|improved|"
     r"improvement|underperform|overdue|joiner|joiners|joined|joining|hire\s+date|tenure|evaluation|"
@@ -993,7 +994,11 @@ _PMS_ANALYTICAL_INTENT_RE = re.compile(
     r"waiting\s+time|cpl|cpv|leads|rework|response\s+time|leakage|tender\s+compliance|atv|media\s+buyer|"
     r"scorecard|scorecards|bsc|balanced\s+scorecard|corrective\s+actions?|action\s+plan|"
     r"ranking|rank|ranks|top|best|worst|lowest|highest|weakest|strongest|bottom|leader|leaders|leading|leads|"
-    r"driver|drivers|gap|gaps|trend|trends|trajectory|progression|over\s+time|6-month|"
+    r"driver|drivers|driving|drove|impacting|affecting|hurting|boosting|causing|caused|"
+    r"weakness|weaknesses|strength|strengths|improving|improved|improvement|"
+    r"gap|gaps|trend|trends|trajectory|progression|progress|over\s+time|6-month|"
+    r"month[- ]by[- ]month|month[- ]over[- ]month|been\s+moving|movement|evolution|"
+    r"(?:last|recent|past)\s+(?:\d+|few)?\s*months|"
     r"compare|comparison|versus|vs|diagnose|root\s+cause|dragging|pulling|below\s+target|"
     r"dropped|drop|dropping|decline|declined|fell|fall|overdue|joiner|joiners|joined|joining|"
     r"hire\s+date|tenure|position|role|title|performance|result|results)\b",

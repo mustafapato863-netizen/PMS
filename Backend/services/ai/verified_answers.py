@@ -127,6 +127,7 @@ def read_score_comparison(
         filters = dict(
             team=team,
             function=function,
+            position=None if by_team else plan.position,
             branch=plan.branch,
             performance_level=plan.performance_level,
             month=month,
@@ -142,12 +143,15 @@ def read_score_comparison(
                 **filters, score_measure=getattr(plan, "score_measure", None) or "official",
             )
         combined.resolved_month, combined.resolved_year = month, int(year)
+        accepted_teams = {team or function}
+        if not by_team and plan.position:
+            accepted_teams.add(f"{team or function} · {plan.position}")
         evidence = next((
             entry for entry in result.typed_evidence
             if entry.kpi_key == "overall_score" and entry.period == label
             and (
                 (employee_id and entry.employee_id == employee_id)
-                or (not employee_id and entry.team == (team or function) and entry.sample_size)
+                or (not employee_id and entry.team in accepted_teams and entry.sample_size)
             )
             and entry.actual is not None and isfinite(entry.actual)
         ), None)
@@ -191,7 +195,14 @@ def read_score_comparison(
             else f"fell by {points:.1f} {point_label}" if difference < 0
             else "held steady"
         )
-        subject = first.employee_name or first.team
+        subject = (
+            first.employee_name
+            or (
+                f"{plan.position} ({first.team})"
+                if plan.position and first.team and plan.position.casefold() not in first.team.casefold()
+                else (plan.position or first.team)
+            )
+        )
         position = (
             f" Position: {second.position}."
             if plan.include_employee_position and second.position else

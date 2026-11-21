@@ -1646,7 +1646,12 @@ class DeterministicLocalProviderAdapter:
                             f"{worst['team']} has the lowest score at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
                         )
                 else:
-                    if variant_idx == 1:
+                    raw_scope_label = str(merged.get("scope") or "").strip()
+                    if " · " in raw_scope_label:
+                        headline = (
+                            f"In {period} ({branch}), {raw_scope_label} scored {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
+                        )
+                    elif variant_idx == 1:
                         headline = (
                             f"Primary risk area in {period} ({branch}): {worst['team']} trails at {w_score:.1f}%{change_txt_en}{agent_impact_clause}."
                         )

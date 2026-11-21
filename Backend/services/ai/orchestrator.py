@@ -2265,6 +2265,11 @@ class PmsAiOrchestrator:
                 if isinstance(call_args, dict) and call_name in ("query_rankings", "get_kpi_diagnosis", "get_score_trend", "compare_branches"):
                     call_args = dict(call_args)
                     call_args.setdefault("score_measure", routed.plan.score_measure or "official")
+                    if call_name in ("get_kpi_diagnosis", "get_score_trend") and routed.plan.position:
+                        call_args.setdefault("position", routed.plan.position)
+                    raw_br_arg = str(call_args.get("branch") or "").strip().casefold()
+                    if raw_br_arg in ("uae", "egy", "egypt", "ksa", "emirates", "all", "all branches"):
+                        call_args.pop("branch", None)
                 call_start = time.perf_counter()
                 ml_cache_sig = {
                     "stage": "model_led_tool",
@@ -2728,7 +2733,13 @@ class PmsAiOrchestrator:
         curr_period = latest_ev.period or f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"
         curr_period_label = _safe_period_label(curr_period)
 
-        display_subject = getattr(latest_ev, "employee_name", None) or emp_name or latest_ev.team or team
+        pos_label = getattr(latest_ev, "position", None) or routed.plan.position
+        base_team = latest_ev.team or team
+        display_subject = (
+            getattr(latest_ev, "employee_name", None)
+            or emp_name
+            or (f"{pos_label} ({base_team})" if (pos_label and base_team) else (pos_label or base_team))
+        )
         compound_required_groups: list[list[str]] = []
         branch_ev: list[TypedMetricEvidence] = []
         compound_trend_result = (
@@ -3224,7 +3235,7 @@ class PmsAiOrchestrator:
             },
             temperature=0.0,
             max_tokens=None,
-            timeout_seconds=min(cfg.provider_timeout_seconds, synthesis_budget_s),
+            timeout_seconds=min(max(cfg.provider_timeout_seconds, 22.0), synthesis_budget_s),
             purpose="model_led_synthesis",
             task_role="investigation" if (
                 tool_name in {"query_rankings", "rank_employees", "compare_branches", "get_score_trend"}
@@ -3606,13 +3617,17 @@ class PmsAiOrchestrator:
         )
 
         applied_correction = None
-        if len(validated_plan_v2.operations) == 1 and not compound_required_groups:
-            correction = corrected_measurement(routed.plan.model_dump(), tool_result.typed_evidence, final_headline)
+        if len(validated_plan_v2.operations) == 1:
+            correction = (
+                corrected_measurement(routed.plan.model_dump(), tool_result.typed_evidence, final_headline)
+                if not compound_required_groups
+                else None
+            )
             if correction and active_measurement_correction(self.db):
                 final_headline = correction
                 final_provider, final_model, final_answer_source = "deterministic", MEASUREMENT_RULE, "deterministic"
                 applied_correction = MEASUREMENT_RULE
-            else:
+            elif not compound_required_groups or compound_required_groups == [["role", "position"]]:
                 ranking_rewrite = corrected_concise_ranking(
                     routed.plan.model_dump(),
                     tool_result.typed_evidence,
@@ -3663,6 +3678,7 @@ class PmsAiOrchestrator:
                     name=str(qr_rows_save[0].get("name") or ""),
                 )
             if qr_rows_save and qr_entity_save in ("department", "team", "position", "branch", "employee", "kpi"):
+                qr_memory_rows = qr_digest.get("all_ranked_rows") or qr_rows_save
                 routed.confirmed_context.ranking_results = [
                     RankingResultReference(
                         rank=i + 1,
@@ -3674,7 +3690,7 @@ class PmsAiOrchestrator:
                         period=qr_period_save,
                         evidence_ref=str(row.get("route") or (tool_result.deep_links[0].route if tool_result.deep_links else "")) or None,
                     )
-                    for i, row in enumerate(qr_rows_save[:10])
+                    for i, row in enumerate(qr_memory_rows[:10])
                 ]
 
         elif tool_name == "rank_employees" and not (tool_result.digest or {}).get("threshold_count_summary"):
@@ -3855,12 +3871,12 @@ class PmsAiOrchestrator:
     ) -> AiChatResponsePayload:
         t0 = time.perf_counter()
         cfg = get_ai_runtime_config()
-        default_turn_budget = max(cfg.provider_timeout_seconds * 2.5, 25.0)
+        default_turn_budget = max(cfg.provider_timeout_seconds * 2.5, 45.0)
         try:
             turn_budget = float(os.getenv("PMS_AI_TURN_DEADLINE_SECONDS") or default_turn_budget)
         except ValueError:
             turn_budget = default_turn_budget
-        turn_deadline = t0 + max(5.0, min(turn_budget, 60.0))
+        turn_deadline = t0 + max(5.0, min(turn_budget, 90.0))
         role = str(self.scope.get("role") or "Manager")
         requested_detail = req.answer_detail or "auto"
         lower_prompt = (req.prompt or "").casefold()
@@ -4597,8 +4613,14 @@ class PmsAiOrchestrator:
                 signals.asks_booking_count = True
         if routed.plan.employee_id:
             signals.detected_employee_query = routed.plan.employee_id
-        elif routed.plan.intent == "ranking":
+        elif routed.plan.intent == "ranking" or routed.plan.position:
+            # Never let a legacy regex guess mistake a resolved role/position name
+            # (e.g. "HR Operation Supervisor") for an employee name.
             signals.detected_employee_query = None
+            if routed.plan.position and routed.plan.intent != "ranking":
+                signals.primary_intents = [
+                    t for t in signals.primary_intents if t not in ("agent_spotlight_trend", "employee_history")
+                ] or ["executive_insights"]
         if routed.plan.intent in ("trend", "compare_periods") or routed.plan.operation_kind_v2 == "trend":
             signals.asks_trend = True
         signals.asks_single_person = bool(routed.plan.single_person)
@@ -4716,6 +4738,7 @@ class PmsAiOrchestrator:
         use_composable = (
             composable_spec is not None
             and capability_mode != "proposal"
+            and routed.plan.intent not in ("trend", "score_drivers")
             and not kpi_question_kind
             and not is_comparison_prompt
             and not is_count_prompt
@@ -6343,6 +6366,7 @@ class PmsAiOrchestrator:
                 winner_context.candidate_employees = []
             if ranked_entity in ("department", "team", "position"):
                 winner_context.ranking_winner = RankingWinner(entity=ranked_entity, name=ranked_rows[0]["name"])
+            ranked_memory_rows = ranking_result.get("all_ranked_rows") or ranked_rows
             winner_context.ranking_results = [
                 RankingResultReference(
                     rank=i + 1,
@@ -6354,7 +6378,7 @@ class PmsAiOrchestrator:
                     period=ranking_result.get("period_key") or (winner_context.periods[-1] if winner_context.periods else None),
                     evidence_ref=str(row.get("route") or (deep_links[0].route if deep_links else "")) or None,
                 )
-                for i, row in enumerate(ranked_rows[:10])
+                for i, row in enumerate(ranked_memory_rows[:10])
             ]
             routed.confirmed_context = winner_context
             resolved_state.last_confirmed_query = winner_context

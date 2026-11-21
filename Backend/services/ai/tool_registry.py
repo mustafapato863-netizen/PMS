@@ -435,9 +435,10 @@ class DeterministicToolRegistry:
         },
         "get_score_trend": {
             "type": "object",
-            "description": "Retrieve historical trend trajectory across months for an employee or team.",
+            "description": "Retrieve historical trend trajectory across months for an employee, position/role, or team.",
             "properties": {
                 "team": {"type": "string"},
+                "position": {"type": "string", "description": "Optional position/role name within the team"},
                 "metric_id": {"type": "string"},
                 "periods": {"type": "array", "items": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"}, "minItems": 2, "maxItems": 12},
                 "branch": {"type": "string"},
@@ -471,11 +472,12 @@ class DeterministicToolRegistry:
         },
         "get_kpi_diagnosis": {
             "type": "object",
-            "description": "Diagnose an employee's or team's KPI achievement and operational volume breakdowns.",
+            "description": "Diagnose an employee's, position's, or team's KPI achievement and operational volume breakdowns.",
             "properties": {
                 "employee_id": {"type": "string", "description": "PMS employee ID when diagnosing one employee"},
                 "employee_name": {"type": "string", "description": "Employee full name when diagnosing one employee"},
                 "team": {"type": "string"},
+                "position": {"type": "string", "description": "Optional position/role name within the team"},
                 "metric_id": {"type": "string"},
                 "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$"},
                 "branch": {"type": "string"},
@@ -668,10 +670,14 @@ class DeterministicToolRegistry:
             )
         elif tool_name == "get_score_trend":
             emp_q = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            pos_arg = tool_arguments.get("position") or self.ctx.session_state.position
+            raw_br = tool_arguments.get("branch")
+            clean_br = None if str(raw_br or "").strip().casefold() in {"uae", "egy", "egypt", "ksa", "emirates", "all", "all branches"} else raw_br
             if emp_q:
                 return self.execute_agent_spotlight_and_trend(
                     team=tool_arguments.get("team") or self.ctx.session_state.team,
-                    branch=tool_arguments.get("branch"),
+                    position=pos_arg,
+                    branch=clean_br,
                     performance_level=tool_arguments.get("performance_level"),
                     month=month_str,
                     year=year_int,
@@ -683,7 +689,8 @@ class DeterministicToolRegistry:
             else:
                 return self.execute_team_metric_trend(
                     team=tool_arguments.get("team") or self.ctx.session_state.team,
-                    branch=tool_arguments.get("branch"),
+                    position=pos_arg,
+                    branch=clean_br,
                     performance_level=tool_arguments.get("performance_level"),
                     kpi=tool_arguments.get("requested_metric_id") or tool_arguments.get("metric_id"),
                     period=tool_arguments.get("period"),
@@ -708,10 +715,14 @@ class DeterministicToolRegistry:
             )
         elif tool_name == "get_kpi_diagnosis":
             employee_query = str(tool_arguments.get("employee_name") or tool_arguments.get("employee_id") or "").strip()
+            pos_arg = tool_arguments.get("position") or self.ctx.session_state.position
+            raw_br = tool_arguments.get("branch")
+            clean_br = None if str(raw_br or "").strip().casefold() in {"uae", "egy", "egypt", "ksa", "emirates", "all", "all branches"} else raw_br
             if employee_query:
                 result = self.execute_agent_spotlight_and_trend(
                     team=tool_arguments.get("team") or self.ctx.session_state.team,
-                    branch=tool_arguments.get("branch"),
+                    position=pos_arg,
+                    branch=clean_br,
                     performance_level=tool_arguments.get("performance_level"),
                     month=month_str,
                     year=year_int,
@@ -725,14 +736,16 @@ class DeterministicToolRegistry:
                     "employee_id": tool_arguments.get("employee_id"),
                     "employee_name": tool_arguments.get("employee_name"),
                     "team": tool_arguments.get("team"),
-                    "branch": tool_arguments.get("branch"),
+                    "position": pos_arg,
+                    "branch": clean_br,
                     "metric_id": tool_arguments.get("metric_id"),
                     "period": period_str or None,
                 }
                 return result
             return self.execute_kpi_diagnosis_and_trends(
                 team=tool_arguments.get("team") or self.ctx.session_state.team,
-                branch=tool_arguments.get("branch"),
+                position=pos_arg,
+                branch=clean_br,
                 compare_branch=tool_arguments.get("compare_branch"),
                 kpi=tool_arguments.get("metric_id"),
                 month=month_str,
@@ -837,6 +850,7 @@ class DeterministicToolRegistry:
         self,
         *,
         team: str,
+        position: str | None = None,
         branch: str | None,
         performance_level: str | None,
         kpi: str | None,
@@ -844,9 +858,10 @@ class DeterministicToolRegistry:
         periods: list[str] | None = None,
         score_measure: str | None = None,
     ) -> ToolExecutionResult:
-        """Return team-level evidence for each requested or recently available period."""
+        """Return team-level or position-level evidence for each requested or recently available period."""
         resolved = self.ctx.resolve_filters(
             team=team,
+            position=position,
             branch=branch,
             performance_level=performance_level,
         )
@@ -872,6 +887,7 @@ class DeterministicToolRegistry:
             return ToolExecutionResult(tool_name="get_score_trend", arguments=resolved,
                                        digest={"unavailable_reason": "Choose a team for its performance trend."})
         team_keys = selection_team_keys(team)
+        target_pos = resolved.get("position")
         for record in scoped_records:
             record_team = str(_record_field(record, "team", "") or "").strip().casefold()
             if record_team != team.casefold() and record_team not in {key.casefold() for key in team_keys}:
@@ -879,6 +895,10 @@ class DeterministicToolRegistry:
             record_level = str(_record_field(record, "performance_level", "Employee") or "Employee").casefold()
             if performance_level and record_level != performance_level.casefold():
                 continue
+            if target_pos:
+                record_pos = str(_record_field(record, "position", "") or "").strip().casefold()
+                if record_pos != str(target_pos).strip().casefold():
+                    continue
             if resolved["region"]:
                 record_region = _shared_record_region(record, record_team).strip().casefold()
                 if record_region != str(resolved["region"]).strip().casefold():
@@ -912,6 +932,7 @@ class DeterministicToolRegistry:
                     (year_value, _month_num, month_name),
                     self.execute_kpi_diagnosis_and_trends(
                         team=team,
+                        position=target_pos,
                         branch=branch,
                         performance_level=performance_level,
                         asks_period_comparison=False,
@@ -925,6 +946,7 @@ class DeterministicToolRegistry:
         if not period_results:
             return self.execute_kpi_diagnosis_and_trends(
                 team=team,
+                position=target_pos,
                 branch=branch,
                 performance_level=performance_level,
                 asks_period_comparison=True,
@@ -972,11 +994,28 @@ class DeterministicToolRegistry:
         latest_result.tool_name = "get_score_trend"
         latest_result.arguments = {
             "team": team,
+            "position": target_pos,
             "branch": branch,
             "performance_level": performance_level,
             "metric_id": kpi,
             "periods": [f"{year_value:04d}-{month_num:02d}" for year_value, month_num, _ in requested_periods],
         }
+        if not kpi or str(kpi).strip().casefold() in {"overall_score", "score", "overall"}:
+            spotlight_res = self.execute_team_trend_spotlight(
+                team=team,
+                position=target_pos,
+                branch=branch,
+                month=requested_periods[-1][2] if requested_periods else None,
+                year=requested_periods[-1][0] if requested_periods else None,
+                kpi=None,
+                months_window=max(6, len(requested_periods)),
+            )
+            if spotlight_res.visual_cards:
+                latest_result.visual_cards = spotlight_res.visual_cards
+            if isinstance(spotlight_res.digest, dict) and spotlight_res.digest.get("scope"):
+                if isinstance(latest_result.digest, dict):
+                    latest_result.digest["scope"] = spotlight_res.digest["scope"]
+                    latest_result.digest["team_trend_spotlight"] = spotlight_res.digest.get("team_trend_spotlight")
         latest_result.digest = {
             **(latest_result.digest if isinstance(latest_result.digest, dict) else {}),
             "team_metric_history": [
@@ -3475,6 +3514,7 @@ class DeterministicToolRegistry:
                             bucket.append(row)
                 groups = {k: v[: spec.per_group_limit] for k, v in groups.items() if v}
 
+            all_ranked_rows = list(rows[:10])
             if spec.limit > 0 and len(rows) > spec.limit:
                 cutoff = round(float(rows[spec.limit - 1].get("score") or 0.0), 2)
                 visible = list(rows[: spec.limit])
@@ -3615,6 +3655,7 @@ class DeterministicToolRegistry:
                     else spec.period
                 ),
                 "rows": rows,
+                "all_ranked_rows": all_ranked_rows if "all_ranked_rows" in locals() else rows[:10],
                 "groups": groups or None,
                 "total": len(rows),
             },
@@ -4833,6 +4874,10 @@ class DeterministicToolRegistry:
                     continue
             if target_pos and r_pos.casefold() != target_pos.casefold():
                 continue
+            if resolved["region"]:
+                rec_reg = _shared_record_region(rec, r_team).strip().casefold()
+                if rec_reg != str(resolved["region"]).strip().casefold():
+                    continue
             if resolved["branch"]:
                 if not record_matches_branch(rec, resolved["branch"]):
                     continue

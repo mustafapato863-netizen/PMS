@@ -154,7 +154,7 @@ def corrected_concise_ranking(
     if entity == "employee" and item.employee_name:
         subject = item.employee_name
         entity_label = "employee"
-    elif entity == "position" and item.position:
+    elif (entity == "position" or (entity == "team" and item.position)) and item.position:
         subject = item.position
         entity_label = "role"
     elif entity == "branch" and item.branch and item.branch != "all":

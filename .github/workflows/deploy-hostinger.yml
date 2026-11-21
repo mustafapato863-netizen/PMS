@@ -65,4 +65,4 @@ jobs:
             NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY || '' }}
             NVIDIA_API_KEY_ALTER=${{ secrets.NVIDIA_API_KEY_ALTER || '' }}
             NVIDIA_FEEDBACK_MODEL=${{ vars.NVIDIA_FEEDBACK_MODEL || 'nvidia/nemotron-3.5-super-vl-120b-a12b' }}
-            PMS_AI_NVIDIA_REASONING_EFFORT=${{ vars.PMS_AI_NVIDIA_REASONING_EFFORT || 'none' }}
+            PMS_AI_NVIDIA_REASONING_EFFORT=${{ vars.PMS_AI_NVIDIA_REASONING_EFFORT || 'auto' }}

@@ -393,7 +393,7 @@ class UnifiedProviderConfig:
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
     nvidia_model: str = DEFAULT_NVIDIA_MODEL
-    timeout_seconds: float = 10.0
+    timeout_seconds: float = 18.0
     max_retries: int = 1
     nvidia_api_key: str = ""
     # Standby slots used for a single in-place retry on 401/403/429.
@@ -472,11 +472,11 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         raw_timeout = float(
             os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS")
             or os.environ.get("PMS_AI_TIMEOUT_SECONDS")
-            or "10.0"
+            or "18.0"
         )
-        timeout_seconds = max(1.0, min(raw_timeout, 30.0))
+        timeout_seconds = max(1.0, min(raw_timeout, 45.0))
     except (TypeError, ValueError):
-        timeout_seconds = 10.0
+        timeout_seconds = 18.0
 
     try:
         raw_retries = int(os.environ.get("PMS_AI_MAX_RETRIES", "1"))
@@ -1164,9 +1164,14 @@ class NvidiaProviderAdapter:
         if request.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
         if resolved_model == DEFAULT_NVIDIA_MODEL:
-            default_effort = "none"
-            effort = os.getenv("PMS_AI_NVIDIA_REASONING_EFFORT", default_effort).strip().casefold()
-            payload["reasoning_effort"] = effort if effort in {"none", "low", "high"} else default_effort
+            # Give NVIDIA thinking budget ("low") on investigation/repair turns so complex,
+            # ambiguous, or multi-turn questions get real reasoning time; keep routine fast.
+            adaptive_default = "low" if request.task_role in ("investigation", "repair") else "none"
+            raw_effort = os.getenv("PMS_AI_NVIDIA_REASONING_EFFORT", "auto").strip().casefold()
+            if raw_effort in {"none", "low", "high"}:
+                payload["reasoning_effort"] = raw_effort
+            else:
+                payload["reasoning_effort"] = adaptive_default
 
         http_request = urllib.request.Request(
             NVIDIA_CHAT_COMPLETIONS_URL,
@@ -1403,7 +1408,7 @@ class UnifiedProviderEngine:
                     terminal_detail = "Overall request deadline exceeded"
                     break
 
-                per_call_timeout = min(self.config.timeout_seconds, remaining_time)
+                per_call_timeout = min(overall_timeout, remaining_time)
                 if (self.config.task_routing_enabled and self.config.fallback_enabled and request.task_role == "routine"
                         and self._is_enabled(fallback_name) and self._has_credentials(fallback_name)):
                     per_call_timeout = min(per_call_timeout, remaining_time * 0.55)
@@ -1657,7 +1662,7 @@ class UnifiedProviderEngine:
             ))
         else:
             t0 = time.perf_counter()
-            per_call_timeout = min(self.config.timeout_seconds, remaining_time)
+            per_call_timeout = min(overall_timeout, remaining_time)
             try:
                 try:
                     text, usage = fallback_adapter.execute(

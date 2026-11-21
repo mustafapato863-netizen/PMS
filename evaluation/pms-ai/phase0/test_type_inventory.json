@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 64,
-  "case_count": 853,
+  "file_count": 65,
+  "case_count": 861,
   "files_by_label": {
     "synthetic": 17,
-    "mocked": 44,
+    "mocked": 45,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -192,6 +192,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_flexible_scenarios.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_full_coverage_egy_uae.py",
       "kind": "test",
       "labels": [
@@ -257,7 +267,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 4,
+      "cases": 5,
       "evidence_status": "partial",
       "note": ""
     },

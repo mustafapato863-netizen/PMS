@@ -892,6 +892,180 @@ class HybridQueryRouter:
             list(employee_candidates) if employee_candidates is not None else []
         )
 
+    @staticmethod
+    def _normalize_role_tokens(text: str) -> list[str]:
+        """Normalize punctuation, common role abbreviations, and simple plurals for flexible position matching."""
+        cleaned = re.sub(r"[&/+_-]+", " ", (text or "").casefold())
+        cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned)
+        abbrev = {
+            "ops": "operation",
+            "operations": "operation",
+            "sr": "senior",
+            "jr": "junior",
+            "mgmt": "management",
+            "mgr": "manager",
+            "dev": "developer",
+            "devs": "developer",
+            "sup": "supervisor",
+            "spec": "specialist",
+            "rep": "representative",
+        }
+        tokens: list[str] = []
+        for raw in cleaned.split():
+            tok = abbrev.get(raw, raw)
+            if len(tok) > 4 and tok.endswith("s") and not tok.endswith("ss"):
+                tok = tok[:-1]
+            if tok and tok not in {"and", "of", "the", "for", "in"}:
+                tokens.append(tok)
+        return tokens
+
+    def _detect_position_in_prompt(
+        self,
+        text_lower: str,
+        *,
+        preferred_team: str | None = None,
+    ) -> tuple[str | None, str | None]:
+        """Resolve a position/role name from static aliases, the live catalog, or authorized records."""
+        static_team, static_pos = _detect_position(text_lower)
+        if static_pos:
+            return static_team, static_pos
+
+        candidates: dict[str, tuple[str, str]] = {}
+        for t_def in self.catalog.teams.values():
+            team_name = str(getattr(t_def, "team", "") or "").strip()
+            for pos in getattr(t_def, "positions", ()) or ():
+                pos_clean = str(pos or "").strip()
+                pos_cf = pos_clean.casefold()
+                if len(pos_cf) >= 4 and pos_cf not in candidates:
+                    candidates[pos_cf] = (team_name, pos_clean)
+        for emp in self.employee_candidates:
+            pos_clean = str(getattr(emp, "position", "") or "").strip()
+            team_name = str(getattr(emp, "team", "") or "").strip()
+            pos_cf = pos_clean.casefold()
+            if len(pos_cf) >= 4 and team_name and pos_cf not in candidates:
+                candidates[pos_cf] = (team_name, pos_clean)
+
+        # Exclude ambiguous single-word labels (e.g. "Calls" in Pre-Approvals OP Dubai) unless the user is already scoped to that exact team.
+        generic_single_words = {
+            "call", "calls", "chat", "email", "mail", "admin", "sales", "support",
+            "agent", "agents", "manager", "managers", "lead", "leads", "supervisor",
+            "specialist", "team", "teams", "staff", "employee", "employees", "role",
+            "position", "pharmacy", "marketing", "finance", "inbound", "outbound",
+            "dubai", "sharjah", "ajman", "clinics", "coding", "submission",
+        }
+        pref_cf = (preferred_team or "").strip().casefold()
+
+        def _single_word_allowed(pos_cf_val: str, t_name: str) -> bool:
+            words = re.findall(r"[a-z0-9]+", pos_cf_val)
+            if len(words) > 1:
+                return True
+            if not words:
+                return False
+            if words[0] in generic_single_words:
+                return bool(pref_cf and t_name.casefold() == pref_cf)
+            return True
+
+        # 1. Exact word-boundary match (longest first)
+        for pos_cf in sorted(candidates.keys(), key=len, reverse=True):
+            t_name, p_name = candidates[pos_cf]
+            if not _single_word_allowed(pos_cf, t_name):
+                continue
+            if re.search(rf"(?<![a-z0-9]){re.escape(pos_cf)}(?![a-z0-9])", text_lower):
+                return t_name, p_name
+
+        # 2. Normalized contiguous token-sequence match (handles plurals & abbreviations like "HR Operations Supervisor" / "HR Ops Supervisor" / "Media Buyers")
+        prompt_tokens = self._normalize_role_tokens(text_lower)
+        if not prompt_tokens:
+            return None, None
+        prompt_joined = " " + " ".join(prompt_tokens) + " "
+
+        norm_candidates: list[tuple[list[str], str, str]] = []
+        for pos_cf, (t_name, p_name) in candidates.items():
+            if not _single_word_allowed(pos_cf, t_name):
+                continue
+            p_toks = self._normalize_role_tokens(p_name)
+            if p_toks:
+                norm_candidates.append((p_toks, t_name, p_name))
+        norm_candidates.sort(key=lambda item: len(item[0]), reverse=True)
+
+        for p_toks, t_name, p_name in norm_candidates:
+            if len(p_toks) < 2 and (not pref_cf or t_name.casefold() != pref_cf):
+                continue
+            needle = " " + " ".join(p_toks) + " "
+            if needle in prompt_joined:
+                return t_name, p_name
+
+        # 3. Unique contiguous distinctive partial role match (e.g. "assessment center trend" -> "Assessment Center Lead")
+        # Require at least 2 contiguous non-team/non-branch/non-generic tokens from the role name.
+        non_distinctive_tokens = {
+            "what", "how", "show", "give", "tell", "who", "which", "why", "did", "does", "was", "were",
+            "are", "is", "been", "trend", "score", "scores", "kpi", "kpis", "performance", "month",
+            "months", "progress", "moving", "movement", "change", "changed", "driving", "driver",
+            "drivers", "drop", "dropped", "best", "worst", "top", "lowest", "highest", "compare",
+            "team", "department", "role", "position", "employee", "agent", "manager", "lead",
+            "supervisor", "specialist", "average", "official", "last", "recent", "past", "over",
+            "time", "overall", "leading", "leader", "performer", "rate", "booking", "attendance",
+            "attended", "location", "branch", "inbound", "outbound", "call", "center", "pharmacy",
+            "marketing", "finance", "sales", "support", "coding", "submission", "resubmission",
+            "pre", "approval", "dubai", "sharjah", "ajman", "clinic", "egypt", "uae", "rcm", "crm",
+            "csr", "pmo", "nursing", "human", "resource",
+            "august", "september", "october", "january", "february", "march", "april", "may",
+            "june", "july", "november", "december", "2026", "2025",
+        }
+        scoped_pool = [
+            item for item in norm_candidates
+            if pref_cf and item[1].casefold() == pref_cf
+        ] or norm_candidates
+        partial_matches: list[tuple[int, str, str]] = []
+        for p_toks, t_name, p_name in scoped_pool:
+            if len(p_toks) < 3:
+                continue
+            best_contig = 0
+            for i in range(len(p_toks)):
+                for j in range(i + 2, len(p_toks) + 1):
+                    sub = p_toks[i:j]
+                    distinctive_count = sum(1 for tok in sub if tok not in non_distinctive_tokens and len(tok) >= 3)
+                    if distinctive_count < 1:
+                        continue
+                    if (" " + " ".join(sub) + " ") in prompt_joined:
+                        if len(sub) > best_contig:
+                            best_contig = len(sub)
+            if best_contig >= 2 and best_contig / len(p_toks) >= 0.5:
+                partial_matches.append((best_contig, t_name, p_name))
+        if len(partial_matches) == 1:
+            return partial_matches[0][1], partial_matches[0][2]
+        if len(partial_matches) > 1:
+            partial_matches.sort(key=lambda x: x[0], reverse=True)
+            if partial_matches[0][0] > partial_matches[1][0]:
+                return partial_matches[0][1], partial_matches[0][2]
+        return None, None
+
+    @staticmethod
+    def _resolve_ranked_ordinal_reference(
+        text_lower: str,
+        prior: ConfirmedQueryContext | None,
+    ) -> Any | None:
+        """Resolve ordinal follow-ups ('second one', '#2', 'runner up', 'third one', 'lowest one') against prior.ranking_results."""
+        if not prior or not getattr(prior, "ranking_results", None):
+            return None
+        results = list(prior.ranking_results)
+        idx: int | None = None
+        if re.search(r"(?:(?<!\w)#\s*1|\b(?:first\s+one|1st\s+one|number\s+1|top\s+one))\b", text_lower):
+            idx = 0
+        elif re.search(r"(?:(?<!\w)#\s*2|\b(?:second\s+one|2nd\s+one|the\s+second|the\s+2nd|number\s+2|runner[- ]?up))\b", text_lower):
+            idx = 1
+        elif re.search(r"(?:(?<!\w)#\s*3|\b(?:third\s+one|3rd\s+one|the\s+third|the\s+3rd|number\s+3))\b", text_lower):
+            idx = 2
+        elif re.search(r"(?:(?<!\w)#\s*4|\b(?:fourth\s+one|4th\s+one|the\s+fourth|the\s+4th|number\s+4))\b", text_lower):
+            idx = 3
+        elif re.search(r"(?:(?<!\w)#\s*5|\b(?:fifth\s+one|5th\s+one|the\s+fifth|the\s+5th|number\s+5))\b", text_lower):
+            idx = 4
+        elif re.search(r"\b(?:last\s+one|lowest\s+one|worst\s+one|bottom\s+one)\b", text_lower):
+            idx = len(results) - 1
+        if idx is not None and 0 <= idx < len(results):
+            return results[idx]
+        return None
+
     def resolve_and_validate(
         self,
         *,
@@ -1179,7 +1353,23 @@ class HybridQueryRouter:
                 resolved_t = raw_t
             if resolved_t not in teams_in_prompt:
                 teams_in_prompt.append(resolved_t)
-        pos_team, detected_pos = _detect_position(lower)
+        preferred_pos_team = (
+            teams_in_prompt[0]
+            if teams_in_prompt
+            else (prior.team if prior and prior.team else session_state.team)
+        )
+        pos_team, detected_pos = self._detect_position_in_prompt(lower, preferred_team=preferred_pos_team)
+        resolved_from_ordinal = False
+        if not detected_pos and not teams_in_prompt and prior:
+            ord_item = self._resolve_ranked_ordinal_reference(lower, prior)
+            if ord_item is not None:
+                if ord_item.entity == "position" and ord_item.name:
+                    detected_pos = ord_item.name
+                    pos_team = prior.team or prior.function
+                    resolved_from_ordinal = True
+                elif ord_item.entity == "team" and ord_item.name:
+                    teams_in_prompt = [ord_item.name]
+                    resolved_from_ordinal = True
         if pos_team and not teams_in_prompt:
             teams_in_prompt = [pos_team]
 
@@ -2883,12 +3073,24 @@ class HybridQueryRouter:
                     "trends",
                     "trajectory",
                     "progression",
+                    "progress",
                     "over time",
                     "multi-month",
+                    "month by month",
+                    "month-by-month",
+                    "month over month",
+                    "month-over-month",
                     "history",
                     "score pattern",
                     "monthly pattern",
                     "trend pattern",
+                    "evolution",
+                    "last 3 months",
+                    "last few months",
+                    "past months",
+                    "over recent months",
+                    "changed over",
+                    "been moving",
                 )
             )
             or bool(
@@ -3357,6 +3559,9 @@ class HybridQueryRouter:
             for phrase in (
                 "diagnose ",
                 "score drivers",
+                "what is driving",
+                "what's driving",
+                "whats driving",
                 "kpi gaps",
                 "drove the score gap",
                 "why did ",
@@ -3454,7 +3659,14 @@ class HybridQueryRouter:
             intent = "corrective_actions"
         elif asks_scorecard_structure:
             intent = "scorecard_structure"
-        elif asks_ranking_person or asks_group_leader(lower):
+        elif resolved_from_ordinal and asks_trend:
+            intent = "trend"
+        elif resolved_from_ordinal and asks_score_drivers:
+            intent = "score_drivers"
+        elif asks_ranking_person or (
+            asks_group_leader(lower)
+            and not (resolved_from_ordinal and not re.search(r"\b(?:who|employees?|agents?|staff|people)\b", lower))
+        ):
             intent = "ranking"
         elif asks_trend and not asks_ranking_person:
             intent = "trend"
@@ -3751,7 +3963,7 @@ class HybridQueryRouter:
         plan.verified_cohort_score = bool(
             requests_cohort_score and (plan.team or plan.function)
             and plan.intent == "current_value" and len(plan.periods) == 1
-            and not (plan.employee_id or plan.metric or plan.asks_decisions)
+            and not (plan.employee_id or plan.metric or plan.asks_decisions or plan.position)
             and parse_score_threshold_query(text) is None
             and plan.requested_parts == ["current_value"]
         )
@@ -3777,7 +3989,13 @@ class HybridQueryRouter:
                 not asks_team_comparison
                 and (plan.team or plan.function or plan.employee_id)
                 and len(eff_periods) == 2
-                and re.search(r"\b(?:overall (?:pms )?score|average score|pms score|team score)\b", lower)
+                and (
+                    re.search(r"\b(?:overall (?:pms )?score|average score|pms score|team score)\b", lower)
+                    or (
+                        plan.position
+                        and re.search(r"\b(?:compare|comparison|vs\.?|versus|difference|between)\b", lower)
+                    )
+                )
                 and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target)\b", lower)
             ):
                 plan.verified_comparison = "employee_scores" if plan.employee_id else "period_scores"
@@ -4113,7 +4331,11 @@ class HybridQueryRouter:
                 "A cohort, staff average, or division is a group; never interpret these words as employee names.\n"
                 "1. Use 'query_rankings' for aggregate and overall-score rankings of departments, teams, positions (roles), branches, or employees. "
                 "Pass entity ('department'|'team'|'position'|'branch'|'employee'), sort_order ('desc'|'asc'), limit, region ('EGY'|'UAE'), department, team, position, period ('YYYY-MM'), group_by, performance_level, score_threshold, threshold_operator as applicable.\n"
-                "2. Follow-up drill-downs: when the user refers to 'in it', 'that department', 'the leading team', 'the top team', or 'the second one', resolve the exact entity name from Remembered Ranking Winner / Ranking Results in Context, and carry forward region and period unless the user explicitly changes country, month, team, person, or KPI. "
+                "2. Follow-up drill-downs: when the user refers to 'in it', 'that department', 'the leading team', 'the top team', 'the second one', '#2', 'runner up', 'third one', or 'lowest one', resolve the exact entity name from Remembered Ranking Winner / Ranking Results in Context, and carry forward region and period unless the user explicitly changes country, month, team, person, or KPI. "
+                "When the user asks for a position/role trend (e.g. 'HR Operation Supervisor trend' or 'second one trend'), call 'get_score_trend' with both team and position set to the canonical names. "
+                "When the user asks what is driving a position/role's score or why it dropped, call 'get_kpi_diagnosis' with team and position. "
+                "NEVER invent a country/region or branch filter if the user did not mention one and Context does not have one. "
+                "When the user pivots to a different department ('what about Marketing?'), drop the old team/position and keep the same analytical intent. "
                 "When the user asks to re-order or reverse the previous list ('arrange them from lowest to top', 'reverse order'), keep the SAME Prior Ranking Entity (e.g. entity='department' with NO department/team filter), flip sort_order ('asc' vs 'desc'), and pass limit=20.\n"
                 "3. For Marketing when asked about its internal teams, pass entity='team' with department='Marketing' (or entity='position' with team='Marketing'); PMS ranks its measured roles.\n"
                 "For a cohort's mean or overall score use 'get_kpi_diagnosis' with metric_id='overall_score', "
@@ -4136,6 +4358,7 @@ class HybridQueryRouter:
             for label, value in (
                 ("Team", plan.team),
                 ("Function", plan.function),
+                ("Position", plan.position),
                 ("Country", eff_region),
                 ("Branch", plan.branch),
                 ("Performance level", plan.performance_level),
@@ -4213,7 +4436,7 @@ class HybridQueryRouter:
                             merged_tool_arg_props[_p_name] = _p_copy
 
             engine = get_unified_provider_engine()
-            planner_timeout = max(cfg.provider_timeout_seconds, 15.0)
+            planner_timeout = max(cfg.provider_timeout_seconds, 24.0)
             if turn_deadline is not None:
                 planner_timeout = min(planner_timeout, turn_deadline - perf_counter())
             req = ProviderRequest(
@@ -4262,6 +4485,8 @@ class HybridQueryRouter:
                 purpose="model_led_router",
                 task_role="investigation" if (
                     asks_ranking_person or asks_trend or (prior and is_short_followup)
+                    or bool(plan.position) or asks_score_drivers or asks_team_comparison or asks_branch_comparison
+                    or len(text.split()) >= 8
                     or parse_query_rankings_spec(text) is not None or is_broad_overview_prompt(text)
                     or plan.operation_kind_v2 in {"ranking", "trend", "compare_periods", "compare_branches",
                                                   "compare_teams", "score_drivers", "person_best_period", "person_worst_period"}
@@ -4368,7 +4593,12 @@ class HybridQueryRouter:
                                 # Normalize country/region and enforce explicit user constraints
                                 raw_reg = str(tool_args.get("region") or tool_args.get("country") or "").strip().casefold()
                                 norm_reg = {"egypt": "EGY", "egy": "EGY", "uae": "UAE", "emirates": "UAE", "ksa": "KSA"}.get(raw_reg)
-                                if norm_reg:
+                                has_any_country_constraint = bool(has_egy_country or has_uae_country or has_ksa_hint or (eff_region and eff_region in ("EGY", "UAE", "KSA")))
+                                if not has_any_country_constraint:
+                                    # Never let a structured decoder invent a country filter the user did not ask for.
+                                    tool_args.pop("region", None)
+                                    tool_args.pop("country", None)
+                                elif norm_reg:
                                     tool_args["region"] = norm_reg
                                 elif eff_region and eff_region in ("EGY", "UAE", "KSA") and not tool_args.get("region"):
                                     tool_args["region"] = eff_region
@@ -4395,11 +4625,34 @@ class HybridQueryRouter:
                                 except Exception:
                                     pass
                         else:
-                            if isinstance(tool_args, dict) and tool_name in ("get_kpi_diagnosis", "get_score_trend", "compare_branches"):
-                                tool_args.setdefault("score_measure", eff_score_measure)
-                                if explicit_score_measure is not None:
-                                    tool_args["score_measure"] = explicit_score_measure
-                            plan.intent = "current_value"
+                            if isinstance(tool_args, dict):
+                                raw_br = str(tool_args.get("branch") or "").strip().casefold()
+                                if raw_br in ("uae", "egy", "egypt", "ksa", "emirates", "all", "all branches"):
+                                    tool_args.pop("branch", None)
+                                if tool_name in ("get_kpi_diagnosis", "get_score_trend"):
+                                    if plan.position and not tool_args.get("position"):
+                                        tool_args["position"] = plan.position
+                                    if plan.team and not tool_args.get("team"):
+                                        tool_args["team"] = plan.team
+                                if tool_name in ("get_kpi_diagnosis", "get_score_trend", "compare_branches"):
+                                    tool_args.setdefault("score_measure", eff_score_measure)
+                                    if explicit_score_measure is not None:
+                                        tool_args["score_measure"] = explicit_score_measure
+                            plan.intent = "trend" if tool_name == "get_score_trend" else "current_value"
+                            confirmed_ctx.team = plan.team or confirmed_ctx.team
+                            confirmed_ctx.function = plan.function or confirmed_ctx.function
+                            confirmed_ctx.position = plan.position
+                            confirmed_ctx.region = eff_region
+                            if tool_name == "get_score_trend":
+                                confirmed_ctx.intent = "trend"
+                                confirmed_ctx.prior_ranking_intent = False
+                                confirmed_ctx.ranking_winner = None
+                                same_scope_as_prior = bool(
+                                    prior_eff
+                                    and (plan.team or "").casefold() == (prior_eff.team or "").casefold()
+                                )
+                                if not same_scope_as_prior:
+                                    confirmed_ctx.ranking_results = []
                         return RouterValidationResult(
                             outcome="answer",
                             plan=plan,
@@ -4781,10 +5034,22 @@ class HybridQueryRouter:
             pending_clarification_code=None,
             pending_clarification_choices=[],
             inherited_filters=inherited_filters,
+            ranking_results=(
+                list(prior_eff.ranking_results)
+                if (
+                    prior_eff is not None
+                    and prior_eff.ranking_results
+                    and plan.intent != "ranking"
+                    and (plan.team or "").casefold() == (prior_eff.team or "").casefold()
+                )
+                else []
+            ),
             prior_ranking_intent=bool(
                 plan.intent == "ranking"
                 or (
-                    is_person_attribute_followup
+                    plan.intent != "trend"
+                    and plan.employee_id is not None
+                    and is_person_attribute_followup
                     and prior_eff is not None
                     and (prior_eff.intent == "ranking" or prior_eff.prior_ranking_intent)
                 )

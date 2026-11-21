@@ -135,10 +135,10 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     )
 
     try:
-        timeout_val = float(os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS", "8.0"))
-        timeout_seconds = max(0.5, min(timeout_val, 30.0))
+        timeout_val = float(os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS", "18.0"))
+        timeout_seconds = max(0.5, min(timeout_val, 45.0))
     except (TypeError, ValueError):
-        timeout_seconds = 8.0
+        timeout_seconds = 18.0
 
     raw_scopes = (
         os.environ.get("PMS_AI_ENABLED_SCOPES")

@@ -47,5 +47,6 @@ export const REPORT_CENTER_ENABLED = (
 ).trim().toLowerCase() === 'true';
 
 export const API_TIMEOUT_MS = 30_000;
+export const API_AI_CHAT_TIMEOUT_MS = 75_000;
 export const API_UPLOAD_TIMEOUT_MS = 120_000;
 

@@ -346,3 +346,69 @@ def test_staging_egy_outbound_jan_2026_official_91_5_vs_emp_avg_90_4(monkeypatch
         assert "90.4%" in r_avg.headline, r_avg.headline
     finally:
         mem_db.close()
+
+
+def test_hr_best_team_then_position_trend_followup(monkeypatch):
+    """Asking '<Position> trend' after 'what is the best team in HR' must return that position's own trend, not the whole department or #1 employee ranking."""
+    def _hr_rec(emp_id: str, name: str, position: str, month: str, score: float) -> PerformanceRecord:
+        return PerformanceRecord(
+            id=f"{emp_id}-{month}-2026",
+            employee_id=emp_id,
+            employee_name=name,
+            team="Human Resources",
+            region="EGY",
+            position=position,
+            performance_level="Employee",
+            month=month,
+            year=2026,
+            evaluation=EvaluationData(score=score, grade="A" if score >= 95 else "B", status="Exceeds" if score >= 95 else "Meets"),
+            calls=CallsData(),
+            geo=GeoData(),
+            raw_data={"Position": position},
+        )
+
+    records = [
+        _hr_rec("70207", "Mohamed Diaa Eldin Youssef", "Assessment Center Lead", "August", 99.3),
+        _hr_rec("70207", "Mohamed Diaa Eldin Youssef", "Assessment Center Lead", "September", 100.0),
+        _hr_rec("70207", "Mohamed Diaa Eldin Youssef", "Assessment Center Lead", "October", 97.56),
+        _hr_rec("70208", "Sara Ahmed", "HR Operation Supervisor", "August", 91.0),
+        _hr_rec("70208", "Sara Ahmed", "HR Operation Supervisor", "September", 93.2),
+        _hr_rec("70208", "Sara Ahmed", "HR Operation Supervisor", "October", 95.4),
+        _hr_rec("70209", "Nour Hassan", "HR Specialist", "August", 93.5),
+        _hr_rec("70209", "Nour Hassan", "HR Specialist", "September", 93.6),
+        _hr_rec("70209", "Nour Hassan", "HR Specialist", "October", 91.7),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    db = _in_memory_db()
+    try:
+        orch = PmsAiOrchestrator(db, {"role": "Admin", "user_id": "hr-trend-test", "has_unrestricted_team_access": True})
+
+        r1 = orch.run_chat_turn(AiChatRequest(
+            prompt="what is the best team in HR",
+            session_state=SessionFilterContext(),
+            provider_override="deterministic",
+        ))
+        assert r1.outcome == "answer", r1.headline
+        assert "Assessment Center Lead" in r1.headline and "97.6%" in r1.headline
+
+        r2 = orch.run_chat_turn(AiChatRequest(
+            prompt="HR Operation Supervisor trend",
+            conversation_id=r1.conversation_id,
+            context_version=r1.context_version,
+            session_state=r1.resolved_session_state,
+            history=[
+                {"role": "user", "content": "what is the best team in HR"},
+                {"role": "assistant", "content": r1.headline},
+            ],
+            provider_override="deterministic",
+        ))
+        assert r2.outcome == "answer", r2.headline
+        assert "HR Operation Supervisor" in r2.headline, r2.headline
+        assert "95.4%" in r2.headline, r2.headline
+        assert "94.9%" not in r2.headline, r2.headline
+        assert "Assessment Center Lead" not in r2.headline, r2.headline
+        assert r2.resolved_session_state.last_confirmed_query.position == "HR Operation Supervisor"
+        assert r2.resolved_session_state.last_confirmed_query.prior_ranking_intent is False
+    finally:
+        db.close()
