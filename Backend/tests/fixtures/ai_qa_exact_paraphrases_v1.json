@@ -1,0 +1,307 @@
+{
+  "schema_version": "pms-ai-exact-paraphrases-v1",
+  "sessions": [
+    {
+      "id": "exact_overall",
+      "family": "scope_and_score",
+      "independent_turns": true,
+      "use_history": true,
+      "initial_state": {
+        "month": "October",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "x01",
+          "prompt": "For the Emirates, what was the Sales cohort's mean PMS score in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": "Sales"
+            }
+          ],
+          "critical_scope": {
+            "month": "August",
+            "region": "UAE"
+          }
+        },
+        {
+          "id": "x02",
+          "prompt": "Give me the August 2026 average PMS score for CSR staff in the Emirates.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "CSR"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 64,
+              "unit": "%",
+              "subject": "CSR"
+            }
+          ],
+          "critical_scope": {
+            "month": "August",
+            "region": "UAE"
+          }
+        },
+        {
+          "id": "x03",
+          "prompt": "What did Finance score on the Corporate scorecard in the UAE in June 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Finance"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 87.5,
+              "unit": "%",
+              "subject": "Finance"
+            }
+          ],
+          "critical_scope": {
+            "month": "June",
+            "region": "UAE",
+            "performance_level": "Corporate"
+          }
+        },
+        {
+          "id": "x04",
+          "prompt": "How did Pre-Approvals IP score at Managerial level in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Pre-Approvals IP"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 91.2,
+              "unit": "%",
+              "subject": "Pre-Approvals IP"
+            }
+          ],
+          "critical_scope": {
+            "month": "September",
+            "region": "EGY",
+            "performance_level": "Managerial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact_metric_and_rank",
+      "family": "metric_and_hierarchy",
+      "independent_turns": true,
+      "use_history": true,
+      "initial_state": {
+        "month": "October",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "x05",
+          "prompt": "Which employee in Inbound logged the shortest wait time during September 2026 in Egypt?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 3.4,
+              "unit": "min",
+              "subject": "Nadia Mansour"
+            }
+          ],
+          "critical_scope": {
+            "team": "Inbound",
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "x06",
+          "prompt": "Which division finished first in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Human Resources"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 95,
+              "unit": "%",
+              "subject": "Human Resources"
+            }
+          ],
+          "critical_scope": {
+            "month": "September",
+            "region": "EGY"
+          },
+          "checks": {
+            "rank_entity": "department"
+          }
+        },
+        {
+          "id": "x07",
+          "prompt": "Which Pharmacy location had the better overall score in June 2026, Dubai or Sharjah?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Pharmacy"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 88.5,
+              "unit": "%",
+              "subject": "Pharmacy"
+            }
+          ],
+          "critical_scope": {
+            "month": "June"
+          }
+        },
+        {
+          "id": "x08",
+          "prompt": "Among Sales employees, what was the average score in UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": "Sales"
+            }
+          ],
+          "critical_scope": {
+            "month": "August",
+            "region": "UAE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "exact_rollup_from_role",
+      "family": "scope_zoom_out",
+      "independent_turns": false,
+      "use_history": true,
+      "initial_state": {
+        "month": "October",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "x09",
+          "prompt": "Rank the Marketing roles from best to worst for September 2026 in Egypt.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Creative Director"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 98,
+              "unit": "%",
+              "subject": "Creative Director"
+            }
+          ],
+          "critical_scope": {
+            "month": "September",
+            "region": "EGY"
+          },
+          "checks": {
+            "rank_entity": "position"
+          }
+        },
+        {
+          "id": "x10",
+          "prompt": "Who was the highest scorer in the leading role?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Fadi Nassar"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 98,
+              "unit": "%",
+              "subject": "Fadi Nassar"
+            }
+          ],
+          "critical_scope": {
+            "month": "September",
+            "region": "EGY"
+          }
+        },
+        {
+          "id": "x11",
+          "prompt": "What was the overall score for the entire Marketing department in Egypt in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Marketing"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 82,
+              "unit": "%",
+              "subject": "Marketing"
+            }
+          ],
+          "critical_scope": {
+            "month": "August",
+            "region": "EGY"
+          }
+        },
+        {
+          "id": "x12",
+          "prompt": "Which role had the lowest score in Marketing in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Media Buyer"
+            ]
+          ],
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": "Media Buyer"
+            }
+          ],
+          "critical_scope": {
+            "month": "September",
+            "region": "EGY"
+          },
+          "checks": {
+            "rank_entity": "position"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -39,7 +39,8 @@ os.environ["PMS_AUTO_SEED"] = "false"
 os.environ["PMS_SEED_PERMISSIONS_ON_STARTUP"] = "false"
 os.environ["PMS_SEED_DEMO_LEVELS"] = "false"
 os.environ["PMS_RATE_LIMIT_MODE"] = "off"
-os.environ["PMS_AI_GEMINI_ROUTING_ENABLED"] = "false"
+os.environ["PMS_AI_NVIDIA_ROUTING_ENABLED"] = "false"
+os.environ["PMS_AI_MODEL_LED_PILOT_ENABLED"] = "false"
 os.environ["PMS_AI_LOCAL_ROUTER_ENABLED"] = "false"
 os.environ["PMS_AI_LLM_INTENT_ENABLED"] = "false"
 os.environ["PMS_AI_LLM_SYNTHESIS_ENABLED"] = "false"
@@ -50,7 +51,7 @@ os.environ["PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED"] = "false"
 os.environ["PMS_AI_CLASSIFIER_MODE"] = "off"
 os.environ.pop("PMS_AI_LLM_BASE_URL", None)
 os.environ.pop("PMS_AI_LOCAL_ROUTER_URL", None)
-os.environ.pop("GEMINI_API_KEY", None)
+os.environ.pop("NVIDIA_API_KEY_ALTER", None)
 os.environ.pop("GOOGLE_API_KEY", None)
 
 sys.path.insert(0, str(BACKEND))
@@ -285,7 +286,7 @@ def production_posture() -> dict:
             "ai_product_switch_default": False,
             "ai_product_switch_note": "Missing product_settings row, unreadable table, and seed all leave ai_enabled false. ProductSetting.enabled default is false.",
             "router_mode": runtime.router_mode,
-            "gemini_routing_enabled": runtime.gemini_routing_enabled,
+            "nvidia_routing_enabled": runtime.nvidia_routing_enabled,
             "classifier_mode": runtime.classifier_mode,
             "classifier_mode_note": "Forced off when APP_ENV=production, even if PMS_AI_CLASSIFIER_MODE is set.",
             "conversation_state_enabled": runtime.conversation_state_enabled,
@@ -317,14 +318,14 @@ def masked_env() -> dict:
         "JWT_SECRET",
         "DATABASE_URL",
         "REDIS_URL",
-        "GEMINI_API_KEY",
+        "NVIDIA_API_KEY_ALTER",
         "GOOGLE_API_KEY",
         "Gemini_API_KEY",
         "PMS_AI_LLM_API_KEY",
     }
     interesting = [
         "APP_ENV",
-        "PMS_AI_GEMINI_ROUTING_ENABLED",
+        "PMS_AI_NVIDIA_ROUTING_ENABLED",
         "PMS_AI_ROUTER_MODE",
         "PMS_AI_CLASSIFIER_MODE",
         "PMS_AI_LLM_INTENT_ENABLED",

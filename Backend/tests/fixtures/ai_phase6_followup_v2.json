@@ -1,0 +1,807 @@
+{
+  "schema_version": "pms-ai-phase6-followup-v2",
+  "data_boundary": "strictly_synthetic_zero_pii",
+  "sessions": [
+    {
+      "id": "uae_rank",
+      "family": "department_to_team_to_employee",
+      "turns": [
+        {
+          "id": "n01",
+          "prompt": "I'm reviewing the August 2026 UAE employee results. Which department tops the score table?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "RCM"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 95,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n02",
+          "prompt": "Which team inside that department finished first?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Coding"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 97,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n03",
+          "prompt": "Give me the highest-rated employee on that team.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Bilal Al-Mansoori"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 97,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true
+        }
+      ]
+    },
+    {
+      "id": "egy_context",
+      "family": "multiple_roles_and_period_override",
+      "turns": [
+        {
+          "id": "n04",
+          "prompt": "For Egypt's Marketing results in September 2026, which job title earned the highest score?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Creative Director"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 98,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n05",
+          "prompt": "Who posted that score?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Fadi Nassar"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 98,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n06",
+          "prompt": "What was the department-wide average back in August 2026? Include the whole Marketing department.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Marketing"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 82,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_scope_overview",
+            "get_executive_and_priority_insights",
+            "get_kpi_diagnosis_and_trends",
+            "query_rankings",
+            "get_query_rankings",
+            "read_team_metric"
+          ],
+          "expected_model_plan": true
+        }
+      ]
+    },
+    {
+      "id": "egy_ranks",
+      "family": "rank_order_ties_threshold",
+      "independent_turns": true,
+      "turns": [
+        {
+          "id": "n07",
+          "prompt": "Rank the three best-scoring Inbound employees in Egypt for September 2026, best first.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ],
+            [
+              "Karim Fawzy"
+            ],
+            [
+              "Hala Barakat"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 96,
+              "unit": "%",
+              "subject": "Nadia Mansour",
+              "ranked": true
+            },
+            {
+              "value": 94,
+              "unit": "%",
+              "subject": "Karim Fawzy",
+              "ranked": true
+            },
+            {
+              "value": 92,
+              "unit": "%",
+              "subject": "Hala Barakat",
+              "ranked": true
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true,
+          "required_ranks": [
+            "Nadia Mansour",
+            "Karim Fawzy",
+            "Hala Barakat"
+          ],
+          "must_not_contain": [
+            "Rami Khoury"
+          ]
+        },
+        {
+          "id": "n08",
+          "prompt": "Give me both names at the top of Egypt's Outbound September 2026 scorecard, including an equal first.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dina Soliman"
+            ],
+            [
+              "Omar Haddad"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 89,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings",
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics"
+          ],
+          "expected_model_plan": true,
+          "required_ranks": [
+            "Dina Soliman",
+            "Omar Haddad"
+          ],
+          "allow_rank_ties": true
+        },
+        {
+          "id": "n09",
+          "prompt": "Name the departments in the August 2026 UAE employee results that fell strictly below 80%.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ],
+            [
+              "CSR"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 64,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true,
+          "must_not_contain": [
+            "RCM"
+          ]
+        },
+        {
+          "id": "n10",
+          "prompt": "Order the UAE employee departments by August 2026 score, starting at the bottom.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "CSR"
+            ],
+            [
+              "Sales"
+            ],
+            [
+              "RCM"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 64,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 95,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings"
+          ],
+          "expected_model_plan": true,
+          "required_ranks": [
+            "CSR",
+            "Sales",
+            "RCM"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "metric_units",
+      "family": "metrics_units_and_directions",
+      "independent_turns": true,
+      "turns": [
+        {
+          "id": "n11",
+          "prompt": "For September 2026 in Egypt, give me Nadia Mansour's waiting time in minutes.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 3.4,
+              "unit": "min",
+              "subject": "Nadia Mansour",
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n12",
+          "prompt": "What was the actual Quality Errors percentage for Bilal Al-Mansoori in the UAE during August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Bilal Al-Mansoori"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 1.2,
+              "unit": "%",
+              "subject": "Bilal Al-Mansoori",
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n13",
+          "prompt": "For Egypt's September 2026 Inbound results, name the employee with the shortest Waiting Time and give the actual minutes.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 3.4,
+              "unit": "min",
+              "subject": "Nadia Mansour",
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "query_rankings",
+            "get_query_rankings",
+            "rank_employees",
+            "get_people_contribution_and_rankings",
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n14",
+          "prompt": "What's the mean employee performance score for UAE Sales for the August 2026 review?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_scope_overview",
+            "get_executive_and_priority_insights",
+            "get_kpi_diagnosis_and_trends",
+            "query_rankings",
+            "get_query_rankings",
+            "read_team_metric"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n15",
+          "prompt": "Compare June 2026 UAE Pharmacy employee scores across Dubai, Sharjah and Ajman. Put the strongest branch first.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dubai"
+            ],
+            [
+              "Sharjah"
+            ],
+            [
+              "Ajman"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "June",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 88.5,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 81,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 79,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "compare_branches",
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "expected_model_plan": true,
+          "required_ranks": [
+            "Dubai",
+            "Sharjah",
+            "Ajman"
+          ]
+        },
+        {
+          "id": "n16",
+          "prompt": "Which location received the most bookings from Egypt Inbound in September 2026? Give counts for Dubai, Sharjah and Ajman.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dubai"
+            ],
+            [
+              "Sharjah"
+            ],
+            [
+              "Ajman"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 220,
+              "unit": null,
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 110,
+              "unit": null,
+              "subject": null,
+              "ranked": false
+            },
+            {
+              "value": 50,
+              "unit": null,
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "compare_branches",
+            "get_kpi_diagnosis_and_trends"
+          ],
+          "expected_model_plan": true
+        }
+      ]
+    },
+    {
+      "id": "levels",
+      "family": "levels_managerial_corporate",
+      "independent_turns": true,
+      "turns": [
+        {
+          "id": "n17",
+          "prompt": "Show the overall Managerial score for Egypt Pre-Approvals IP in September 2026.",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Pre-Approvals IP"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 91.2,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_scope_overview",
+            "get_executive_and_priority_insights",
+            "get_kpi_diagnosis_and_trends",
+            "query_rankings",
+            "get_query_rankings",
+            "read_team_metric",
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics"
+          ],
+          "expected_model_plan": true
+        },
+        {
+          "id": "n18",
+          "prompt": "What overall score did UAE Finance achieve at Corporate level in June 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Finance"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "June",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 87.5,
+              "unit": "%",
+              "subject": null,
+              "ranked": false
+            }
+          ],
+          "required_tools": [
+            "read_scope_overview",
+            "get_executive_and_priority_insights",
+            "get_kpi_diagnosis_and_trends",
+            "query_rankings",
+            "get_query_rankings",
+            "read_team_metric",
+            "read_employee_metric",
+            "get_agent_spotlight_and_trend",
+            "get_kpi_diagnosis_and_trends",
+            "read_team_metric",
+            "query_metrics",
+            "get_management_balanced_scorecard"
+          ],
+          "expected_model_plan": true
+        }
+      ]
+    },
+    {
+      "id": "boundaries",
+      "family": "missing_data_and_conversation",
+      "independent_turns": true,
+      "turns": [
+        {
+          "id": "n19",
+          "prompt": "Show published UAE Pharmacy employee results for September 2026 only.",
+          "expected_outcome": "unavailable_or_empty",
+          "critical_scope": {
+            "region": "UAE",
+            "month": "September",
+            "year": 2026
+          },
+          "must_not_contain": [
+            "88.5",
+            "Aisha Al-Nuaimi"
+          ]
+        },
+        {
+          "id": "n20",
+          "prompt": "Good morning, what can you help me with here?",
+          "expected_outcome": "answer",
+          "must_not_contain": [
+            "CSR",
+            "lowest score",
+            "64.0"
+          ]
+        },
+        {
+          "id": "n21",
+          "prompt": "Can you write a weather forecast for next Monday?",
+          "expected_outcome": "unsupported_request",
+          "must_not_contain": [
+            "Nadia Mansour"
+          ]
+        },
+        {
+          "id": "n22",
+          "prompt": "Give me the August 2026 UAE Sales employee average once.",
+          "expected_outcome": "answer",
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August",
+            "year": 2026
+          },
+          "required_facts": [
+            {
+              "value": 76,
+              "unit": "%"
+            }
+          ],
+          "idempotent_replay_check": true
+        }
+      ]
+    },
+    {
+      "id": "self",
+      "family": "authorization",
+      "scope_override": {
+        "role": "Employee",
+        "user_id": "eval-n-self",
+        "employee_id": "H-IN-01",
+        "employee_code": "H-IN-01",
+        "has_unrestricted_team_access": false
+      },
+      "independent_turns": true,
+      "turns": [
+        {
+          "id": "n23",
+          "prompt": "Open Karim Fawzy's Inbound employee score for September 2026.",
+          "expected_outcome": "restricted_access",
+          "critical_auth": true,
+          "must_not_contain": [
+            "94.0",
+            "H-IN-02"
+          ]
+        },
+        {
+          "id": "n24",
+          "prompt": "I'd like to read the other employees' rankings in Outbound.",
+          "expected_outcome": "restricted_access",
+          "critical_auth": true,
+          "must_not_contain": [
+            "Dina Soliman",
+            "Omar Haddad",
+            "89.0"
+          ]
+        }
+      ]
+    }
+  ]
+}

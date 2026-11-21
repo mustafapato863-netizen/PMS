@@ -371,6 +371,16 @@ def test_cluster_failures_groups_deterministically_with_zero_pii(monkeypatch):
         caller_user_id="admin-1",
         caller_role="Admin",
     )
+    original = db.get(AiInteractionTrace, uuid.UUID(t1.trace_id))
+    original.structured_response = {
+        **original.structured_response,
+        "headline": "Staff in0 scored 92% (contact: sample@example.com).",
+    }
+    original.session_state = {
+        "team": "Inbound", "region": "UAE", "month": "September", "year": 2026,
+        "employee_id": "SGHD70001", "position": "contact sample@example.com",
+    }
+    db.commit()
     svc.review_feedback(trace_id=t1.trace_id, reviewer_id="admin-1", caller_role="Admin", decision="rejected")
 
     client = _build_app(db, monkeypatch=monkeypatch, ai_enabled=True)
@@ -391,6 +401,13 @@ def test_cluster_failures_groups_deterministically_with_zero_pii(monkeypatch):
     assert c["down_count"] == 2
     assert c["rejected_count"] == 1
     assert c["pending_count"] == 1
+    excerpt = next(t for t in c["traces"] if t["trace_id"] == t1.trace_id)
+    assert "92%" in excerpt["answer_excerpt"]
+    assert "sample@example.com" not in excerpt["answer_excerpt"]
+    assert "Staff in0" not in excerpt["answer_excerpt"]
+    assert excerpt["scope_context"] == "Inbound · UAE · September 2026"
+    replay_scope = {key: value for key, value in excerpt["replay_scope"].items() if value is not None}
+    assert replay_scope == {"team": "Inbound", "region": "UAE", "month": "September", "year": 2026}
 
 
 def test_retention_purge_dry_run_clamp_and_delete_trace(monkeypatch):

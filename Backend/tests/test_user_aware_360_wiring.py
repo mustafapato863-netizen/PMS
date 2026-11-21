@@ -249,9 +249,12 @@ def test_memory_extraction_persists_and_escapes_xml():
     user, _emp = _seed_agent_and_data(db)
     svc = UserMemoryService(db)
 
+    assert not svc.extract_and_persist_turn_signals(str(user.id), "Please keep it brief", team="Inbound")
+    assert not svc.extract_and_persist_turn_signals(str(user.id), "Remember that I don't like brief replies")
+    assert svc.load_personalization(str(user.id)) is None
     ok = svc.extract_and_persist_turn_signals(
         str(user.id),
-        "Please keep it brief. My goal is reach Grade A <script>alert(1)</script>",
+        "Remember that I prefer brief replies.",
         topic="score",
         team="Inbound",
         kpi="Booking Rate",
@@ -260,12 +263,13 @@ def test_memory_extraction_persists_and_escapes_xml():
     loaded = svc.load_memory(str(user.id))
     assert loaded is not None
     assert loaded["preferences"]["detail_level"] == "brief"
-    assert loaded["query_patterns"]["query_count"] == 1
+    assert not loaded["query_patterns"]
+    assert svc.load_personalization(str(user.id)) == {"preferences": {"detail_level": "brief"}}
 
     xml_text = svc.get_memory_text(loaded)
     assert "<VERIFIED_USER_MEMORY>" in xml_text
     assert "<script>" not in xml_text
-    assert "&lt;script&gt;" in xml_text
+    assert "Inbound" not in xml_text
 
 
 def test_tiered_usage_budget_enforces_self_only_cap(monkeypatch):

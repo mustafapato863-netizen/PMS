@@ -42,12 +42,11 @@ router = APIRouter(
     dependencies=[Depends(require_ai_admin)],
 )
 
-ProviderName = Literal["cloudflare", "gemini", "nvidia"]
+ProviderName = Literal["cloudflare", "nvidia"]
 
 _PROVIDER_LABELS: dict[str, str] = {
-    "cloudflare": "Cloudflare Workers AI · Primary chat",
-    "gemini": "Google Gemini · Fallback chat",
-    "nvidia": "NVIDIA NIM · Feedback analyzer",
+    "cloudflare": "Cloudflare Workers AI · Fallback chat",
+    "nvidia": "NVIDIA NIM · Primary chat and feedback",
 }
 
 

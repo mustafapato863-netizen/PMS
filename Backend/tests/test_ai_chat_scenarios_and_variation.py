@@ -14,6 +14,7 @@ from models.ai_schemas import (
     TypedMetricEvidence,
 )
 from repositories.ai_conversation_repository import compute_request_fingerprint
+from services.ai.catalog import get_ai_catalog
 from services.ai.contextual_assistant import (
     build_navigation_payload,
     build_page_help_payload,
@@ -95,7 +96,10 @@ def test_variation_seed_schema_and_fingerprint_preservation():
 def test_starter_prompts_scope_safety_and_team_tailoring():
     neutral = build_call_center_starter_prompts(SessionFilterContext())
     assert len(neutral) == 6
-    assert neutral[0].label == "Which team in All authorized departments dropped most?"
+    assert neutral[0].label == "Review overall performance"
+    pharmacy = build_call_center_starter_prompts(SessionFilterContext(function="Call Center", team="Pharmacy"))
+    assert pharmacy[0].label == "Review Pharmacy performance"
+    assert all("Call Center" not in prompt.prompt for prompt in pharmacy)
     assert {p.category for p in neutral} == {"team", "people", "branch", "kpi", "governance"}
     neutral_blob = " ".join(f"{p.label} {p.subtitle} {p.prompt}" for p in neutral)
     assert "call center" not in neutral_blob.lower()
@@ -124,6 +128,25 @@ def test_starter_prompts_scope_safety_and_team_tailoring():
     assert kpi_outbound[0].id == "outbound-paradox"
     assert "100%" not in kpi_outbound[0].subtitle
     assert "56.6%" not in kpi_outbound[0].subtitle
+
+
+@pytest.mark.parametrize(
+    ("team", "function", "region", "level"),
+    [
+        (row["team"], row["function"], region, level)
+        for row in get_ai_catalog().get_full_coverage_scope_registry()
+        for region in (("EGY", "UAE") if row["region"] == "All" else (row["region"],))
+        for level in row["performance_levels"]
+    ],
+)
+def test_starter_scenarios_stay_within_each_catalog_scope(team, function, region, level):
+    prompts = build_call_center_starter_prompts(SessionFilterContext(
+        team=team, function=function, region=region, performance_level=level,
+    ))
+    assert {prompt.category for prompt in prompts} == {"team", "people", "branch", "kpi", "governance"}
+    if team.casefold() not in ("inbound", "outbound", "call center", "support positions"):
+        assert prompts[0].prompt == f"Review {team} performance"
+        assert not any("call center" in item.prompt.casefold() for item in prompts)
 
 
 def test_deterministic_multi_variant_composer_and_dynamic_followups():

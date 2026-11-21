@@ -133,10 +133,10 @@ def test_anonymous_caller_is_rejected_on_diagnostics_before_any_role_check(test_
 
 
 _PROVIDER_ENV = (
-    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_NVIDIA_ENABLED",
     "PMS_AI_FALLBACK_ENABLED", "CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN",
-    "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY", "CLOUDFLARE_AI_MODEL", "CF_AI_MODEL",
-    "PMS_CLOUDFLARE_MODEL", "PMS_GEMINI_MODEL", "PMS_AI_GEMINI_MODEL", "GEMINI_MODEL",
+    "CLOUDFLARE_API_KEY", "NVIDIA_API_KEY_ALTER", "NVIDIA_API_KEY_ALTER", "GOOGLE_API_KEY", "CLOUDFLARE_AI_MODEL", "CF_AI_MODEL",
+    "PMS_CLOUDFLARE_MODEL", "NVIDIA_FEEDBACK_MODEL", "NVIDIA_FEEDBACK_MODEL", "NVIDIA_MODEL",
 )
 
 
@@ -158,8 +158,8 @@ def test_3_no_credentials_reports_unavailable_without_a_network_probe(clean_prov
     assert health["endpoint_configured"] is False
     assert health["active_provider"] == "deterministic"
     assert health["reason"] == "no_credentials_configured"
-    assert health["primary_provider"] == "cloudflare"
-    assert health["fallback_provider"] == "gemini"
+    assert health["primary_provider"] == "nvidia"
+    assert health["fallback_provider"] == "cloudflare"
 
 
 def test_4_cloudflare_credentials_make_cloudflare_the_active_provider(clean_provider_env):
@@ -170,31 +170,31 @@ def test_4_cloudflare_credentials_make_cloudflare_the_active_provider(clean_prov
     assert health["active_provider"] == "cloudflare"
     assert health["configured_model"] == "@cf/ibm-granite/granite-4.0-h-micro"
     assert health["endpoint_host"] == "api.cloudflare.com"
-    assert health["reason"] == "configured"
+    assert health["reason"] == "primary_unconfigured_fallback_only"
     assert "token-test-not-real" not in json.dumps(health)
 
 
-def test_5_gemini_only_credentials_fall_back_to_gemini(clean_provider_env):
-    clean_provider_env.setenv("GEMINI_API_KEY", "key-test-not-real")
+def test_5_nvidia_alternate_credential_enables_primary_provider(clean_provider_env):
+    clean_provider_env.setenv("NVIDIA_API_KEY_ALTER", "key-test-not-real")
     health = provider_status()
     assert health["available"] is True
-    assert health["active_provider"] == "gemini"
-    assert health["configured_model"] == "gemini-2.5-flash"
-    assert health["reason"] == "primary_unconfigured_fallback_only"
+    assert health["active_provider"] == "nvidia"
+    assert health["configured_model"] == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert health["reason"] == "configured"
     assert "key-test-not-real" not in json.dumps(health)
 
-    # Candidate model is configurable via PMS_GEMINI_MODEL
-    clean_provider_env.setenv("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite")
+    # Candidate model is configurable via NVIDIA_FEEDBACK_MODEL
+    clean_provider_env.setenv("NVIDIA_FEEDBACK_MODEL", "nvidia/test-alternate-model")
     health_candidate = provider_status()
-    assert health_candidate["configured_model"] == "gemini-3.5-flash-lite"
+    assert health_candidate["configured_model"] == "nvidia/test-alternate-model"
 
 
 def test_6_disabled_providers_are_never_active(clean_provider_env):
     clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
     clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
-    clean_provider_env.setenv("GEMINI_API_KEY", "key-test-not-real")
+    clean_provider_env.setenv("NVIDIA_API_KEY_ALTER", "key-test-not-real")
     clean_provider_env.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
-    clean_provider_env.setenv("PMS_AI_GEMINI_ENABLED", "false")
+    clean_provider_env.setenv("PMS_AI_NVIDIA_ENABLED", "false")
     health = provider_status()
     assert health["available"] is False
     assert health["active_provider"] == "deterministic"
@@ -206,12 +206,12 @@ def test_7_openai_can_never_be_selected_even_when_configured(clean_provider_env)
     clean_provider_env.setenv("PMS_AI_OPENAI_ENABLED", "true")
     clean_provider_env.setenv("OPENAI_API_KEY", "sk-test-not-real")
     health = provider_status()
-    assert health["primary_provider"] == "cloudflare"
-    assert health["fallback_provider"] == "gemini"
+    assert health["primary_provider"] == "nvidia"
+    assert health["fallback_provider"] == "cloudflare"
     assert health["active_provider"] == "deterministic"
 
 
-def test_8_diagnostics_payload_providers_are_cloudflare_gemini_or_deterministic(clean_provider_env, test_db_session):
+def test_8_diagnostics_payload_providers_are_cloudflare_nvidia_or_deterministic(clean_provider_env, test_db_session):
     from api.routers.ai_workspace import build_ai_diagnostics_payload
 
     clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
@@ -233,6 +233,7 @@ def test_8_diagnostics_payload_providers_are_cloudflare_gemini_or_deterministic(
 
 def test_9_diagnostics_six_states_distinction(clean_provider_env):
     """Verify clean transitions across the 6 diagnostic states without network calls."""
+    clean_provider_env.setenv("PMS_AI_PRIMARY_PROVIDER", "cloudflare")
     from services.ai.llm_client import (
         STATUS_CONFIGURED,
         STATUS_UNAVAILABLE,
@@ -254,12 +255,12 @@ def test_9_diagnostics_six_states_distinction(clean_provider_env):
 
     # 2. STATUS_UNAVAILABLE: Providers explicitly disabled in config
     clean_provider_env.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
-    clean_provider_env.setenv("PMS_AI_GEMINI_ENABLED", "false")
+    clean_provider_env.setenv("PMS_AI_NVIDIA_ENABLED", "false")
     st_unavail = provider_status()
     assert st_unavail["status_code"] == STATUS_UNAVAILABLE
     assert st_unavail["available"] is False
     clean_provider_env.delenv("PMS_AI_CLOUDFLARE_ENABLED", raising=False)
-    clean_provider_env.delenv("PMS_AI_GEMINI_ENABLED", raising=False)
+    clean_provider_env.delenv("PMS_AI_NVIDIA_ENABLED", raising=False)
 
     # 3. STATUS_CREDENTIALS_PRESENT: Credentials configured, but live verification not yet executed
     clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
@@ -297,10 +298,10 @@ def test_9_diagnostics_six_states_distinction(clean_provider_env):
     clear_live_verification()
     clean_provider_env.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
     clean_provider_env.delenv("CLOUDFLARE_API_TOKEN", raising=False)
-    clean_provider_env.setenv("GEMINI_API_KEY", "gemini-key-test")
+    clean_provider_env.setenv("NVIDIA_API_KEY_ALTER", "nvidia-key-test")
     st5 = provider_status()
     assert st5["status_code"] == STATUS_FALLBACK_ACTIVE
-    assert st5["active_provider"] == "gemini"
+    assert st5["active_provider"] == "nvidia"
 
 
 class _FakeSharedVerifyRedis:
@@ -349,6 +350,7 @@ def test_10_verify_live_endpoint_admin_success(test_db_session, monkeypatch):
         "total_latency_ms": 330.0,
         "error": None,
     }
+    monkeypatch.setenv("PMS_AI_PRIMARY_PROVIDER", "cloudflare")
     monkeypatch.setattr(verify_cloudflare_ai, "run_live_verification", lambda **kwargs: fake_result)
 
     tok = _get_user_token(test_db_session, "admin_user_verify", "Admin")
@@ -500,6 +502,7 @@ def test_15_live_endpoint_daily_budget_exceeded(test_db_session, monkeypatch):
 
     from scripts import verify_cloudflare_ai
     fake_result = {"verified": True, "provider": "cloudflare", "model": "test", "total_latency_ms": 50.0}
+    monkeypatch.setenv("PMS_AI_PRIMARY_PROVIDER", "cloudflare")
     monkeypatch.setattr(verify_cloudflare_ai, "run_live_verification", lambda **kwargs: fake_result)
 
     # First 2 calls pass
@@ -601,6 +604,7 @@ def test_18_live_verification_invalidated_on_config_or_credential_change():
 
     clear_live_verification()
     cfg1 = UnifiedProviderConfig(
+        primary_provider="cloudflare",
         cloudflare_account_id="acct-initial",
         cloudflare_api_token="token-initial",
         cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
@@ -612,6 +616,7 @@ def test_18_live_verification_invalidated_on_config_or_credential_change():
 
     # Token changed in cfg2 -> prior verification invalidated
     cfg2 = UnifiedProviderConfig(
+        primary_provider="cloudflare",
         cloudflare_account_id="acct-initial",
         cloudflare_api_token="token-NEW",
         cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
@@ -625,6 +630,7 @@ def test_18_live_verification_invalidated_on_config_or_credential_change():
     record_live_verification({"verified": True, "provider": "cloudflare", "model": cfg2.cloudflare_model}, config=cfg2)
     assert get_live_verification(cfg2)["verified"] is True
     cfg3 = UnifiedProviderConfig(
+        primary_provider="cloudflare",
         cloudflare_account_id="acct-initial",
         cloudflare_api_token="token-NEW",
         cloudflare_model="@cf/zai-org/glm-4.7-flash",

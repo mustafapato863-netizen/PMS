@@ -1,0 +1,9 @@
+{
+  "fixture_sha256": "808b0af739689a5a9bf346c2811c8d709fd8a363febee3d6546093bdf74d17b6",
+  "session_count": 3,
+  "turn_count": 12,
+  "data_boundary": "synthetic_only",
+  "schema_version": "pms-ai-qa-exact-paraphrases-manifest-v1",
+  "fixture": "Backend/tests/fixtures/ai_qa_exact_paraphrases_v1.json",
+  "provenance": "Frozen before adapting routing and planner guidance; expected values derived from published synthetic records."
+}

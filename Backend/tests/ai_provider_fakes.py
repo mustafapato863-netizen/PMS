@@ -15,7 +15,7 @@ import pytest
 from services.ai import provider_engine
 from services.ai.provider_engine import ProviderAttempt, ProviderRequest, ProviderResponse
 
-DEFAULT_MODEL = {"cloudflare": "@cf/ibm-granite/granite-4.0-h-micro", "gemini": "gemini-2.5-flash"}
+DEFAULT_MODEL = {"cloudflare": "@cf/ibm-granite/granite-4.0-h-micro", "nvidia": "nvidia/nemotron-3.5-super-vl-120b-a12b"}
 
 
 def tool_response(tool_name: str, **tool_arguments: Any) -> dict[str, Any]:

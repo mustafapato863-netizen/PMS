@@ -191,13 +191,13 @@ def test_store_database_overrides_environment(monkeypatch):
 
 
 def test_store_ignores_unreadable_ciphertext_and_uses_env(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "env-gemini-key")
+    monkeypatch.setenv("NVIDIA_API_KEY", "env-nvidia-key")
     db = _make_session()
-    db.add(AiProviderConfig(provider="gemini", primary_api_key_encrypted="not-a-token"))
+    db.add(AiProviderConfig(provider="nvidia", primary_api_key_encrypted="not-a-token"))
     db.commit()
 
-    config = provider_config_store.resolve_provider_config("gemini", db=db, use_cache=False)
-    assert config.primary_api_key == "env-gemini-key"
+    config = provider_config_store.resolve_provider_config("nvidia", db=db, use_cache=False)
+    assert config.primary_api_key == "env-nvidia-key"
     assert config.primary_key_source == "env"
 
 
@@ -271,38 +271,34 @@ def test_cloudflare_does_not_retry_when_auto_failover_is_off():
     assert len(client.calls) == 1
 
 
-def test_gemini_retries_once_with_standby_key():
-    client = _RetryOnceHttpClient(
-        {
-            "candidates": [
-                {"content": {"parts": [{"text": "OK"}]}, "finishReason": "STOP"}
-            ],
-            "usageMetadata": {
-                "promptTokenCount": 1,
-                "candidatesTokenCount": 1,
-                "totalTokenCount": 2,
-            },
-        }
-    )
-    config = provider_engine.UnifiedProviderConfig(
-        gemini_api_key="primary-key",
-        gemini_standby_api_key="standby-key",
-        gemini_auto_failover_key=True,
-    )
-    request = provider_engine.ProviderRequest(
-        messages=[provider_engine.ProviderMessage(role="user", content="hello")],
-        max_tokens=8,
-    )
+def test_nvidia_chat_always_uses_alternate_key(monkeypatch):
+    from dataclasses import replace
 
-    text, usage = provider_engine.GeminiProviderAdapter(http_client=client).execute(
-        request, config, timeout=5.0
-    )
+    monkeypatch.setenv("NVIDIA_API_KEY", "primary-feedback-key")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "alternate-chat-key")
+    resolve = provider_config_store.resolve_provider_config
+    runtime = resolve("nvidia", use_cache=False)
+    for slot in ("primary", "alternate"):
+        monkeypatch.setattr(provider_config_store, "resolve_provider_config", lambda name: (
+            replace(runtime, active_key_slot=slot) if name == "nvidia" else resolve(name)
+        ))
+        config = provider_engine.load_unified_provider_config()
+        assert config.nvidia_api_key == "alternate-chat-key"
 
-    assert text == "OK"
-    assert usage.total_tokens == 2
-    assert len(client.calls) == 2
-    assert client.calls[0]["x-goog-api-key"] == "primary-key"
-    assert client.calls[1]["x-goog-api-key"] == "standby-key"
+
+def test_nvidia_key_probe_requires_a_final_answer(monkeypatch):
+    from services.ai import provider_probe
+
+    def probe(_url, *, payload, **_kwargs):
+        assert payload["reasoning_effort"] == "none"
+        assert payload["max_tokens"] > 1
+        return 200, {"choices": [{"message": {"content": "", "reasoning": "unfinished"}}]}, ""
+
+    monkeypatch.setattr(provider_probe, "_http_json", probe)
+    result = provider_probe.probe_nvidia(api_key="test-key", model=provider_probe.DEFAULT_NVIDIA_MODEL)
+    assert result["status_code"] == 200
+    assert result["ok"] is False
+    assert "no final answer" in result["message"]
 
 
 def test_nvidia_analyzer_retries_once_with_standby_key(monkeypatch):
@@ -360,6 +356,32 @@ def test_nvidia_analyzer_does_not_retry_when_auto_failover_is_off(monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("auto_failover", [True, False])
+def test_nvidia_analyzer_uses_available_standby_when_selected_key_is_empty(monkeypatch, auto_failover):
+    from types import SimpleNamespace
+
+    config = SimpleNamespace(
+        enabled=True,
+        enabled_source="db",
+        primary_model=nemotron_analyzer.DEFAULT_NVIDIA_MODEL,
+        active_api_key="",
+        standby_api_key="standby-key",
+        auto_failover_key=auto_failover,
+    )
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_runtime_config", lambda: config)
+    authorizations: list[str] = []
+
+    def fake_urlopen(request, timeout=None):
+        authorizations.append(dict(request.header_items())["Authorization"])
+        raise urllib.error.HTTPError(request.full_url, 401, "unauthorized", None, None)
+
+    monkeypatch.setattr(nemotron_analyzer.urllib.request, "urlopen", fake_urlopen)
+    assert nemotron_analyzer.is_feedback_analyzer_configured() is auto_failover
+    with pytest.raises(RuntimeError, match="HTTP 401" if auto_failover else "not configured"):
+        nemotron_analyzer._post_nvidia_chat_completions([{"role": "user", "content": "test"}])
+    assert authorizations == (["Bearer standby-key"] if auto_failover else [])
+
+
 # ---------------------------------------------------------------------------
 # Admin API
 # ---------------------------------------------------------------------------
@@ -409,7 +431,7 @@ def test_admin_can_list_masked_provider_config(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     providers = {item["provider"]: item for item in payload["providers"]}
-    assert set(providers) == {"cloudflare", "gemini", "nvidia"}
+    assert set(providers) == {"cloudflare", "nvidia"}
     assert providers["cloudflare"]["primary_key"]["configured"] is True
     assert providers["cloudflare"]["primary_key"]["source"] == "env"
     assert "env-cloudflare-token-value" not in response.text
@@ -453,7 +475,7 @@ def test_admin_switch_key_requires_target_credentials(monkeypatch):
     client = _build_app(db, monkeypatch)
 
     response = client.post(
-        "/api/ai/admin/providers/gemini/switch-key",
+        "/api/ai/admin/providers/nvidia/switch-key",
         headers={"x-test-role": "Admin", "x-test-user-id": ADMIN_ID},
         json={"slot": "alternate"},
     )
@@ -461,16 +483,16 @@ def test_admin_switch_key_requires_target_credentials(monkeypatch):
 
     db.add(
         AiProviderConfig(
-            provider="gemini",
+            provider="nvidia",
             primary_api_key_encrypted=encrypt_secret("primary-key"),
             alternate_api_key_encrypted=encrypt_secret("alternate-key"),
         )
     )
     db.commit()
-    provider_config_store.invalidate_provider_config("gemini")
+    provider_config_store.invalidate_provider_config("nvidia")
 
     response = client.post(
-        "/api/ai/admin/providers/gemini/switch-key",
+        "/api/ai/admin/providers/nvidia/switch-key",
         headers={"x-test-role": "Admin", "x-test-user-id": ADMIN_ID},
         json={"slot": "alternate"},
     )

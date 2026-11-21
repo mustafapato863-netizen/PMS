@@ -196,6 +196,7 @@ export interface ConfirmedQueryContext {
   last_subject_employee_name?: string | null;
   last_operation_kind?: string | null;
   inherited_filters?: string[];
+  ranking_winner?: { entity: 'department' | 'team' | 'position'; name: string } | null;
 }
 
 export interface StructuredQueryPlan {
@@ -266,7 +267,7 @@ export interface AiChatRequestPayload {
   page_context?: PageContextV1 | null;
   capability_hint?: 'auto' | 'page_help' | 'navigation' | 'performance_query' | 'proposal';
   history?: AiChatMessage[];
-  provider_override?: 'auto' | 'gemini' | 'deterministic';
+  provider_override?: 'auto' | 'nvidia' | 'deterministic';
   answer_detail?: 'auto' | 'brief' | 'details';
   conversation_id?: string | null;
   client_request_id?: string | null;
@@ -515,7 +516,7 @@ export type CorrectiveActionSuggestionOutcome =
   | 'model_unavailable'
   | 'draft_rejected';
 
-export type CorrectiveActionSuggestionProvider = 'cloudflare' | 'gemini' | 'deterministic' | 'none';
+export type CorrectiveActionSuggestionProvider = 'cloudflare' | 'nvidia' | 'gemini' | 'deterministic' | 'none';
 
 export type CorrectiveActionDraftType = 'Coaching' | 'Training' | 'Monitor';
 
@@ -605,7 +606,7 @@ export interface AiCorrectiveActionSuggestionDraft {
   measured_issue: string;
   measured_issue_source: 'pms_evidence';
   recommended_steps: string[];
-  recommended_steps_source: 'cloudflare' | 'gemini';
+  recommended_steps_source: 'cloudflare' | 'nvidia' | 'gemini';
   uncertainty: string;
   uncertainty_source: 'pms_evidence';
   approval_status: 'unapproved_draft';
@@ -730,6 +731,9 @@ export interface AiConversationDetailResponse {
 export interface AiFeedbackTraceSample {
   trace_id: string;
   prompt_redacted: string;
+  answer_excerpt?: string | null;
+  scope_context?: string | null;
+  replay_scope?: SessionFilterContext | null;
   intent: string;
   operation_kind?: string | null;
   tool_choice?: string | null;
@@ -738,6 +742,8 @@ export interface AiFeedbackTraceSample {
   feedback_reason?: string | null;
   review_status: string;
   reviewer_verified: boolean;
+  replay_verified?: boolean;
+  proposed_action?: string | null;
   created_at?: string | null;
 }
 
@@ -770,6 +776,13 @@ export interface AiFeedbackClustersResponse {
   has_next?: boolean;
   has_prev?: boolean;
   clusters: AiFeedbackClusterItem[];
+  shared_learning?: {
+    family: 'team_scores' | 'period_scores' | 'ranking_positions';
+    label: string;
+    helpful_users: number;
+    unhelpful_users: number;
+    active: boolean;
+  }[];
 }
 
 export interface AiApprovedPatternItem {
@@ -827,6 +840,27 @@ export interface AiApprovePatternResponse {
   trace_review?: AiTraceReviewResponse | null;
 }
 
+export interface AiPatternRouteSnapshot {
+  outcome: string;
+  intent: string;
+  operation?: string | null;
+  team?: string | null;
+  function?: string | null;
+  region?: string | null;
+  branch?: string | null;
+  performance_level?: string | null;
+  periods: string[];
+}
+
+export interface AiPatternPreviewResponse {
+  cases: {
+    case: 'original' | 'paraphrase' | 'contrast';
+    before: AiPatternRouteSnapshot;
+    after: AiPatternRouteSnapshot;
+    candidate_applied: boolean;
+  }[];
+}
+
 export type NemotronRootCauseCategory =
   | 'intent_misclassification'
   | 'wrong_tool'
@@ -857,6 +891,8 @@ export interface NemotronFeedbackAnalysisResult {
   suggested_dpo_chosen_outline?: string | null;
   confidence: number;
   analyzed_at?: string | null;
+  model_requested?: string | null;
+  prompt_version?: string | null;
   cached: boolean;
   quarantine_reasons: string[];
   message?: string | null;
@@ -880,6 +916,8 @@ export interface AiClusterAnalysisResponse {
   suggested_pattern?: NemotronSuggestedPattern | null;
   confidence: number;
   analyzed_at?: string | null;
+  model_requested?: string | null;
+  prompt_version?: string | null;
   message?: string | null;
 }
 

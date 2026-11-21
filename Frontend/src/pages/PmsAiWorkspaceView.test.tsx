@@ -245,6 +245,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(watchingCallsWhileClosed).toHaveLength(0);
 
     // Open the rail and verify /api/ai/watching executes and renders alerts & guardrails
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
     const showRailBtn = screen.getByLabelText('Show AI is watching panel');
     expect(showRailBtn).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(showRailBtn);
@@ -267,8 +268,8 @@ describe('PmsAiWorkspaceView', () => {
   it('dispatches a starter prompt and records feedback without claiming it was verified', async () => {
     renderWorkspace('/ai');
 
-    expect(screen.getByText('Which team in All authorized departments dropped most?')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
+    expect(screen.getByText('Review overall performance')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Review overall performance'));
 
     await waitFor(() => {
       expect(
@@ -307,7 +308,7 @@ describe('PmsAiWorkspaceView', () => {
       return { success: true };
     });
     renderWorkspace('/ai');
-    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
+    fireEvent.click(screen.getByText('Review overall performance'));
     const useful = await screen.findByLabelText('Mark response as useful');
     fireEvent.click(useful);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save feedback');
@@ -339,7 +340,7 @@ describe('PmsAiWorkspaceView', () => {
 
     renderWorkspace('/ai');
 
-    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
+    fireEvent.click(screen.getByText('Review overall performance'));
 
     await waitFor(() => {
       expect(
@@ -624,6 +625,7 @@ describe('PmsAiWorkspaceView', () => {
 
     // Panel starts closed; toggle open and then closed
     expect(screen.queryByText('AI is watching')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
     const showRailBtn = screen.getByLabelText('Show AI is watching panel');
     fireEvent.click(showRailBtn);
     expect(screen.getByText('AI is watching')).toBeInTheDocument();
@@ -851,7 +853,7 @@ describe('PmsAiWorkspaceView', () => {
     renderWorkspace('/ai?function=Pharmacy');
 
     expect(screen.getByLabelText('Filter Pharmacy Team')).toBeInTheDocument();
-    expect(screen.getByText('Which team in Pharmacy dropped most?')).toBeInTheDocument();
+    expect(screen.getByText('Review Pharmacy performance')).toBeInTheDocument();
     expect(screen.queryByText(/Call Center/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filter UAE Branch')).not.toBeInTheDocument();
   });
@@ -1357,10 +1359,10 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
 
     // Mobile Filters toggle updates aria-expanded cleanly
-    const filtersToggle = screen.getByRole('button', { name: 'Show scope filters' });
+    const filtersToggle = screen.getByRole('button', { name: 'Chat settings' });
     expect(filtersToggle).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(filtersToggle);
-    expect(screen.getByRole('button', { name: 'Hide scope filters' })).toHaveAttribute(
+    expect(filtersToggle).toHaveAttribute(
       'aria-expanded',
       'true',
     );
@@ -1663,9 +1665,9 @@ describe('PmsAiWorkspaceView', () => {
     });
   });
 
-  it('sends rich conversation memory up to 40 turns and shows the 256k memory pill', async () => {
+  it('passes conversation memory without a hard-coded context window label', async () => {
     renderWorkspace('/ai');
-    expect(screen.getByTestId('ai-memory-indicator')).toHaveTextContent('256k memory');
+    expect(screen.queryByText('256k memory')).not.toBeInTheDocument();
 
     const input = screen.getByLabelText('Ask PMS AI a question');
     fireEvent.change(input, { target: { value: 'What best dep in uae?' } });
@@ -1687,6 +1689,6 @@ describe('PmsAiWorkspaceView', () => {
       expect(assistantMemory?.content).toContain(CHAT_RESPONSE.data.narrative_bullets[0]);
     });
 
-    expect(screen.getByTestId('ai-memory-indicator')).toHaveTextContent('2 turns');
+
   });
 });

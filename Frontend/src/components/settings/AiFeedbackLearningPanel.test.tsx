@@ -12,6 +12,13 @@ const mockedApiFetch = vi.mocked(apiFetch);
 const SAMPLE_CLUSTERS = {
   success: true,
   total_traces: 2,
+  shared_learning: [{
+    family: 'team_scores',
+    label: 'Team score comparisons',
+    helpful_users: 3,
+    unhelpful_users: 0,
+    active: true,
+  }],
   clusters: [
     {
       surface: 'workspace_chat',
@@ -31,6 +38,9 @@ const SAMPLE_CLUSTERS = {
         {
           trace_id: 'trace-111',
           prompt_redacted: 'Who holds the Inbound mvp badge in September 2026?',
+          answer_excerpt: 'Inbound scored 81% in September.',
+          scope_context: 'Inbound · Egypt · September 2026',
+          replay_scope: { team: 'Inbound', region: 'egypt', month: 'September', year: 2026 },
           intent: 'current_value',
           operation_kind: 'current_value',
           tool_choice: 'get_team_scorecard',
@@ -74,7 +84,56 @@ describe('AiFeedbackLearningPanel', () => {
     vi.clearAllMocks();
   });
 
+  it('previews a routing draft and links a replay only after the reviewer verifies it', async () => {
+    const before = { outcome: 'answer', intent: 'current_value', team: 'Inbound', periods: ['2026-09'] };
+    const after = { ...before, intent: 'ranking' };
+    const tracePath = '/api/ai/traces/trace-111';
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path.startsWith('/api/ai/feedback/clusters')) return Promise.resolve(SAMPLE_CLUSTERS);
+      if (path === '/api/ai/feedback/patterns') return Promise.resolve(SAMPLE_PATTERNS);
+      if (path === `${tracePath}/preview-pattern`) {
+        return Promise.resolve({ cases: [{ case: 'original', before, after, candidate_applied: true }] });
+      }
+      if (path === '/api/ai/chat') {
+        return Promise.resolve({ data: { outcome: 'answer', headline: 'Inbound top performer scored 95.2%.', trace_id: 'replay-111' } });
+      }
+      return Promise.resolve({ success: true });
+    });
+
+    render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
+    expect(await screen.findByText('Team score comparisons')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect' }));
+    expect(screen.getByText('Inbound scored 81% in September.')).toBeVisible();
+    expect(screen.getByText('Inbound · Egypt · September 2026')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Replay in PMS' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Test correction$/ }));
+    fireEvent.click(screen.getByText('Routing draft', { exact: false }));
+    fireEvent.change(screen.getByLabelText('Try a paraphrase'), {
+      target: { value: 'Show the Inbound MVP for September 2026' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Run preview' }));
+    expect(await screen.findByText('With draft · ranking · Inbound · 2026-09')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Replay in PMS' }));
+    expect(await screen.findByText('Inbound top performer scored 95.2%.')).toBeInTheDocument();
+    expect(mockedApiFetch).toHaveBeenCalledWith('/api/ai/chat', expect.objectContaining({
+      body: expect.stringContaining('"session_state":{"team":"Inbound","region":"egypt","month":"September","year":2026}'),
+    }), expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
+    const confirm = screen.getByRole('button', { name: 'Confirm verified replay' });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Review Notes (optional)'), {
+      target: { value: 'Score verified against the September PMS ranking.' },
+    });
+    fireEvent.click(screen.getByLabelText('I verified this behavior against live PMS data'));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith(`${tracePath}/review`, expect.objectContaining({
+      body: expect.stringContaining('"replay_trace_id":"replay-111"'),
+    })));
+  });
+
   it('shows loading skeleton then loads clusters, enforces PMS verification gate, and approves pattern', async () => {
+    let matchesOriginal = false;
     let resolveClusters: (val: unknown) => void = () => {};
     const pendingClusters = new Promise((res) => {
       resolveClusters = res;
@@ -86,6 +145,10 @@ describe('AiFeedbackLearningPanel', () => {
       }
       if (path === '/api/ai/feedback/patterns') {
         return Promise.resolve(SAMPLE_PATTERNS);
+      }
+      if (path === '/api/ai/traces/trace-111/preview-pattern') {
+        const route = { outcome: 'answer', intent: 'current_value', team: 'Inbound', periods: ['2026-09'] };
+        return Promise.resolve({ cases: [{ case: 'original', before: route, after: route, candidate_applied: matchesOriginal }] });
       }
       if (path === '/api/ai/traces/trace-111/approve-pattern' && init?.method === 'POST') {
         return Promise.resolve({
@@ -111,6 +174,7 @@ describe('AiFeedbackLearningPanel', () => {
     });
 
     render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
 
     // Loading skeleton visible before data resolves
     expect(screen.getByLabelText('Loading AI feedback clusters')).toBeInTheDocument();
@@ -123,9 +187,24 @@ describe('AiFeedbackLearningPanel', () => {
 
     // Inspect cluster -> Approve & save pattern disabled until PMS checkbox checked
     fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
     const approveBtn = screen.getByRole('button', { name: /Approve & save pattern/i });
     expect(approveBtn).toBeDisabled();
 
+    fireEvent.click(screen.getByLabelText('I verified this behavior against live PMS data'));
+    expect(approveBtn).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Test correction$/ }));
+    fireEvent.click(screen.getByText('Routing draft', { exact: false }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run preview' }));
+    expect(await screen.findByText('Draft did not match.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
+    fireEvent.click(screen.getByLabelText('I verified this behavior against live PMS data'));
+    expect(approveBtn).toBeDisabled();
+    matchesOriginal = true;
+    fireEvent.click(screen.getByRole('button', { name: /^Test correction$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run preview' }));
+    expect(await screen.findByText('Draft matched.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
     fireEvent.click(screen.getByLabelText('I verified this behavior against live PMS data'));
     expect(approveBtn).toBeEnabled();
 
@@ -143,10 +222,13 @@ describe('AiFeedbackLearningPanel', () => {
   });
 
   it('requires inline confirmation before removing an active pattern and handles load errors with retry', async () => {
-    mockedApiFetch
-      .mockRejectedValueOnce(new Error('Network error'))
-      .mockImplementation((path: string, init?: RequestInit) => {
+    let rejectClusters = true;
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
         if (path.startsWith('/api/ai/feedback/clusters')) {
+          if (rejectClusters) {
+            rejectClusters = false;
+            return Promise.reject(new Error('Network error'));
+          }
           return Promise.resolve({ success: true, total_traces: 0, clusters: [] });
         }
         if (path === '/api/ai/feedback/patterns') {
@@ -159,11 +241,13 @@ describe('AiFeedbackLearningPanel', () => {
       });
 
     render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Unable to load AI feedback clusters and approved patterns.');
 
     fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Active patterns/i }));
 
     const card = await screen.findByTestId('ai-approved-pattern-pat-99');
     expect(card).toBeInTheDocument();
@@ -230,6 +314,7 @@ describe('AiFeedbackLearningPanel', () => {
     });
 
     render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
 
     // Page 1 shows items 1..10 and automatically prefetches page 2 in background
     expect(await screen.findByText('Cluster prompt #1')).toBeInTheDocument();
@@ -296,20 +381,26 @@ describe('AiFeedbackLearningPanel', () => {
           quarantine_reasons: [],
         });
       }
+      if (path === '/api/ai/traces/trace-111/preview-pattern') {
+        return Promise.resolve({ cases: [] });
+      }
       return Promise.resolve({ success: true });
     });
 
     render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
 
     expect(await screen.findByText('Who holds the Inbound mvp badge in September 2026?')).toBeInTheDocument();
-    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 4 / 50 today');
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('NVIDIA requests: 4 / 50 today');
 
     fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
     // First check the PMS checkbox manually to verify Apply Suggestion resets it back to unchecked
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
     const pmsCheckbox = screen.getByLabelText('I verified this behavior against live PMS data') as HTMLInputElement;
     fireEvent.click(pmsCheckbox);
     expect(pmsCheckbox.checked).toBe(true);
 
+    fireEvent.click(screen.getByRole('button', { name: /^Diagnose$/ }));
     fireEvent.click(screen.getByRole('button', { name: /Analyze Root Cause/i }));
 
     const diagnosisCard = await screen.findByTestId('trace-diagnosis-card');
@@ -317,13 +408,17 @@ describe('AiFeedbackLearningPanel', () => {
     expect(diagnosisCard).toHaveTextContent('91% confidence');
     expect(diagnosisCard).toHaveTextContent('MVP badge phrasing was routed to current_value instead of ranking.');
 
-    fireEvent.click(screen.getByRole('button', { name: /Apply suggestion to form/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Test suggested correction/i }));
 
     // Form fields prefilled from suggestion
-    expect(screen.getByDisplayValue('Who holds the <TEAM> mvp badge in <MONTH> <YEAR>?')).toBeInTheDocument();
+    expect(screen.getByDisplayValue(SAMPLE_CLUSTERS.clusters[0].traces[0].prompt_redacted)).toBeInTheDocument();
+    expect(mockedApiFetch).toHaveBeenCalledWith('/api/ai/traces/trace-111/preview-pattern', expect.objectContaining({
+      body: expect.stringContaining('"intent":"ranking"'),
+    }));
     expect(screen.getByDisplayValue('final_score')).toBeInTheDocument();
     // Critical safety gate: PMS verification checkbox MUST be reset to unchecked
     expect(pmsCheckbox.checked).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /^Resolve$/ }));
     expect(screen.getByRole('button', { name: /Approve & save pattern/i })).toBeDisabled();
   });
 
@@ -360,7 +455,8 @@ describe('AiFeedbackLearningPanel', () => {
     });
 
     render(<AiFeedbackLearningPanel />);
-    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 1 / 50 today');
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('NVIDIA requests: 1 / 50 today');
 
     fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
     fireEvent.click(screen.getByRole('button', { name: /Analyze Root Cause/i }));
@@ -368,6 +464,48 @@ describe('AiFeedbackLearningPanel', () => {
     const diagnosisCard = await screen.findByTestId('trace-diagnosis-card');
     expect(diagnosisCard).toHaveTextContent('Blocked by privacy quarantine — no data left PMS');
     expect(diagnosisCard).toHaveTextContent('residual_email');
+  });
+
+  it('keeps a delayed cluster result attached to the cluster that requested it', async () => {
+    const first = SAMPLE_CLUSTERS.clusters[0];
+    const second = {
+      ...first,
+      scope_team: 'Outbound',
+      traces: [{ ...first.traces[0], trace_id: 'trace-222', prompt_redacted: 'Review Outbound performance' }],
+    };
+    let finishAnalysis: (result: unknown) => void = () => {};
+    const pendingAnalysis = new Promise((resolve) => { finishAnalysis = resolve; });
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/ai/feedback/clusters/analyze') return pendingAnalysis;
+      if (path.startsWith('/api/ai/feedback/clusters')) {
+        return Promise.resolve({ ...SAMPLE_CLUSTERS, clusters: [first, second] });
+      }
+      if (path === '/api/ai/feedback/analyzer/status') {
+        return Promise.resolve({ success: true, enabled: true, configured: true, daily_used: 0, daily_limit: 50 });
+      }
+      return Promise.resolve(SAMPLE_PATTERNS);
+    });
+
+    render(<AiFeedbackLearningPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
+    const [inspectInbound, inspectOutbound] = await screen.findAllByRole('button', { name: 'Inspect' });
+    fireEvent.click(inspectInbound);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Summarize Cluster' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Summarize Cluster' }));
+    fireEvent.click(inspectOutbound);
+    finishAnalysis({
+      outcome: 'analyzed',
+      traces_analyzed: 1,
+      primary_root_cause: 'wrong_tool',
+      executive_summary: 'Inbound tool mismatch',
+      recurring_issues: [],
+      recommended_engineering_fixes: [],
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Summarize Cluster' })).toBeEnabled());
+    expect(screen.queryByText('Inbound tool mismatch')).not.toBeInTheDocument();
+    fireEvent.click(inspectInbound);
+    expect(await screen.findByText('Inbound tool mismatch')).toBeInTheDocument();
   });
 
   it('summarizes a selected cluster with recurring issues and engineering fixes', async () => {
@@ -404,7 +542,8 @@ describe('AiFeedbackLearningPanel', () => {
     });
 
     render(<AiFeedbackLearningPanel />);
-    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('AI Diagnosis: 2 / 50 today');
+    fireEvent.click(screen.getByRole('button', { name: 'Review queue' }));
+    expect(await screen.findByTestId('analyzer-status-pill')).toHaveTextContent('NVIDIA requests: 2 / 50 today');
 
     fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
     fireEvent.click(screen.getByRole('button', { name: /Summarize Cluster/i }));

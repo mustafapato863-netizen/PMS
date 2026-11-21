@@ -22,10 +22,13 @@ export const KPIAggregationSchema = z.object({
 const KPIUnitSchema = z.enum([
   '%', 'currency', 'number', 'min',
   'AED', 'count', 'hours', 'sec', 'visits',
+  'Minutes', 'Number', 'Days', 'Prescriptions / FTE',
+  'Invoices', 'Reconciliations', 'Confirmations', 'Invoices / Staff',
 ]).transform((unit): '%' | 'currency' | 'number' | 'min' => {
   if (unit === 'AED') return 'currency';
-  if (unit === 'count' || unit === 'hours' || unit === 'sec' || unit === 'visits') return 'number';
-  return unit;
+  if (unit === 'Minutes') return 'min';
+  if (unit === '%' || unit === 'currency' || unit === 'min') return unit;
+  return 'number';
 });
 
 /**
@@ -104,7 +107,7 @@ export const TeamConfigSchema = z.object({
   team: z.string().min(1).describe('Team name (e.g., "Inbound", "Sales")'),
   db_name: z.string().min(1).describe('Database/dataset name for this team'),
   aliases: z.array(z.string()).optional(),
-  region: z.enum(['EGY', 'UAE']).describe('Geographic region'),
+  region: z.enum(['EGY', 'UAE', 'All']).describe('Countries covered by this scorecard configuration'),
   employee_id_col: z.string().describe('Column name for employee ID'),
   employee_name_col: z.string().describe('Column name for employee name'),
   grade_thresholds: GradeThresholdsSchema.describe('Grade thresholds (A, B, C, D)'),

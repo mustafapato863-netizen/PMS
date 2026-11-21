@@ -3110,6 +3110,8 @@ export function buildFunctionDeepDiveFromRecords(
 
   return {
     ...fallback,
+    isEmpty: false,
+    emptyReason: undefined,
     functionSlug: normSlug,
     title: `${canonicalFn} Deep Dive`,
     functionName: canonicalFn,

@@ -1,7 +1,6 @@
 """Provider-agnostic AI settings for the PMS assistant.
 
-All model traffic goes through ``services.ai.provider_engine``: Cloudflare
-Workers AI is primary and Google Gemini is the fallback. This module no longer
+All model traffic goes through ``services.ai.provider_engine``: NVIDIA NIM is primary and Cloudflare Workers AI is the fallback. This module no longer
 contains any transport, self-hosted model, inference-slot or health-probe code.
 It only answers "is this AI feature on?", "what are the time and size limits?"
 and "which provider/model is configured?". PMS still computes every number; a
@@ -10,7 +9,7 @@ provider failure is a reason code and the caller falls back to the rules engine.
 Feature gates
 -------------
 Intent routing and validated synthesis are on when a provider is usable
-(Cloudflare or Gemini enabled *and* credentialed). ``PMS_AI_INTENT_ENABLED`` /
+(NVIDIA or Cloudflare enabled *and* credentialed). ``PMS_AI_INTENT_ENABLED`` /
 ``PMS_AI_SYNTHESIS_ENABLED`` may force them off (or on). Tool-planning
 exploration stays opt-in via ``PMS_AI_EXPLORATION_ENABLED`` and is always off
 when ``APP_ENV=production``. The global kill switch remains the database-backed
@@ -26,9 +25,9 @@ import threading
 import time
 from typing import Any
 
-from services.ai.provider_engine import UnifiedProviderConfig, load_unified_provider_config
-
-SUPPORTED_PROVIDERS = ("cloudflare", "gemini")
+from services.ai.provider_engine import (
+    SUPPORTED_PROVIDERS, UnifiedProviderConfig, load_unified_provider_config, resolve_provider_model,
+)
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*", re.IGNORECASE | re.DOTALL)
@@ -88,8 +87,8 @@ def _tri_state(*names: str) -> bool | None:
 def _provider_ready(config: UnifiedProviderConfig, provider: str) -> bool:
     if provider == "cloudflare":
         return bool(config.cloudflare_enabled and config.cloudflare_account_id and config.cloudflare_api_token)
-    if provider == "gemini":
-        return bool(config.gemini_enabled and config.gemini_api_key)
+    if provider == "nvidia":
+        return bool(config.nvidia_enabled and config.nvidia_api_key)
     return False  # any other provider name (including "openai") is never usable
 
 
@@ -134,11 +133,11 @@ def local_exploration_enabled() -> bool:
 
 
 def configured_model_name() -> str:
-    """Primary model name for display and tracing (Cloudflare unless Gemini leads)."""
+    """Primary model name for display and tracing (NVIDIA or Cloudflare)."""
     cfg = load_unified_provider_config()
     primary = cfg.effective_primary_provider
-    if primary == "gemini":
-        return cfg.gemini_model
+    if primary == "nvidia":
+        return cfg.nvidia_model
     return cfg.cloudflare_model
 
 
@@ -246,12 +245,11 @@ def _compute_provider_config_fingerprint(cfg: UnifiedProviderConfig) -> str:
     NEVER logs or exposes the digest or secrets. Used purely for cache invalidation.
     """
     primary = cfg.effective_primary_provider
-    lead_model = cfg.gemini_model if primary == "gemini" else cfg.cloudflare_model
     acct = cfg.cloudflare_account_id or ""
     cf_token = cfg.cloudflare_api_token or ""
-    gem_key = cfg.gemini_api_key or ""
-    token_digest = hashlib.sha256(f"{cf_token}:{gem_key}".encode("utf-8")).hexdigest()[:16]
-    raw = f"{primary}:{lead_model}:{acct}:{token_digest}:{cfg.fallback_enabled}:{cfg.cloudflare_enabled}:{cfg.gemini_enabled}"
+    nvidia_key = cfg.nvidia_api_key or ""
+    token_digest = hashlib.sha256(f"{cf_token}:{nvidia_key}".encode("utf-8")).hexdigest()[:16]
+    raw = f"{primary}:{cfg.effective_fallback_provider}:{cfg.nvidia_model}:{cfg.cloudflare_model}:{acct}:{token_digest}:{cfg.fallback_enabled}:{cfg.cloudflare_enabled}:{cfg.nvidia_enabled}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -266,7 +264,7 @@ def record_live_verification(result: dict[str, Any], config: UnifiedProviderConf
             "verified": is_verified,
             "status": DIAGNOSTIC_STATUS_LIVE_VERIFIED if is_verified else DIAGNOSTIC_STATUS_LIVE_FAILED,
             "provider": str(result.get("provider") or cfg.effective_primary_provider),
-            "model": str(result.get("model") or cfg.cloudflare_model),
+            "model": str(result.get("model") or resolve_provider_model(cfg.effective_primary_provider, cfg)),
             "latency_ms": float(result.get("total_latency_ms") or 0.0),
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "monotonic_ts": time.monotonic(),
@@ -327,7 +325,7 @@ def clear_live_verification() -> None:
 
 _PROVIDER_HOSTS = {
     "cloudflare": "api.cloudflare.com",
-    "gemini": "generativelanguage.googleapis.com",
+    "nvidia": "integrate.api.nvidia.com",
 }
 
 
@@ -353,7 +351,7 @@ def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, ob
     fallback_reason = get_recent_fallback_reason()
 
     if not usable:
-        if (primary == "cloudflare" and not cfg.cloudflare_enabled) or (not cfg.cloudflare_enabled and not cfg.gemini_enabled):
+        if (primary == "cloudflare" and not cfg.cloudflare_enabled) or (primary == "nvidia" and not cfg.nvidia_enabled):
             status_code = DIAGNOSTIC_STATUS_UNAVAILABLE
             reason = "disabled"
         else:
@@ -384,7 +382,7 @@ def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, ob
     return {
         "primary_provider": primary,
         "fallback_provider": cfg.effective_fallback_provider if cfg.fallback_enabled else None,
-        "configured_model": cfg.gemini_model if lead == "gemini" else cfg.cloudflare_model,
+        "configured_model": cfg.nvidia_model if lead == "nvidia" else cfg.cloudflare_model,
         "endpoint_configured": bool(usable),
         "endpoint_host": _PROVIDER_HOSTS.get(lead) if usable else None,
         "available": bool(usable),

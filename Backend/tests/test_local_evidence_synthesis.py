@@ -124,7 +124,7 @@ def test_denied_scope_never_sends_evidence_to_model(monkeypatch):
     from services.ai.orchestrator import PmsAiOrchestrator
 
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     _patch_records(monkeypatch, [_make_call_center_record("EMP001", "Alice Example", "Inbound", 80, 10, 30, 40, 60)])
     monkeypatch.setattr("services.ai.orchestrator.synthesize_branch_bookings", lambda *args: pytest.fail("restricted evidence reached model"))
@@ -143,7 +143,7 @@ def test_assistant_uses_model_after_fetching_scoped_branch_counts(monkeypatch):
 
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     records = [
         _make_call_center_record("EMP001", "Alice Example", "Inbound", 80, 10, 30, 40, 120),
@@ -180,7 +180,7 @@ def test_assistant_uses_model_after_fetching_scoped_overall_score(monkeypatch):
 
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     records = [
         _make_call_center_record("EMP001", "Alice Example", "Inbound", 80, 10, 30, 40, 120),
@@ -206,18 +206,18 @@ def test_assistant_uses_model_after_fetching_scoped_overall_score(monkeypatch):
     assert response.basis_warning is None
 
 
-@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Gemini credentials")
+@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Nvidia credentials")
 def test_live_model_writes_branch_comparison_from_supplied_counts(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     response = synthesize_branch_bookings("Which branch had more Inbound bookings, Dubai or Sharjah?", evidence())
-    assert response is not None and response.provider_used in ("cloudflare", "gemini"), response
+    assert response is not None and response.provider_used in ("cloudflare", "nvidia"), response
     assert _validated_answer(response.headline, BranchBookingFacts("September 2026", "Inbound", (("Dubai", 180), ("Sharjah", 70))))
 
 
-@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Gemini credentials")
+@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Nvidia credentials")
 def test_live_model_writes_overall_score_from_supplied_facts(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     data = [{"period": "September 2026", "scope": "Inbound", "branch": "All Branches", "average_score": 85.0, "total_records": 2}]
     response = synthesize_overall_score("What is the Inbound score?", data)
-    assert response is not None and response.provider_used in ("cloudflare", "gemini"), response
+    assert response is not None and response.provider_used in ("cloudflare", "nvidia"), response
     assert _validated_score_answer(response.headline, OverallScoreFacts("September 2026", "Inbound", "All Branches", 85.0))

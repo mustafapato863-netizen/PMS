@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 59,
-  "case_count": 808,
+  "file_count": 64,
+  "case_count": 853,
   "files_by_label": {
-    "synthetic": 16,
-    "mocked": 40,
+    "synthetic": 17,
+    "mocked": 44,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -75,7 +75,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 11,
+      "cases": 12,
       "evidence_status": "partial",
       "note": ""
     },
@@ -187,7 +187,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 6,
+      "cases": 8,
       "evidence_status": "partial",
       "note": ""
     },
@@ -202,12 +202,62 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_independent_eval_scoring.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 7,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_intent_gate_and_origin.py",
       "kind": "test",
       "labels": [
         "mocked"
       ],
       "cases": 9,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_learning_worker.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_model_led_phases2_3.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 14,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_model_led_phases4_5.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_official_scoring_parity.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 4,
       "evidence_status": "partial",
       "note": ""
     },
@@ -357,7 +407,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 18,
+      "cases": 20,
       "evidence_status": "partial",
       "note": ""
     },
@@ -367,7 +417,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 66,
+      "cases": 71,
       "evidence_status": "partial",
       "note": ""
     },
@@ -457,7 +507,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 37,
+      "cases": 41,
       "evidence_status": "partial",
       "note": ""
     },
@@ -529,7 +579,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 11,
+      "cases": 12,
       "evidence_status": "partial",
       "note": ""
     },
@@ -599,7 +649,7 @@
       "labels": [
         "synthetic"
       ],
-      "cases": 4,
+      "cases": 5,
       "evidence_status": "not applicable",
       "note": ""
     },

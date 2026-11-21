@@ -151,6 +151,8 @@ def _body_for(path: str) -> dict | None:
         return PROPOSAL_BODY
     if path.endswith("/approve-pattern"):
         return {"intent": "ranking", "verified_against_pms": True}
+    if path.endswith("/preview-pattern"):
+        return {"intent": "ranking", "verified_against_pms": False}
     if path.endswith("/conversations"):
         return {}
     if path.endswith("/agent-360/what-if"):
@@ -181,6 +183,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "FeedbackGovernanceService", Boom)
     monkeypatch.setattr(ai_workspace, "NemotronFeedbackAnalyzerService", Boom)
     monkeypatch.setattr(ai_workspace, "get_analyzer_status", boom)
+    monkeypatch.setattr("services.ai.quality_summary.sampled_quality", boom)
     monkeypatch.setattr(ai_workspace, "ApprovedPatternMatcher", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
@@ -216,6 +219,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "GET /api/ai/feedback/clusters",
         "GET /api/ai/feedback/export-bundle",
         "GET /api/ai/feedback/patterns",
+        "GET /api/ai/feedback/quality",
         "GET /api/ai/memory/",
         "GET /api/ai/memory/me",
         "GET /api/ai/memory/{user_id}",
@@ -231,6 +235,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "POST /api/ai/traces/purge",
         "POST /api/ai/traces/{trace_id}/analyze",
         "POST /api/ai/traces/{trace_id}/approve-pattern",
+        "POST /api/ai/traces/{trace_id}/preview-pattern",
         "POST /api/ai/traces/{trace_id}/review",
         "PUT /api/ai/memory/me",
     ]
@@ -241,8 +246,10 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "/ai/traces/{trace_id}/analyze",
         "/ai/traces/{trace_id}/review",
         "/ai/feedback/clusters",
+        "/ai/feedback/quality",
         "/ai/feedback/patterns",
         "/ai/traces/{trace_id}/approve-pattern",
+        "/ai/traces/{trace_id}/preview-pattern",
         "/ai/feedback/patterns/{pattern_id}",
         "/ai/traces/purge",
         "/ai/traces/{trace_id}",
@@ -457,8 +464,8 @@ def test_model_stays_off_without_credentials_and_production_exploration_cannot_b
         "CLOUDFLARE_API_TOKEN",
         "CF_API_TOKEN",
         "CLOUDFLARE_API_KEY",
-        "GEMINI_API_KEY",
-        "Gemini_API_KEY",
+        "NVIDIA_API_KEY_ALTER",
+        "NVIDIA_API_KEY_ALTER",
         "GOOGLE_API_KEY",
         "PMS_AI_LOCAL_ROUTER_ENABLED",
         "PMS_AI_LOCAL_SYNTHESIS_ENABLED",
@@ -510,37 +517,37 @@ _REQUIRED_PROVIDER_VARS = (
     "PMS_AI_PRIMARY_PROVIDER",
     "PMS_AI_FALLBACK_PROVIDER",
     "PMS_AI_CLOUDFLARE_ENABLED",
-    "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_NVIDIA_ENABLED",
     "PMS_AI_FALLBACK_ENABLED",
     "PMS_AI_OPENAI_ENABLED",
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
     "CLOUDFLARE_AI_MODEL",
     "CLOUDFLARE_AI_MODEL_ALTER",
-    "GEMINI_API_KEY",
-    "PMS_GEMINI_MODEL",
+    "NVIDIA_API_KEY_ALTER",
+    "NVIDIA_FEEDBACK_MODEL",
 )
 
-_LEGACY_MARKERS = ("PMS_AI_LLM_", "pms-qwen-pilot", "llama.cpp", "qwen", "OPENAI_API_KEY")
+_LEGACY_MARKERS = ("PMS_AI_LLM_", "pms-qwen-pilot", "llama.cpp", "qwen", "OPENAI_API_KEY", "GEMINI_API_KEY", "PMS_GEMINI_MODEL")
 
 
-def test_compose_and_deploy_use_only_cloudflare_primary_gemini_fallback():
+def test_compose_and_deploy_use_nvidia_primary_and_cloudflare_fallback():
     for relative in ("docker-compose.yml", "compose.production.yml"):
         text_value = (REPO / relative).read_text(encoding="utf-8")
         for var in _REQUIRED_PROVIDER_VARS:
             assert f"  {var}:" in text_value, f"{relative} must pass {var}"
-        assert "PMS_AI_PRIMARY_PROVIDER: ${PMS_AI_PRIMARY_PROVIDER:-cloudflare}" in text_value
-        assert "PMS_AI_FALLBACK_PROVIDER: ${PMS_AI_FALLBACK_PROVIDER:-gemini}" in text_value
+        assert "PMS_AI_PRIMARY_PROVIDER: ${PMS_AI_PRIMARY_PROVIDER:-nvidia}" in text_value
+        assert "PMS_AI_FALLBACK_PROVIDER: ${PMS_AI_FALLBACK_PROVIDER:-cloudflare}" in text_value
         assert "PMS_AI_CLOUDFLARE_ENABLED: ${PMS_AI_CLOUDFLARE_ENABLED:-true}" in text_value
-        assert "PMS_AI_GEMINI_ENABLED: ${PMS_AI_GEMINI_ENABLED:-true}" in text_value
+        assert "PMS_AI_NVIDIA_ENABLED: ${PMS_AI_NVIDIA_ENABLED:-true}" in text_value
         assert "PMS_AI_FALLBACK_ENABLED: ${PMS_AI_FALLBACK_ENABLED:-true}" in text_value
         assert "PMS_AI_OPENAI_ENABLED: ${PMS_AI_OPENAI_ENABLED:-false}" in text_value
         assert "CLOUDFLARE_AI_MODEL: ${CLOUDFLARE_AI_MODEL:-@cf/ibm-granite/granite-4.0-h-micro}" in text_value
         assert "CLOUDFLARE_AI_MODEL_ALTER: ${CLOUDFLARE_AI_MODEL_ALTER:-@cf/zai-org/glm-4.7-flash}" in text_value
-        assert "PMS_GEMINI_MODEL: ${PMS_GEMINI_MODEL:-gemini-2.5-flash}" in text_value
+        assert "NVIDIA_FEEDBACK_MODEL: ${NVIDIA_FEEDBACK_MODEL:-nvidia/nemotron-3.5-super-vl-120b-a12b}" in text_value
         # Secrets are pass-through only; no literal default value.
         assert "CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}" in text_value
-        assert "GEMINI_API_KEY: ${GEMINI_API_KEY:-}" in text_value
+        assert "NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}" in text_value
         for marker in _LEGACY_MARKERS:
             assert marker.casefold() not in text_value.casefold(), f"{relative} still references {marker}"
 
@@ -552,7 +559,7 @@ def test_compose_and_deploy_use_only_cloudflare_primary_gemini_fallback():
     for example in (REPO / "DevOps" / ".env.example", REPO / "DevOps" / ".env.hostinger.example"):
         example_text = example.read_text(encoding="utf-8")
         assert "PMS_AI_OPENAI_ENABLED=false" in example_text
-        assert "PMS_AI_PRIMARY_PROVIDER=cloudflare" in example_text
+        assert "PMS_AI_PRIMARY_PROVIDER=nvidia" in example_text
         assert "CLOUDFLARE_AI_MODEL_ALTER=@cf/zai-org/glm-4.7-flash" in example_text
         for marker in _LEGACY_MARKERS:
             assert marker.casefold() not in example_text.casefold(), f"{example.name} still references {marker}"

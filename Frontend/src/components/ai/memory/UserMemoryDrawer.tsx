@@ -171,7 +171,7 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
               <Brain size={22} className="mx-auto text-slate-300" />
               <p className="mt-2 text-sm font-semibold text-slate-700">No memory yet</p>
               <p className="mt-1 text-xs text-slate-500">
-                As you chat, your assistant will learn your preferences and focus areas.
+                Choose a preference here, or ask the assistant to remember how you like your answers.
               </p>
             </div>
           ) : (
@@ -221,7 +221,7 @@ export function UserMemoryDrawer({ isOpen, onClose }: UserMemoryDrawerProps) {
             <button
               type="button"
               onClick={() => setConfirmClear(true)}
-              disabled={!memory || itemCount === 0}
+              disabled={!memory || loading || saving}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 hover:border-rose-400 disabled:opacity-40"
             >
               <Trash2 size={14} /> Clear all my memory

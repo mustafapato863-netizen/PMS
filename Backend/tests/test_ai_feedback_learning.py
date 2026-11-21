@@ -13,11 +13,14 @@ from sqlalchemy.pool import StaticPool
 from api.routers import ai_workspace
 from config.database import Base, get_db
 from models.ai_schemas import AiChatRequest, SessionFilterContext
-from models.models import AiApprovedPattern, AiInteractionTrace, AuditLog, Employee, ProductSetting, Team
+from models.models import AiApprovedPattern, AiInteractionTrace, AuditLog, Employee, ProductSetting, Team, User
 from services.ai import feature_gate
 from services.ai.approved_patterns import ApprovedPatternMatcher, normalize_pattern_prompt
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.router import HybridQueryRouter
+from services.ai.shared_feedback_learning import shared_planner_guidance
+from services.ai.trace_logger import TrainingTraceLogger
+from tests.ai_provider_fakes import install_scripted_provider, tool_response
 from tests.test_ai_booking_comparisons import _make_schema_record
 
 
@@ -61,6 +64,96 @@ def _build_app(db, *, monkeypatch, ai_enabled: bool = True):
     app.dependency_overrides[get_db] = override_db
     app.include_router(ai_workspace.router, prefix="/api")
     return TestClient(app)
+
+
+def test_shared_learning_requires_distinct_authorized_votes_and_pauses_on_flag(monkeypatch):
+    monkeypatch.setenv("PMS_AI_SHARED_VERIFIED_FEEDBACK_ENABLED", "true")
+    db = _make_session()
+    db.add(ProductSetting(key="ai_access_tier", enabled=True, value_str="all_authenticated_users"))
+    users = [
+        User(id=uuid.uuid4(), username=f"learning-{i}", email=f"learning-{i}@example.test",
+             full_name=f"Learning {i}", password_hash="synthetic-test", role=role, is_active=True)
+        for i, role in enumerate(("Admin", "Employee", "Function Director"))
+    ]
+    db.add_all(users)
+    db.commit()
+    client = _build_app(db, monkeypatch=monkeypatch)
+
+    def vote(user, rating="up", family="team_scores"):
+        trace = AiInteractionTrace(
+            user_id=str(user.id), role=user.role, prompt="private question",
+            sanitized_prompt="private question",
+            non_empty_evidence=True,
+            structured_response={"verified_answer_family": family, "outcome": "answer"},
+        )
+        db.add(trace)
+        db.commit()
+        response = client.post(
+            "/api/ai/feedback",
+            headers={"x-test-role": user.role, "x-test-user-id": str(user.id)},
+            json={"trace_id": str(trace.id), "rating": rating},
+        )
+        assert response.status_code == 200, response.text
+
+    def status():
+        res = client.get("/api/ai/feedback/clusters", headers={
+            "x-test-role": users[0].role, "x-test-user-id": str(users[0].id),
+        })
+        assert res.status_code == 200, res.text
+        return next(f for f in res.json()["shared_learning"] if f["family"] == "team_scores")
+
+    for user in (users[0], users[0], users[1]):
+        vote(user)
+    vote(users[2], family=None)
+    assert status()["helpful_users"] == 2
+    assert not status()["active"]
+    vote(users[2])
+    assert status()["active"]
+    guidance = shared_planner_guidance(db)
+    assert "percentage-point difference" in guidance
+    assert "private question" not in guidance and not any(str(user.id) in guidance for user in users)
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    calls = install_scripted_provider(monkeypatch, [
+        tool_response("query_rankings", entity="department", region="EGY", period="2026-09", limit=1),
+    ])
+    HybridQueryRouter(scope={
+        "role": "Admin", "user_id": str(users[0].id), "has_unrestricted_team_access": True,
+    }, db=db).resolve_and_validate(
+        prompt="Which department ranked highest in Egypt in September 2026?",
+        session_state=SessionFilterContext(month="September", year=2026),
+    )
+    assert len(calls) == 1 and "Verified guidance from shared user feedback" in str(calls[0])
+    vote(users[1], "down")
+    assert status()["unhelpful_users"] == 1
+    assert not status()["active"]
+    assert not shared_planner_guidance(db)
+    vote(users[1], "up")
+    assert status()["active"]
+    monkeypatch.setenv("PMS_AI_SHARED_VERIFIED_FEEDBACK_ENABLED", "false")
+    assert not shared_planner_guidance(db)
+    db.close()
+
+
+def test_verified_replay_pattern_uuid_survives_trace_redaction():
+    pattern_id = "42602613-d987-4e95-a629-483768e9df46"
+    with _make_session() as db:
+        trace_id = TrainingTraceLogger(db).record_turn(
+            user_id=str(uuid.uuid4()),
+            role="Admin",
+            prompt="Show the approved ranking.",
+            session_state=SessionFilterContext(),
+            tool_calls=[],
+            tool_digest={"approved_pattern_id": pattern_id, "employee_id": "EMP1234"},
+            structured_response={"outcome": "answer"},
+            provider_name="deterministic",
+            model_name="test",
+            latency_ms=1,
+            non_empty_evidence=True,
+            guardrail_triggered=False,
+        )
+        stored = db.get(AiInteractionTrace, uuid.UUID(trace_id))
+        assert stored.tool_digest["approved_pattern_id"] == pattern_id
+        assert stored.tool_digest["employee_id"] == "<EMPLOYEE_ID>"
 
 
 def test_unavailable_and_clarification_turns_emit_valid_trace_ids(monkeypatch):
@@ -366,7 +459,7 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
         lambda _self, **_kw: [in_rec, in_rec2, out_rec],
     )
 
-    unseen_inbound = "Show me the Inbound mvp badge in September 2026"
+    unseen_inbound = "Show me the Inbound mvp badge"
     unseen_outbound = "Show me the Outbound mvp badge in September 2026"
 
     # BEFORE pattern approval: deterministic router falls back to current_value instead of ranking
@@ -399,11 +492,47 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
         headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},
         json={"trace_id": tr.trace_id, "rating": "down"},
     ).status_code == 200
+    from services.ai import nemotron_analyzer
+
+    monkeypatch.setattr(nemotron_analyzer, "is_feedback_analyzer_configured", lambda: True)
+    monkeypatch.setattr(nemotron_analyzer, "_consume_daily_budget", lambda: True)
+    monkeypatch.setattr(nemotron_analyzer, "_post_nvidia_chat_completions", lambda *_args, **_kwargs: {
+        "root_cause_category": "intent_misclassification",
+        "root_cause_summary": "MVP badge wording asks for a top performer.",
+    })
+    diagnosis = client.post(
+        f"/api/ai/traces/{tr.trace_id}/analyze",
+        headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},
+        json={},
+    )
+    assert diagnosis.status_code == 200, diagnosis.text
+    assert diagnosis.json()["outcome"] == "analyzed"
+    draft = {
+        "corrected_pattern_prompt": "Please list the Inbound mvp badge",
+        "intent": "ranking",
+        "operation_kind": "ranking",
+        "paraphrase": unseen_inbound,
+        "contrast": "Show me the Inbound mvp badge trend",
+    }
+    preview_path = f"/api/ai/traces/{tr.trace_id}/preview-pattern"
+    assert client.post(preview_path, headers={"x-test-role": "Manager"}, json=draft).status_code == 403
+    preview = client.post(
+        preview_path, headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"}, json=draft,
+    )
+    assert preview.status_code == 200, preview.text
+    cases = {row["case"]: row for row in preview.json()["cases"]}
+    assert cases["original"]["candidate_applied"]
+    assert cases["paraphrase"]["before"]["intent"] != "ranking"
+    assert cases["paraphrase"]["after"]["intent"] == "ranking"
+    assert cases["paraphrase"]["after"]["periods"] == ["2026-09"]
+    assert cases["contrast"]["before"] == cases["contrast"]["after"]
+    assert not cases["contrast"]["candidate_applied"]
+    assert ApprovedPatternMatcher(db).list_patterns() == []
     approve = client.post(
         f"/api/ai/traces/{tr.trace_id}/approve-pattern",
         headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},
         json={
-            "corrected_pattern_prompt": "Please list the Inbound mvp badge in September 2026",
+            "corrected_pattern_prompt": draft["corrected_pattern_prompt"],
             "intent": "ranking",
             "operation_kind": "ranking",
             "requested_parts": ["ranking"],
@@ -413,6 +542,46 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
         },
     )
     assert approve.status_code == 200
+    pattern_id = approve.json()["pattern"]["id"]
+
+    # An approved interpretation still takes effect with the Admin model-led pilot on.
+    from tests.ai_provider_fakes import install_scripted_provider
+
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    provider_calls = install_scripted_provider(monkeypatch, {
+        "response_type": "clarification",
+        "clarification_prompt": "What does MVP mean?",
+    })
+    after_admin = orch_admin.run_chat_turn(AiChatRequest(
+        prompt=unseen_inbound,
+        session_state=SessionFilterContext(month="September", year=2026),
+    ))
+    assert after_admin.outcome == "answer"
+    assert after_admin.structured_query.intent == "ranking"
+    assert "Laila Sami" in " ".join([after_admin.headline, *after_admin.narrative_bullets])
+    assert all(call["purpose"] != "model_led_router" for call in provider_calls)
+    learned_original = orch_admin.run_chat_turn(AiChatRequest(
+        prompt=draft["corrected_pattern_prompt"],
+        session_state=SessionFilterContext(team="Inbound", month="September", year=2026),
+        provider_override="deterministic",
+    ))
+    assert learned_original.headline == after_admin.headline
+    assert learned_original.structured_query.periods == after_admin.structured_query.periods == ["2026-09"]
+    review_path = f"/api/ai/traces/{tr.trace_id}/review"
+    admin_headers = {"x-test-role": "Admin", "x-test-user-id": "admin-1"}
+    review = {"decision": "approved", "notes": "Verified against the September Inbound PMS ranking."}
+    assert client.post(review_path, headers=admin_headers, json={
+        **review, "replay_trace_id": tr.trace_id,
+    }).status_code == 422
+    replay_review = client.post(review_path, headers=admin_headers, json={
+        **review, "replay_trace_id": after_admin.trace_id,
+    })
+    assert replay_review.status_code == 200, replay_review.text
+    clusters = client.get("/api/ai/feedback/clusters", headers=admin_headers).json()["clusters"]
+    assert any(
+        item["trace_id"] == tr.trace_id and item["replay_verified"]
+        for cluster in clusters for item in cluster["traces"]
+    )
 
     # AFTER approval: disjoint unseen paraphrase routes to ranking & executes fresh scoped PMS query
     mgr_scope = {
@@ -433,6 +602,14 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
     assert after_inbound.structured_query.intent == "ranking"
     assert "Laila Sami" in after_inbound.headline or any("Laila Sami" in b for b in after_inbound.narrative_bullets)
 
+    # Existing rows persisted before display verbs were normalized remain usable.
+    pattern_row = db.get(AiApprovedPattern, pattern_id)
+    pattern_row.normalized_pattern = f"list {pattern_row.normalized_pattern}"
+    db.commit()
+    legacy_match = ApprovedPatternMatcher(db).match_prompt("Can you display the Inbound MVP badge?")
+    assert legacy_match is not None and legacy_match.pattern_id == pattern_id
+    assert ApprovedPatternMatcher(db).match_prompt("Show the Inbound MVP badge trend") is None
+
     # RBAC MUST still block unauthorized Outbound team even when pattern matches
     after_outbound = PmsAiOrchestrator(db, mgr_scope).run_chat_turn(
         AiChatRequest(
@@ -443,6 +620,18 @@ def test_approved_pattern_improves_unseen_paraphrase_while_preserving_rbac(monke
     )
     assert after_outbound.outcome == "restricted_access"
     assert "Omar Zaki" not in after_outbound.headline
+
+    assert client.delete(
+        f"/api/ai/feedback/patterns/{pattern_id}",
+        headers={"x-test-role": "Admin", "x-test-user-id": "admin-1"},
+    ).status_code == 200
+    deactivated = router_before.resolve_and_validate(
+        prompt=unseen_inbound,
+        session_state=SessionFilterContext(month="September", year=2026),
+        provider_override="deterministic",
+    )
+    assert deactivated.plan.intent == before_res.plan.intent
+    assert deactivated.matched_pattern_id is None
 
 
 def test_catalog_chronological_period_sort_and_support_positions_explicit_region_rbac():

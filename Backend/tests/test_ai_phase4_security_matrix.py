@@ -39,7 +39,7 @@ from services.ai.feature_gate import (  # noqa: E402
 from services.ai.orchestrator import PmsAiOrchestrator  # noqa: E402
 from services.ai.provider_engine import (  # noqa: E402
     CloudflareAIProviderAdapter,
-    GeminiProviderAdapter,
+    NvidiaProviderAdapter,
     ProviderRateLimitError,
     ProviderTimeoutError,
     TokenUsage,
@@ -422,9 +422,9 @@ def test_prompt_injection_in_prior_action_is_stripped_outbound_and_echo_is_rejec
 
     cfg = UnifiedProviderConfig(
         primary_provider="cloudflare",
-        fallback_provider="gemini",
+        fallback_provider="nvidia",
         cloudflare_enabled=True,
-        gemini_enabled=False,
+        nvidia_enabled=False,
         fallback_enabled=False,
         cloudflare_account_id="acct",
         cloudflare_api_token="super-secret-cf-token",
@@ -523,25 +523,25 @@ def test_provider_timeout_429_malformed_json_and_zero_secret_or_pii_in_logs(secu
         def execute(self, request, config=None, *, model: str = "", timeout: float = 5.0):
             raise ProviderTimeoutError(f"timeout using token {secret_cf}")
 
-    class _RateLimitGemini(GeminiProviderAdapter):
+    class _RateLimitNvidia(NvidiaProviderAdapter):
         def execute(self, request, config=None, *, model: str = "", timeout: float = 5.0):
             raise ProviderRateLimitError(f"429 rate limit using key {secret_gm}")
 
     cfg = UnifiedProviderConfig(
         primary_provider="cloudflare",
-        fallback_provider="gemini",
+        fallback_provider="nvidia",
         cloudflare_enabled=True,
-        gemini_enabled=True,
+        nvidia_enabled=True,
         fallback_enabled=True,
         cloudflare_account_id="acct",
         cloudflare_api_token=secret_cf,
-        gemini_api_key=secret_gm,
+        nvidia_api_key=secret_gm,
         max_retries=0,
     )
     engine = UnifiedProviderEngine(
         config=cfg,
         cloudflare_adapter=_TimeoutThen429CF(),
-        gemini_adapter=_RateLimitGemini(),
+        nvidia_adapter=_RateLimitNvidia(),
     )
     admin_scope = {"role": "Admin", "has_unrestricted_team_access": True}
     with caplog.at_level(logging.DEBUG):
@@ -564,7 +564,7 @@ def test_provider_timeout_429_malformed_json_and_zero_secret_or_pii_in_logs(secu
     engine_bad_json = UnifiedProviderEngine(
         config=cfg,
         cloudflare_adapter=_MalformedCF(),
-        gemini_adapter=_RateLimitGemini(),
+        nvidia_adapter=_RateLimitNvidia(),
     )
     with caplog.at_level(logging.DEBUG):
         res_bad = CorrectiveActionDrafter(security_db, provider_engine=engine_bad_json).suggest(
@@ -601,25 +601,25 @@ def test_orchestrator_provider_timeout_and_rate_limit_fallback_without_log_leaks
         def execute(self, request, config=None, *, model: str = "", timeout: float = 5.0):
             raise ProviderTimeoutError(f"cloudflare timeout token={secret_cf}")
 
-    class _RateLimitGM(GeminiProviderAdapter):
+    class _RateLimitGM(NvidiaProviderAdapter):
         def execute(self, request, config=None, *, model: str = "", timeout: float = 5.0):
-            raise ProviderRateLimitError(f"gemini 429 key={secret_gm}")
+            raise ProviderRateLimitError(f"nvidia 429 key={secret_gm}")
 
     cfg = UnifiedProviderConfig(
         primary_provider="cloudflare",
-        fallback_provider="gemini",
+        fallback_provider="nvidia",
         cloudflare_enabled=True,
-        gemini_enabled=True,
+        nvidia_enabled=True,
         fallback_enabled=True,
         cloudflare_account_id="acct",
         cloudflare_api_token=secret_cf,
-        gemini_api_key=secret_gm,
+        nvidia_api_key=secret_gm,
         max_retries=0,
     )
     failing_engine = UnifiedProviderEngine(
         config=cfg,
         cloudflare_adapter=_TimeoutCF(),
-        gemini_adapter=_RateLimitGM(),
+        nvidia_adapter=_RateLimitGM(),
     )
 
     from services.ai import provider_engine
@@ -725,9 +725,9 @@ def test_prompt_injection_in_kpi_label_and_position_is_neutralized(security_db):
 
     cfg = UnifiedProviderConfig(
         primary_provider="cloudflare",
-        fallback_provider="gemini",
+        fallback_provider="nvidia",
         cloudflare_enabled=True,
-        gemini_enabled=False,
+        nvidia_enabled=False,
         fallback_enabled=False,
         cloudflare_account_id="acct",
         cloudflare_api_token="tok",

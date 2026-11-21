@@ -315,6 +315,99 @@ def get_all_records(
 SUMMARY_RECORDS_MAX_LIMIT = SUMMARY_RECORDS_CAP
 
 
+@router.get("/official-scores", response_model=StandardResponse)
+def get_official_scores(
+    request: Request,
+    db: Session = Depends(get_db),
+    month: str | None = Query(None, max_length=20),
+    year: int | None = Query(None, ge=1900, le=9999),
+    region: str | None = Query(None, max_length=16),
+    performance_level: str = Query("Employee", max_length=32),
+    location: str = Query("all", max_length=32),
+    measure: str = Query("official", max_length=32),
+):
+    """Return authoritative Monthly Review official scores OR employee averages for the caller's RBAC scope."""
+    from services.ai.catalog import ai_evidence_cache, function_for_team, user_can_access_branch
+    from services.evaluation.cache_identity import evaluation_cache_identity
+    from services.planning_service import MONTH_ORDER
+    from services.scoring.monthly_official_scores import build_official_scores_snapshot
+    from utils.branch_scope import project_record_for_branch, record_matches_branch
+
+    scope = get_current_user_scope(db, request)
+    norm_measure = "employee_average" if measure == "employee_average" else "official"
+    if measure not in ("official", "employee_average"):
+        raise HTTPException(status_code=422, detail="measure must be 'official' or 'employee_average'")
+    eff_region = region.strip().upper() if region and region.strip() else None
+    if eff_region and eff_region not in ("EGY", "UAE", "KSA", "ALL"):
+        raise HTTPException(status_code=422, detail="Invalid region filter")
+    if eff_region and eff_region != "ALL":
+        is_global = bool(scope.get("has_unrestricted_team_access")) or str(scope.get("role") or "") in {"Admin", "General Manager", "Performance Team", "Viewer"}
+        has_explicit_regions = bool(scope.get("accessible_regions"))
+        if (not is_global or has_explicit_regions) and not user_can_access_region(scope, eff_region):
+            raise HTTPException(status_code=403, detail="Access denied for this region")
+    loc_clean = (location or "all").strip().casefold()
+    if loc_clean != "all" and not user_can_access_branch(scope, loc_clean):
+        raise HTTPException(status_code=403, detail="Access denied for this branch")
+
+    norm_level = normalize_performance_level(performance_level) or "Employee"
+    period_key = (
+        f"{year:04d}-{MONTH_ORDER[month.strip().title()]:02d}"
+        if (year and month and month.strip().title() in MONTH_ORDER)
+        else None
+    )
+    query_sig = {
+        "stage": "official_scores_endpoint",
+        "region": eff_region,
+        "level": norm_level,
+        "month": month.strip().title() if month else None,
+        "year": year,
+        "period_key": period_key,
+        "measure": norm_measure,
+        "location": loc_clean,
+    }
+    eval_id = evaluation_cache_identity(db)
+    cached = ai_evidence_cache.get(db=db, scope=scope, query_signature=query_sig, eval_id=eval_id)
+    if cached is not None:
+        release_read_transaction(db)
+        return StandardResponse(success=True, message="Official scores retrieved.", data=cached)
+
+    records = _get_dashboard_records(
+        db,
+        month=month.strip().title() if month else None,
+        performance_level=_level_filter(norm_level),
+        year=year,
+        region=None if eff_region == "ALL" else eff_region,
+        scope=scope,
+    )
+    scoped_records = filter_records_by_scope(records, scope)
+    if eff_region and eff_region != "ALL":
+        scoped_records = [
+            r for r in scoped_records
+            if str(getattr(r, "region", "") or "").strip().upper() == eff_region
+        ]
+    if loc_clean != "all":
+        scoped_records = [
+            project_record_for_branch(r, loc_clean)
+            for r in scoped_records
+            if record_matches_branch(r, loc_clean)
+        ]
+
+    snapshot = build_official_scores_snapshot(
+        db,
+        scope,
+        scoped_records,
+        region=eff_region,
+        level=norm_level,
+        period_key=period_key,
+        measure=norm_measure,  # type: ignore[arg-type]
+        location=loc_clean,
+        function_for_team_fn=function_for_team,
+    )
+    ai_evidence_cache.set(db=db, scope=scope, query_signature=query_sig, payload=snapshot, eval_id=eval_id)
+    release_read_transaction(db)
+    return StandardResponse(success=True, message="Official scores retrieved.", data=snapshot)
+
+
 @router.get("/summary-records", response_model=StandardResponse)
 def get_summary_records(
     request: Request,

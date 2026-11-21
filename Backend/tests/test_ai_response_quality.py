@@ -122,7 +122,7 @@ def test_keyword_and_help_gate_never_query_performance_data(
     expected_mode: str,
 ) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
     spy = _install_db_read_spy(monkeypatch)
@@ -149,7 +149,7 @@ def test_keyword_and_help_gate_never_query_performance_data(
 
 def test_multiturn_pronoun_correction_topic_switch_and_explain_previous(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -242,7 +242,7 @@ def test_multiturn_pronoun_correction_topic_switch_and_explain_previous(monkeypa
 
 def test_tied_leading_agent_keeps_candidates_and_selected_followup_question(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -304,7 +304,7 @@ def test_tied_leading_agent_keeps_candidates_and_selected_followup_question(monk
 
 def test_explicit_employee_outside_requested_team_asks_for_scope_clarification(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
     _patch_records(monkeypatch, _make_rich_records())
@@ -331,7 +331,7 @@ def test_explicit_employee_outside_requested_team_asks_for_scope_clarification(m
 
 def test_country_switch_is_visible_without_changing_team_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -380,7 +380,7 @@ def test_country_switch_is_visible_without_changing_team_identity(monkeypatch: p
 
 def test_bare_month_only_applies_when_active_analytical_context_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -411,7 +411,7 @@ def test_bare_month_only_applies_when_active_analytical_context_exists(monkeypat
 def test_bounded_context_single_provider_call_and_unavailable_provider_never_substitutes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -463,7 +463,7 @@ def test_bounded_context_single_provider_call_and_unavailable_provider_never_sub
 
 def test_brief_completeness_and_pp_formatting(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
 
@@ -506,7 +506,7 @@ def test_brief_completeness_and_pp_formatting(monkeypatch: pytest.MonkeyPatch) -
 
 def test_permission_revocation_revalidates_saved_context(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -547,7 +547,7 @@ def test_permission_revocation_revalidates_saved_context(monkeypatch: pytest.Mon
 
 def test_local_fastapi_multiturn_endpoint_and_fresh_chat_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
 
@@ -1008,7 +1008,7 @@ def _install_phase5_model_led_responses(
     monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     return install_scripted_provider(monkeypatch, [planner_call, synthesis_reply])
 
 
@@ -1679,7 +1679,7 @@ def test_structured_evidence_source_link_keeps_team_and_period_filters(monkeypat
     from urllib.parse import parse_qs, urlsplit
 
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "true")
     _patch_records(monkeypatch, _make_rich_records())

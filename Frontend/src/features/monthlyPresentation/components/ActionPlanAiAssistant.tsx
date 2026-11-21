@@ -371,7 +371,7 @@ export function AiRecommendationBanner({
   if (!payload) return null;
 
   const providerLabel =
-    payload.provider_used === 'cloudflare' || payload.provider_used === 'gemini'
+    payload.provider_used === 'cloudflare' || payload.provider_used === 'nvidia' || payload.provider_used === 'gemini'
       ? 'PMS AI'
       : 'Evidence Check';
 

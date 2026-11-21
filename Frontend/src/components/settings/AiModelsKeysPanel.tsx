@@ -10,12 +10,11 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
 
-export type AiProviderName = 'cloudflare' | 'gemini' | 'nvidia';
+export type AiProviderName = 'cloudflare' | 'nvidia';
 export type AiKeySlot = 'primary' | 'alternate';
 export type AiKeySource = 'db' | 'env' | 'none';
 
@@ -46,9 +45,11 @@ export interface AiProviderConfigItem {
   updated_at: string | null;
 }
 
+type AiProviderListItem = Omit<AiProviderConfigItem, 'provider'> & { provider: string };
+
 interface AiProviderConfigListResponse {
   success: boolean;
-  providers: AiProviderConfigItem[];
+  providers: AiProviderListItem[];
 }
 
 interface AiProviderConfigResponse {
@@ -93,14 +94,12 @@ type TestState = Record<string, { state: 'loading' } | { state: 'done'; result: 
 
 const PROVIDER_ICONS: Record<AiProviderName, typeof Cloud> = {
   cloudflare: Cloud,
-  gemini: Sparkles,
   nvidia: ShieldCheck,
 };
 
 const PROVIDER_ROLE: Record<AiProviderName, string> = {
-  cloudflare: 'Primary chat provider',
-  gemini: 'Fallback chat provider',
-  nvidia: 'Feedback root-cause analyzer',
+  cloudflare: 'Fallback chat provider',
+  nvidia: 'Primary chat and feedback analysis',
 };
 
 const MODEL_PRESETS: Record<AiProviderName, string[]> = {
@@ -109,7 +108,6 @@ const MODEL_PRESETS: Record<AiProviderName, string[]> = {
     '@cf/zai-org/glm-4.7-flash',
     '@cf/meta/llama-3.1-8b-instruct',
   ],
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'],
   nvidia: [
     'nvidia/nemotron-3.5-super-vl-120b-a12b',
     'nvidia/llama-3.3-nemotron-super-49b-v1.5',
@@ -187,7 +185,12 @@ export function AiModelsKeysPanel() {
       const response = await apiFetch<AiProviderConfigListResponse>('/api/ai/admin/providers');
       if (signal?.cancelled) return;
       const items = Array.isArray(response?.providers) ? response.providers : [];
-      applyProviders(items);
+      // A backend running an older release can still return retired providers.
+      const supported = items.filter(
+        (item): item is AiProviderConfigItem =>
+          item?.provider === 'cloudflare' || item?.provider === 'nvidia',
+      );
+      applyProviders(supported);
     } catch (error) {
       if (signal?.cancelled) return;
       const message = error instanceof Error ? error.message : 'Unable to load AI provider settings.';
@@ -413,7 +416,7 @@ export function AiModelsKeysPanel() {
           <div>
             <h2 className="text-base font-extrabold text-slate-900">AI Models &amp; Keys</h2>
             <p className="mt-0.5 max-w-2xl text-xs font-medium text-slate-500">
-              Manage the primary chat, fallback chat, and feedback analyzer providers. Keys are encrypted
+              Manage the chat and feedback providers. Keys are encrypted
               at rest, sent only to their provider, and never displayed again after saving.
             </p>
           </div>
@@ -484,11 +487,16 @@ export function AiModelsKeysPanel() {
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900">{item.label}</h3>
                   <p className="text-xs font-medium text-slate-500">{PROVIDER_ROLE[item.provider]}</p>
+                  {item.provider === 'nvidia' && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Chat uses the alternate API key. {item.alternate_key.configured ? 'Alternate key configured.' : 'Add an alternate key to enable NVIDIA chat.'}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-bold text-slate-600">
-                  Active: {slotLabel(activeSlot)}
+                  {item.provider === 'nvidia' ? 'Feedback key' : 'Active'}: {slotLabel(activeSlot)}
                 </span>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700">
                   <input
@@ -510,7 +518,7 @@ export function AiModelsKeysPanel() {
                   htmlFor={`${item.provider}-primary-model`}
                   className="block text-xs font-bold text-slate-700"
                 >
-                  {item.provider === 'nvidia' ? 'Analyzer model' : 'Primary model'}
+                  {item.provider === 'nvidia' ? 'Model' : 'Primary model'}
                 </label>
                 <input
                   id={`${item.provider}-primary-model`}
@@ -819,7 +827,7 @@ export function AiModelsKeysPanel() {
                     className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                    Save {item.provider === 'cloudflare' ? 'Cloudflare' : item.provider === 'gemini' ? 'Gemini' : 'NVIDIA'} settings
+                    Save {item.provider === 'cloudflare' ? 'Cloudflare' : 'NVIDIA'} settings
                   </button>
                 </div>
               </div>

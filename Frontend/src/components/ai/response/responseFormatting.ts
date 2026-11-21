@@ -9,6 +9,34 @@ export function formatManagerReadableText(text: string): string {
   return text.replace(/(\d+(?:\.\d+)?)\s*pp\b/g, '$1 pts');
 }
 
+export function answerTextKey(text: string) {
+  return formatManagerReadableText(text).trim().replace(/^\s*[-•]\s+/, '')
+    .replace(/[*_`]/g, '').replace(/\s+/g, ' ').replace(/[.!?]+$/, '').toLowerCase();
+}
+
+export function getAnswerText(response: AiChatResponsePayload) {
+  const clean = (text: string) => formatManagerReadableText(text).trim()
+    .replace(/^\s*[-•]\s+/, '')
+    .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`/g, (_, bold, emphasis, code) => bold ?? emphasis ?? code);
+  const headline = clean(response.headline);
+  const seen = new Set([headline, ...headline.split(/[;\n]+|(?<=[.!?])\s+(?=[A-Z])/)].map(answerTextKey));
+  const unique = (lines: string[]) => lines.map(clean).filter((line) => {
+    const signature = answerTextKey(line);
+    if (!signature || seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+  return {
+    headline,
+    bullets: unique(response.narrative_bullets ?? []),
+    details: unique(response.detail_bullets ?? []),
+  };
+}
+
+export function formatAnswerForClipboard(headline: string, bullets: string[], details: string[] = []) {
+  return [headline, bullets.map((bullet) => `• ${bullet}`).join('\n'), details.join('\n')].filter(Boolean).join('\n\n');
+}
+
 /**
  * Extracts evaluated headcount from citations (e.g. "Evaluated · 71" -> "71 evaluated")
  * so it can be displayed once in the quiet header instead of a separate bottom pill.

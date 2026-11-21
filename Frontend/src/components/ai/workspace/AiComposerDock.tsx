@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { ArrowRight, Info, LayoutGrid, Send, X } from 'lucide-react';
+import { ArrowRight, LayoutGrid, Send, X } from 'lucide-react';
 import type { AiStarterPrompt } from '../../../features/ai/types';
 
 interface AiComposerDockProps {
@@ -44,7 +44,7 @@ export default function AiComposerDock({
   };
 
   return (
-    <div className="relative z-20 border-t border-slate-100 bg-white/95 px-4 pb-3 pt-3 sm:px-6">
+    <div className="relative z-20 mx-auto w-full max-w-[49rem] px-4 pb-3 pt-2 sm:px-6">
       {/* On-demand Guided Prompts Popover (replaces the permanent duplicate gray follow-up tray) */}
       {hasTurns && showPromptLibrary && (
         <div
@@ -114,13 +114,13 @@ export default function AiComposerDock({
           value={promptInput}
           onChange={(e) => handleTextareaChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               resetHeightAndSubmit();
             }
           }}
           disabled={isSending}
-          placeholder="Ask about overall scores, team KPIs, branch comparisons, or coaching plans…"
+          placeholder="Ask a question about PMS…"
           aria-label="Ask PMS AI a question"
           className="max-h-[132px] min-h-[36px] min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm font-medium leading-snug text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-60"
         />
@@ -135,10 +135,6 @@ export default function AiComposerDock({
         </button>
       </form>
 
-      <p className="mt-1.5 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-        <Info size={11} className="shrink-0" />
-        <span>All figures are verified against PMS records within your authorized scope.</span>
-      </p>
     </div>
   );
 }

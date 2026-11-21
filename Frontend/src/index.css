@@ -2237,6 +2237,10 @@ body {
   .navigation-dock-tablet-only { display: none; }
   .navigation-dock-label { max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
   .has-navigation-dock .app-route-padding { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
+  .has-navigation-dock .ai-workspace-chat {
+    height: calc(100dvh - 172px - env(safe-area-inset-bottom));
+    min-height: 0;
+  }
   .above-navigation-dock { bottom: calc(78px + env(safe-area-inset-bottom)); }
 
   .app-header-control { min-height: 44px; }
@@ -3333,6 +3337,15 @@ body {
 
 @keyframes login-border-spin { to { transform: rotate(360deg); } }
 @keyframes login-orb-float { from { transform: translate3d(-15px, 9px, 0) scale(.94); } to { transform: translate3d(18px, -14px, 0) scale(1.06); } }
+
+@keyframes ai-answer-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ai-answer-enter { animation: ai-answer-enter 180ms ease-out; }
+}
 
 @media (max-width: 560px) {
   .login-shell { padding: 14px; }

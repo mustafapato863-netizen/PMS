@@ -31,8 +31,9 @@ from models.ai_schemas import (
     AiPilotFeedbackRequest,
     AiPilotFeedbackResponse,
     AiTraceReviewResponse,
+    SessionFilterContext,
 )
-from models.models import AiInteractionTrace, AuditLog, Employee, PerformanceRecord, Team
+from models.models import AiApprovedPattern, AiInteractionTrace, AuditLog, Employee, PerformanceRecord, Team
 from services.ai.config import redact_secrets
 from services.ai.llm_client import configured_model_name
 from services.ai.trace_logger import (
@@ -478,6 +479,7 @@ class FeedbackGovernanceService:
         decision: str | None = None,
         notes: str | None = None,
         proposed_action: str | None = None,
+        replay_trace_id: str | None = None,
         ip_address: str | None = None,
         request_id: str | None = None,
         commit: bool = True,
@@ -509,18 +511,42 @@ class FeedbackGovernanceService:
         _names, tokens = self._name_tokens()
         clean_notes = self._sanitize_text(notes, tokens=tokens, max_len=_NOTES_MAX_LEN)
         clean_action = self._sanitize_text(proposed_action, tokens=tokens, max_len=_NOTES_MAX_LEN)
+        verified_replay = None
+        if replay_trace_id:
+            replay_uuid = _parse_optional_uuid(replay_trace_id)
+            replay = self.db.get(AiInteractionTrace, uuid.UUID(replay_uuid)) if replay_uuid else None
+            if (
+                not resolved_verified or not clean_notes or replay is None
+                or replay.user_id != str(reviewer_id) or replay.id == row.id
+                or replay.created_at < row.created_at
+                or not replay.non_empty_evidence or not isinstance(replay.structured_response, dict)
+                or replay.structured_response.get("outcome") != "answer"
+            ):
+                raise ValueError("Verify a fresh answer with PMS evidence and add a short verification note.")
+            active_patterns = {
+                pattern_id for (pattern_id,) in self.db.query(AiApprovedPattern.id).filter_by(
+                    source_trace_id=str(row.id), is_active=True, verified_against_pms=True,
+                )
+            }
+            replay_digest = replay.tool_digest if isinstance(replay.tool_digest, dict) else {}
+            if active_patterns and replay_digest.get("approved_pattern_id") not in active_patterns:
+                raise ValueError("Replay did not use an active pattern for this feedback.")
+            verified_replay = replay_uuid
 
         prev_meta = self._extract_gov_meta(row)
         review_requests = dict(prev_meta.get("review_idempotency") or {})
         review_key = str(request_id or "").strip()
         review_key_digest = _canonical_sha256(review_key) if review_key else None
-        review_digest = _canonical_sha256({
+        review_fields = {
             "reviewer_id": str(reviewer_id or "admin"),
             "decision": resolved_decision,
             "reviewer_verified": resolved_verified,
             "notes": clean_notes,
             "proposed_action": clean_action,
-        })
+        }
+        if verified_replay:
+            review_fields["verified_replay_trace_id"] = verified_replay
+        review_digest = _canonical_sha256(review_fields)
         if review_key_digest:
             existing_request = review_requests.get(review_key_digest)
             if isinstance(existing_request, dict):
@@ -546,7 +572,7 @@ class FeedbackGovernanceService:
             )
         else:
             row.is_distillation_eligible = False
-        if clean_notes:
+        if clean_notes and not verified_replay:
             row.feedback_reason = clean_notes[:_FEEDBACK_REASON_MAX_LEN]
 
         gov_meta = dict(prev_meta)
@@ -559,6 +585,10 @@ class FeedbackGovernanceService:
                 "proposed_action": clean_action,
             }
         )
+        if verified_replay:
+            gov_meta["verified_replay_trace_id"] = verified_replay
+        elif not resolved_verified or (clean_action and clean_action.startswith("pattern:")):
+            gov_meta.pop("verified_replay_trace_id", None)
 
         eligible = bool(row.is_distillation_eligible and row.reviewer_verified)
         actor_uuid = _parse_optional_uuid(reviewer_id)
@@ -568,6 +598,7 @@ class FeedbackGovernanceService:
             "reviewer_verified": resolved_verified,
             "is_distillation_eligible": eligible,
             "proposed_action": clean_action,
+            "verified_replay_trace_id": verified_replay,
         }
         if actor_uuid is None:
             new_values["actor_user_id"] = str(reviewer_id or "admin")
@@ -616,6 +647,7 @@ class FeedbackGovernanceService:
         surface: str | None = None,
         rating: str | None = None,
         review_status: str | None = None,
+        since: datetime | None = None,
         page: int | None = None,
         page_size: int | None = None,
     ) -> AiFeedbackClustersResponse:
@@ -625,8 +657,11 @@ class FeedbackGovernanceService:
 
         ensure_trace_schema_once(self.db)
         _names, tokens = self._name_tokens()
+        query = self.db.query(AiInteractionTrace)
+        if since is not None:
+            query = query.filter(AiInteractionTrace.created_at >= since)
         rows = (
-            self.db.query(AiInteractionTrace)
+            query
             .order_by(AiInteractionTrace.created_at.desc())
             .limit(1000)
             .all()
@@ -641,6 +676,7 @@ class FeedbackGovernanceService:
                 "approved": 0,
                 "rejected": 0,
                 "traces": [],
+                "flaggers": set(),
             }
         )
         matched_total = 0
@@ -710,6 +746,8 @@ class FeedbackGovernanceService:
                 bucket["up"] += 1
             elif row_rating == "down":
                 bucket["down"] += 1
+                if row.user_id:
+                    bucket["flaggers"].add(str(row.user_id))
             if row_status == "approved":
                 bucket["approved"] += 1
             elif row_status == "rejected":
@@ -731,10 +769,33 @@ class FeedbackGovernanceService:
                 if not tool_choice and first_digest.get("tool_name"):
                     tool_choice = str(first_digest.get("tool_name"))[:80] or None
                 clean_fb_reason = self._sanitize_text(row.feedback_reason, tokens=tokens, max_len=160)
+                response = row.structured_response if isinstance(row.structured_response, dict) else {}
+                scope_context = " · ".join(
+                    dict.fromkeys(
+                        value.strip()
+                        for key in ("function", "team", "region", "branch", "performance_level")
+                        if isinstance((value := session_dict.get(key)), str) and value.strip()
+                    )
+                )
+                month = session_dict.get("month")
+                replay_filters = {}
+                for field in ("function", "team", "region", "branch", "performance_level", "position", "month"):
+                    label = session_dict.get(field)
+                    if isinstance(label, str) and label and self._sanitize_scope_label(label, tokens=tokens) == label:
+                        replay_filters[field] = label
+                year = session_dict.get("year")
+                if type(year) is int and 2000 <= year <= 2100:
+                    replay_filters["year"] = year
+                if isinstance(month, str) and month.strip():
+                    period = f"{month} {year}" if isinstance(year, int) else month
+                    scope_context = f"{scope_context} · {period}" if scope_context else period
                 bucket["traces"].append(
                     AiFeedbackTraceSample(
                         trace_id=str(row.id),
                         prompt_redacted=prompt_redacted,
+                        answer_excerpt=self._sanitize_text(response.get("headline"), tokens=tokens, max_len=320),
+                        scope_context=self._sanitize_scope_label(scope_context, tokens=tokens, max_len=180),
+                        replay_scope=SessionFilterContext.model_validate(replay_filters) if replay_filters else None,
                         intent=operation_family,
                         operation_kind=str(plan_dict.get("operation_kind_v2") or first_digest.get("operation") or operation_family)[:64],
                         tool_choice=tool_choice,
@@ -743,6 +804,8 @@ class FeedbackGovernanceService:
                         feedback_reason=clean_fb_reason,
                         review_status=row_status,
                         reviewer_verified=bool(row.reviewer_verified),
+                        replay_verified=bool(meta.get("verified_replay_trace_id") and row.reviewer_verified),
+                        proposed_action=meta.get("proposed_action"),
                         created_at=row.created_at.isoformat() if row.created_at else None,
                     )
                 )
@@ -760,6 +823,7 @@ class FeedbackGovernanceService:
                 total_count=counts["total"],
                 up_count=counts["up"],
                 down_count=counts["down"],
+                affected_users=len(counts["flaggers"]),
                 pending_count=counts["pending"],
                 approved_count=counts["approved"],
                 rejected_count=counts["rejected"],
@@ -767,7 +831,7 @@ class FeedbackGovernanceService:
             )
             for key, counts in sorted(
                 grouped.items(),
-                key=lambda item: (-item[1]["total"], item[0]),
+                key=lambda item: (-len(item[1]["flaggers"]), -item[1]["down"], -item[1]["total"], item[0]),
             )
         ]
         total_clusters = len(all_clusters)

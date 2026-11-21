@@ -108,7 +108,7 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     fireEvent.click(screen.getByTestId('ai-copy-summary-btn'));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(
-        'Dubai recorded 200 bookings; Ajman booking data is missing or unpublished.\n- Dubai recorded 200 bookings.',
+        'Dubai recorded 200 bookings; Ajman booking data is missing or unpublished.',
       );
       expect(screen.getByTestId('ai-copy-summary-btn')).toHaveTextContent('Copied');
     });
@@ -388,6 +388,8 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
       narrative_bullets: [
         qText, // verbatim duplicate bullet
         'Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.',
+        'Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview',
+        `${qText} Choose a branch if you only want that branch's results.`,
       ],
       clarification: {
         code: 'AMBIGUOUS_TEAM_SCOPE',
@@ -411,6 +413,8 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
         'Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.',
       ),
     ).toBeInTheDocument();
+    expect(screen.getAllByText(/Specify a team, department/)).toHaveLength(1);
+    expect(screen.getByText(/Choose a branch if you only want/)).toBeInTheDocument();
     // Empty choices box is NOT rendered
     expect(screen.queryByTestId(/ai-clarification-choice-/)).not.toBeInTheDocument();
     expect(screen.queryByText('Suggested options:')).not.toBeInTheDocument();
@@ -437,5 +441,32 @@ describe('AiResponseCard — unrecorded bars (Item 3d)', () => {
     expect(screen.getByTestId('ai-clarification-choice-c1')).toHaveTextContent('UAE Overall Performance');
     // Headline still appears only once as the headline, not repeated inside the choices box
     expect(screen.getAllByText(qText)).toHaveLength(1);
+  });
+
+  it('keeps a brief overview direct with evidence available on demand', () => {
+    const response: AiChatResponsePayload = {
+      ...responseWithBarCard(),
+      outcome: 'answer',
+      answer_detail: 'brief',
+      structured_query: {
+        intent: 'current_value',
+        periods: ['2026-09'],
+        ranking_direction: 'best',
+        single_person: false,
+        clarification_code: 'NONE',
+        asks_decisions: false,
+      },
+      tool_calls: [{ tool_name: 'get_executive_and_priority_insights', arguments: {}, records_evaluated: 3 }],
+      narrative_bullets: ['Sales led the review.', 'Outbound scored 84%.', 'Three teams were evaluated.'],
+    };
+    render(<MemoryRouter><AiResponseCard response={response} /></MemoryRouter>);
+
+    expect(screen.getByText(response.headline)).toBeInTheDocument();
+    expect(screen.getByText('Sales led the review.')).toBeInTheDocument();
+    expect(screen.queryByText('Three teams were evaluated.')).not.toBeInTheDocument();
+    expect(screen.queryByText('UAE Branch Booking Counts · Inbound')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /View details/i }));
+    expect(screen.getByText('Three teams were evaluated.')).toBeInTheDocument();
+    expect(screen.getByText('UAE Branch Booking Counts · Inbound')).toBeInTheDocument();
   });
 });

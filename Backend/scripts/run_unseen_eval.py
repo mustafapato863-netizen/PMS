@@ -499,7 +499,7 @@ def evaluate_unseen_dataset(
 
     env_keys = (
         "PMS_AI_INTENT_ENABLED",
-        "PMS_AI_GEMINI_ROUTING_ENABLED",
+        "PMS_AI_NVIDIA_ROUTING_ENABLED",
         "PMS_AI_SYNTHESIS_ENABLED",
         "PMS_AI_CONVERSATION_STATE_ENABLED",
         "PMS_AI_MODEL_LED_PILOT_ENABLED",
@@ -509,7 +509,7 @@ def evaluate_unseen_dataset(
 
     provider_enabled = mode in {"mocked", "live"}
     os.environ["PMS_AI_INTENT_ENABLED"] = "true" if provider_enabled else "false"
-    os.environ["PMS_AI_GEMINI_ROUTING_ENABLED"] = "false"
+    os.environ["PMS_AI_NVIDIA_ROUTING_ENABLED"] = "false"
     os.environ["PMS_AI_SYNTHESIS_ENABLED"] = "true" if provider_enabled else "false"
     os.environ["PMS_AI_CONVERSATION_STATE_ENABLED"] = "true"
     os.environ["PMS_AI_MODEL_LED_PILOT_ENABLED"] = "true" if provider_enabled else "false"

@@ -8,7 +8,7 @@ export function isCallCenterStarterScope(
 ): boolean {
   const fn = (functionName || '').trim().toLowerCase();
   const teamName = (team || '').trim().toLowerCase();
-  return fn === 'call center' || CALL_CENTER_TEAMS.has(teamName);
+  return teamName && teamName !== 'all' ? CALL_CENTER_TEAMS.has(teamName) : fn === 'call center';
 }
 
 /**
@@ -31,13 +31,14 @@ export function buildFallbackStarterPrompts(input: {
   const scopeSuffix = branchLabel ? ` in ${branchLabel}` : '';
 
   if (!callCenter) {
+    const namedScope = Boolean(team || functionName);
     return [
       {
-        id: 'team-drop',
-        label: `Which team in ${teamLabel} dropped most?`,
-        subtitle: 'Identify the team with the largest performance drop and see key drivers.',
-        badge: 'TEAM',
-        prompt: `Which team in ${teamLabel} dropped the most this month${scopeSuffix}, what is the main KPI driver, and what decisions do you recommend?`,
+        id: 'scope-review',
+        label: namedScope ? `Review ${teamLabel} performance` : 'Review overall performance',
+        subtitle: 'See the published score and key findings for the selected period.',
+        badge: 'PERFORMANCE',
+        prompt: namedScope ? `Review ${teamLabel} performance${scopeSuffix}` : `Review overall performance${scopeSuffix}`,
         category: 'team',
         icon_key: 'users',
       },

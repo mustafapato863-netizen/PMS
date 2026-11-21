@@ -30,11 +30,11 @@ from services.ai.llm_client import (
 )
 
 _ENV = (
-    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_NVIDIA_ENABLED",
     "PMS_AI_FALLBACK_ENABLED", "PMS_AI_OPENAI_ENABLED", "CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID",
-    "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY",
+    "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "NVIDIA_API_KEY_ALTER", "NVIDIA_API_KEY_ALTER",
     "GOOGLE_API_KEY", "OPENAI_API_KEY", "CLOUDFLARE_AI_MODEL", "CF_AI_MODEL", "PMS_CLOUDFLARE_MODEL",
-    "PMS_GEMINI_MODEL", "PMS_AI_GEMINI_MODEL", "GEMINI_MODEL", "PMS_AI_INTENT_ENABLED", "PMS_AI_SYNTHESIS_ENABLED",
+    "NVIDIA_FEEDBACK_MODEL", "NVIDIA_FEEDBACK_MODEL", "NVIDIA_MODEL", "PMS_AI_INTENT_ENABLED", "PMS_AI_SYNTHESIS_ENABLED",
     "PMS_AI_EXPLORATION_ENABLED", "PMS_AI_LOCAL_ROUTER_ENABLED", "PMS_AI_LOCAL_SYNTHESIS_ENABLED",
     "PMS_AI_LOCAL_EXPLORATION_ENABLED", "PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "APP_ENV",
     "PMS_AI_ROUTER_TIMEOUT_SECONDS", "PMS_AI_SYNTHESIS_TIMEOUT_SECONDS", "PMS_AI_EXPLORATION_TIMEOUT_SECONDS",
@@ -54,8 +54,8 @@ def _cloudflare(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
 
 
-def _gemini(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "key-test-not-real")
+def _nvidia(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "key-test-not-real")
 
 
 # -- decommissioning guarantees ---------------------------------------------------
@@ -104,24 +104,24 @@ def test_explicit_flags_override_the_credential_default(clean_env):
     assert local_synthesis_enabled() is False
 
 
-def test_primary_is_cloudflare_and_fallback_is_gemini_in_call_order(clean_env):
+def test_primary_is_nvidia_and_fallback_is_cloudflare_in_call_order(clean_env):
     _cloudflare(clean_env)
-    _gemini(clean_env)
-    assert configured_providers() == ["cloudflare", "gemini"]
-    assert active_provider_name() == "cloudflare"
+    _nvidia(clean_env)
+    assert configured_providers() == ["nvidia", "cloudflare"]
+    assert active_provider_name() == "nvidia"
 
 
 def test_fallback_can_be_disabled(clean_env):
     _cloudflare(clean_env)
-    _gemini(clean_env)
+    _nvidia(clean_env)
     clean_env.setenv("PMS_AI_FALLBACK_ENABLED", "false")
-    assert configured_providers() == ["cloudflare"]
+    assert configured_providers() == ["nvidia"]
 
 
-def test_gemini_only_when_cloudflare_is_unconfigured(clean_env):
-    _gemini(clean_env)
-    assert configured_providers() == ["gemini"]
-    assert active_provider_name() == "gemini"
+def test_nvidia_only_when_cloudflare_is_unconfigured(clean_env):
+    _nvidia(clean_env)
+    assert configured_providers() == ["nvidia"]
+    assert active_provider_name() == "nvidia"
 
 
 def test_openai_is_never_a_usable_provider(clean_env):
@@ -132,7 +132,7 @@ def test_openai_is_never_a_usable_provider(clean_env):
     assert configured_providers() == []
     assert provider_available() is False
     assert active_provider_name() == "deterministic"
-    assert provider_status()["primary_provider"] == "cloudflare"
+    assert provider_status()["primary_provider"] == "nvidia"
 
 
 def test_exploration_is_permanently_disabled(clean_env):
@@ -149,13 +149,14 @@ def test_exploration_is_permanently_disabled(clean_env):
 
 
 def test_configured_model_name_follows_the_primary_provider(clean_env):
+    clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "cloudflare")
     assert configured_model_name() == "@cf/ibm-granite/granite-4.0-h-micro"
     clean_env.setenv("CLOUDFLARE_AI_MODEL", "@cf/zai-org/glm-4.7-flash")
     assert configured_model_name() == "@cf/zai-org/glm-4.7-flash"
-    clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "gemini")
-    assert configured_model_name() == "gemini-2.5-flash"
-    clean_env.setenv("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite")
-    assert configured_model_name() == "gemini-3.5-flash-lite"
+    clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "nvidia")
+    assert configured_model_name() == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    clean_env.setenv("NVIDIA_FEEDBACK_MODEL", "nvidia/test-alternate-model")
+    assert configured_model_name() == "nvidia/test-alternate-model"
 
 
 def test_timeouts_are_bounded(clean_env):
@@ -198,7 +199,7 @@ def test_fallback_reason_is_recorded_and_bounded():
 
 def test_provider_status_never_contains_secrets(clean_env):
     _cloudflare(clean_env)
-    _gemini(clean_env)
+    _nvidia(clean_env)
     status = str(provider_status()).casefold()
     for secret in ("token-test-not-real", "key-test-not-real", "acct-test"):
         assert secret not in status

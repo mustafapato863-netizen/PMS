@@ -488,7 +488,7 @@ def _make_scripted_chat_engine() -> Any:
     """Deterministic in-process UnifiedProviderEngine for scripted-provider mode (no network)."""
     from services.ai.provider_engine import (
         CloudflareAIProviderAdapter,
-        GeminiProviderAdapter,
+        NvidiaProviderAdapter,
         ProviderRequest,
         TokenUsage,
         UnifiedProviderConfig,
@@ -517,26 +517,26 @@ def _make_scripted_chat_engine() -> Any:
                 prompt_tokens=40, completion_tokens=12, total_tokens=52
             )
 
-    class _ScriptedChatGemini(GeminiProviderAdapter):
+    class _ScriptedChatNvidia(NvidiaProviderAdapter):
         def execute(self, request: ProviderRequest, config: UnifiedProviderConfig, *, model: str = "", timeout: float = 5.0):
             return json.dumps({"answer": "Fallback summary."}), TokenUsage(prompt_tokens=20, completion_tokens=8, total_tokens=28)
 
     cfg = UnifiedProviderConfig(
         primary_provider="cloudflare",
-        fallback_provider="gemini",
+        fallback_provider="nvidia",
         cloudflare_enabled=True,
-        gemini_enabled=True,
+        nvidia_enabled=True,
         fallback_enabled=True,
         cloudflare_account_id="scripted-account",
         cloudflare_api_token="scripted-token",
         cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
-        gemini_api_key="scripted-gemini-key",
-        gemini_model="gemini-2.5-flash",
+        nvidia_api_key="scripted-nvidia-key",
+        nvidia_model="nvidia/nemotron-3.5-super-vl-120b-a12b",
     )
     return UnifiedProviderEngine(
         cfg,
         cloudflare_adapter=_ScriptedChatCloudflare(),
-        gemini_adapter=_ScriptedChatGemini(),
+        nvidia_adapter=_ScriptedChatNvidia(),
     )
 
 
@@ -555,13 +555,13 @@ def _evaluate_pilot_rules_only(case: dict[str, Any]) -> dict[str, Any]:
         actions_before = int(db.query(p4.func.count(Action.id)).scalar() or 0)
         disabled_cfg = UnifiedProviderConfig(
             primary_provider="cloudflare",
-            fallback_provider="gemini",
+            fallback_provider="nvidia",
             cloudflare_enabled=False,
-            gemini_enabled=False,
+            nvidia_enabled=False,
             fallback_enabled=False,
             cloudflare_account_id="",
             cloudflare_api_token="",
-            gemini_api_key="",
+            nvidia_api_key="",
         )
         drafter = CorrectiveActionDrafter(
             db,
@@ -718,7 +718,7 @@ def evaluate_mode(mode: str) -> dict[str, Any]:
         if not configured_providers():
             return _build_blocked_mode_summary(
                 mode,
-                "No live Cloudflare or Gemini credentials are configured in the environment.",
+                "No live Cloudflare or Nvidia credentials are configured in the environment.",
             )
 
     if normalized_mode == "rules-only":
@@ -734,9 +734,10 @@ def evaluate_mode(mode: str) -> dict[str, Any]:
             "PMS_AI_INTENT_ENABLED": "false",
             "PMS_AI_SYNTHESIS_ENABLED": "false",
             "PMS_AI_EXPLORATION_ENABLED": "false",
-            "PMS_AI_GEMINI_ROUTING_ENABLED": "false",
+            "PMS_AI_NVIDIA_ROUTING_ENABLED": "false",
+            "PMS_AI_MODEL_LED_PILOT_ENABLED": "false",
             "PMS_AI_CLOUDFLARE_ENABLED": "false",
-            "PMS_AI_GEMINI_ENABLED": "false",
+            "PMS_AI_NVIDIA_ENABLED": "false",
             "PMS_AI_LOCAL_ROUTER_ENABLED": "false",
             "PMS_AI_LOCAL_SYNTHESIS_ENABLED": "false",
             "PMS_AI_LOCAL_EXPLORATION_ENABLED": "false",
@@ -757,7 +758,7 @@ def evaluate_mode(mode: str) -> dict[str, Any]:
             "PMS_AI_SYNTHESIS_ENABLED": "true",
             "PMS_AI_EXPLORATION_ENABLED": "false",
             "PMS_AI_CLOUDFLARE_ENABLED": "true",
-            "PMS_AI_GEMINI_ENABLED": "true",
+            "PMS_AI_NVIDIA_ENABLED": "true",
             "PMS_AI_CLASSIFIER_MODE": "off",
         }
     else:
@@ -904,7 +905,7 @@ def evaluate_mode(mode: str) -> dict[str, Any]:
                         "response": payload,
                         "provider_used": provider_used,
                         "provider_calls": provider_calls,
-                        "model_attempted": provider_calls > 0 or provider_used in {"cloudflare", "gemini", "llama_cpp", "openai"},
+                        "model_attempted": provider_calls > 0 or provider_used in {"cloudflare", "nvidia", "llama_cpp", "openai"},
                     }
                     turns.append(turn_rec)
                     if method != "POST" or path != "/api/ai/chat":

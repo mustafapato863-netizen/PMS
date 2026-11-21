@@ -3,30 +3,30 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 CostStatusType = Literal["measured_usd", "measured_neurons", "unknown", "not_applicable"]
 
 from models.ai_schemas import StructuredQueryPlan
-from services.ai.config import get_ai_runtime_config, redact_secrets
+from services.ai.config import get_ai_runtime_config
 from services.ai.domain_policies import ParsedPromptSignals
 from services.ai.trace_logger import sanitize_prompt_for_router_training
 
 logger = logging.getLogger(__name__)
-
-# Gemini 2.5 Flash reference pricing per token ($0.15 / 1M input, $0.60 / 1M output)
-GEMINI_FLASH_INPUT_USD_PER_TOKEN = 0.15 / 1_000_000.0
-GEMINI_FLASH_OUTPUT_USD_PER_TOKEN = 0.60 / 1_000_000.0
 
 _UNSAFE_TABULAR_RE = re.compile(r"(?:\t[^\t]+\t[^\t]+|\n[^\n]+\|[^\n]+\|)")
 
 
 class ProviderUnavailableError(RuntimeError):
     """Raised when an external provider fails and no safe local fallback or clarification is available."""
+
+
+def ranking_value(row: dict, precision: int = 1) -> str:
+    if row.get("actual_display"):
+        return str(row["actual_display"])
+    score = row.get("score")
+    return f"{score:.{precision}f}%" if isinstance(score, (float, int)) else "unavailable"
 
 
 @dataclass
@@ -165,14 +165,14 @@ def build_minimized_routing_payload(
     candidate_branches: list[str],
     known_employee_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build a strictly minimized, PII-free payload for Gemini structured intent routing.
+    """Build a strictly minimized, PII-free payload for external structured intent routing.
     Never includes workbook contents, employee records, private KPI values, or conversation transcripts.
     """
     sanitized_question = sanitize_prompt_for_router_training(
         prompt, known_employee_names=known_employee_names
     )
     compact_view = {
-        "function": current_view.get("function") or "Call Center",
+        "function": current_view.get("function"),
         "team": current_view.get("team"),
         "branch": current_view.get("branch"),
         "performance_level": current_view.get("performance_level") or "Employee",
@@ -189,12 +189,8 @@ def build_minimized_routing_payload(
     }
 
 
-def _estimate_tokens(text: str) -> int:
-    return max(1, int(round(len(text or "") / 4.0)))
-
-
-class GeminiStructuredRouterAdapter:
-    """Calls Gemini structured output API with x-goog-api-key header and minimized metadata."""
+class NvidiaStructuredRouterAdapter:
+    """Routes legacy shadow and hybrid requests through the unified provider engine."""
 
     def propose_query_plan(
         self,
@@ -205,29 +201,21 @@ class GeminiStructuredRouterAdapter:
         candidate_metrics: list[str],
         candidate_branches: list[str],
         known_employee_names: list[str] | None = None,
+        timeout: float | None = None,
     ) -> StructuredRoutingProviderResult:
         cfg = get_ai_runtime_config()
-        scope_key = str(current_view.get("team") or current_view.get("function") or "call center")
-
-        if not cfg.gemini_routing_enabled:
+        scope_key = current_view.get("team") or current_view.get("function")
+        if not cfg.nvidia_routing_enabled:
             return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(fallback_outcome="cloud_disabled"),
+                plan=None, metrics=ProviderCallMetrics(fallback_outcome="cloud_disabled")
             )
         if not cfg.is_scope_allowed_for_cloud(scope_key):
             return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(fallback_outcome="scope_not_allowed"),
+                plan=None, metrics=ProviderCallMetrics(fallback_outcome="scope_not_allowed")
             )
         if not is_prompt_safe_for_external_projection(prompt):
             return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(fallback_outcome="unsafe_prompt"),
-            )
-        if not cfg.gemini_api_key:
-            return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(fallback_outcome="missing_api_key"),
+                plan=None, metrics=ProviderCallMetrics(fallback_outcome="unsafe_prompt")
             )
 
         minimized_input = build_minimized_routing_payload(
@@ -238,180 +226,42 @@ class GeminiStructuredRouterAdapter:
             candidate_branches=candidate_branches,
             known_employee_names=known_employee_names,
         )
-
-        system_instruction = (
-            "You are the PMS AI query router. Convert the manager's English question and current view "
-            "into a JSON object matching StructuredQueryPlan. "
-            "Allowed intents: current_value, actual_vs_target, compare_periods, compare_branches, "
-            "compare_teams, trend, ranking, score_drivers, scorecard_structure, corrective_actions, "
-            "clarify, unsupported. "
-            "Allowed clarification_code values: NONE, AMBIGUOUS_ABANDON_METRIC, "
-            "AMBIGUOUS_ATTENDANCE_DEFINITION, AMBIGUOUS_TEAM_SCOPE, AMBIGUOUS_KPI_SCOPE, "
-            "MISSING_COMPARISON_PERIOD, RESTRICTED_SCOPE_SUGGESTION, UNAVAILABLE_PERIOD_SUGGESTION. "
-            "Return ONLY valid JSON."
-        )
-
-        candidate_models = [m.strip() for m in cfg.gemini_model.split(",") if m.strip()] or ["gemini-2.5-flash"]
-        user_text = json.dumps(minimized_input, ensure_ascii=False, separators=(",", ":"))
-        payload = {
-            "systemInstruction": {"parts": [{"text": system_instruction}]},
-            "contents": [{"role": "user", "parts": [{"text": user_text}]}],
-            "generationConfig": {
-                "temperature": 0.0,
-                "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "intent": {"type": "STRING"},
-                        "requested_parts": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "team": {"type": "STRING", "nullable": True},
-                        "function": {"type": "STRING", "nullable": True},
-                        "position": {"type": "STRING", "nullable": True},
-                        "branch": {"type": "STRING", "nullable": True},
-                        "compare_branch": {"type": "STRING", "nullable": True},
-                        "performance_level": {"type": "STRING"},
-                        "metric": {"type": "STRING", "nullable": True},
-                        "periods": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "ranking_direction": {"type": "STRING", "enum": ["best", "worst"]},
-                        "single_person": {"type": "BOOLEAN"},
-                        "clarification_code": {"type": "STRING"},
-                        "query_rankings": {
-                            "type": "OBJECT",
-                            "nullable": True,
-                            "properties": {
-                                "entity": {"type": "STRING", "enum": ["department", "team", "branch", "employee"]},
-                                "sort_order": {"type": "STRING", "enum": ["desc", "asc"]},
-                                "limit": {"type": "INTEGER"},
-                                "group_by": {"type": "STRING", "enum": ["none", "department", "team", "branch"]},
-                                "per_group_limit": {"type": "INTEGER"},
-                                "region": {"type": "STRING", "nullable": True},
-                                "department": {"type": "STRING", "nullable": True},
-                                "team": {"type": "STRING", "nullable": True},
-                                "branch": {"type": "STRING", "nullable": True},
-                                "metric_id": {"type": "STRING", "nullable": True},
-                                "period": {"type": "STRING", "nullable": True},
-                                "score_threshold": {"type": "NUMBER", "nullable": True},
-                                "threshold_operator": {"type": "STRING", "nullable": True},
-                            },
-                        },
-                    },
-                    "required": ["intent", "performance_level", "clarification_code"],
-                },
-            },
-        }
-        encoded_payload = json.dumps(payload).encode("utf-8")
-
-        last_result: StructuredRoutingProviderResult | None = None
-        calls_made = 0
-        t_start = time.perf_counter()
-
-        for model_name in candidate_models:
-            calls_made += 1
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-            req = urllib.request.Request(
-                url,
-                data=encoded_payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": cfg.gemini_api_key,
-                },
-                method="POST",
+        config = replace(load_unified_provider_config(), primary_provider="nvidia", fallback_enabled=False)
+        response = UnifiedProviderEngine(config).generate(
+            ProviderRequest(
+                system_instruction=(
+                    "Convert the manager's question and view into a PMS query plan. Return only "
+                    "a JSON object with intent and any relevant scope fields. Allowed intents: current_value, "
+                    "actual_vs_target, compare_periods, compare_branches, trend, ranking, score_drivers, "
+                    "scorecard_structure, corrective_actions, clarify, unsupported. Use eligible teams and metrics. "
+                    "Use YYYY-MM periods and best/worst ranking_direction. Use query_rankings_args for aggregate rankings."
+                ),
+                messages=[ProviderMessage(role="user", content=json.dumps(minimized_input, ensure_ascii=False))],
+                response_format="json",
+                json_schema={"type": "object", "properties": {"intent": {"type": "string"}}, "required": ["intent"]},
+                timeout_seconds=min(cfg.provider_timeout_seconds, timeout) if timeout is not None else cfg.provider_timeout_seconds,
+                purpose="structured_routing",
+                task_role="routine",
             )
-
-            t0 = time.perf_counter()
-            try:
-                with urllib.request.urlopen(req, timeout=cfg.provider_timeout_seconds) as resp:
-                    raw_body = resp.read().decode("utf-8")
-                elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
-                body = json.loads(raw_body)
-                usage = body.get("usageMetadata") or {}
-                in_tok = int(usage.get("promptTokenCount") or _estimate_tokens(system_instruction + user_text))
-                out_tok = int(usage.get("candidatesTokenCount") or _estimate_tokens(raw_body))
-                cost_usd = round(
-                    in_tok * GEMINI_FLASH_INPUT_USD_PER_TOKEN + out_tok * GEMINI_FLASH_OUTPUT_USD_PER_TOKEN,
-                    8,
-                )
-                text_out = body["candidates"][0]["content"]["parts"][0]["text"]
-                parsed_dict = json.loads(text_out)
-                if isinstance(parsed_dict, dict):
-                    if str(parsed_dict.get("ranking_direction") or "").strip().casefold() not in ("best", "worst"):
-                        parsed_dict["ranking_direction"] = "best"
-                    else:
-                        parsed_dict["ranking_direction"] = str(parsed_dict["ranking_direction"]).strip().casefold()
-                    if not parsed_dict.get("clarification_code"):
-                        parsed_dict["clarification_code"] = "NONE"
-                    qr_args = parsed_dict.pop("query_rankings", None)
-                    if isinstance(qr_args, dict) and qr_args:
-                        order = str(qr_args.get("sort_order") or "").strip().casefold()
-                        qr_args["sort_order"] = order if order in ("asc", "desc") else "desc"
-                        if qr_args.get("ranking_direction"):
-                            qr_args["sort_order"] = "desc" if qr_args.pop("ranking_direction") == "best" else "asc"
-                        parsed_dict["query_rankings_args"] = qr_args
-                plan = StructuredQueryPlan.model_validate(parsed_dict)
-                return StructuredRoutingProviderResult(
-                    plan=plan,
-                    metrics=ProviderCallMetrics(
-                        provider_used="gemini",
-                        model_used=model_name,
-                        provider_calls=calls_made,
-                        provider_ms=elapsed_ms,
-                        input_tokens=in_tok,
-                        output_tokens=out_tok,
-                        estimated_cost_usd=float(cost_usd or 0.0),
-                        cost_status="measured_usd" if cost_usd is not None else "unknown",
-                        fallback_outcome="none",
-                        outbound_payload=minimized_input,
-                    ),
-                )
-            except TimeoutError as exc:
-                elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-                logger.warning("Gemini router (%s) timed out after %.1f ms", model_name, elapsed_ms)
-                return StructuredRoutingProviderResult(
-                    plan=None,
-                    metrics=ProviderCallMetrics(
-                        provider_used="gemini",
-                        model_used=model_name,
-                        provider_calls=calls_made,
-                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
-                        fallback_outcome="timeout",
-                        outbound_payload=minimized_input,
-                    ),
-                    error_detail=redact_secrets(str(exc)),
-                )
-            except (json.JSONDecodeError, KeyError, ValueError) as exc:
-                logger.warning("Gemini router (%s) returned invalid structured output: %s", model_name, redact_secrets(str(exc)))
-                return StructuredRoutingProviderResult(
-                    plan=None,
-                    metrics=ProviderCallMetrics(
-                        provider_used="gemini",
-                        model_used=model_name,
-                        provider_calls=calls_made,
-                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
-                        fallback_outcome="invalid_json",
-                        outbound_payload=minimized_input,
-                    ),
-                    error_detail=redact_secrets(str(exc)),
-                )
-            except Exception as exc:
-                outcome = "timeout" if "timed out" in str(exc).casefold() else "http_error"
-                logger.warning("Gemini router (%s) request failed (%s): %s", model_name, outcome, redact_secrets(str(exc)))
-                last_result = StructuredRoutingProviderResult(
-                    plan=None,
-                    metrics=ProviderCallMetrics(
-                        provider_used="gemini",
-                        model_used=model_name,
-                        provider_calls=calls_made,
-                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
-                        fallback_outcome=outcome,
-                        outbound_payload=minimized_input,
-                    ),
-                    error_detail=redact_secrets(str(exc)),
-                )
-                http_code = getattr(exc, "code", None)
-                if http_code not in (429, 500, 502, 503, 504):
-                    return last_result
-
-        return last_result or StructuredRoutingProviderResult(plan=None)
+        )
+        executed_attempts = [attempt for attempt in response.attempts if attempt.status not in ("disabled", "missing_key", "skipped")]
+        fallback_outcome = "none" if response.is_success else response.outcome
+        if fallback_outcome == "provider_unavailable" and executed_attempts:
+            fallback_outcome = executed_attempts[-1].status
+        metrics = metrics_from_provider_response(
+            response,
+            provider_calls=len(executed_attempts),
+            fallback_outcome=fallback_outcome,
+            outbound_payload=minimized_input,
+        )
+        if not response.is_success:
+            return StructuredRoutingProviderResult(plan=None, metrics=metrics)
+        try:
+            plan = StructuredQueryPlan.model_validate_json(response.content)
+        except ValueError:
+            metrics.fallback_outcome = "schema_validation_failed"
+            return StructuredRoutingProviderResult(plan=None, metrics=metrics)
+        return StructuredRoutingProviderResult(plan=plan, metrics=metrics)
 
 
 _VARIATION_STOPWORDS: frozenset[str] = frozenset({
@@ -652,43 +502,75 @@ class DeterministicLocalProviderAdapter:
             merged.update(d)
 
         period = merged.get("period") or "Latest Period"
-        scope = merged.get("scope") or "Call Center"
+        scope = merged.get("scope") or "your authorized scope"
         branch = merged.get("branch") or "All Branches"
 
         # Composable rankings: a direction-aware headline from the single engine.
         # This branch is isolated so existing worst-first fallbacks stay intact.
         if qr := merged.get("query_rankings"):
             qr_rows = list(qr.get("rows") or [])
-            entity_label = str(qr.get("entity") or "department").replace("_", " ")
+            raw_entity = str(qr.get("entity") or "department").replace("_", " ")
+            entity_label = "role" if raw_entity == "position" else raw_entity
             order = qr.get("sort_order") or "desc"
             groups = qr.get("groups") or {}
             if qr_rows:
                 first_row = qr_rows[0]
                 name = first_row.get("name") or "the top group"
                 score = first_row.get("score")
-                score_txt = f"{float(score):.1f}%" if isinstance(score, (int, float)) else "score unavailable"
+                precision = 2 if entity_label == "employee" else 1
+                score_txt = ranking_value(first_row, precision)
                 total = int(qr.get("total") or len(qr_rows))
-                if order == "desc":
-                    headline = (
-                        f"Best {entity_label} in {scope}: {name} leads at {score_txt} "
-                        f"across {total} ranked {entity_label}s."
-                    )
+                requested = qr.get("limit", 1)
+                first_count = first_row.get("total")
+                count_note = (
+                    f" ({int(first_count)} evaluated employee)"
+                    if entity_label == "role" and first_count == 1
+                    else (f" ({int(first_count)} evaluated)" if entity_label == "role" and first_count else "")
+                )
+                # Detect ties at rank #1
+                tied_top = [
+                    str(r.get("name") or "")
+                    for r in qr_rows
+                    if isinstance(score, (int, float))
+                    and isinstance(r.get("score"), (int, float))
+                    and round(float(r["score"]), 4) == round(float(score), 4)
+                ]
+                if requested == 1:
+                    label = "Best" if order == "desc" else "Lowest"
+                    if len(tied_top) > 1:
+                        headline = f"{label} {entity_label} in {scope} for {period}: tied between {', '.join(tied_top[:3])} at {score_txt}."
+                    else:
+                        headline = f"{label} {entity_label} in {scope} for {period} is {name} at {score_txt}{count_note}."
+                elif entity_label == "employee" and not groups:
+                    label = "Top" if order == "desc" else "Bottom"
+                    emp_noun = "employee" if total == 1 else "employees"
+                    headline = f"{label} {total} {emp_noun} in {scope} for {period}."
                 else:
-                    headline = (
-                        f"Lowest {entity_label} in {scope}: {name} sits at {score_txt} "
-                        f"across {total} ranked {entity_label}s."
-                    )
-                for row in qr_rows[:5]:
-                    row_score = row.get("score")
-                    value = f"{float(row_score):.1f}%" if isinstance(row_score, (int, float)) else "—"
-                    bullets.append(f"{row.get('name') or 'Unknown'} — {value}.")
+                    label = "Best" if order == "desc" else "Lowest"
+                    if len(tied_top) > 1:
+                        headline = f"{label} {entity_label} in {scope} for {period}: tied between {', '.join(tied_top[:3])} at {score_txt}."
+                    else:
+                        headline = f"{label} {entity_label} in {scope} for {period} is {name} at {score_txt}{count_note}."
+                if qr.get("score_basis") == "average employee score":
+                    headline = headline.rstrip(".") + " by average employee score."
+                for row in qr_rows[:5] if requested != 1 and not groups else []:
+                    value = ranking_value(row, precision)
+                    row_cnt = row.get("total")
+                    row_note = f" ({int(row_cnt)} evaluated)" if entity_label == "role" and row_cnt is not None else ""
+                    bullets.append(f"{row.get('name') or 'Unknown'} — {value}{row_note}.")
                 for gname, grows in list(groups.items())[:8]:
                     top = grows[0] if grows else {}
-                    top_score = top.get("score")
-                    top_txt = f"{float(top_score):.1f}%" if isinstance(top_score, (int, float)) else "—"
+                    top_txt = ranking_value(top)
                     bullets.append(
                         f"{gname}: {len(grows)} ranked, led by {top.get('name') or 'Unknown'} at {top_txt}."
                     )
+                excluded = list(qr.get("excluded_unverified") or [])
+                if excluded:
+                    excl_names = ", ".join(str(item.get("name") or "") for item in excluded[:5] if item.get("name"))
+                    if excl_names:
+                        bullets.append(
+                            f"Coverage: {len(qr_rows)} verified ranked; excluded without verified official score: {excl_names}."
+                        )
             else:
                 headline = f"No scored {entity_label} records matched {scope} in {period}."
 
@@ -806,7 +688,11 @@ class DeterministicLocalProviderAdapter:
                 else f"{sc_disp} (Grade {gr})"
             )
             chg_txt = f", moving {chg:+.1f} pp vs {prev_lbl}" if chg is not None else ""
-            six_txt = f" ({six_d:+.1f} pp since {first_lbl})" if six_d is not None and first_lbl else ""
+            same_comparison = bool(
+                chg is not None and six_d is not None
+                and prev_lbl == first_lbl and round(chg, 1) == round(six_d, 1)
+            )
+            six_txt = f" ({six_d:+.1f} pp since {first_lbl})" if six_d is not None and first_lbl and not same_comparison else ""
             ties = list(sp.get("ties") or [])
             tie_txt = f", tied with {', '.join(ties[:2])}" if ties else ""
             missing_months = list(sp.get("missing_months") or [])
@@ -1454,15 +1340,15 @@ class DeterministicLocalProviderAdapter:
                     most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
                     if variant_idx == 1:
                         headline = (
-                            f"Operational gap across branches in {period}: {lagger['branch']} trails {leader['branch']} by {abs(diff):.1f} pts ({lagger['score']:.1f}% vs {leader['score']:.1f}%)."
+                            f"{scope} branch scores in {period}: {lagger['branch']} trails {leader['branch']} by {abs(diff):.1f} pts ({lagger['score']:.1f}% vs {leader['score']:.1f}%)."
                         )
                     elif variant_idx == 2:
                         headline = (
-                            f"Branch benchmark ({period}): {leader['branch']} holds {leader['score']:.1f}% against {lagger['branch']} at {lagger['score']:.1f}%—a {abs(diff):.1f}-pt spread."
+                            f"{scope} branch scores in {period}: {leader['branch']} holds {leader['score']:.1f}% against {lagger['branch']} at {lagger['score']:.1f}%—a {abs(diff):.1f}-pt spread."
                         )
                     else:
                         headline = (
-                            f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
+                            f"For {scope} in {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
                             f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
                         )
                     if most_noshows:
@@ -1557,7 +1443,9 @@ class DeterministicLocalProviderAdapter:
         elif "total_actions" in merged:
             tot_act = merged.get("total_actions", 0)
             acts = merged.get("actions") or []
-            if variant_idx == 1:
+            if merged.get("open_actions_only"):
+                headline = f"{tot_act} open corrective {'action' if tot_act == 1 else 'actions'} for {scope} in {period}."
+            elif variant_idx == 1:
                 headline = f"Governance queue for {scope}: {tot_act} corrective actions require tracking across active follow-up states."
             elif variant_idx == 2:
                 headline = f"Action posture in {scope}: {tot_act} tracked corrective actions are currently logged for manager follow-up."
@@ -1710,6 +1598,13 @@ class DeterministicLocalProviderAdapter:
                         bullets.append(
                             f"Contributing factors on {requested_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
                         )
+            elif signals.asks_average_overall_score:
+                if avg_score is not None:
+                    employee_label = "employee" if tot_rec == 1 else "employees"
+                    coverage = f" across {tot_rec} evaluated {employee_label}" if tot_rec else ""
+                    headline = f"{scope} averaged {avg_score:.1f}% in {period}{coverage}."
+                else:
+                    headline = f"Overall PMS score is not available for {scope} in {period} ({branch})."
             elif worst and avg_score is not None:
                 w_score = worst.get("current_score") or 0.0
                 w_change = worst.get("score_change")
@@ -1836,7 +1731,7 @@ class DeterministicLocalProviderAdapter:
 
         return NarrativeSynthesisResult(
             headline=headline,
-            narrative_bullets=bullets[:4],
+            narrative_bullets=bullets[:5] if merged.get("query_rankings") else bullets[:4],
             suggested_followups=followups,
             provider_used=self.provider_name,
             model_used=self.model_name,
@@ -1850,11 +1745,11 @@ class DeterministicLocalProviderAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Unified Multi-Provider Engine Export (Cloudflare Primary, Gemini Fallback)
+# Unified provider engine exports
 # ---------------------------------------------------------------------------
 from services.ai.provider_engine import (  # noqa: E402
     CloudflareAIProviderAdapter,
-    GeminiProviderAdapter,
+    NvidiaProviderAdapter,
     ProviderAttempt,
     ProviderError,
     ProviderMessage,

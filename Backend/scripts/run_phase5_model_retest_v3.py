@@ -205,7 +205,7 @@ def run(model_key: str, kind: str, version: int, *, deadline_seconds: int = TIME
             for key, value in {
                 "PMS_AI_INTENT_ENABLED": "true",
                 "PMS_AI_SYNTHESIS_ENABLED": "true",
-                "PMS_AI_GEMINI_ROUTING_ENABLED": "false",
+                "PMS_AI_NVIDIA_ROUTING_ENABLED": "false",
                 "PMS_AI_MODEL_LED_PILOT_ENABLED": "true",
                 "PMS_AI_ROUTER_MODE": "hybrid",
             }.items():

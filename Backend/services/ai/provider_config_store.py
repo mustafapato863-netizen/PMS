@@ -23,7 +23,7 @@ from services.ai.secret_crypto import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
-PROVIDERS: tuple[str, ...] = ("cloudflare", "gemini", "nvidia")
+PROVIDERS: tuple[str, ...] = ("nvidia", "cloudflare")
 KEY_SLOTS: tuple[str, ...] = ("primary", "alternate")
 
 CACHE_TTL_SECONDS = 5.0
@@ -31,7 +31,6 @@ DB_FAILURE_BACKOFF_SECONDS = 30.0
 
 DEFAULT_CLOUDFLARE_MODEL = "@cf/ibm-granite/granite-4.0-h-micro"
 DEFAULT_CLOUDFLARE_ALTER_MODEL = "@cf/zai-org/glm-4.7-flash"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 DEFAULT_NVIDIA_DAILY_LIMIT = 50
 
@@ -140,26 +139,8 @@ def _env_defaults(provider: str) -> dict[str, Any]:
             ),
             "daily_limit": None,
         }
-    if provider == "gemini":
-        enabled, enabled_source = _truthy(os.environ.get("PMS_AI_GEMINI_ENABLED"), True)
-        return {
-            "enabled": enabled,
-            "enabled_source": enabled_source,
-            "primary_model": _env(
-                "PMS_GEMINI_MODEL",
-                "PMS_AI_GEMINI_MODEL",
-                "GEMINI_MODEL",
-            )
-            or DEFAULT_GEMINI_MODEL,
-            "alternate_model": None,
-            "account_id": "",
-            "alternate_account_id": "",
-            "primary_api_key": _env("GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY"),
-            "alternate_api_key": _env("GEMINI_API_KEY_ALTER", "GOOGLE_API_KEY_ALTER"),
-            "daily_limit": None,
-        }
     enabled, enabled_source = _truthy(
-        os.environ.get("PMS_AI_FEEDBACK_ANALYZER_ENABLED"), False
+        os.environ.get("PMS_AI_NVIDIA_ENABLED"), True
     )
     daily_raw = os.environ.get(
         "PMS_AI_FEEDBACK_ANALYZER_DAILY_LIMIT", str(DEFAULT_NVIDIA_DAILY_LIMIT)

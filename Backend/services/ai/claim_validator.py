@@ -373,6 +373,11 @@ def _allowed_numbers_from_ledger(ledger: list[ClaimFact]) -> set[float]:
                 allowed.add(round(p_diff, 4))
                 allowed.add(round(p_diff, 1))
 
+    ranking_facts = [f for f in ledger if f.part == "ranking"]
+    if ranking_facts:
+        for rank_idx in range(1, len(ranking_facts) + 1):
+            allowed.add(float(rank_idx))
+
     return allowed
 
 

@@ -397,16 +397,16 @@ def test_model_led_fallback_reports_deterministic_provider_and_truthful_message(
     assert data["trace_id"]
 
 
-def test_resolve_provider_model_allows_gemini_3_5_flash(caplog):
-    cfg = UnifiedProviderConfig(gemini_model="gemini-2.5-flash")
+def test_resolve_provider_model_rejects_unapproved_nvidia_model(caplog):
+    cfg = UnifiedProviderConfig(nvidia_model="nvidia/nemotron-3.5-super-vl-120b-a12b")
     req = ProviderRequest(
         messages=[ProviderMessage(role="user", content="hi")],
-        model="gemini-3.5-flash",
+        model="nvidia-3.5-flash",
     )
     with caplog.at_level(logging.WARNING):
-        resolved = resolve_provider_model("gemini", cfg, req)
-    assert resolved == "gemini-3.5-flash"
-    assert "Rejected unapproved Gemini model override" not in caplog.text
+        resolved = resolve_provider_model("nvidia", cfg, req)
+    assert resolved == cfg.nvidia_model
+    assert "Rejected unapproved Nvidia model override" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -671,7 +671,7 @@ def test_request_input_token_ceiling_blocks_oversized_prompt_before_http(memory_
             cloudflare_api_token="tok",
         ),
         cloudflare_adapter=mock_cf,
-        gemini_adapter=mock_gem,
+        nvidia_adapter=mock_gem,
     )
     resp = engine.generate(
         ProviderRequest(
@@ -706,7 +706,7 @@ def test_diagnostics_reports_budget_timeout_and_pilot_fields_without_secrets(mem
     monkeypatch.setenv("PMS_AI_SYNTHESIS_TIMEOUT_SECONDS", "18.0")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "super-secret-cf-token-value")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "super-secret-account-id-123456")
-    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSySuperSecretGeminiKeyValue12345")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "AIzaSySuperSecretNvidiaKeyValue12345")
 
     client = _make_client(memory_db, sample_records, monkeypatch)
     resp = client.get("/api/ai/diagnostics", headers={"X-User-Role": "Admin"})
@@ -714,7 +714,7 @@ def test_diagnostics_reports_budget_timeout_and_pilot_fields_without_secrets(mem
     raw_text = resp.text
     assert "super-secret-cf-token-value" not in raw_text
     assert "super-secret-account-id-123456" not in raw_text
-    assert "AIzaSySuperSecretGeminiKeyValue12345" not in raw_text
+    assert "AIzaSySuperSecretNvidiaKeyValue12345" not in raw_text
 
     data = resp.json()["data"]
     assert data["model_led_pilot_enabled"] is True

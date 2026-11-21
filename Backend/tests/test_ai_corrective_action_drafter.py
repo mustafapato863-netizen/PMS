@@ -1,4 +1,4 @@
-"""Provider-backed (Cloudflare primary, Gemini fallback) corrective-action suggestion drafter and API (#98).
+"""Provider-backed (Cloudflare primary, Nvidia fallback) corrective-action suggestion drafter and API (#98).
 
 Mocked model unless ``PMS_AI_RUN_LIVE_MODEL_TESTS=true``: the mocked tests
 prove gating, evidence binding, validation and read-only behavior. They are
@@ -179,7 +179,7 @@ def _not_configured() -> ProviderResponse:
         content="", provider="none", model="none", outcome="provider_unavailable", latency_ms=1.0,
         attempts=[
             ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="missing_key"),
-            ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="disabled"),
+            ProviderAttempt(provider="nvidia", model="nvidia/nemotron-3.5-super-vl-120b-a12b", status="disabled"),
         ],
     )
 
@@ -712,7 +712,7 @@ def test_real_engine_timeout_maps_to_model_unavailable(db, monkeypatch):
     adapter.execute.side_effect = ProviderTimeoutError("timed out")
     engine = UnifiedProviderEngine(
         UnifiedProviderConfig(
-            primary_provider="cloudflare", fallback_provider="gemini", fallback_enabled=False,
+            primary_provider="cloudflare", fallback_provider="nvidia", fallback_enabled=False,
             cloudflare_account_id="acct-test", cloudflare_api_token="token-test-not-real",
             timeout_seconds=5.0, max_retries=0,
         ),
@@ -967,7 +967,7 @@ def test_route_is_mounted_in_the_api_router():
 def test_unconfigured_model_returns_model_unavailable_cleanly(db, monkeypatch):
     """With no provider credentials, drafter returns model_unavailable with facts intact and calls nothing."""
     for name in (
-        "GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OpenAI_API_KEY",
+        "NVIDIA_API_KEY_ALTER", "NVIDIA_API_KEY_ALTER", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OpenAI_API_KEY",
         "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "CLOUDFLARE_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -1164,7 +1164,7 @@ def test_multimonth_prompt_excludes_pii_and_keeps_single_period_prompt_clean(db,
 
 
 # ---------------------------------------------------------------------------
-# Live provider (opt-in; requires Cloudflare/Gemini credentials in the environment).
+# Live provider (opt-in; requires Cloudflare/Nvidia credentials in the environment).
 # ---------------------------------------------------------------------------
 
 LIVE_SCENARIOS = [
@@ -1175,7 +1175,7 @@ LIVE_SCENARIOS = [
 ]
 
 
-@pytest.mark.skipif(os.getenv("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Gemini credentials")
+@pytest.mark.skipif(os.getenv("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Nvidia credentials")
 @pytest.mark.parametrize("label,overrides,expected_focus,_seed_mode", LIVE_SCENARIOS, ids=[s[0] for s in LIVE_SCENARIOS])
 def test_live_provider_returns_a_validated_draft(db, capsys, label, overrides, expected_focus, _seed_mode):
     _seed(db)
@@ -1195,7 +1195,7 @@ def test_live_provider_returns_a_validated_draft(db, capsys, label, overrides, e
 
     assert payload.model_called is True, payload.fallback_reason
     assert payload.outcome == "suggested", (payload.outcome, payload.fallback_reason, payload.validation_errors)
-    assert payload.provider_used in ("cloudflare", "gemini")
+    assert payload.provider_used in ("cloudflare", "nvidia")
     draft = payload.draft
     assert draft is not None
     if expected_focus:

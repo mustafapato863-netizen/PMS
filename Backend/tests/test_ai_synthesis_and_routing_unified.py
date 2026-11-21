@@ -1,8 +1,8 @@
 """Tests verifying synthesis and routing integration with UnifiedProviderEngine.
 
 Verifies:
-1. synthesize_branch_bookings uses Cloudflare/Gemini when available and formats verified counts.
-2. synthesize_overall_score falls back to Gemini when Cloudflare fails (quota/timeout).
+1. synthesize_branch_bookings uses Cloudflare/Nvidia when available and formats verified counts.
+2. synthesize_overall_score falls back to Nvidia when Cloudflare fails (quota/timeout).
 3. Rejection of ungrounded or hallucinated answers, falling back to deterministic text.
 4. suggest_intent with UnifiedProviderEngine for allowed intents.
 5. Graceful fallback to deterministic outcomes when no model is configured.
@@ -56,7 +56,7 @@ def _score_evidence():
     ]
 
 
-def test_unified_synthesis_branch_bookings_gemini_success(monkeypatch):
+def test_unified_synthesis_branch_bookings_nvidia_success(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_UNIFIED_SYNTHESIS", "true")
     reset_unified_provider_engine()
@@ -64,11 +64,11 @@ def test_unified_synthesis_branch_bookings_gemini_success(monkeypatch):
     mock_engine = MagicMock(spec=UnifiedProviderEngine)
     mock_engine.generate.return_value = ProviderResponse(
         content=json.dumps({"answer": "Inbound bookings in September 2026: Dubai 180, Sharjah 70."}),
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider="nvidia",
+        model="nvidia/nemotron-3.5-super-vl-120b-a12b",
         latency_ms=120.0,
         usage=TokenUsage(prompt_tokens=40, completion_tokens=15, total_tokens=55),
-        attempts=[ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="success", latency_ms=120.0)],
+        attempts=[ProviderAttempt(provider="nvidia", model="nvidia/nemotron-3.5-super-vl-120b-a12b", status="success", latency_ms=120.0)],
         outcome="success",
     )
 
@@ -79,14 +79,14 @@ def test_unified_synthesis_branch_bookings_gemini_success(monkeypatch):
 
     res = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", _branch_evidence())
     assert res is not None
-    assert res.provider_used == "gemini"
-    assert res.model_used == "gemini-2.5-flash"
+    assert res.provider_used == "nvidia"
+    assert res.model_used == "nvidia/nemotron-3.5-super-vl-120b-a12b"
     assert res.headline == "Inbound bookings in September 2026: Dubai 180, Sharjah 70."
     assert res.metrics.fallback_outcome == "none"
     assert res.metrics.provider_calls == 1
 
 
-def test_unified_synthesis_overall_score_gemini_fallback_success(monkeypatch):
+def test_unified_synthesis_overall_score_nvidia_fallback_success(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_UNIFIED_SYNTHESIS", "true")
     reset_unified_provider_engine()
@@ -94,13 +94,13 @@ def test_unified_synthesis_overall_score_gemini_fallback_success(monkeypatch):
     mock_engine = MagicMock(spec=UnifiedProviderEngine)
     mock_engine.generate.return_value = ProviderResponse(
         content=json.dumps({"answer": "Inbound scored 85.0% in September 2026."}),
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider="nvidia",
+        model="nvidia/nemotron-3.5-super-vl-120b-a12b",
         latency_ms=180.0,
         usage=TokenUsage(prompt_tokens=35, completion_tokens=12, total_tokens=47),
         attempts=[
             ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="rate_limited", latency_ms=80.0),
-            ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="success", latency_ms=100.0),
+            ProviderAttempt(provider="nvidia", model="nvidia/nemotron-3.5-super-vl-120b-a12b", status="success", latency_ms=100.0),
         ],
         outcome="success",
     )
@@ -112,8 +112,8 @@ def test_unified_synthesis_overall_score_gemini_fallback_success(monkeypatch):
 
     res = synthesize_overall_score("What is Inbound score in September 2026?", _score_evidence())
     assert res is not None
-    assert res.provider_used == "gemini"
-    assert res.model_used == "gemini-2.5-flash"
+    assert res.provider_used == "nvidia"
+    assert res.model_used == "nvidia/nemotron-3.5-super-vl-120b-a12b"
     assert res.headline == "Inbound scored 85.0% in September 2026."
     assert res.metrics.fallback_outcome == "none"
     assert res.metrics.provider_calls == 1
@@ -128,8 +128,8 @@ def test_unified_synthesis_rejects_hallucinated_facts_and_falls_back(monkeypatch
     mock_engine = MagicMock(spec=UnifiedProviderEngine)
     mock_engine.generate.return_value = ProviderResponse(
         content=json.dumps({"answer": "Inbound bookings in September 2026: Dubai 999, Ajman 500."}),
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider="nvidia",
+        model="nvidia/nemotron-3.5-super-vl-120b-a12b",
         latency_ms=110.0,
         outcome="success",
     )
@@ -159,7 +159,7 @@ def test_unified_synthesis_no_model_configured_falls_back_cleanly(monkeypatch):
         latency_ms=5.0,
         attempts=[
             ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="missing_key"),
-            ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="missing_key"),
+            ProviderAttempt(provider="nvidia", model="nvidia/nemotron-3.5-super-vl-120b-a12b", status="missing_key"),
         ],
         outcome="no_model_configured",
     )
@@ -176,7 +176,7 @@ def test_unified_synthesis_no_model_configured_falls_back_cleanly(monkeypatch):
     assert res.metrics.fallback_outcome == "no_model_configured"
 
 
-def test_unified_suggest_intent_gemini_success(monkeypatch):
+def test_unified_suggest_intent_nvidia_success(monkeypatch):
     monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_UNIFIED_ROUTER", "true")
     reset_unified_provider_engine()
@@ -184,8 +184,8 @@ def test_unified_suggest_intent_gemini_success(monkeypatch):
     mock_engine = MagicMock(spec=UnifiedProviderEngine)
     mock_engine.generate.return_value = ProviderResponse(
         content=json.dumps({"intent": "trend"}),
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider="nvidia",
+        model="nvidia/nemotron-3.5-super-vl-120b-a12b",
         latency_ms=85.0,
         outcome="success",
     )
@@ -198,7 +198,7 @@ def test_unified_suggest_intent_gemini_success(monkeypatch):
     res = suggest_intent("How has Inbound performance changed over the last 3 months?")
     assert res.intent == "trend"
     assert res.reason == "ok"
-    assert res.model == "gemini-2.5-flash"
+    assert res.model == "nvidia/nemotron-3.5-super-vl-120b-a12b"
 
 
 def test_unified_suggest_intent_rejects_invalid_intent_value(monkeypatch):
@@ -209,8 +209,8 @@ def test_unified_suggest_intent_rejects_invalid_intent_value(monkeypatch):
     mock_engine = MagicMock(spec=UnifiedProviderEngine)
     mock_engine.generate.return_value = ProviderResponse(
         content=json.dumps({"intent": "execute_unauthorized_sql"}),
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider="nvidia",
+        model="nvidia/nemotron-3.5-super-vl-120b-a12b",
         latency_ms=75.0,
         outcome="success",
     )

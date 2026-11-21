@@ -48,7 +48,7 @@ class ScoreRulesExplainer:
                 authorized = set(getattr(passport, "authorized_teams", []) or [])
 
                 def scope_filter(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-                    if getattr(passport, "has_unrestricted_team_access", False) or not authorized:
+                    if getattr(passport, "has_unrestricted_team_access", False):
                         return items
                     return [i for i in items if str(i.get("team") or "") in authorized]
 

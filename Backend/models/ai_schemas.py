@@ -115,7 +115,7 @@ class QueryRankingsArgs(BaseModel):
     planner may emit the full contract.
     """
 
-    entity: Literal["department", "team", "branch", "employee", "kpi"] = "department"
+    entity: Literal["department", "team", "position", "branch", "employee", "kpi"] = "department"
     sort_order: Literal["desc", "asc"] = "desc"
     limit: int = Field(default=10, ge=1, le=50)
     group_by: Literal["none", "department", "team", "branch"] = "none"
@@ -123,11 +123,14 @@ class QueryRankingsArgs(BaseModel):
     region: str | None = None
     department: str | None = None
     team: str | None = None
+    position: str | None = None
     branch: str | None = None
+    performance_level: str | None = None
     metric_id: str | None = None
     period: str | None = None
     score_threshold: float | None = None
     threshold_operator: str | None = None
+    score_measure: Literal["official", "employee_average"] | None = None
 
 
 class ValidatedQueryPlanV2(BaseModel):
@@ -136,7 +139,7 @@ class ValidatedQueryPlanV2(BaseModel):
     scope: QueryScopeV2 = Field(default_factory=QueryScopeV2)
     operations: list[QueryOperationV2] = Field(default_factory=list, max_length=2)
     clarification_code: ClarificationCodeType = "NONE"
-    resolution_source: Literal["local_rules", "local_classifier", "local_model_router", "gemini_router", "clarification_choice"] = "local_rules"
+    resolution_source: Literal["local_rules", "local_classifier", "local_model_router", "nvidia_router", "gemini_router", "clarification_choice"] = "local_rules"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -161,6 +164,22 @@ class AiClarificationPrompt(BaseModel):
     choices: list[ClarificationChoice] = Field(default_factory=list)
 
 
+class RankingWinner(BaseModel):
+    entity: Literal["department", "team", "position"]
+    name: str
+
+
+class RankingResultReference(BaseModel):
+    rank: int = Field(..., ge=1)
+    entity: Literal["department", "team", "position", "branch", "employee", "kpi"]
+    name: str
+    id: str | None = None
+    score: float | None = None
+    region: str | None = None
+    period: str | None = None
+    evidence_ref: str | None = None
+
+
 class ConfirmedQueryContext(BaseModel):
     intent: RouterIntentType | None = None
     team: str | None = None
@@ -175,6 +194,7 @@ class ConfirmedQueryContext(BaseModel):
     candidate_metrics: list[str] = Field(default_factory=list)
     periods: list[str] = Field(default_factory=list)
     comparison_type: Literal["period", "branch", "team", "none"] | None = "none"
+    comparison_teams: list[str] = Field(default_factory=list, max_length=2)
     ranking_direction: Literal["best", "worst"] = "best"
     single_person: bool = False
     last_subject_employee_id: str | None = None
@@ -185,6 +205,9 @@ class ConfirmedQueryContext(BaseModel):
     pending_clarification_choices: list[ClarificationChoice] = Field(default_factory=list)
     inherited_filters: list[str] = Field(default_factory=list)
     prior_ranking_intent: bool = False
+    ranking_winner: RankingWinner | None = None
+    ranking_results: list[RankingResultReference] = Field(default_factory=list)
+    score_measure: Literal["official", "employee_average"] | None = None
 
 
 class StructuredQueryPlan(BaseModel):
@@ -216,6 +239,11 @@ class StructuredQueryPlan(BaseModel):
     # planner recognizes entity/grouping/order/region; otherwise the local
     # deterministic parser fills these from the prompt and memory.
     query_rankings_args: QueryRankingsArgs | None = None
+    comparison_teams: list[str] = Field(default_factory=list, max_length=2)
+    verified_comparison: Literal["team_scores", "period_scores", "employee_scores"] | None = None
+    include_employee_position: bool = False
+    verified_cohort_score: bool = False
+    score_measure: Literal["official", "employee_average"] = "official"
 
 
 class TypedMetricEvidence(BaseModel):
@@ -405,7 +433,7 @@ CorrectiveActionSuggestionOutcome = Literal[
 # Who produced ``draft``. ``"deterministic"`` is part of the shared provider
 # vocabulary but this endpoint never emits it: it does not substitute a static
 # draft when the model is unavailable or its answer is rejected.
-CorrectiveActionSuggestionProvider = Literal["cloudflare", "gemini", "deterministic", "none"]
+CorrectiveActionSuggestionProvider = Literal["cloudflare", "nvidia", "gemini", "deterministic", "none"]
 
 # A draft may only propose a non-disciplinary action type. PIP, Warning,
 # Reward and Promotion remain human decisions in the existing workflow.
@@ -508,7 +536,7 @@ class AiCorrectiveActionSuggestionDraft(BaseModel):
     measured_issue_source: Literal["pms_evidence"] = "pms_evidence"
     # Validated steps (built from validated structured choice or closed-vocabulary validation).
     recommended_steps: list[str] = Field(default_factory=list, min_length=1, max_length=3)
-    recommended_steps_source: Literal["cloudflare", "gemini"] = "cloudflare"
+    recommended_steps_source: Literal["cloudflare", "nvidia", "gemini"] = "cloudflare"
     # Built in code: what the evidence does not show.
     uncertainty: str
     uncertainty_source: Literal["pms_evidence"] = "pms_evidence"
@@ -561,7 +589,7 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     @model_validator(mode="after")
     def _draft_matches_outcome(self) -> "AiCorrectiveActionSuggestionPayload":
         if self.outcome == "suggested":
-            if self.draft is None or self.provider_used not in ("cloudflare", "gemini"):
+            if self.draft is None or self.provider_used not in ("cloudflare", "nvidia", "gemini"):
                 raise ValueError("a suggested outcome requires a validated model draft")
         elif self.draft is not None:
             raise ValueError("only a suggested outcome may carry a draft")
@@ -605,7 +633,7 @@ class AiChatRequest(BaseModel):
     page_context: PageContextV1 | None = None
     capability_hint: Literal["auto", "page_help", "navigation", "performance_query", "proposal"] | None = "auto"
     history: list[AiChatMessage] = Field(default_factory=list, max_length=100)
-    provider_override: Literal["auto", "gemini", "deterministic"] | None = "auto"
+    provider_override: Literal["auto", "nvidia", "deterministic"] | None = "auto"
     answer_detail: Literal["auto", "brief", "details"] | None = "auto"
     conversation_id: str | None = Field(default=None, max_length=100)
     client_request_id: str | None = Field(default=None, max_length=100)
@@ -1078,6 +1106,7 @@ class AiTraceReviewRequest(BaseModel):
     decision: FeedbackReviewDecisionType | None = None
     notes: str | None = Field(default=None, max_length=240)
     proposed_action: str | None = Field(default=None, max_length=240)
+    replay_trace_id: str | None = Field(default=None, max_length=36)
 
     @model_validator(mode="after")
     def _sync_decision_and_verified(self) -> "AiTraceReviewRequest":
@@ -1137,6 +1166,9 @@ class AiPilotFeedbackResponse(BaseModel):
 class AiFeedbackTraceSample(BaseModel):
     trace_id: str
     prompt_redacted: str
+    answer_excerpt: str | None = None
+    scope_context: str | None = None
+    replay_scope: SessionFilterContext | None = None
     intent: str
     operation_kind: str | None = None
     tool_choice: str | None = None
@@ -1145,6 +1177,8 @@ class AiFeedbackTraceSample(BaseModel):
     feedback_reason: str | None = None
     review_status: str = "pending"
     reviewer_verified: bool = False
+    replay_verified: bool = False
+    proposed_action: str | None = None
     created_at: str | None = None
 
 
@@ -1158,11 +1192,20 @@ class AiFeedbackClusterItem(BaseModel):
     failure_category: str = "unspecified"
     total_count: int
     up_count: int = 0
+    affected_users: int = 0
     down_count: int = 0
     pending_count: int = 0
     approved_count: int = 0
     rejected_count: int = 0
     traces: list[AiFeedbackTraceSample] = Field(default_factory=list)
+
+
+class AiSharedLearningFamily(BaseModel):
+    family: Literal["team_scores", "period_scores", "ranking_positions"]
+    label: str
+    helpful_users: int
+    unhelpful_users: int
+    active: bool
 
 
 class AiFeedbackClustersResponse(BaseModel):
@@ -1177,6 +1220,7 @@ class AiFeedbackClustersResponse(BaseModel):
     has_next: bool = False
     has_prev: bool = False
     clusters: list[AiFeedbackClusterItem] = Field(default_factory=list)
+    shared_learning: list[AiSharedLearningFamily] = Field(default_factory=list)
 
 
 class AiApprovePatternRequest(BaseModel):
@@ -1189,6 +1233,34 @@ class AiApprovePatternRequest(BaseModel):
     failure_category: str | None = Field(default=None, max_length=64)
     verified_against_pms: bool = False
     review_notes: str | None = Field(default=None, max_length=240)
+
+
+class AiPreviewPatternRequest(AiApprovePatternRequest):
+    paraphrase: str | None = Field(default=None, max_length=300)
+    contrast: str | None = Field(default=None, max_length=300)
+
+
+class AiPatternRouteSnapshot(BaseModel):
+    outcome: str
+    intent: str
+    operation: str | None = None
+    team: str | None = None
+    function: str | None = None
+    region: str | None = None
+    branch: str | None = None
+    performance_level: str | None = None
+    periods: list[str] = Field(default_factory=list)
+
+
+class AiPatternPreviewCase(BaseModel):
+    case: Literal["original", "paraphrase", "contrast"]
+    before: AiPatternRouteSnapshot
+    after: AiPatternRouteSnapshot
+    candidate_applied: bool
+
+
+class AiPatternPreviewResponse(BaseModel):
+    cases: list[AiPatternPreviewCase]
 
 
 class AiApprovedPatternItem(BaseModel):
@@ -1266,6 +1338,8 @@ class NemotronFeedbackAnalysisResult(BaseModel):
     suggested_dpo_chosen_outline: str | None = Field(default=None, max_length=600)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     analyzed_at: str | None = None
+    model_requested: str | None = None
+    prompt_version: str | None = None
     cached: bool = False
     quarantine_reasons: list[str] = Field(default_factory=list)
     message: str | None = None
@@ -1298,6 +1372,8 @@ class AiClusterAnalysisResponse(BaseModel):
     suggested_pattern: NemotronSuggestedPattern | None = None
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     analyzed_at: str | None = None
+    model_requested: str | None = None
+    prompt_version: str | None = None
     message: str | None = None
 
 
@@ -1374,8 +1450,8 @@ class AiDiagnosticsPayload(BaseModel):
     intent_routing_enabled: bool
     synthesis_enabled: bool
     exploration_enabled: bool
-    routing_provider: Literal["cloudflare", "gemini", "deterministic"] = "deterministic"
-    synthesis_provider: Literal["cloudflare", "gemini", "deterministic"] = "deterministic"
+    routing_provider: Literal["cloudflare", "nvidia", "deterministic"] = "deterministic"
+    synthesis_provider: Literal["cloudflare", "nvidia", "deterministic"] = "deterministic"
     brief_default_enabled: bool
     conversation_state_enabled: bool
     provider_timeout_seconds: float
@@ -1412,7 +1488,7 @@ class AiProviderKeyState(BaseModel):
 
 
 class AiProviderConfigItem(BaseModel):
-    provider: Literal["cloudflare", "gemini", "nvidia"]
+    provider: Literal["cloudflare", "nvidia"]
     label: str
     enabled: bool
     enabled_source: str = "env"

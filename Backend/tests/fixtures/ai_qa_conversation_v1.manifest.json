@@ -1,0 +1,8 @@
+{
+  "schema_version": "pms-ai-qa-conversation-manifest-v1",
+  "fixture": "Backend/tests/fixtures/ai_qa_conversation_v1.json",
+  "fixture_sha256": "56ff50f14adc70709125e4fdbe9044cf5ef3101784bc6fcb09556e1d457f587a",
+  "session_count": 8,
+  "turn_count": 31,
+  "data_boundary": "synthetic_only"
+}

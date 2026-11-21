@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -292,7 +293,7 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     from models.models import AuditLog
     from services.ai.config import redact_secrets
     from services.ai.providers import (
-        GeminiStructuredRouterAdapter,
+        NvidiaStructuredRouterAdapter,
         build_minimized_routing_payload,
         is_prompt_safe_for_external_projection,
     )
@@ -331,10 +332,10 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     assert is_prompt_safe_for_external_projection("col1\tcol2\tcol3\nval1\tval2\tval3") is False
     assert "[REDACTED_API_KEY]" in redact_secrets("https://example.com?key=AIzaSy1234567890123456789012345")
 
-    # 3. Verify server-owned switch blocks cloud calls by default, and uses x-goog-api-key header when enabled
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
-    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyTestKey12345678901234567890")
-    router_adapter = GeminiStructuredRouterAdapter()
+    # 3. Verify server-owned switch blocks cloud calls by default, and uses Authorization header when enabled
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "AIzaSyTestKey12345678901234567890")
+    router_adapter = NvidiaStructuredRouterAdapter()
     disabled_res = router_adapter.propose_query_plan(
         prompt="Compare Inbound in July vs August",
         current_view={"function": "Call Center", "team": "Inbound"},
@@ -346,8 +347,8 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     assert disabled_res.metrics.provider_calls == 0
     assert disabled_res.metrics.fallback_outcome == "cloud_disabled"
 
-    # Enable cloud routing and verify x-goog-api-key header, token usage, and timeout fallback
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
+    # Enable cloud routing and verify Authorization header, token usage, and timeout fallback
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_PILOT_SCOPES", "call center,inbound,outbound")
 
     captured_requests = []
@@ -377,8 +378,8 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
         }
         return _FakeHttpResponse(
             {
-                "candidates": [{"content": {"parts": [{"text": json.dumps(plan_json)}]}}],
-                "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 40},
+                "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(plan_json)}}],
+                "usage": {"prompt_tokens": 120, "completion_tokens": 40, "total_tokens": 160},
             }
         )
 
@@ -395,11 +396,11 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     assert ok_res.metrics.provider_calls == 1
     assert ok_res.metrics.input_tokens == 120
     assert ok_res.metrics.output_tokens == 40
-    assert ok_res.metrics.estimated_cost_usd > 0
+    assert ok_res.metrics.cost_status == "unknown"
     sent_req, _ = captured_requests[-1]
     assert "key=" not in sent_req.full_url
     header_map = {k.casefold(): v for k, v in sent_req.header_items()}
-    assert header_map.get("x-goog-api-key") == "AIzaSyTestKey12345678901234567890"
+    assert header_map.get("authorization") == "Bearer AIzaSyTestKey12345678901234567890"
 
     # Simulate timeout fallback
     def _timeout_urlopen(req, timeout=None):
@@ -1045,7 +1046,7 @@ def test_goldfish_review_enhancements_and_security_hardening(monkeypatch):
 def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
     """Verify Monthly Presentation Call Center hierarchy (Support Positions + position drill-down),
     greeting turn, multi-part booking trend + top performer with explicit ranking metric,
-    ambiguous ranking clarification, open-ended Gemini routing when team is known, and dynamic latest month."""
+    ambiguous ranking clarification, open-ended Nvidia routing when team is known, and dynamic latest month."""
     from models.ai_schemas import StructuredQueryPlan
     from services.ai.catalog import ai_evidence_cache
     from services.ai.providers import ProviderCallMetrics, StructuredRoutingProviderResult
@@ -1151,16 +1152,16 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
     assert ambig_rank.structured_query.clarification_code == "AMBIGUOUS_KPI_SCOPE"
     assert ambig_rank.tool_calls == []
 
-    # 5. Gemini interprets open-ended requests even when team is known and metric/action is unclear,
+    # 5. Nvidia interprets open-ended requests even when team is known and metric/action is unclear,
     #    after authorization and payload checks pass
     monkeypatch.setenv("PMS_AI_ROUTER_MODE", "hybrid")
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-secret-gemini-key-999")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "test-secret-nvidia-key-999")
 
-    gemini_calls: list[str] = []
+    nvidia_calls: list[str] = []
 
-    def _mock_gemini_propose(self, **kwargs):
-        gemini_calls.append(kwargs.get("prompt", ""))
+    def _mock_nvidia_propose(self, **kwargs):
+        nvidia_calls.append(kwargs.get("prompt", ""))
         return StructuredRoutingProviderResult(
             plan=StructuredQueryPlan(
                 intent="score_drivers",
@@ -1172,8 +1173,8 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
                 clarification_code="NONE",
             ),
             metrics=ProviderCallMetrics(
-                provider_used="gemini",
-                model_used="gemini-2.5-flash",
+                provider_used="nvidia",
+                model_used="nvidia/nemotron-3.5-super-vl-120b-a12b",
                 provider_calls=1,
                 provider_ms=12.5,
                 input_tokens=80,
@@ -1184,8 +1185,8 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "services.ai.router.GeminiStructuredRouterAdapter.propose_query_plan",
-        _mock_gemini_propose,
+        "services.ai.router.NvidiaStructuredRouterAdapter.propose_query_plan",
+        _mock_nvidia_propose,
     )
 
     open_res = orch.run_chat_turn(
@@ -1194,20 +1195,20 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
             session_state=SessionFilterContext(function="Call Center", team="Inbound"),
         )
     )
-    assert len(gemini_calls) == 1
+    assert len(nvidia_calls) == 1
     assert open_res.outcome == "answer"
     assert open_res.provider_usage is not None
-    assert open_res.provider_usage.route_used == "gemini_router"
+    assert open_res.provider_usage.route_used == "nvidia_router"
     assert open_res.provider_usage.provider_calls == 1
 
-    # Unauthorized branch request is blocked BEFORE calling Gemini
+    # Unauthorized branch request is blocked BEFORE calling Nvidia
     dubai_only_scope = {
         "role": "Branch Director",
         "user_id": "00000000-0000-0000-0000-000000000095",
         "has_unrestricted_team_access": True,
         "accessible_branches": ["dubai"],
     }
-    gemini_calls.clear()
+    nvidia_calls.clear()
     blocked_res = PmsAiOrchestrator(db, dubai_only_scope).run_chat_turn(
         AiChatRequest(
             prompt="Where should I focus in Inbound for Sharjah this month?",
@@ -1215,7 +1216,7 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
         )
     )
     assert blocked_res.outcome == "restricted_access"
-    assert len(gemini_calls) == 0
+    assert len(nvidia_calls) == 0
 
     # 6. Dynamic latest published month advances from September 2026 to October 2026 upon new upload
     monkeypatch.setenv("PMS_AI_ROUTER_MODE", "rules")
@@ -1485,7 +1486,7 @@ def test_v2_blueprint_conversational_analytics_and_owned_sessions(monkeypatch):
 
 
 def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
-    """Tests multi-role RBAC enforcement, phonetic name disambiguation (Mariam/Maryam), and Gemini model failover."""
+    """Tests multi-role RBAC enforcement, phonetic name disambiguation (Mariam/Maryam), and Nvidia model failover."""
     import json
     import urllib.error
     import pytest
@@ -1494,7 +1495,7 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
         AiConversationService,
         ConversationAccessError,
     )
-    from services.ai.providers import GeminiStructuredRouterAdapter
+    from services.ai.providers import NvidiaStructuredRouterAdapter
     from services.ai.trace_logger import TrainingTraceLogger
 
     db = _build_in_memory_db()
@@ -1748,11 +1749,11 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
     assert trace_logger.export_distillation_dataset(verified_only=True) == []
 
     # -------------------------------------------------------------------------
-    # Scenario 6: Gemini Multi-Model Fallback Chain (503 on primary -> 200 on secondary)
+    # Scenario 6: NVIDIA transient retry (503 followed by success)
     # -------------------------------------------------------------------------
-    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
-    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyTestFallbackKey123456789012345")
-    monkeypatch.setenv("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite,gemini-2.5-flash")
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("NVIDIA_API_KEY_ALTER", "AIzaSyTestFallbackKey123456789012345")
+    monkeypatch.setenv("NVIDIA_FEEDBACK_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")
     attempted_urls: list[str] = []
 
     class _FallbackHttpResponse:
@@ -1770,7 +1771,7 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
 
     def _fallback_urlopen(req, timeout=None):
         attempted_urls.append(req.full_url)
-        if "gemini-3.5-flash-lite" in req.full_url:
+        if len(attempted_urls) == 1:
             raise urllib.error.HTTPError(
                 req.full_url, 503, "Service Unavailable", hdrs=None, fp=None
             )
@@ -1778,18 +1779,18 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
             "intent": "score_drivers",
             "team": "Inbound",
             "performance_level": "Employee",
-            "ranking_direction": "NONE",
+            "ranking_direction": "best",
             "clarification_code": "NONE",
         }
         return _FallbackHttpResponse(
             {
-                "candidates": [{"content": {"parts": [{"text": json.dumps(plan_json)}]}}],
-                "usageMetadata": {"promptTokenCount": 95, "candidatesTokenCount": 32},
+                "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(plan_json)}}],
+                "usage": {"prompt_tokens": 95, "completion_tokens": 32, "total_tokens": 127},
             }
         )
 
     monkeypatch.setattr("urllib.request.urlopen", _fallback_urlopen)
-    fb_res = GeminiStructuredRouterAdapter().propose_query_plan(
+    fb_res = NvidiaStructuredRouterAdapter().propose_query_plan(
         prompt="Where should I focus in Inbound this month?",
         current_view={"function": "Call Center", "team": "Inbound"},
         candidate_teams=["Inbound"],
@@ -1798,8 +1799,8 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
     )
     assert fb_res.plan is not None
     assert fb_res.plan.intent == "score_drivers"
-    assert fb_res.plan.ranking_direction == "best"  # Normalized from "NONE"
-    assert fb_res.metrics.model_used == "gemini-2.5-flash"
+    assert fb_res.plan.ranking_direction == "best"
+    assert fb_res.metrics.model_used == "nvidia/nemotron-3.5-super-vl-120b-a12b"
     assert fb_res.metrics.provider_calls == 2
     assert len(attempted_urls) == 2
 
@@ -3283,8 +3284,8 @@ def test_ai_admin_diagnostics_endpoint():
     assert data["pilot_role_restricted"] is True
     assert "model_configured_name" in data
     assert "concurrency_limit" not in data  # inference-slot tracking was removed with the self-hosted model
-    assert data["routing_provider"] in ("cloudflare", "gemini", "deterministic")
-    assert data["synthesis_provider"] in ("cloudflare", "gemini", "deterministic")
+    assert data["routing_provider"] in ("cloudflare", "nvidia", "deterministic")
+    assert data["synthesis_provider"] in ("cloudflare", "nvidia", "deterministic")
     assert data["fallback_scope"] == "process_local"
     assert "inference_verified" in data
     # Secrets must NEVER be present
@@ -3344,7 +3345,7 @@ def test_ai_diagnostics_db_failure_and_provider_status(monkeypatch):
     assert diag_sorted.data_freshness["latest_published_period"] == "October 2026"
 
     # 3. Diagnostics are configuration-only: no credentials means unavailable, never an HTTP probe.
-    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY"):
+    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "NVIDIA_API_KEY_ALTER", "NVIDIA_API_KEY_ALTER", "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("diagnostics made a network call"))
     diag_none = build_ai_diagnostics_payload(normal_db)
@@ -4247,16 +4248,16 @@ def test_composable_best_department_in_uae_excludes_other_regions(monkeypatch):
     )
     assert resp.outcome == "answer"
     assert "Best department" in resp.headline
-    assert "Coding" in resp.headline
-    assert "Inbound" not in resp.headline
+    assert "RCM" in resp.headline
+    assert "Call Center" not in resp.headline
 
 
 def test_composable_top_n_employees_in_every_department(monkeypatch):
     records = [
         _composable_record("IN-1", "Inbound One", "Inbound", "EGY", 91.0),
         _composable_record("IN-2", "Inbound Two", "Inbound", "EGY", 70.0),
-        _composable_record("OUT-1", "Outbound One", "Outbound", "EGY", 88.0),
-        _composable_record("OUT-2", "Outbound Two", "Outbound", "EGY", 60.0),
+        _composable_record("MKT-1", "Marketing One", "Marketing", "EGY", 88.0),
+        _composable_record("MKT-2", "Marketing Two", "Marketing", "EGY", 60.0),
     ]
     _patch_records(monkeypatch, records)
     ai_evidence_cache.clear()
@@ -4273,11 +4274,46 @@ def test_composable_top_n_employees_in_every_department(monkeypatch):
     )
     assert resp.outcome == "answer"
     group_bullets = " ".join(resp.narrative_bullets)
-    assert "Inbound:" in group_bullets
-    assert "Outbound:" in group_bullets
+    assert "Call Center:" in group_bullets
+    assert "Marketing:" in group_bullets
     group_titles = [c.title for c in resp.visual_cards]
-    assert any("Inbound" in t for t in group_titles)
-    assert any("Outbound" in t for t in group_titles)
+    assert any("Call Center" in t for t in group_titles)
+    assert any("Marketing" in t for t in group_titles)
+
+
+def test_composable_rankings_drill_into_verified_winners_and_keep_period(monkeypatch):
+    records = [
+        _composable_record("IN-1", "Inbound Leader", "Inbound", "EGY", 97.0),
+        _composable_record("IN-2", "Inbound Second", "Inbound", "EGY", 96.0),
+        _composable_record("IN-3", "Inbound Third", "Inbound", "EGY", 95.0),
+        _composable_record("OUT-1", "Outbound Leader", "Outbound", "EGY", 90.0),
+        _composable_record("UAE-1", "Other Country", "Sales", "UAE", 100.0),
+        _composable_record("IN-4", "October Leader", "Inbound", "EGY", 100.0, month="October"),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+    orch = PmsAiOrchestrator(_build_in_memory_db(), {
+        "role": "Admin", "user_id": "admin-ranking-drilldown", "has_unrestricted_team_access": True,
+    })
+    state = SessionFilterContext(month="October", year=2026)
+    cases = [
+        ("Which department had the highest average employee score in Egypt in September 2026?", "department", "Call Center"),
+        ("Which two teams performed best in that department?", "team", "Inbound"),
+        ("Who were the top 3 employees in it?", "employee", "Inbound Leader"),
+    ]
+    for question, entity, expected in cases:
+        response = orch.run_chat_turn(AiChatRequest(
+            prompt=question, session_state=state, provider_override="deterministic",
+        ))
+        assert response.outcome == "answer", response.headline
+        ranking = response.structured_query.query_rankings_args
+        assert (ranking.entity, ranking.region, ranking.period) == (entity, "EGY", "2026-09")
+        assert expected in " ".join([response.headline, *response.narrative_bullets])
+        state = response.resolved_session_state
+
+    assert "Inbound Third" in " ".join(response.narrative_bullets)
+    assert "October Leader" not in " ".join(response.narrative_bullets)
+    assert "Outbound Leader" not in " ".join(response.narrative_bullets)
 
 
 def test_composable_followup_reverses_sort_order(monkeypatch):
@@ -4327,8 +4363,8 @@ def test_composable_threshold_filters_departments(monkeypatch):
         )
     )
     assert resp.outcome == "answer"
-    assert "Inbound" in resp.headline
-    assert "Coding" not in resp.headline
+    assert "Call Center" in resp.headline
+    assert "RCM" not in resp.headline
 
 
 def test_composable_lowest_n_in_same_dep_ranks_employees(monkeypatch):
@@ -4363,7 +4399,8 @@ def test_composable_lowest_n_in_same_dep_ranks_employees(monkeypatch):
     assert "Other Dep" not in combined_text
 
 
-def test_review_performance_typo_and_shorthand_answers_directly_without_redundancy(monkeypatch):
+@pytest.mark.parametrize("model_led", [False, True])
+def test_review_performance_typo_and_shorthand_answers_directly_without_redundancy(monkeypatch, model_led):
     """Verify 'we need review perormance for sep in uae' (with typo and month shorthand):
     1. Corrects typo 'perormance' and recognizes 'sep' as September (never an employee name).
     2. Directly answers with an executive overview for UAE in September 2026.
@@ -4384,6 +4421,15 @@ def test_review_performance_typo_and_shorthand_answers_directly_without_redundan
     assert sig.detected_month == "September"
     assert "executive_insights" in sig.primary_intents
 
+    if model_led:
+        from tests.ai_provider_fakes import install_scripted_provider
+
+        monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+        provider_calls = install_scripted_provider(monkeypatch, {
+            "response_type": "clarification",
+            "clarification_prompt": "Which team should I review?",
+        })
+
     orch = PmsAiOrchestrator(
         _build_in_memory_db(),
         {"role": "Admin", "user_id": "admin-review", "has_unrestricted_team_access": True, "accessible_regions": ["UAE"]},
@@ -4391,14 +4437,19 @@ def test_review_performance_typo_and_shorthand_answers_directly_without_redundan
     resp = orch.run_chat_turn(
         AiChatRequest(
             prompt="we need review perormance for sep in uae",
-            session_state=SessionFilterContext(month="September", year=2026),
-            provider_override="deterministic",
+            session_state=SessionFilterContext(month="October", year=2026, performance_level="Employee"),
+            provider_override="auto" if model_led else "deterministic",
+            answer_detail="brief",
         )
     )
 
     assert resp.outcome == "answer"
+    if model_led:
+        assert any(call["purpose"] == "model_led_router" for call in provider_calls)
     assert "Which team, KPI, person" not in resp.headline
     assert "September" in resp.headline
+    assert resp.resolved_session_state.region == "UAE"
+    assert resp.resolved_session_state.month == "September"
     # Verify non-redundancy: no bullet duplicates the headline
     normalized_h = resp.headline.strip().casefold()
     for b in resp.narrative_bullets:
@@ -4407,6 +4458,85 @@ def test_review_performance_typo_and_shorthand_answers_directly_without_redundan
     assert len(resp.visual_cards) > 0
     bar_card = next((c for c in resp.visual_cards if c.card_type == "horizontal_bar"), None)
     assert bar_card is not None
+
+
+@pytest.mark.parametrize(("team", "function", "country_phrase", "region"), [
+    ("Finance", "Finance", "the UAE", "UAE"),
+    ("Pharmacy", "Pharmacy", "the UAE", "UAE"),
+    ("Coding EGY", "RCM", "Egypt", "EGY"),
+])
+def test_model_led_planner_uses_requested_department_instead_of_stale_call_center_filters(
+    monkeypatch, team, function, country_phrase, region,
+):
+    from tests.ai_provider_fakes import failed_response, install_scripted_provider
+
+    other_rec = _composable_record("OTHER-1", "Department Reviewer", team, region, 91.0)
+    if team == "Pharmacy":
+        other_rec.kpi_values = [
+            {"kpi_key": "TenderCompliance", "label": "Tender Compliance", "actual_value": 91.0, "target_value": 100.0, "unit": "%", "direction": "higher_better"},
+        ]
+    _patch_records(monkeypatch, [
+        other_rec,
+        _composable_record("EGY-CC", "Inbound Reviewer", "Inbound", "EGY", 42.0, month="October"),
+    ])
+    ai_evidence_cache.clear()
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    calls = install_scripted_provider(monkeypatch, failed_response("timeout"))
+
+    result = PmsAiOrchestrator(_build_in_memory_db(), {
+        "role": "Admin",
+        "user_id": "admin-department-switch",
+        "has_unrestricted_team_access": True,
+    }).run_chat_turn(AiChatRequest(
+        prompt=f"Review {team} performance in {country_phrase} for September 2026",
+        session_state=SessionFilterContext(
+            team="Inbound", function="Call Center", region="EGY", month="October", year=2026,
+        ),
+    ))
+
+    planner = next(call for call in calls if call["purpose"] == "model_led_router")
+    context = next(message["content"] for message in planner["messages"] if message["role"] == "user")
+    assert f"Function: {function}" in context
+    assert f"Country: {region}" in context
+    assert "Period: 2026-09" in context
+    assert "Call Center" not in context
+    assert result.outcome == "answer", result.headline
+    assert result.resolved_session_state.function == function
+    assert result.resolved_session_state.region == region
+    assert "91.0%" in result.headline
+    assert "42.0%" not in result.headline
+
+
+@pytest.mark.parametrize("prompt", [
+    "How much did the overall employee PMS score move from September to October 2026 for Marketing in Egypt?",
+    "Which UAE branch had the highest Pharmacy employee PMS score in September 2026: Dubai, Sharjah, or Ajman? Give the score.",
+    "What was the average employee PMS score for Sales in the UAE in August 2026?",
+])
+def test_team_pms_score_wording_does_not_extract_an_employee_name(prompt):
+    from services.ai.router import _extract_person_query_from_prompt
+
+    assert _extract_person_query_from_prompt(prompt) is None
+
+
+def test_average_employee_score_uses_team_records(monkeypatch):
+    _patch_records(monkeypatch, [
+        _composable_record("SALE-1", "Test Reviewer One", "Sales", "UAE", 70.0, month="August"),
+        _composable_record("SALE-2", "Test Reviewer Two", "Sales", "UAE", 90.0, month="August"),
+    ])
+    ai_evidence_cache.clear()
+    result = PmsAiOrchestrator(_build_in_memory_db(), {
+        "role": "Admin",
+        "user_id": "admin-sales-average",
+        "has_unrestricted_team_access": True,
+    }).run_chat_turn(AiChatRequest(
+        prompt="What was the average employee PMS score for Sales in the UAE in August 2026?",
+        provider_override="deterministic",
+    ))
+
+    assert result.outcome == "answer", result.headline
+    assert result.resolved_session_state.team == "Sales"
+    assert "Sales averaged 80.0% in August 2026 across 2 evaluated employees." == result.headline
+    assert "get_agent_spotlight_and_trend" not in [call.tool_name for call in result.tool_calls]
 
 
 

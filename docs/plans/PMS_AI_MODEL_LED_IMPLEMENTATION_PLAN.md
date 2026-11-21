@@ -1,178 +1,160 @@
-# PMS AI model-led assistant: authoritative implementation plan
+# PMS AI model-led search and learning plan
 
-Status: proposed execution contract, 16 November 2026. Planning only; no runtime migration or release has been performed.
+**Status** · Execution specification, 20 November 2026. The pilot starts with workspace chat for Admin users. Current acceptance evidence and open gates are tracked in [the verification record](../qa/pms-assistant-upgrade-2026-11-20.md). A completed implementation step does not imply that the end-to-end or release gates have passed.
 
-## 1. Authority and executor instructions
+## 1. Product contract
 
-This document is the single execution reference for the next AI architecture transition. Earlier AI plans are historical inputs, not concurrent instructions. Repository security, scoring, data-source and permission contracts still apply.
+An English-speaking manager can ask a performance question in their own words and continue with short follow-ups. PMS AI finds the relevant published records, uses the same scoring rules and scope as Monthly Review, and returns the answer first. The initial pilot covers Egypt and UAE, across the published Employee, Managerial and Corporate scopes. Discover the coverage from PMS data and grants for the signed-in user.
 
-The user intends to use an executor identified in their coding application as **Gemini Flash 3.8, High**. This records their executor preference, not a verified API model ID. Verify availability in that application. Do not copy this label into PMS runtime configuration. The coding assistant and the application's inference provider are separate choices.
+A representative journey is “Which department did best in Egypt in September?”, “Which two teams did best in it?”, then “Who were the top three in the leading team?” The expected progression is department → team → employee, with the country and period carried forward. For Marketing, use its measured positions when the user asks about its internal teams and the catalog identifies a single team with multiple position scorecards. Label those results as roles. A later explicit change of country, period, level or subject supersedes the corresponding remembered field. When a choice would change the answer materially, ask one focused question.
 
-Read this plan, the scoped progress ledger, AGENTS.md and RTK.md. Then read only files relevant to the current phase. Use at most three relevant skills. Do not load every historical AI plan or all skills. Do not tune code to isolated question wording.
+The model chooses the information to look up and the next action. The server resolves authorized entities, validates the plan, queries PMS, applies scoring rules and verifies the answer. Every reported number can be traced to a scoped PMS result. Brief is the default. Answer with a sentence or the requested ranked list, followed by a source and, where helpful, one relevant follow-up. Details can expand on demand.
 
-Preserve the current dirty worktree. Do not merge, push, deploy, change credentials, enable production AI or mutate production data under this document alone. Phase completion requires artifacts and evidence, not a completion checkbox.
+## 2. Starting evidence and cleanup decisions
 
-## 2. Verified starting point
+The starting checkpoint is local `main` at `f92935d3` plus uncommitted work. Capture a fresh status and review the working changes before implementation. The original **10 ranking questions** and **2 additional follow-ups** are exposed regression cases; verify model-led generalization independently. Treat this checkpoint as historical baseline evidence, not a completion claim. Use the verification record for current provider, staging and rollout status.
 
-Local inspection found:
-
-- Branch `fix/pre-approvals-ip-single-team` contains uncommitted AI and related frontend work. Capture fresh status and diff before implementation.
-- `config/environment.py` loads `DevOps/.env`, `Backend/.env.local`, and `DevOps/.env.local`, restoring pre-existing process variables as authoritative.
-- After that loader runs, local provider configuration has Cloudflare primary, Gemini fallback, and Gemini credentials present. This proves local configuration availability, not provider connectivity or production configuration.
-- Intent and synthesis switches resolve true locally. Exploration resolves false.
-- `services/ai/llm_client.py` explicitly disables exploration when APP_ENV is production.
-- `contextual_assistant.py` can terminate requests through lexical rules before provider understanding.
-- `orchestrator.py` builds deterministic prose and offers provider synthesis only in selected paths; connecting credentials does not make the model responsible for all dialogue.
-- Previous regression scores were deterministic. A subsequent reported final set scored 27/32 and exposed country switching, employee extraction and non-booking KPI response defects. Verify current results rather than trusting historical green reports.
-
-## 3. Product contract
-
-English interface and replies. A manager receives the direct answer first, normally one to three sentences or up to three short bullets. Details and sources remain available without a mandatory dashboard dump. Offer at most one useful deeper follow-up.
-
-Cover every authorized function, team, position, country, branch and performance level through common tools and catalog metadata. Retain country-specific calculation differences and the Monthly Presentation hierarchy. Missing data is not zero; first observed performance is not a hire date; a tie is not a unique winner.
-
-The model owns language understanding, contextual clarification, tool selection and answer composition. The backend owns authentication, authorization, published data selection, calculations, units, tool validation and factual verification. Feedback is not automatic model training.
-
-## 4. Cleanup FIRST: exact inventory and disposition
-
-Cleanup has two gates: documentation/context cleanup immediately; runtime deletion only after a proven replacement. Reducing contradictory instructions can reduce executor confusion, but does not guarantee factual model accuracy.
-
-### Documentation inventory
-
-| Existing path | Disposition | Reason / retained material |
-| --- | --- | --- |
-| `docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md` | Supersede and archive | Explicit Qwen-led implementation and offline-only Gemini role conflict with new provider-led direction. Retain evidence and privacy requirements. |
-| `docs/plans/PMS_AI_ALL_DEPARTMENTS_ROADMAP.md` | Supersede and archive | Historical Qwen milestones and release status. Preserve scope coverage requirements. |
-| `docs/plans/pms-ai-chatbot-implementation-plan.md` | Supersede and archive | Local composition / optional classifier direction conflicts with model-led conversation. Retain hierarchy and calculation contracts. |
-| `docs/plans/contextual-ai-assistant/IMPLEMENTATION_PLAN.md` and `FULL_COVERAGE_EXECUTION_PLAN.md` | Review, extract valid contracts, archive as historical | Prevent competing execution instructions. |
-| `docs/plans/contextual-ai-assistant/LOCAL_EVIDENCE_SYNTHESIS_PILOT.md` and `LOCAL_DATA_EXPLORATION_REPORT.md` | Historical reference only | Useful adapter findings, not a mandate to restore local models. |
-| `docs/plans/pms-ai-conversation-v2/IMPLEMENTATION_BLUEPRINT.md` | Retain conversation contracts; supersede architecture instructions | Persistence, ownership and deletion semantics remain valuable. |
-| `docs/plans/pms-ai-conversation-origin-fix/` | Preserve as historical bug evidence | Do not regress duplicate-chat and origin fixes. |
-| `docs/plans/pms-ai-response-quality-final/` | Preserve, mark exposed regression history | Contains current WIP findings and known failing cases. Do not delete current work. |
-| `docs/plans/pms-ai-evidence-first/` | Retain dictionaries, data relationships, coverage and glossary; supersede stale execution queue | Business definitions are not obsolete merely because routing changes. |
-| `docs/plans/pms-ai-classifier-evaluation-report.md` | Historical experiment | No classifier runtime requirement in this plan. |
-| `docs/ops/pms-ai-provider-verification.md`, `pms-ai-pilot-release-checklist.md` | Reconcile and retain | Operations procedures must match the final provider and feature controls. |
-
-Before any move, enumerate references using rg and distinguish tracked files from untracked WIP. Initially add a brief SUPERSEDED notice linking here rather than moving heavily referenced documents. If relocating to `docs/archive/pms-ai/2026-11-16/`, update inbound links and preserve paths in an archive manifest. Do not recursively move/delete whole directories. Preserve reports and fixture provenance. Do not archive Monthly Evaluation plans: they describe a separate business subsystem.
-
-### Runtime inventory
-
-| Path / area | Treatment |
+| Area | Decision for this plan |
 | --- | --- |
-| `Backend/services/ai/provider_engine.py`, `llm_client.py` | Reuse provider transport, bounded retries, configuration and metrics. Audit actual supported tool protocol before extending. |
-| `local_model_router.py`, `local_data_explorer.py`, `local_evidence_synthesis.py` | Active-looking names do not prove obsolete code. Trace imports/callers, extract useful schemas/validators, then rename/refactor incrementally. No blind deletion based on `local`. |
-| `router.py`, `domain_policies.py`, `contextual_assistant.py` | Retire language heuristics from the new execution path; preserve security/domain validation. |
-| `orchestrator.py`, `providers.py` | Replace mandatory deterministic analytical composition in the pilot; retain an explicit honest failure response and rollback path temporarily. |
-| `tool_registry.py`, catalog, authorization and dashboard read services | Reuse authoritative calculations and data access; adapt tool interfaces and audit country/level coverage. |
-| conversation repository/service, feedback and audit services | Preserve ownership, versioning, idempotency and deletion. Audit gaps before schema changes. |
-| `Backend/scripts/run_unseen_eval.py`, `evaluate_pms_ai_improvements.py`, `evaluate_ai_classifier.py` | Identify overlapping responsibilities. Establish one documented runner entry point; retain meaningful tests and historical artifacts. Remove obsolete scripts only after callers are checked. |
-| `ai_unseen_multiturn_eval.json`, `ai_response_quality_holdout_v2.json`, `ai_response_quality_final_blind_eval.json` | Preserve and label exposed. They are regression data, not production answer banks or blind evidence. |
-| dependency manifests, Dockerfiles, deployment scripts | Audit local-model/classifier libraries by imports and build usage. Remove only proven unused dependencies and update locks/builds. No blanket deletion of ML libraries. |
+| `router.py`, `domain_policies.py`, `orchestrator.py`, `providers.py` | Keep the repaired flow as baseline and rollback. Inventory phrase detectors, saved hints, capability gates and dispatch paths. Move interpretation of free-form analytics to the model-led path. Keep server-side validation, scope, availability and scoring checks. |
+| `catalog.py`, `tool_registry.py`, dashboard and Insights services, `utils/report_scope.py` | Use the authoritative hierarchy, scoring, branch rules, report configuration and permission checks. Share each analytical operation across execution paths. |
+| `provider_engine.py`, `llm_client.py`, provider configuration and probes | Reuse transport, provider adapters, accounting and timeouts. Verify the configured Cloudflare/NVIDIA task routes from the actual runtime. Gemini is not a required provider. Use a configured fallback only after it passes the same gates. |
+| Conversation, traces, AI Feedback and approved patterns | Reuse ownership, versioning, redaction, audit and review. Evolve approved corrections into testable guidance for interpreting and finding evidence. |
+| Evaluation scripts, exposed fixtures and earlier plans | Use one maintained evaluator. Retain provenance and established scoring references. Archive duplicate or obsolete material after checking callers and links. |
 
-Phase 0 output: `CLEANUP_MANIFEST.md` with exact path, current purpose, callers, proposed action, replacement, validation and status. Archive notices and a single plan index must be finished before new orchestration coding. Runtime deletions remain scheduled for Phase 6.
+Phase 0 starts with cleanup of conflicting execution instructions and an inventory of active paths. Remove displaced runtime code after the replacement meets its rollout gates. Fold AI Feedback remediation into Phase 5 below. Preserve existing working-tree changes and separately scoped Monthly Evaluation work. [Prior findings and regression evidence](PMS_AI_CHAT_AND_FEEDBACK_REMEDIATION_PLAN.md) · [Cleanup inventory](pms-ai-model-led/CLEANUP_MANIFEST.md) · [Data relationships](pms-ai-evidence-first/DATA_RELATIONSHIPS.md)
 
-## 5. Target request flow
+## 3. Request and evidence design
 
-1. Authenticate, enforce pilot access and quota, load the owned conversation and current authorized scope.
-2. Build bounded context: recent dialogue, compact confirmed state, selected page/filter context and authorized catalog references. Keep user text and retrieved content separate from trusted instructions.
-3. Ask the configured model to answer socially, request clarification, or issue typed tool requests. Do not reject unfamiliar English through lexical off-topic rules before this step.
-4. Validate each tool request against schemas and live authorization. Execute server-defined read operations and return typed evidence.
-5. Allow a bounded follow-up tool request when necessary; stop on sufficient evidence, repeated requests, budget exhaustion or unresolved ambiguity.
-6. Ask the model for a brief answer tied to evidence identifiers. Validate factual claims. Permit one bounded repair for invalid output, then return an honest limitation with verified evidence; do not silently replace the user's question with a generic summary.
-7. Persist user turn, answer, confirmed context, evidence provenance and execution trace atomically/idempotently through existing conversation contracts.
+```mermaid
+flowchart LR
+    A[Question and owned conversation] --> B[Model planner]
+    C[Authorized catalog and confirmed context] --> B
+    B --> D[Typed lookup or analytical plan]
+    D --> E[Live authorization and scope validation]
+    E --> F[Read only PMS tools]
+    F --> G[Verified evidence]
+    G --> B
+    G --> H[Short answer and claim verification]
+    H --> I[Chat and audit trace]
+    I --> J[Feedback clusters and replay]
+    J --> K[Bounded auto-correction or Admin review]
+    K --> C
+```
 
-Proposed initial limits: maximum 3 model/tool rounds, 6 tool executions and one repair within the same total budget. Set explicit wall-time, token and row limits after Phase 1 measurements. Count retries and fallback attempts in the budget. Never use an unlimited loop.
+| Interface | Required behavior |
+| --- | --- |
+| Planner input | Latest user question, bounded recent dialogue, confirmed scope and references, permitted tool schemas, and a compact authorized catalog. Treat conversation content and retrieved text as data. |
+| Discovery | Resolve names to canonical department, team, position, branch, metric and employee identifiers. Return only authorized matches and available periods for those matches. Use typed search over existing catalog and report sources. |
+| Plan | Carry operation, entity to rank or compare, parent scope, country, period or periods, performance level, metric, count, order and referenced result IDs where relevant. Extend `ValidatedQueryPlanV2` and `QueryRankingsArgs` where required. The plan can also request clarification. |
+| Execution | Validate the plan and reauthorize every tool call. Compare the resolved scope with explicit user constraints. Read records through the existing PMS services with server-defined queries and row bounds. Reuse the same executors in model-led and fallback modes. |
+| Evidence | Return fact IDs, exact resolved scope, metric, unit and score basis, value, sample size where relevant, reporting period and source reference. Preserve empty, missing, unpublished and zero as distinct results. Assert that the evidence scope matches the executed plan before composing the answer. |
+| Answer and memory | Verify each factual claim against evidence, including winner, order, count, precision, unit and period. Store the verified subject or winner and its scope in the owned conversation. A ranked result can be referred to by “it”, “the best team” or “the second one” when the reference is clear. |
 
-## 6. Phased execution
+Keep the ranking calculations exact before display rounding. Distinguish overall evaluation score, KPI actual, achievement and contribution. Respect metric direction, employee cohort, score caps, headcount weighting where the PMS view uses it, and any approved period-specific score basis. Identify comparable periods through the existing evaluation metadata. Use a direct result or a concise note if a comparison spans different scoring rules. Verify branch rankings against the dashboard's authorized branch calculation.
 
-### Phase 0 — Freeze and clean conflicting context
+Keep discovery under current RBAC, including role changes mid-conversation. Restrict external prompts to approved, minimal evidence. Use placeholder employee IDs when data can be reintegrated after inference. Keep SQL, connection details, authentication material and full datasets within PMS. The assistant can explain corrective actions and draft recommendations from cited evidence with human approval through the existing workflow. Preserve write permissions at the application boundary.
 
-- Capture HEAD, branch, tracked/untracked status and a recoverable snapshot of current work without overwriting it.
-- Complete the cleanup manifest and supersession notices above; publish one active plan index.
-- Record existing defects and test baseline without adding new phrase-specific fixes.
-- Gate: no ambiguous active AI architecture instructions; no lost files; archive links resolve.
+## 4. Delivery phases
 
-### Phase 1 — Prove configuration and end-to-end provider usage
+### Phase 0 · Preserve work and freeze the baseline
 
-- Use the real environment loader. Report only presence/boolean flags and nonsecret model identifiers; never output secrets or secret-bearing URLs.
-- Trace a synthetic greeting, metric question and two follow-ups through the same API path used by the frontend.
-- Record correlation ID, route, provider/model per stage, calls, tool names, timings, token usage when available, fallback and validation reason. Do not log raw sensitive payloads by default.
-- Make runtime primary/fallback selection explicit. User's coding-model choice does not authorize changing the runtime provider.
-- Gate: actual live-provider trace with synthetic data, or a clearly recorded connectivity blocker. Offline tests cannot satisfy this gate.
+1. Record repository status, serving revisions, effective feature switches and non-secret provider configuration. Keep the existing ranking fixes and protect any parallel work.
+2. Inspect live callers and import paths. Mark each overlapping interpretation path, script, fixture and dependency as keep, merge, retire or rollback-only with a reason and replacement.
+3. Freeze the 12 exposed ranking cases and the earlier Marketing, Pharmacy and Sales parity checks. Include country and level overrides, missing months, KPI aliases, single and grouped rankings, branch calculations and provider failure.
+4. Identify the authoritative PMS view or independent record query for each expectation. Capture route, planned scope, executed scope, facts, answer source and elapsed time.
 
-### Phase 2 — One model-led pilot path
+**Exit gate** · A reproducible baseline and cleanup inventory show exactly which code answered each case. Existing data, scoring, chat ownership and feedback history are preserved.
 
-- Add a distinct admin-only pilot switch with rollback to the existing path.
-- Reuse provider engine; inspect whether it supports native tools or validated structured tool requests. Choose one documented protocol with equivalent authorization.
-- Reuse useful explorer components only after evaluating their data exposure and output contracts. Do not simply remove the production guard or flip the old exploration switch.
-- Separate understanding/execution/rendering from the legacy cascade. No duplicate public chat endpoints unless contract migration requires one.
-- The model can clarify entities using an authorized search tool. It must not receive a full employee directory or database credentials.
-- Gate: varied wording works through a traceable model/tool path; timeout and unavailable-provider behavior is honest.
+### Phase 1 · Prove the provider through signed-in chat
 
-### Phase 3 — Shared tools across departments and levels
+1. Use the existing provider verification tools and configured Cloudflare/NVIDIA credentials in isolated staging with synthetic evidence. Verify structured planning, a real tool-backed answer and two context-dependent turns through the same chat endpoint as the browser. Do not require or silently fall back to Gemini.
+2. Record provider and model per stage, reasoning effort, actual attempts, fallback reason, tools, validated plan, evidence scope, latency and token/cost availability. Keep core chat output uncapped where the provider contract supports it. Benchmark reasoning effort on representative tasks; route high effort only where it improves measured accuracy within the agreed deadline.
+3. Exercise malformed results, empty output, timeout, 429, authentication failure and fallback. Count every attempt. Readiness requires a successful analytical turn with the provider demonstrably deciding the plan.
 
-Proposed capabilities, mapped onto existing services rather than assumed function names:
+**Exit gate** · A signed-in trace proves live planning, validated lookup and verified output. A failed provider gate blocks wider rollout and leaves the verified PMS fallback available. [Provider verification runbook](../ops/pms-ai-provider-verification.md)
 
-- Discover authorized hierarchy and metric definitions.
-- Resolve employees by ID/name with bounded candidates.
-- Read current metric/score evidence for a scope and period.
-- Read multi-period series with explicit gaps.
-- Rank and compare compatible populations/metrics with ties and denominators.
-- Read corrective actions; produce a draft through the existing approval workflow.
+### Phase 2 · Give the planner scoped discovery and shared tools
 
-Each result carries subject IDs, country, team, level, metric ID, unit, raw/display values, period, status, source reference and scoring-basis metadata. Distinguish count from rate and movement from relative percentage change. Do not infer percentage scale from magnitude. KPI zero, null, missing, unpublished and unauthorized must be distinguishable.
+1. Add or consolidate scoped lookup for hierarchy, employee and KPI definitions and availability. Present only tools relevant to the question and user's grants. Reuse existing period and entity resolvers.
+2. Route Admin pilot analytical requests through the model. Keep one validated execution contract for rankings, current score, targets, trends and comparisons. Start with ranking and evaluation score, then expand across the catalog's KPIs and performance levels through the same interfaces.
+3. Require plan-to-execution parity for explicit scope, requested entity, metric and date. Keep a bounded discovery loop when the model needs clarification from the catalog. If it repeats an identical call without gaining evidence, stop early.
+4. Compare every tool family with the corresponding PMS view across Egypt and UAE. Cover each published level and verify permission denials independently from missing data.
 
-Use the existing scorer; do not reimplement team formulas. Test Egypt/UAE separation, function grants, Employee/Managerial/Corporate scope and country-specific calculation bases. Maintain a coverage matrix with supported, no-data and unsupported states for every catalog scope. A Call Center pilot must not be reported as all-department completion.
+**Exit gate** · Live requests use typed lookups, then one shared scoring or ranking path. Explicit September stays September in plan, executed tool and answer. An unavailable September produces a clear unavailability result.
 
-Gate: tool parity with authorized PMS source services and no cross-scope leaks.
+### Phase 3 · Preserve context and publish concise answers
 
-### Phase 4 — Conversation and concise model answers
+1. Save the verified subject, rank result references, metric and reporting scope using existing conversation state. Store references to results with rank order and evidence provenance where needed. Resolve later references against the owned, reauthorized conversation and use explicit changes immediately.
+2. Cover latest chat, previous chats, independent new chats, reload, deletion, concurrent turns and idempotent retries. Persist state only for completed, verified turns. Keep preferences separate from factual context.
+3. Use the same final response contract for model and fallback output. Render a single clarification, direct answer, compact ranked list and source link consistently across the workspace, copy, reload and supported contextual surfaces.
+4. Validate factual claims before rendering. Permit one repair within the shared turn deadline. If repair fails, return the available verified result or a concise limitation tied to the original question.
 
-- Maintain employee, metric, operation, period and country independently. New explicit instructions override compatible inherited fields.
-- Confirmed identity survives follow-ups; unresolved ties require selection; scope changes revalidate identities.
-- Include recent dialogue plus a compact versioned state; do not rely on client-supplied state as authorization.
-- Preserve original user wording when clarification choices bind IDs.
-- The model composes all supported analytical answer types from evidence, not only booking comparisons and overall scores.
-- Validate claim subject/value/unit/period/source, not merely whether a number occurs somewhere in evidence. Sources are structured links, not prose rewritten with regex.
-- Keep technical evidence panels collapsed. Never attach an unrelated performance summary to a greeting or unsupported question.
-- Preserve new/delete/reload conversation isolation, one user submit to one persisted turn, and retry idempotency.
-- Gate: complete multi-turn chains answer the actual operation and metric, including Waiting Time after bookings and score trend after KPI discussion.
+**Exit gate** · Country → department → team → top three and Marketing → role → person succeed over multiple turns. Test equivalent wording, “in it”, a change of country or month, tied scores, shortened requests and permissions narrowed after the first turn.
 
-### Phase 5 — Feedback and evaluation
+### Phase 4 · Consolidate the runtime and control cost
 
-- Feedback belongs to a specific answer, evidence revision, provider/model and prompt version. Negative feedback creates review work, not an automatic new rule or approved answer.
-- Corrected examples require review; use them as limited retrieval examples or future training candidates. Re-fetch current numeric facts. Never replay stale employee answers from a text similarity match.
-- Cache only with scope, user permissions, metric/period, data/configuration version and invalidation. Delay semantic answer caching until correctness is established.
-- Preserve exposed regressions; strengthen semantic expectations. A correct employee name alone cannot pass a trend question.
-- Evaluate at least 80 prompts over 20 conversations covering every operation, both countries, permission levels, ambiguous names, ties, missing periods, corrections, deletion/reload and provider failures. Department coverage must also be explicit rather than inferred from prompt count.
-- Freeze a separate final set before first run. Record first-run results; once inspected for tuning it becomes exposed. Keep deterministic tool tests, mocked-provider tests and live-provider results separate.
-- Proposed release gates: 100% critical authorization/numeric-unit/source checks; at least 95% semantic task completion on the agreed final set; no known reproduced high-priority defect. Measure p50/p95 latency and cost, then agree workload-specific limits before release. Thresholds do not excuse a serious individual failure.
-- Gate: reviewer can inspect exact failed questions and evidence, not only aggregate accuracy.
+1. Redirect callers to the shared lookup, validation and execution modules. Move traffic out of the old language heuristics gradually and verify each removal through import checks, regression tests and measured results.
+2. Use one shared deadline and budgets across discovery, planning, answer, repair and any provider failover. Start with up to three planning/discovery rounds, up to six authorized reads and one repair. Prefer one planning call and one read for straightforward questions. Choose provider-specific limits, reasoning effort and concurrency from Phase 1 measurements; do not apply an unverified high-effort setting globally.
+3. Reuse cached verified evidence by effective access scope, normalized plan, reporting/data revision and scoring configuration version. Invalidate after data uploads, scoring changes and grant changes. Preserve accurate limit and provider attribution.
+4. Maintain server-side daily user controls as configurable settings. Keep the current settings during the pilot until the daily cap is selected. Measure time from browser submission to the first usable answer and separate routing, lookup, synthesis and fallback timings. Report p50 and p95 by question family, along with provider attempts, cost coverage, cache hits and failure rates.
 
-### Phase 6 — Remove displaced runtime complexity
+**Exit gate** · No duplicate provider attempts on a replayed completed turn. No cross-user or stale-scope cache hits. The candidate meets the latency and cost budgets agreed from the measured baseline. Publish repeatable warm and cold results.
 
-- Use imports, call graph and runtime traces to confirm pilot-equivalent behavior.
-- Remove superseded phrase-specific routing and analytical templates in bounded changes; preserve validators, calculation rules, navigation contracts and security checks.
-- Consolidate evaluators and prompt versions. Keep fixtures in test/development paths, exclude training artifacts from runtime images where unused.
-- Remove unused dependencies/model-launch scripts only with manifest evidence. This phase does not authorize deleting model files outside the repository or on the server.
-- Gate: official typecheck, relevant backend/frontend suites, build and container checks pass; rollback remains possible through version control/release version.
+### Phase 5 · Turn feedback into verified improvements
 
-### Phase 7 — Staging and separately authorized rollout
+1. Show original question, scope, answer and evidence next to the replay. Classify the failed stage as understanding, entity resolution, period, permissions, source data, calculation or presentation. Let the Admin confirm the expected behavior and acceptable evidence.
+2. The analyzer drafts a correction to interpretation, discovery or tool choice. Route source, calculation and access defects to the corresponding code owner. Keep diagnosis available as a separate workflow with clear provider readiness and errors.
+3. For a low-risk deterministic presentation correction, require at least three independent affected users, successful replay on the original evidence, an unseen equivalent and a contrast case, and idempotent output before automatic activation. Record a version, evidence, expiry and audit trail; automatically withdraw on negative feedback against a corrected answer. Let Admins inspect, disable and roll back it without manually approving each repeated case.
+4. Require Admin review before activating changes that alter data scope, permissions, calculations, or model planning/tool-selection policy. Compute scores and rankings fresh or from valid scoped evidence. Keep evaluation cases separate from the guidance supplied to the model.
+5. Start with versioned prompt and tool guidance. Consider offline fine-tuning only if approved, de-identified examples accumulate and a benchmark shows a measurable advantage. Scale evaluation before adding runtime ML libraries or training infrastructure.
 
-- Test signed-in local/staging behavior with the actual provider. No production tab as a substitute.
-- Verify account ownership, narrowing permissions mid-conversation, retries, fresh/deleted chats, mobile use and short answers.
-- Start admin-only; enforce server-side request/token/concurrency budgets and measurable provider timeouts. Daily per-user limits may initially be configurable; avoid inventing a user-approved amount.
-- Document fallback policy, health visibility and rollback. Never advertise an AI-generated answer when a deterministic fallback was used.
-- Production enabling, migration and deployment require the user's release authorization. Keep unverified gates open.
+**Exit gate** · At least one bounded correction completes diagnosis → verified replay across independent users → automatic activation → successful unseen rephrase → negative-feedback withdrawal and rollback rehearsal. No loss of performance on the contrasting case. Higher-impact policy changes require Admin review. Live analyzer readiness is tracked independently from chat correctness; a correction that remains inactive for insufficient evidence is not counted as a completed activation gate.
 
-## 7. Database and migration policy
+### Phase 6 · Independent evaluation and release
 
-Audit existing conversation, turns, feedback and telemetry models first. Prefer existing JSON/versioned fields where they meet ownership, query and retention needs. Add a migration only for a demonstrated missing durable requirement, such as indexed trace metadata or durable usage accounting. Specify additive upgrade, rollback, backfill and retention; test against a production-shaped copy. Do not rewrite historic chats or feedback. Respect deletion and do not retain removed personal content through hidden caches/training copies.
+1. Freeze a held-out synthetic set with at least 50 scored turns, including multi-turn sessions and paraphrases. Keep prompts, expected facts and near-miss cases outside prompt examples and feedback hints. Cover both countries, published levels and department families, boundaries, explanations, no-data cases and restricted roles. Keep the exposed regression set and a separate de-identified genuine-conversation set in separate runs. Each genuine case counted toward a semantic score must have a saved expected behavior/fact set and a reproducible first-response judgment; otherwise label it qualitative diagnostic evidence only and do not report it as a pass rate. Never send genuine transcripts or employee identities to external model providers.
+2. Run the same synthetic fixture and scorer in baseline, mocked and live modes. Score the first observed response. Report raw denominators, per-family results, model-synthesis, deterministic and fallback pass rates separately, plus provider errors and regressions. Corrections and retries get separate metrics and do not replace the original observation.
+3. Stage the UI and API at paired revisions. Run the focused Backend suites, Frontend tests, typecheck, build and signed-in journeys. Inspect Brief rendering, trace provenance, retention and feedback. Validate any migration against a production-shaped copy before deployment.
+4. Release to Admin users first after approval. Widen access only after the same gates pass for each role cohort. Roll back through the pilot switch and known-good revision, and disable individual guidance independently. Verify deployment health and sample answers after release.
 
-## 8. Definition of done and handoff
+**Release gates** · 100% critical authorization, evidence provenance, explicit-scope and numeric/unit checks. At least 95% semantic completion on the frozen held-out set with the live provider, reported separately for model-synthesized, deterministic and fallback responses. A successful turn includes the correct operation, scope, result and expected response type. The known ranking and contextual follow-up regressions must all pass. Provider failures appear in the denominator when they prevent completion. Report any uncovered department, country, level or answer source explicitly. Do not mark the genuine-conversation gate passed without reproducible expected facts and first-response judgments.
 
-Each phase handoff includes: changed paths, problem/behavior, exact checks and results, trace/evaluation artifact location, open defects, next phase and rollback implications. One phase at a time; do not continue architectural deletion while provider execution remains unproven.
+| Regression scenario | Expected behavior |
+| --- | --- |
+| Best department by average employee score, then best teams, then top three people | Rank the entity requested at each turn and retain the country, period and level. Use the previously verified winner to scope the next lookup. |
+| “Best team in Marketing”, then “Who was best in it?” | Show the measured position when the department has role-based scorecards. Rank the next answer inside that position. Preserve the evaluation count when a role has one measured employee. |
+| A different country or month appears in a follow-up | Refresh the relevant scope, discard incompatible result references and query the requested period. |
+| A team name is shared, a KPI alias is unfamiliar or the month is missing | Resolve candidates through the scoped catalog. Clarify a material ambiguity or report the requested period as unavailable. |
+| “Who is a new joiner?” with only PMS snapshots available | State the first measured period if supported. Confirm a joining date only from a permitted authoritative HR source. |
+| Branch, lower-is-better KPI and changed target comparisons | Match the dashboard's branch logic, metric direction, units and effective score basis for each period. |
+| A grant changes, a provider fails or tool evidence contradicts a draft | Revalidate access and claims. Preserve verified evidence and display the appropriate outcome for the affected turn. |
 
-Never claim: credentials prove live connectivity; test accuracy proves model training; a model label proves the requested API model; a green suite proves an untested browser; or a renamed holdout is unseen.
+## 5. Data, migration and ownership
 
-Immediate next assignment: execute Phase 0, then Phase 1. Present the cleanup manifest and synthetic end-to-end provider evidence before implementing Phase 2.
+Reuse the existing conversation, turn, trace, memory and review records. The following diagram describes logical ownership and provenance. Confirm the physical constraints in the ORM and migrations before changing storage.
+
+```mermaid
+erDiagram
+    USER ||--o{ AI_CONVERSATION : owns
+    AI_CONVERSATION ||--o{ AI_TURN : contains
+    AI_TURN ||--o| AI_INTERACTION_TRACE : produces
+    AI_INTERACTION_TRACE ||--o{ AI_APPROVED_PATTERN : informs
+    USER ||--o| AI_USER_MEMORY : owns
+```
+
+- Reuse versioned conversation JSON for confirmed scope and result references. Reuse feedback review and audit metadata while it can represent the required ownership, provenance and retention.
+- If a proven access pattern needs a migration, specify columns and indexes, constraints, backfill, rollout order, retention and rollback. Keep migrations additive and idempotent. Verify against the actual production-shaped schema, including referenced key constraints, before a production run.
+- Use sanitized or synthetic evaluation examples. Keep live employee records in the source system. Filter stale or revoked references on read and honor deletion and retention across stored chats, evidence, caches and evaluation exports.
+- Start with the dependencies already used by the project. Add a library only after recording the missing capability, the measured benefit and its operational cost.
+
+## 6. Implementation handoff and verification surfaces
+
+| First delivery unit | Evidence required |
+| --- | --- |
+| Baseline and live readiness | Frozen exposed fixture, current-state audit and one signed-in model-to-PMS trace |
+| Ranking and scoped lookup | Shared plan/executor contract, change of country and date regression, authorization and dashboard parity |
+| Conversation and answer format | Fresh and reloaded browser journeys, successful hierarchy drill-down, single clarification and verified concise answer |
+| Feedback and controlled release | Before/after evidence, held-out benchmark report, budget results and staged rollback exercise |
+
+Reuse [the evaluation runner](../../Backend/scripts/run_unseen_eval.py), [AI workspace tests](../../Backend/tests/test_ai_workspace.py), [tool contract tests](../../Backend/tests/test_ai_phase3_tool_contracts.py), [source parity tests](../../Backend/tests/test_ai_source_parity_matrix.py), [feedback learning tests](../../Backend/tests/test_ai_feedback_learning.py) and [signed-in browser journeys](../../Frontend/e2e/ai_phase7_staging.spec.ts). Resume implementation at Phase 0 against the current checkout, then close the live-provider gate before broad changes to interpretation. Each delivery unit records changed files, tests, traces, measured outcomes, unresolved gaps and the rollback action.

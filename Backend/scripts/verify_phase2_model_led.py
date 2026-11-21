@@ -97,18 +97,18 @@ def provider_configuration_snapshot() -> dict[str, Any]:
     return {
         "primary_provider_configured": cfg.effective_primary_provider,
         "primary_model_configured": (
-            cfg.cloudflare_model if cfg.effective_primary_provider == "cloudflare" else cfg.gemini_model
+            cfg.cloudflare_model if cfg.effective_primary_provider == "cloudflare" else cfg.nvidia_model
         ),
         "fallback_provider_configured": cfg.effective_fallback_provider,
         "fallback_model_configured": (
-            cfg.gemini_model if cfg.effective_fallback_provider == "gemini" else cfg.cloudflare_model
+            cfg.nvidia_model if cfg.effective_fallback_provider == "nvidia" else cfg.cloudflare_model
         ),
         "fallback_enabled": bool(cfg.fallback_enabled),
         "configured_usable_provider_order": configured_providers(cfg),
         "credential_presence": {
             "cloudflare_account_id": bool(cfg.cloudflare_account_id),
             "cloudflare_api_token": bool(cfg.cloudflare_api_token),
-            "gemini_api_key": bool(cfg.gemini_api_key),
+            "nvidia_api_key": bool(cfg.nvidia_api_key),
         },
         "intent_enabled": local_intent_enabled(),
         "synthesis_enabled": local_synthesis_enabled(),

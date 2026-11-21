@@ -1608,6 +1608,17 @@ class AiTurn(Base):
     )
 
 
+class AiLearningRun(Base):
+    """Durable daily feedback-analysis claim. Stores aggregate outcomes only."""
+    __tablename__ = "ai_learning_runs"
+
+    day = Column(String(10), primary_key=True)
+    claim = Column(String(36), nullable=False)
+    state = Column(String(24), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+    results = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+
+
 class AiApprovedPattern(Base):
     """Admin-approved deterministic routing patterns derived from verified PMS AI feedback traces."""
 

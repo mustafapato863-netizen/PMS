@@ -52,7 +52,7 @@ def get_my_memory(request: Request, db: Session = Depends(get_db)):
     scope = require_authenticated_scope(db, request)
     user_id = str(scope.get("user_id") or "")
     svc = UserMemoryService(db)
-    memory = svc.load_memory(user_id)
+    memory = svc.load_personalization(user_id, include_empty=True)
     release_read_transaction(db)
     return {"memory": memory}
 
@@ -81,9 +81,9 @@ def update_my_memory(
         if prefs:
             updates["preferences"] = prefs
     svc = UserMemoryService(db)
-    if updates:
-        svc.save_memory(user_id, updates)
-    memory = svc.load_memory(user_id)
+    if updates and not svc.save_memory(user_id, updates):
+        raise HTTPException(status_code=503, detail="Your preferences could not be saved. Please try again.")
+    memory = svc.load_personalization(user_id)
     return {"memory": memory}
 
 
@@ -121,7 +121,7 @@ def get_user_memory(user_id: str, request: Request, db: Session = Depends(get_db
     """View a user's stored memory (Admin only)."""
     require_authenticated_scope(db, request)
     svc = UserMemoryService(db)
-    memory = svc.load_memory(user_id)
+    memory = svc.load_personalization(user_id)
     release_read_transaction(db)
     if memory is None:
         return {"user_id": user_id, "memory": None, "message": "No memory found"}

@@ -1,4 +1,4 @@
-"""Provider-backed synthesis (Cloudflare primary, Gemini fallback) from narrowly scoped PMS evidence.
+"""Provider-backed synthesis (NVIDIA primary, Cloudflare fallback) from narrowly scoped PMS evidence.
 
 The model receives only the already-scoped facts needed for the question.
 Unsupported requests stay with the existing pipeline. This is a narrow pilot,
@@ -263,8 +263,8 @@ def _generate_local_answer(
         metrics.fallback_outcome = "invalid_or_unverified_response"
         return result(fallback, "deterministic")
 
-    # provider_used is exactly "cloudflare" or "gemini" for a model-authored answer.
-    if resp.provider not in ("cloudflare", "gemini"):
+    # provider_used is exactly "cloudflare" or "nvidia" for a model-authored answer.
+    if resp.provider not in ("cloudflare", "nvidia"):
         metrics.fallback_outcome = "invalid_or_unverified_response"
         return result(fallback, "deterministic")
     provider_used = resp.provider
@@ -456,7 +456,7 @@ def synthesize_validated_executive_variation(
         record_fallback_reason("provider_exception")
         return None
 
-    if not resp.is_success or resp.provider not in ("cloudflare", "gemini"):
+    if not resp.is_success or resp.provider not in ("cloudflare", "nvidia"):
         return None
 
     try:

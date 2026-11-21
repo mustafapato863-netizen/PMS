@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -6,6 +7,7 @@ import {
   Check,
   ClipboardCheck,
   Compass,
+  Copy,
   HelpCircle,
   History,
   Loader2,
@@ -24,11 +26,14 @@ import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 import { canAccessPmsAi } from '../../lib/access';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
+import AiThinkingProgressCard from './workspace/AiThinkingProgressCard';
+import { useCopyAnswer } from './response/useCopyAnswer';
 import ExecutiveKpiStrip from './response/ExecutiveKpiStrip';
 import VisualEvidenceCard from './response/VisualEvidenceCard';
 import {
   formatBasisWarning,
-  formatManagerReadableText,
+  getAnswerText,
+  formatAnswerForClipboard,
 } from './response/responseFormatting';
 import type {
   AiChatMessage,
@@ -42,6 +47,20 @@ import type {
   FeedbackCategoryType,
   PageContextV1,
 } from '../../features/ai/types';
+
+function CompactAnswerCopy({ text }: { text: string }) {
+  const { copied, copyError, copyAnswer } = useCopyAnswer();
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button type="button" onClick={() => void copyAnswer(text)} aria-label="Copy answer"
+        className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      {copyError && <span role="alert">Copy unavailable.</span>}
+    </span>
+  );
+}
 
 export interface ContextualAssistantPanelProps {
   pageContext: PageContextV1;
@@ -321,6 +340,7 @@ export function ContextualAssistantPanel({
     [pageContext],
   );
 
+  const [dismissedHintPage, setDismissedHintPage] = useState<string | null>(null);
   const starterPrompts = useMemo(
     () => buildStarterPrompts(pageContext, canCreateAction),
     [pageContext, canCreateAction],
@@ -437,7 +457,7 @@ export function ContextualAssistantPanel({
   const sendPrompt = useCallback(
     async (promptText: string, opts?: { variationSeed?: number }) => {
       const trimmed = promptText.trim();
-      if (!trimmed || !canAccessPmsAi(role, effectiveAiTier) || !aiEnabled) return;
+      if (!trimmed || turns.some((turn) => turn.loading) || !canAccessPmsAi(role, effectiveAiTier) || !aiEnabled) return;
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -688,11 +708,11 @@ export function ContextualAssistantPanel({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeProposalTurnId, cancelProposalReview, confirmDeleteId, deletingConvId, isOpen, showHistory]);
 
-  if (!pilotVisible) return null;
+  if (!pilotVisible || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed bottom-5 right-5 z-50 print:hidden"
+      className="above-navigation-dock fixed bottom-3 right-3 z-[56] print:hidden sm:bottom-5 sm:right-5"
       data-testid="contextual-assistant-root"
     >
       {!isOpen ? (
@@ -716,14 +736,14 @@ export function ContextualAssistantPanel({
           role="dialog"
           aria-label="PMS Contextual AI Assistant"
           data-testid="contextual-assistant-panel"
-          className="flex max-h-[82vh] w-[92vw] max-w-[430px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+          className="flex h-[min(720px,calc(100dvh-7rem))] w-[calc(100vw-1.5rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
         >
           {/* Header & Scope Banner */}
-          <header className="border-b border-slate-200 bg-slate-900 px-4 py-3 text-white dark:border-slate-800">
+          <header className="border-b border-slate-200 bg-white px-4 py-3 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 shrink-0 text-blue-400" aria-hidden="true" />
-                <h2 className="text-sm font-bold tracking-tight">PMS Contextual Assistant</h2>
+                <h2 className="text-sm font-bold tracking-tight">Ask this page</h2>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
@@ -738,7 +758,7 @@ export function ContextualAssistantPanel({
                   className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
                     showHistory
                       ? 'bg-blue-600 text-white'
-                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
                   }`}
                 >
                   <History className="size-3" />
@@ -750,24 +770,24 @@ export function ContextualAssistantPanel({
                     onClick={handleNewChat}
                     data-testid="contextual-assistant-new-chat"
                     aria-label="Start new chat"
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
                     <RotateCcw className="size-3" />
                     <span>New chat</span>
                   </button>
                 )}
-                <Link
+                {!conversationId && <Link
                   to="/ai"
-                  className="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/20"
+                  className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
-                  Full AI Workspace
-                </Link>
+                  <ArrowRight size={15} /><span className="sr-only">Full AI Workspace</span>
+                </Link>}
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
                   aria-label="Close PMS Contextual Assistant"
                   data-testid="contextual-assistant-close"
-                  className="rounded-md p-1 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                  className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   <X className="size-4" />
                 </button>
@@ -775,22 +795,19 @@ export function ContextualAssistantPanel({
             </div>
             <p
               data-testid="contextual-assistant-scope-banner"
-              className="mt-1.5 truncate rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-blue-100"
+              className="mt-1.5 truncate text-xs text-slate-600 dark:text-slate-400"
               title={effectiveContextLabel}
             >
               {effectiveContextLabel}
             </p>
             {conversationId && !showHistory && (
-              <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white/10 px-2.5 py-1.5">
-                <span className="text-xs font-medium text-slate-200">
-                  Saved in page assistant
-                </span>
+              <div className="mt-1 flex justify-end">
                 <button
                   type="button"
                   disabled={promotingConvId === conversationId}
                   data-testid="contextual-assistant-continue-workspace"
                   onClick={() => void handleContinueInWorkspace(conversationId)}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-blue-500 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-slate-800"
                 >
                   {promotingConvId === conversationId ? (
                     <>
@@ -991,22 +1008,16 @@ export function ContextualAssistantPanel({
               </div>
             ) : (
               <>
-            {turns.length === 0 && (
+            {turns.length === 0 && starterPrompts[0] && dismissedHintPage !== (pageContext.route_id || pageContext.page_id) && (
               <div className="space-y-2.5">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Ask about this view, metric targets, score drivers, or authorized next steps:
-                </p>
                 <div className="flex flex-wrap gap-1.5" data-testid="contextual-assistant-starters">
-                  {starterPrompts.map((starter) => (
-                    <button
-                      key={starter}
-                      type="button"
-                      onClick={() => sendPrompt(starter)}
-                      className="cursor-pointer rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50/60 hover:text-blue-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
-                    >
-                      {starter}
-                    </button>
-                  ))}
+                  <button type="button" onClick={() => sendPrompt(starterPrompts[0])}
+                    className="rounded-xl border border-slate-200 px-2.5 py-1.5 text-left text-xs font-semibold">
+                    {starterPrompts[0]}
+                  </button>
+                  <button type="button" aria-label="Dismiss page suggestion"
+                    onClick={() => setDismissedHintPage(pageContext.route_id || pageContext.page_id)}
+                    className="rounded-xl px-2 text-xs text-slate-600">Dismiss</button>
                 </div>
               </div>
             )}
@@ -1014,6 +1025,8 @@ export function ContextualAssistantPanel({
             {turns.map((turn, idx) => {
               const res = turn.response;
               const proposal = res?.action_proposal ?? null;
+              const answerText = res ? getAnswerText(res) : null;
+              const primaryEvidence = res?.visual_cards?.find((card) => card.card_type !== 'decision_playbook');
               const isReviewingThisProposal =
                 activeProposalTurnId === turn.id && proposal && reviewDraft;
               const evaluatedRecordsCount = (res?.tool_calls ?? []).reduce(
@@ -1025,27 +1038,22 @@ export function ContextualAssistantPanel({
                 <div
                   key={turn.id}
                   data-testid="contextual-assistant-turn"
-                  className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/60"
+                  className="space-y-3 border-b border-slate-100 pb-4 last:border-b-0 dark:border-slate-800"
                 >
                   {/* User question */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <div className="flex justify-end">
+                    <span className="max-w-[88%] whitespace-pre-wrap break-words rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium text-slate-900 dark:bg-slate-800 dark:text-slate-100">
                       {turn.prompt}
                     </span>
                   </div>
 
-                  {/* Structured 3-bar skeleton loader */}
                   {turn.loading && (
-                    <div
-                      role="status"
-                      aria-label="Loading assistant answer"
-                      className="space-y-2 py-1.5"
-                    >
-                      <div className="h-3 w-3/4 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
-                      <div className="h-3 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
-                      <div className="h-3 w-5/6 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
-                      <span className="sr-only">Verifying authorized PMS evidence…</span>
-                    </div>
+                    <AiThinkingProgressCard compact onStop={() => {
+                      abortControllerRef.current?.abort();
+                      abortControllerRef.current = null;
+                      setTurns((previous) => previous.filter((item) => item.id !== turn.id));
+                      setInput(turn.prompt);
+                    }} />
                   )}
 
                   {/* Error */}
@@ -1059,8 +1067,8 @@ export function ContextualAssistantPanel({
                   )}
 
                   {/* Response payload */}
-                  {res && (
-                    <div className="space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
+                  {res && answerText && (
+                    <div className="ai-answer-enter space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
                       {/* Effective context chip per response */}
                       {(res.effective_context_label || res.scope_banner) && (
                         <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -1073,38 +1081,35 @@ export function ContextualAssistantPanel({
                       {/* 1-2 sentence direct answer */}
                       <p
                         data-testid="contextual-assistant-direct-answer"
-                        className="text-sm font-bold leading-relaxed text-slate-900 dark:text-slate-100"
+                        className="text-sm font-medium leading-relaxed text-slate-900 dark:text-slate-100"
                       >
-                        {formatManagerReadableText(res.headline)}
+                        {answerText.headline}
                       </p>
 
                       {/* Compact Executive KPI Summary Tiles */}
                       <ExecutiveKpiStrip tiles={res.summary_tiles ?? []} compact />
 
                       {/* Supporting Narrative Bullets (up to 3) */}
-                      {res.narrative_bullets && res.narrative_bullets.length > 0 && (
+                      {answerText.bullets.length > 0 && (
                         <ul
                           data-testid="contextual-assistant-bullets"
-                          className="space-y-1.5 rounded-xl border border-slate-200/80 bg-white/95 px-3 py-2.5 text-sm leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
+                          className="space-y-1 text-sm leading-relaxed text-slate-700 dark:text-slate-200"
                         >
-                          {res.narrative_bullets.slice(0, 3).map((bullet, bIdx) => (
+                          {answerText.bullets.slice(0, 3).map((bullet, bIdx) => (
                             <li key={bIdx} className="flex items-start gap-2">
                               <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-                              <span>{formatManagerReadableText(bullet)}</span>
+                              <span>{bullet}</span>
                             </li>
                           ))}
                         </ul>
                       )}
 
-                      {/* Primary Inline Visual Evidence (Chart / Bars / Table) */}
-                      {res.visual_cards &&
-                        res.visual_cards.filter((c) => c.card_type !== 'decision_playbook')[0] && (
-                          <VisualEvidenceCard
-                            card={
-                              res.visual_cards.filter((c) => c.card_type !== 'decision_playbook')[0]
-                            }
-                          />
-                        )}
+                      {primaryEvidence && (
+                        <details className="rounded-lg border border-slate-200 p-2 dark:border-slate-800">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200">View evidence</summary>
+                          <div className="mt-2"><VisualEvidenceCard card={primaryEvidence} /></div>
+                        </details>
+                      )}
 
                       {/* Material basis warning */}
                       {res.basis_warning && (
@@ -1365,13 +1370,13 @@ export function ContextualAssistantPanel({
                         </div>
                       )}
 
-                      {/* Up to 3 Suggested Follow-Ups */}
+                      {/* One optional next step keeps the side panel compact. */}
                       {res.suggested_followups && res.suggested_followups.length > 0 && (
                         <div
                           data-testid="contextual-assistant-followups"
                           className="flex flex-wrap gap-1.5 pt-0.5"
                         >
-                          {res.suggested_followups.slice(0, 3).map((followup) => (
+                          {res.suggested_followups.slice(0, 1).map((followup) => (
                             <button
                               key={followup}
                               type="button"
@@ -1388,9 +1393,12 @@ export function ContextualAssistantPanel({
                       {/* Different Angle + Useful / Not Useful Feedback */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2 dark:border-slate-800">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-medium text-slate-400">
-                            Verified PMS Service · {evaluatedRecordsCount} records
-                          </span>
+                          {res.outcome === 'answer' && (
+                            <CompactAnswerCopy text={formatAnswerForClipboard(answerText.headline, answerText.bullets.slice(0, 3))} />
+                          )}
+                          {evaluatedRecordsCount > 0 && (
+                            <span className="text-xs text-slate-500">{evaluatedRecordsCount} evaluated</span>
+                          )}
                           <button
                             type="button"
                             data-testid={`rephrase-turn-${idx}`}
@@ -1495,14 +1503,14 @@ export function ContextualAssistantPanel({
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about this page, KPIs, or next steps…"
+                placeholder="Ask about this page…"
                 aria-label="Ask PMS Contextual Assistant"
                 data-testid="contextual-assistant-input"
-                className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!input.trim() || turns.some((turn) => turn.loading)}
                 aria-label="Send question"
                 data-testid="contextual-assistant-send"
                 className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
@@ -1577,7 +1585,8 @@ export function ContextualAssistantPanel({
           )}
         </section>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

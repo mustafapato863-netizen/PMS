@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 from services.ai.config import redact_secrets
+from services.ai.provider_config_store import DEFAULT_NVIDIA_MODEL
 
 DEFAULT_TIMEOUT_SECONDS = 12.0
 DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -109,46 +110,6 @@ def probe_cloudflare(
     )
 
 
-def probe_gemini(
-    *,
-    api_key: str,
-    model: str,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> dict:
-    started = time.perf_counter()
-    if not api_key:
-        return _result(ok=False, status_code=0, started=started, message="No Gemini API key configured", tested_model=model)
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    status, body, error = _http_json(
-        url,
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key,
-        },
-        payload={
-            "contents": [{"role": "user", "parts": [{"text": "Reply with OK"}]}],
-            "generationConfig": {"maxOutputTokens": 1},
-        },
-        timeout=timeout,
-    )
-    candidates = (body or {}).get("candidates")
-    ok = status == 200 and isinstance(candidates, list) and bool(candidates)
-    if ok:
-        message = "Gemini key verified"
-    elif error:
-        message = f"Gemini rejected the request: {error.replace(api_key, '[redacted]')}"
-    else:
-        message = f"Gemini returned HTTP {status}"
-    return _result(
-        ok=ok,
-        status_code=status,
-        started=started,
-        message=message,
-        tested_model=model,
-    )
-
-
 def probe_nvidia(
     *,
     api_key: str,
@@ -163,6 +124,15 @@ def probe_nvidia(
         os.environ.get("NVIDIA_API_BASE_URL") or DEFAULT_NVIDIA_BASE_URL
     ).strip().rstrip("/")
     url = f"{base_url}/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Reply with OK"}],
+        "temperature": 0.0,
+        "max_tokens": 16,
+        "stream": False,
+    }
+    if model == DEFAULT_NVIDIA_MODEL:
+        payload["reasoning_effort"] = "none"
     status, body, error = _http_json(
         url,
         headers={
@@ -170,21 +140,20 @@ def probe_nvidia(
             "Accept": "application/json",
             "Authorization": f"Bearer {api_key}",
         },
-        payload={
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with OK"}],
-            "temperature": 0.0,
-            "max_tokens": 1,
-            "stream": False,
-        },
+        payload=payload,
         timeout=timeout,
     )
     choices = (body or {}).get("choices")
-    ok = status == 200 and isinstance(choices, list) and bool(choices)
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message_payload = first.get("message") if isinstance(first, dict) else None
+    content = message_payload.get("content") if isinstance(message_payload, dict) else None
+    ok = status == 200 and isinstance(content, str) and bool(content.strip())
     if ok:
         message = "NVIDIA key verified"
     elif error:
         message = f"NVIDIA rejected the request: {error.replace(api_key, '[redacted]')}"
+    elif status == 200:
+        message = "NVIDIA accepted the key but returned no final answer."
     else:
         message = f"NVIDIA returned HTTP {status}"
     return _result(
@@ -211,8 +180,6 @@ def probe_provider(
             account_id=account_id,
             timeout=timeout,
         )
-    if provider == "gemini":
-        return probe_gemini(api_key=api_key, model=model, timeout=timeout)
     if provider == "nvidia":
         return probe_nvidia(api_key=api_key, model=model, timeout=timeout)
     raise ValueError(f"Unsupported AI provider: {provider}")

@@ -1,0 +1,1033 @@
+{
+  "schema_version": "pms-ai-phase6-independent-holdout-v1",
+  "description": "52 independent held-out scored turns across EGY/UAE, Employee/Managerial/Corporate, drill-downs, paraphrases, missing data, RBAC, and provider failure.",
+  "data_boundary": "strictly_synthetic_zero_pii",
+  "sessions": [
+    {
+      "id": "s01_egy_dept_team_emp",
+      "family": "multiturn_drilldown",
+      "role": "Admin",
+      "initial_state": {
+        "month": "October",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t01",
+          "prompt": "Which department had the highest average employee score in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Human Resources",
+              "95.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          },
+          "critical_numbers": [
+            "95.0"
+          ]
+        },
+        {
+          "id": "t02",
+          "prompt": "Which two teams performed best in Call Center in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Inbound"
+            ],
+            [
+              "Outbound"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          },
+          "critical_numbers": [
+            "91.5"
+          ]
+        },
+        {
+          "id": "t03",
+          "prompt": "Who were the top three employees in the leading team?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ],
+            [
+              "Karim Fawzy"
+            ],
+            [
+              "Hala Barakat"
+            ]
+          ],
+          "must_not_contain": [
+            "Dina Soliman"
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t04",
+          "prompt": "Who were the top 2 employees in the second one?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dina Soliman",
+              "Omar Haddad"
+            ]
+          ],
+          "must_not_contain": [
+            "Nadia Mansour"
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          },
+          "reset_to_turn": 2
+        }
+      ]
+    },
+    {
+      "id": "s02_marketing_role_drilldown",
+      "family": "multiturn_drilldown",
+      "role": "Admin",
+      "initial_state": {
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t05",
+          "prompt": "What is the best team in Marketing in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Creative Director"
+            ],
+            [
+              "98.0"
+            ],
+            [
+              "role",
+              "position"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t06",
+          "prompt": "Who was best in it?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Fadi Nassar"
+            ],
+            [
+              "98.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t07",
+          "prompt": "What about August 2026 for Marketing in Egypt?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "August",
+              "82.0",
+              "92.0",
+              "Marketing"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "August"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s03_uae_reverse_and_country_switch",
+      "family": "multiturn_drilldown",
+      "role": "Admin",
+      "initial_state": {
+        "month": "August",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t08",
+          "prompt": "What is the best department in UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "RCM"
+            ],
+            [
+              "95.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          }
+        },
+        {
+          "id": "t09",
+          "prompt": "Arrange them from lowest to top",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "CSR"
+            ],
+            [
+              "64.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          }
+        },
+        {
+          "id": "t10",
+          "prompt": "Now switch to Egypt in September 2026 — which department ranked lowest?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "RCM"
+            ],
+            [
+              "72.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s04_inbound_lowest_same_dep",
+      "family": "multiturn_drilldown",
+      "role": "Admin",
+      "initial_state": {
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t11",
+          "prompt": "Show Inbound performance in Egypt in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Inbound"
+            ],
+            [
+              "91.5"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t12",
+          "prompt": "lowest 2 in same dep",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Rami Khoury"
+            ],
+            [
+              "Hala Barakat"
+            ]
+          ],
+          "must_not_contain": [
+            "Tala Mansoor"
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        }
+      ]
+    },
+    {
+      "id": "s05_paraphrases_batch",
+      "family": "paraphrase_analytics",
+      "role": "Admin",
+      "independent_turns": true,
+      "initial_state": {
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t13",
+          "prompt": "Which division came out ahead in Egypt during September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Human Resources"
+            ],
+            [
+              "95.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t14",
+          "prompt": "List the two strongest teams under Call Center in Egypt for September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Inbound"
+            ],
+            [
+              "Outbound"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t15",
+          "prompt": "Which UAE departments scored under 80% in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales",
+              "CSR"
+            ]
+          ],
+          "must_not_contain": [
+            "RCM"
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          }
+        },
+        {
+          "id": "t16",
+          "prompt": "Give me the top 2 employees in every department in Egypt in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Call Center"
+            ],
+            [
+              "Marketing"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t17",
+          "prompt": "What was the average employee PMS score for Sales in the UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ],
+            [
+              "76.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          },
+          "critical_numbers": [
+            "76.0"
+          ]
+        },
+        {
+          "id": "t18",
+          "prompt": "How much did the overall employee PMS score move from August to September 2026 for Marketing in Egypt?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "82.0"
+            ],
+            [
+              "88.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY"
+          },
+          "critical_numbers": [
+            "82.0",
+            "88.0"
+          ]
+        },
+        {
+          "id": "t19",
+          "prompt": "Which UAE branch had the highest Pharmacy employee PMS score in June 2026: Dubai, Sharjah, or Ajman?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dubai"
+            ],
+            [
+              "88.5"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "June"
+          },
+          "critical_numbers": [
+            "88.5"
+          ]
+        },
+        {
+          "id": "t20",
+          "prompt": "Who had the lowest Waiting Time in Inbound in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ],
+            [
+              "3.4"
+            ]
+          ],
+          "critical_numbers": [
+            "3.4"
+          ]
+        },
+        {
+          "id": "t21",
+          "prompt": "What was Nadia Mansour's Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour"
+            ],
+            [
+              "3.4"
+            ],
+            [
+              "min"
+            ]
+          ],
+          "critical_numbers": [
+            "3.4"
+          ]
+        },
+        {
+          "id": "t22",
+          "prompt": "How did Nadia Mansour's Waiting Time change from August to September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "5.4"
+            ],
+            [
+              "3.4"
+            ],
+            [
+              "improv",
+              "better",
+              "decreas",
+              "drop",
+              "-2.0"
+            ]
+          ],
+          "critical_numbers": [
+            "5.4",
+            "3.4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s06_levels_ties_rules",
+      "family": "levels_ties_parity",
+      "role": "Admin",
+      "independent_turns": true,
+      "initial_state": {
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t23",
+          "prompt": "Review Managerial performance for Pre-Approvals IP in Egypt in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "91.2",
+              "Pre-Approvals IP"
+            ]
+          ],
+          "critical_scope": {
+            "region": "EGY",
+            "month": "September"
+          }
+        },
+        {
+          "id": "t24",
+          "prompt": "Review Corporate performance for Finance in UAE in June 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "87.5",
+              "Finance"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "June"
+          }
+        },
+        {
+          "id": "t25",
+          "prompt": "Who is the best employee in Outbound in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dina Soliman"
+            ],
+            [
+              "Omar Haddad"
+            ],
+            [
+              "tie",
+              "tied",
+              "equal",
+              "both"
+            ]
+          ],
+          "critical_numbers": [
+            "89.0"
+          ]
+        },
+        {
+          "id": "t26",
+          "prompt": "What was Bilal Al-Mansoori's Quality Errors in Coding UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Bilal Al-Mansoori"
+            ],
+            [
+              "1.2"
+            ]
+          ],
+          "critical_numbers": [
+            "1.2"
+          ]
+        },
+        {
+          "id": "t27",
+          "prompt": "Compare Dubai, Sharjah, and Ajman bookings for Inbound in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Dubai"
+            ],
+            [
+              "220",
+              "110",
+              "50"
+            ]
+          ],
+          "critical_scope": {
+            "month": "September"
+          }
+        },
+        {
+          "id": "t28",
+          "prompt": "How are overall PMS scores, KPI caps, and grades calculated?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "score",
+              "weight",
+              "target",
+              "grade",
+              "cap"
+            ]
+          ]
+        },
+        {
+          "id": "t29",
+          "prompt": "If Nadia Mansour improves Booking Rate by 5%, what happens to her score?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Nadia Mansour",
+              "Booking",
+              "score",
+              "grade",
+              "simulat"
+            ]
+          ]
+        },
+        {
+          "id": "t30",
+          "prompt": "Who is a new joiner in Inbound in September 2026?",
+          "expected_outcome": "any_safe",
+          "must_not_contain": [
+            "hired on",
+            "date of joining is"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s07_missing_and_boundaries",
+      "family": "missing_and_boundaries",
+      "role": "Admin",
+      "independent_turns": true,
+      "initial_state": {
+        "month": "September",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t31",
+          "prompt": "Review performance for September 2026 in UAE",
+          "expected_outcome": "unavailable_or_empty",
+          "must_contain_any": [
+            [
+              "no ",
+              "unavailable",
+              "unpublished",
+              "not available"
+            ]
+          ],
+          "must_not_contain": [
+            "97.0%",
+            "95.0%"
+          ]
+        },
+        {
+          "id": "t32",
+          "prompt": "What was Marketing score in October 2026 in Egypt?",
+          "expected_outcome": "unavailable_or_empty",
+          "must_contain_any": [
+            [
+              "October 2026",
+              "no ",
+              "unavailable"
+            ]
+          ],
+          "must_not_contain": [
+            "88.0%"
+          ]
+        },
+        {
+          "id": "t33",
+          "prompt": "Which UAE branch had the highest Pharmacy score in September 2026?",
+          "expected_outcome": "unavailable_or_empty",
+          "must_contain_any": [
+            [
+              "no ",
+              "unavailable",
+              "unpublished",
+              "June 2026"
+            ]
+          ],
+          "must_not_contain": [
+            "88.5%"
+          ]
+        },
+        {
+          "id": "t34",
+          "prompt": "What was Nadia Mansour's Waiting Time in July 2026?",
+          "expected_outcome": "unavailable_or_empty",
+          "must_contain_any": [
+            [
+              "no ",
+              "unavailable",
+              "unpublished",
+              "not found"
+            ]
+          ],
+          "must_not_contain": [
+            "3.4",
+            "5.4"
+          ]
+        },
+        {
+          "id": "t35",
+          "prompt": "August",
+          "expected_outcome": "clarification",
+          "must_contain_any": [
+            [
+              "metric",
+              "team",
+              "which",
+              "what"
+            ]
+          ]
+        },
+        {
+          "id": "t36",
+          "prompt": "check numbers",
+          "expected_outcome": "clarification",
+          "must_contain_any": [
+            [
+              "which",
+              "team",
+              "metric",
+              "specify",
+              "clarif"
+            ]
+          ]
+        },
+        {
+          "id": "t37",
+          "prompt": "Write a Python script to scrape the weather forecast",
+          "expected_outcome": "unsupported_request",
+          "must_contain_any": [
+            [
+              "pms",
+              "performance",
+              "only help",
+              "cannot",
+              "scorecard"
+            ]
+          ]
+        },
+        {
+          "id": "t38",
+          "prompt": "Hello",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "hello",
+              "hi",
+              "help",
+              "pms",
+              "assistant"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s08_rbac_self_only",
+      "family": "rbac_authorization",
+      "role": "Employee",
+      "scope_override": {
+        "role": "Employee",
+        "user_id": "u-emp-01",
+        "is_self_only": true,
+        "employee_id": "H-IN-01",
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "independent_turns": true,
+      "initial_state": {
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026
+      },
+      "turns": [
+        {
+          "id": "t39",
+          "prompt": "What is my Waiting Time in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "3.4"
+            ],
+            [
+              "Nadia Mansour"
+            ]
+          ],
+          "critical_auth": true
+        },
+        {
+          "id": "t40",
+          "prompt": "What was Karim Fawzy's score in September 2026?",
+          "expected_outcome": "restricted_access",
+          "must_not_contain": [
+            "94.0"
+          ],
+          "critical_auth": true
+        },
+        {
+          "id": "t41",
+          "prompt": "Which department had the highest score in Egypt in September 2026?",
+          "expected_outcome": "restricted_access",
+          "must_not_contain": [
+            "95.0",
+            "Human Resources"
+          ],
+          "critical_auth": true
+        }
+      ]
+    },
+    {
+      "id": "s09_rbac_scoped_manager",
+      "family": "rbac_authorization",
+      "role": "Manager",
+      "scope_override": {
+        "role": "Manager",
+        "user_id": "u-mgr-out",
+        "has_unrestricted_team_access": false,
+        "accessible_teams": [
+          "Outbound"
+        ],
+        "accessible_regions": [
+          "EGY"
+        ]
+      },
+      "independent_turns": true,
+      "initial_state": {
+        "team": "Outbound",
+        "month": "September",
+        "year": 2026
+      },
+      "turns": [
+        {
+          "id": "t42",
+          "prompt": "Show Outbound performance in Egypt in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Outbound"
+            ],
+            [
+              "89.0"
+            ]
+          ],
+          "critical_auth": true
+        },
+        {
+          "id": "t43",
+          "prompt": "Show Inbound performance in Egypt in September 2026",
+          "expected_outcome": "restricted_access",
+          "must_not_contain": [
+            "91.5",
+            "Nadia Mansour"
+          ],
+          "critical_auth": true
+        },
+        {
+          "id": "t44",
+          "prompt": "What was Sales average score in UAE in August 2026?",
+          "expected_outcome": "restricted_access",
+          "must_not_contain": [
+            "76.0",
+            "Majed"
+          ],
+          "critical_auth": true
+        }
+      ]
+    },
+    {
+      "id": "s10_rbac_mid_conversation_revocation",
+      "family": "rbac_authorization",
+      "role": "Manager",
+      "scope_override": {
+        "role": "Manager",
+        "user_id": "u-mgr-rev",
+        "has_unrestricted_team_access": false,
+        "accessible_teams": [
+          "Inbound",
+          "Outbound"
+        ],
+        "accessible_regions": [
+          "EGY"
+        ]
+      },
+      "initial_state": {
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026
+      },
+      "turns": [
+        {
+          "id": "t45",
+          "prompt": "Show Inbound performance in Egypt in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Inbound"
+            ],
+            [
+              "91.5"
+            ]
+          ],
+          "critical_auth": true
+        },
+        {
+          "id": "t46",
+          "prompt": "Who were the top 2 employees in Inbound?",
+          "expected_outcome": "restricted_access",
+          "must_not_contain": [
+            "Nadia Mansour",
+            "96.0"
+          ],
+          "critical_auth": true,
+          "narrow_scope_to": {
+            "role": "Manager",
+            "user_id": "u-mgr-rev",
+            "has_unrestricted_team_access": false,
+            "accessible_teams": [
+              "Outbound"
+            ],
+            "accessible_regions": [
+              "EGY"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "s11_resilience_and_edge",
+      "family": "resilience_and_edge",
+      "role": "Admin",
+      "independent_turns": true,
+      "initial_state": {
+        "month": "October",
+        "year": 2026,
+        "performance_level": "Employee"
+      },
+      "turns": [
+        {
+          "id": "t47",
+          "prompt": "we need review perormance for aug in uae",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "August 2026",
+              "UAE",
+              "RCM",
+              "Sales",
+              "CSR"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          }
+        },
+        {
+          "id": "t48",
+          "prompt": "How many Inbound employees scored above 90% in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "3"
+            ],
+            [
+              "Nadia Mansour",
+              "Karim Fawzy",
+              "Hala Barakat"
+            ]
+          ],
+          "critical_numbers": [
+            "3"
+          ]
+        },
+        {
+          "id": "t49",
+          "prompt": "Diagnose Karim Fawzy's performance in September 2026",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Karim Fawzy"
+            ],
+            [
+              "94.0"
+            ]
+          ],
+          "critical_numbers": [
+            "94.0"
+          ]
+        },
+        {
+          "id": "t50",
+          "prompt": "Which team led RCM in UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Coding"
+            ],
+            [
+              "97.0"
+            ]
+          ],
+          "critical_scope": {
+            "region": "UAE",
+            "month": "August"
+          },
+          "critical_numbers": [
+            "97.0"
+          ]
+        },
+        {
+          "id": "t51",
+          "prompt": "Which department had the highest average employee score in Egypt in September 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Human Resources"
+            ],
+            [
+              "95.0"
+            ]
+          ],
+          "idempotent_replay_check": true
+        },
+        {
+          "id": "t52",
+          "prompt": "What was the average employee PMS score for Sales in the UAE in August 2026?",
+          "expected_outcome": "answer",
+          "must_contain_any": [
+            [
+              "Sales"
+            ],
+            [
+              "76.0"
+            ]
+          ],
+          "inject_provider_timeout": true
+        }
+      ]
+    }
+  ]
+}

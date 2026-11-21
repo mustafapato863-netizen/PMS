@@ -1,4 +1,4 @@
-"""Optional intent suggestions from the configured AI provider (Cloudflare primary, Gemini fallback).
+"""Optional intent suggestions from the configured AI provider (NVIDIA primary, Cloudflare fallback).
 
 PMS remains the source of facts. The model may only return one allowed intent.
 """
@@ -118,12 +118,12 @@ class LocalIntentResult:
 
 def _fallback_provider_name() -> str:
     name = active_provider_name()
-    return name if name in ("cloudflare", "gemini") else "cloudflare"
+    return name if name in ("cloudflare", "nvidia") else "cloudflare"
 
 
 def _resolve_provider(name: str | None) -> str:
-    """``provider`` is always exactly ``cloudflare`` or ``gemini``."""
-    return name if name in ("cloudflare", "gemini") else _fallback_provider_name()
+    """``provider`` is always exactly ``cloudflare`` or ``nvidia``."""
+    return name if name in ("cloudflare", "nvidia") else _fallback_provider_name()
 
 
 def build_intent_json_schema() -> dict[str, object]:
@@ -231,6 +231,7 @@ def suggest_intent(
         max_tokens=32,
         timeout_seconds=routing_timeout_seconds(),
         purpose="intent",
+        task_role="routine",
         user_id=user_id,
         user_role=user_role,
     )

@@ -22,6 +22,8 @@ from models.ai_schemas import (
     AiApprovedPatternListResponse,
     AiApprovePatternRequest,
     AiApprovePatternResponse,
+    AiPatternPreviewResponse,
+    AiPreviewPatternRequest,
     AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
@@ -55,8 +57,10 @@ from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
 from services.ai.approved_patterns import ApprovedPatternMatcher
 from services.ai.feedback_service import FeedbackGovernanceService, FeedbackIdempotencyConflictError
+from services.ai.shared_feedback_learning import shared_learning_families
 from services.ai.nemotron_analyzer import NemotronFeedbackAnalyzerService, get_analyzer_status
 from services.ai.llm_client import (
+    configured_providers,
     get_recent_fallback_reason,
     local_exploration_enabled,
     local_intent_enabled,
@@ -236,22 +240,43 @@ def verify_ai_live(
         _live_verify_in_flight = True
 
     try:
-        import scripts.verify_cloudflare_ai as verify_module
+        from services.ai.provider_engine import load_unified_provider_config
+        from services.ai.provider_probe import probe_nvidia
+
         try:
             total_timeout = float(os.environ.get("PMS_AI_LIVE_VERIFY_TIMEOUT_SECONDS", "5.0"))
             if not (0 < total_timeout <= 5.0):
                 raise ValueError("Total deadline must be between 0 and 5 seconds")
         except ValueError:
             raise HTTPException(status_code=503, detail="Invalid live verification timeout configuration") from None
-        live_result = verify_module.run_live_verification(timeout=total_timeout)
-        record_live_verification(live_result)
+        config = load_unified_provider_config()
+        providers = configured_providers(config)
+        active_provider = providers[0] if providers else config.effective_primary_provider
+        if active_provider == "nvidia":
+            probe = probe_nvidia(
+                api_key=config.nvidia_api_key, model=config.nvidia_model, timeout=total_timeout
+            )
+            live_result = {
+                "verified": probe["ok"], "provider": "nvidia", "model": config.nvidia_model,
+                "total_latency_ms": probe["latency_ms"],
+                "error": None if probe["ok"] else probe["message"],
+            }
+        else:
+            from scripts.verify_cloudflare_ai import run_live_verification
+            live_result = run_live_verification(
+                account_id=config.cloudflare_account_id,
+                api_token=config.cloudflare_api_token,
+                model=config.cloudflare_model,
+                timeout=total_timeout,
+            )
+        record_live_verification(live_result, config)
         payload = build_ai_diagnostics_payload(db)
         release_read_transaction(db)
         success = bool(live_result.get("verified"))
         msg = (
-            "Live Cloudflare AI verification succeeded"
+            "Live AI verification succeeded"
             if success
-            else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
+            else f"Live AI verification failed: {live_result.get('error') or 'check details'}"
         )
         return AiDiagnosticsResponse(success=success, message=msg, data=payload)
     finally:
@@ -686,6 +711,7 @@ def post_ai_trace_review(
             caller_role=caller_role,
             notes=body.notes,
             proposed_action=body.proposed_action,
+            replay_trace_id=body.replay_trace_id,
             ip_address=client_host,
             request_id=req_id,
         )
@@ -695,10 +721,22 @@ def post_ai_trace_review(
     except FeedbackIdempotencyConflictError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if result is None:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
     return result
+
+
+@admin_governance_router.get("/feedback/quality")
+def get_feedback_quality(db: Session = Depends(get_db)):
+    from services.ai.quality_summary import sampled_quality
+
+    payload = sampled_quality(db)
+    release_read_transaction(db)
+    return payload
 
 
 @admin_governance_router.get("/feedback/clusters", response_model=AiFeedbackClustersResponse)
@@ -723,6 +761,7 @@ def get_ai_feedback_clusters(
             page=page,
             page_size=page_size,
         )
+        payload.shared_learning = shared_learning_families(db)
     except PermissionError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -825,6 +864,27 @@ def get_ai_approved_patterns(
     patterns = ApprovedPatternMatcher(db).list_patterns(active_only=not include_inactive)
     release_read_transaction(db)
     return AiApprovedPatternListResponse(success=True, patterns=patterns)
+
+
+@admin_governance_router.post("/traces/{trace_id}/preview-pattern", response_model=AiPatternPreviewResponse)
+def post_preview_ai_pattern(
+    trace_id: str,
+    body: AiPreviewPatternRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiPatternPreviewResponse:
+    scope = require_authenticated_scope(db, request)
+    try:
+        return ApprovedPatternMatcher(db).preview_pattern(trace_id=trace_id, payload=body, scope=scope)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    finally:
+        release_read_transaction(db)
 
 
 @admin_governance_router.post("/traces/{trace_id}/approve-pattern", response_model=AiApprovePatternResponse)
@@ -1075,7 +1135,7 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
 
     model_up = bool(model_health.get("available"))
     active_provider = str(model_health.get("active_provider") or "deterministic")
-    if active_provider not in ("cloudflare", "gemini"):
+    if active_provider not in ("cloudflare", "nvidia"):
         active_provider = "cloudflare"
     intent_on = local_intent_enabled()
     synthesis_on = local_synthesis_enabled()

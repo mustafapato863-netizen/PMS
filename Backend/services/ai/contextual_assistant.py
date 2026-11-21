@@ -18,7 +18,10 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlencode
 from typing import Any
+
+from utils.months import month_number
 
 from sqlalchemy.orm import Session
 
@@ -412,7 +415,7 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
                 resolved_metric_display = raw_m.split(":")[-1].replace("_", " ").title()
         else:
             m_def = cat.find_metric_definition(
-                team=ss.team or "Inbound",
+                team=ss.team,
                 position=ss.position,
                 kpi_key_or_label=raw_m,
                 performance_level=ss.performance_level or "Employee",
@@ -546,6 +549,15 @@ _PAGE_HELP_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bhow\s+are\s+scores?\s+calculated\s+on\s+this\s+(?:page|view|dashboard)\b", re.I),
 )
 
+_EVALUATION_NAV = re.compile(
+    r"\b(?:where|how|take me|open|navigate)\b.*?\b(?:change|edit|update|adjust|manage|configure|settings?)\b.*?\b(?:targets?|weights?)\b"
+    r"|\b(?:where|how|open|navigate)\b.*?\bevaluation settings\b", re.I,
+)
+
+_SCORING_GUIDE = re.compile(
+    r"\bhow\s+(?:are|does|do|is)\b.{0,80}\b(?:scores?|scoring|grades?|caps?)\b.{0,60}\b(?:calculated|calculation|work|determined)\b", re.I,
+)
+
 _NAVIGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:how\s+do\s+i\s+find|where\s+can\s+i\s+(?:find|see|view|open|check)|where\s+do\s+i\s+go|where\s+can\s+i\s+go|where\s+is|where\s+are)\b.*\b(?:scorecards?|profiles?|corrective\s+actions?|action\s+plans?|balanced\s+scorecard|bsc|monthly\s+presentation|monthly\s+review|presentation|team\s+dashboard|executive\s+summary|insights|uploads?|settings|users)\b", re.I),
     re.compile(r"\b(?:take\s+me\s+to|navigate\s+to|go\s+to|open)\s+(?:the\s+)?(?:my\s+scorecard|employee\s+scorecard|agent\s+scorecards?|corrective\s+actions?|balanced\s+scorecard|monthly\s+presentation|monthly\s+review|team\s+dashboard|executive\s+summary|insights|uploads?|settings)\b", re.I),
@@ -640,15 +652,22 @@ def detect_contextual_capability(
     lower = prompt.casefold()
     if is_explain_previous_prompt(prompt):
         return "explain_previous", "local_rules", 0.0
-
-    # Phase 2: Pilot flag check - if enabled, skip lexical gates and route to model
-    from services.ai.config import get_ai_runtime_config
-    config = get_ai_runtime_config()
-    if config.model_led_pilot_enabled:
-        return "performance_query", "model_led_pilot", 0.0
-
     if is_greeting_or_thanks_prompt(prompt) is not None:
         return "greeting", "local_rules", 0.0
+    if is_capabilities_help_prompt(prompt):
+        return "capabilities_help", "local_rules", 0.0
+
+    from services.ai.domain_policies import is_ranked_action_request
+
+    if is_ranked_action_request(prompt):
+        return "proposal", "local_rules", 0.0
+    if re.search(r"\b(?:summari[sz]e|list|show|count|how many)\b.*\bcorrective\s+actions?\b", lower):
+        return "performance_query", "local_rules", 0.0
+
+    if _EVALUATION_NAV.search(lower):
+        return "navigation", "local_rules", 0.0
+    if _SCORING_GUIDE.search(lower):
+        return "page_help", "local_rules", 0.0
 
     for pat in _PAGE_HELP_PATTERNS:
         if pat.search(lower):
@@ -658,8 +677,10 @@ def detect_contextual_capability(
         if pat.search(lower):
             return "navigation", "local_rules", 0.0
 
-    if is_capabilities_help_prompt(prompt):
-        return "capabilities_help", "local_rules", 0.0
+
+    from services.ai.config import get_ai_runtime_config
+    if get_ai_runtime_config().model_led_pilot_enabled:
+        return "performance_query", "model_led_pilot", 0.0
 
     if is_off_topic_prompt(prompt):
         return "off_topic", "local_rules", 0.0
@@ -777,6 +798,18 @@ def detect_contextual_capability(
 
     if _has_grounded_followup_context(req):
         return "performance_query", "local_rules", 0.0
+
+    # Admin model-led pilot: non-off-topic natural English questions bypass the
+    # rigid lexical keyword gate so the model-led planner can interpret unfamiliar
+    # phrasing, invoke discover_pms_catalog, or ask one focused clarification.
+    from services.ai.config import get_ai_runtime_config
+    _ai_cfg = get_ai_runtime_config()
+    if (
+        _ai_cfg.model_led_pilot_enabled
+        and (req.provider_override or "auto") != "deterministic"
+        and str((scope or {}).get("role") or "").strip() == "Admin"
+    ):
+        return "performance_query", "model_led_pilot", 0.0
 
     # Unrecognized prompt with zero PMS signals and zero grounded follow-up cues:
     # ask the configured intent classifier (with bounded context) once; never default to current_value.
@@ -1322,6 +1355,7 @@ def build_explain_previous_payload(
             json_schema=schema,
             timeout_seconds=synthesis_timeout_seconds(),
             purpose="explain_previous",
+            task_role="routine",
             user_id=str((scope or {}).get("user_id") or "") or None,
             user_role=str((scope or {}).get("role") or "") or None,
         )
@@ -1372,28 +1406,16 @@ def build_clarification_gate_payload(
     followups = _build_role_aware_starter_followups(scope, session_state)[:3]
     if is_self_only(scope):
         headline = "Which part of your scorecard or which KPI or month would you like me to inspect?"
-        bullets = [
-            "Specify a KPI, a published month, or ask for your overall performance summary.",
-        ]
-        return headline, bullets, followups
+        return headline, [], followups
     if is_bare_scope_or_period_refinement(prompt):
         token = (prompt or "").strip().rstrip("?.!")
         headline = f"What metric, team, or performance question would you like me to inspect for {token}?"
-        bullets = [
-            f"Specify what you want to see for {token}—such as a team score, KPI target, or overall overview.",
-        ]
-        return headline, bullets, followups
+        return headline, [], followups
     if provider_reason and provider_reason not in ("ok", "disabled"):
         headline = "I couldn't classify that request automatically right now. Could you specify which team, KPI, or period you'd like to inspect?"
-        bullets = [
-            "The intent classification provider is temporarily unavailable, so please name a specific team, metric, employee, or ask for an overall summary.",
-        ]
-        return headline, bullets, followups
+        return headline, [], followups
     headline = "Which team, KPI, person, or performance overview would you like me to inspect?"
-    bullets = [
-        "Specify a team, department, KPI, employee, or time period—or ask for an overall performance overview.",
-    ]
-    return headline, bullets, followups
+    return headline, [], followups
 
 
 def build_off_topic_gate_payload(
@@ -1419,17 +1441,27 @@ def get_authorized_navigation_targets(
     """Return role- and scope-filtered navigation destinations in PMS."""
     role = str(scope.get("role") or "Manager").strip()
     self_scoped = is_self_only(scope)
-    emp_id = str(scope.get("employee_id") or session_state.employee_id or "").strip()
-    team_name = session_state.team or "Inbound"
+    emp_id = str(scope.get("employee_id") or "").strip()
+    team_name = session_state.team or ""
     team_slug = team_name.casefold().replace(" ", "-")
-    period_qs = ""
-    if session_state.month and session_state.year:
-        period_qs = f"?month={session_state.month}&year={session_state.year}"
+    month = month_number(session_state.month)
+    filters = {}
+    if month and session_state.year:
+        filters["period"] = f"{session_state.year}-{month:02d}"
+    period_qs = "?" + urlencode(filters) if filters else ""
+    region = (session_state.region or "").casefold()
+    if region in {"egy", "egypt", "uae"}:
+        filters["region"] = "egy" if region == "egypt" else region
+    if session_state.function:
+        filters["deepDive"] = session_state.function.strip().lower().replace(" ", "-")
+    deck_qs = "?" + urlencode(filters) if filters else ""
 
     targets: list[AiNavigationTarget] = []
 
     if self_scoped:
-        scorecard_route = f"/employee/{emp_id}" if emp_id else f"/team/{team_slug}"
+        if not emp_id:
+            return []
+        scorecard_route = f"/employee/{emp_id}"
         targets.append(
             AiNavigationTarget(
                 id="nav-my-scorecard",
@@ -1460,7 +1492,7 @@ def get_authorized_navigation_targets(
                 if session_state.function
                 else "Open Monthly Presentation →"
             ),
-            route=f"/monthly-presentation{period_qs}",
+            route=f"/monthly-presentation{deck_qs}",
             description=(
                 "Executive deck showing monthly KPI achievement, UAE 4-branch conversion, and top/bottom contributors."
                 if is_uae_cc_nav
@@ -1469,15 +1501,16 @@ def get_authorized_navigation_targets(
             icon_key="presentation",
         )
     )
-    targets.append(
-        AiNavigationTarget(
-            id="nav-team-dashboard",
-            label=f"Open {team_name} Team Dashboard →",
-            route=f"/team/{team_slug}{period_qs}",
-            description=f"Inspect {team_name} employee scorecards, KPI breakdowns, grade distribution, and 6-month trends.",
-            icon_key="team",
+    if team_name and user_can_access_team_level(scope, team_name, session_state.performance_level or "Employee"):
+        targets.append(
+            AiNavigationTarget(
+                id="nav-team-dashboard",
+                label=f"Open {team_name} Team Dashboard →",
+                route=f"/team/{team_slug}{period_qs}",
+                description=f"Inspect {team_name} employee scorecards, KPI breakdowns, grade distribution, and 6-month trends.",
+                icon_key="team",
+            )
         )
-    )
     targets.append(
         AiNavigationTarget(
             id="nav-insights",
@@ -1536,6 +1569,17 @@ def build_page_help_payload(
     """Build curated, role-aware page explanation without reading employee performance rows."""
     page_id = normalize_page_id(req.page_context)
     role = str(scope.get("role") or "Manager").strip()
+    if _SCORING_GUIDE.search(req.prompt):
+        from config.loader import GLOBAL_KPI_ACHIEVEMENT_CAP
+        from utils.scoring_rules import GRADE_THRESHOLDS
+
+        headline = "PMS calculates a weighted score from the achievement of each scored KPI."
+        details = [
+            f"For ratio-based KPIs, direction determines whether PMS divides actual by target or target by actual. The standard achievement cap is {GLOBAL_KPI_ACHIEVEMENT_CAP:.0%}.",
+            "Grade thresholds are " + ", ".join(f"{grade} ≥ {limit:g}%" for grade, limit in GRADE_THRESHOLDS) + ". Lower scores receive E.",
+        ]
+        section = AiPageHelpSection(page_id=page_id, page_title="Scoring rules", summary=headline, key_elements=details)
+        return headline, details, section, [], [], None
     can_write_actions = can_user_write_corrective_action(
         scope,
         team=session_state.team,
@@ -1566,7 +1610,7 @@ def build_page_help_payload(
             cat.get_metric_by_id(lookup_key)
             if lookup_key and ":" in lookup_key
             else cat.find_metric_definition(
-                team=session_state.team or "Inbound",
+                team=session_state.team,
                 position=session_state.position,
                 kpi_key_or_label=lookup_key or "",
                 performance_level=session_state.performance_level or "Employee",
@@ -1910,30 +1954,41 @@ def build_navigation_payload(
     lower = (req.prompt or "").casefold()
     role = str(scope.get("role") or "Manager").strip()
     self_scoped = is_self_only(scope)
-    emp_id = str(scope.get("employee_id") or session_state.employee_id or "").strip()
     team_name = session_state.team or session_state.function or "your authorized scope"
-    team_slug = team_name.casefold().replace(" ", "-")
     targets = get_authorized_navigation_targets(scope, session_state)
     variant_idx = resolve_variation_index(req.prompt, req.history, req.variation_seed)
 
+    if _EVALUATION_NAV.search(lower):
+        if role not in SETTINGS_ADMIN_ROLES:
+            return "An admin can update monthly targets and weights in Evaluation settings.", [], [], []
+        month = month_number(session_state.month)
+        period = urlencode({"year": session_state.year, "month": month}) if session_state.year and month else ""
+        target = AiNavigationTarget(
+            id="nav-evaluation-settings", label="Open Evaluation settings",
+            route="/settings/evaluation" + ("?" + period if period else ""),
+            description="Select the evaluation scope and reporting month to review its targets and weights.",
+            icon_key="planning",
+        )
+        return "Open Evaluation settings, then select the team, level, and reporting month.", [], [target], []
+
     if any(k in lower for k in ("upload", "import", "excel", "workbook")):
-        if role in UPLOAD_WRITE_ROLES:
+        if role in SETTINGS_ADMIN_ROLES:
             upload_target = AiNavigationTarget(
                 id="nav-uploads",
                 label="Open Data Uploads →",
-                route="/uploads",
+                route="/settings/data",
                 description="Upload and validate monthly PMS performance workbooks.",
                 icon_key="planning",
             )
             return (
-                "You can upload and validate monthly PMS workbooks in Data Uploads (/uploads).",
-                ["Only Admin and authorized Manager accounts can upload performance workbooks."],
+                "Open Data uploads in Administration to upload and validate a monthly workbook.",
+                [],
                 [upload_target, *targets[:2]],
                 ["What does this page show?", f"What is {team_name} score in the latest period?"],
             )
         return (
-            f"Your role ({role}) has read-only analytics access and cannot upload workbooks.",
-            ["Workbook uploads are restricted to Admin and authorized Manager accounts."],
+            "Ask an admin to open Data uploads in Administration for this workbook.",
+            [],
             targets[:3],
             ["What does this page show?", "How do I find my scorecard?"],
         )
@@ -2011,12 +2066,10 @@ def build_navigation_payload(
                 targets,
                 ["What is my performance score?"],
             )
-        return (
-            f"You can view {team_name} employee scorecards in the {team_name} Team Dashboard (/team/{team_slug}) or click any employee row to open their individual profile.",
-            ["Use the Team Dashboard link below to browse authorized employee scorecards."],
-            [t for t in targets if t.id == "nav-team-dashboard"] + [t for t in targets if t.id != "nav-team-dashboard"][:2],
-            [f"Who is the lowest performer in {team_name}?", "What does this page show?"],
-        )
+        team_target = next((t for t in targets if t.id == "nav-team-dashboard"), None)
+        if team_target:
+            return f"Open {team_name}, then select an employee to see their scorecard.", [], [team_target], []
+        return "Choose a team you can access, then select an employee to see their scorecard.", [], [], []
 
     if variant_idx == 1:
         return (
@@ -2049,6 +2102,7 @@ def build_corrective_action_proposal_from_evidence(
     records: list[Any],
     selected_metric_id: str | None = None,
     primary_source_link: DeepLinkCta | None = None,
+    require_individual_evidence: bool = False,
 ) -> AiCorrectiveActionProposal | None:
     """Build an evidence-grounded corrective action proposal from verified PMS records and typed KPI evidence.
 
@@ -2061,14 +2115,29 @@ def build_corrective_action_proposal_from_evidence(
         session_state.team
         or (typed_evidence[0].team if typed_evidence else None)
         or (getattr(records[0], "team", None) if records else None)
-        or "Inbound"
     )
+    if not team_name:
+        return None
     fn_name = session_state.function or function_for_team(team_name)
     level = session_state.performance_level or (typed_evidence[0].performance_level if typed_evidence else "Employee")
     branch = session_state.branch if session_state.branch and session_state.branch.casefold() != "all" else None
-    month = session_state.month or (getattr(records[0], "month", "September") if records else "September")
-    year = int(session_state.year or (getattr(records[0], "year", 2026) if records else 2026))
+    periods = {item.period for item in typed_evidence if item.period}
+    periods.update(f"{r.month} {r.year}" for r in records if getattr(r, "month", None) and getattr(r, "year", None))
+    month, year = session_state.month, session_state.year
+    if not (month and year):
+        matching = [p.split() for p in periods if len(p.split()) == 2 and p.split()[1].isdigit()
+                    and (not month or p.split()[0] == month) and (not year or int(p.split()[1]) == year)]
+        if len(matching) != 1:
+            return None
+        month, year = matching[0][0], int(matching[0][1])
     period_label = f"{month} {year}"
+    if require_individual_evidence:
+        typed_evidence = [
+            item for item in typed_evidence
+            if item.employee_id == session_state.employee_id and item.period == period_label and item.actual is not None
+        ]
+        if not session_state.employee_id or not typed_evidence:
+            return None
 
     # Select target KPI evidence: prefer explicitly requested/selected metric, otherwise the scored metric with lowest achievement
     chosen_ev: TypedMetricEvidence | None = None
@@ -2086,7 +2155,7 @@ def build_corrective_action_proposal_from_evidence(
     if chosen_ev is None and typed_evidence:
         scored_evs = [e for e in typed_evidence if e.contributes_to_score and e.achievement_percent is not None]
         if scored_evs:
-            chosen_ev = min(scored_evs, key=lambda e: float(e.achievement_percent or 100.0))
+            chosen_ev = min(scored_evs, key=lambda e: float(e.achievement_percent))
         else:
             chosen_ev = typed_evidence[0]
 
@@ -2098,7 +2167,10 @@ def build_corrective_action_proposal_from_evidence(
         r for r in records
         if str(getattr(r, "team", "")).casefold() == team_name.casefold()
         and (not month or str(getattr(r, "month", "")).casefold() == month.casefold())
-    ] or list(records)
+        and getattr(r, "year", None) == year
+    ]
+    if not scoped_records and not require_individual_evidence:
+        scoped_records = list(records)
 
     if target_emp_id and scoped_records:
         for r in scoped_records:
@@ -2198,6 +2270,18 @@ def build_corrective_action_proposal_from_evidence(
         f"PMS Evidence ({period_label}): {metric_display} at {actual_display} vs. {target_display} target ({gap_display}). "
         f"{hypothesis}"
     )
+    if require_individual_evidence:
+        if not target_emp_name or not chosen_ev:
+            return None
+        sample_size = 1
+        observed_facts = [f"{target_emp_name} scored {actual_display} on {metric_display} in {period_label}."]
+        hypothesis = None
+        suggested_steps = [
+            f"Review {target_emp_name}'s lowest-scoring scorecard items and the related case samples with the supervisor.",
+            "Agree on one verified gap to coach, then review progress at the next scorecard check-in.",
+        ]
+        proposed_action_text = " ".join(suggested_steps)
+        proposed_root_cause_note = observed_facts[0] + " Review the case evidence to establish the cause."
 
     ev_rev = _current_evidence_revision(db)
     can_write = can_user_write_corrective_action(

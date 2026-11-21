@@ -320,10 +320,22 @@ def _sweep_stale_job_files() -> None:
         logger.info("Removed stale processing job files", extra={"count": len(removed)})
 
 
+def _run_feedback_maintenance() -> None:
+    from services.ai.learning_worker import run_feedback_tick
+
+    try:
+        with SessionLocal() as learning_db:
+            run_feedback_tick(learning_db)
+    except Exception:
+        logger.exception("Daily AI feedback analysis could not finish")
+
+
 def run_worker(*, once: bool = False) -> None:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     logger.info("Processing worker started", extra={"worker_id": worker_id})
     _sweep_stale_job_files()
+    next_learning_check = 0.0
+    learning_thread: threading.Thread | None = None
     while True:
         _run_optional_evaluation_tick(worker_id)
         db = SessionLocal()
@@ -338,9 +350,15 @@ def run_worker(*, once: bool = False) -> None:
 
         if job_id:
             process_job_once(job_id, worker_id)
-        elif once:
-            return
         else:
+            if not once and time.monotonic() >= next_learning_check:
+                next_learning_check = time.monotonic() + 600
+                from services.ai.learning_worker import learning_enabled
+                if learning_enabled() and (learning_thread is None or not learning_thread.is_alive()):
+                    learning_thread = threading.Thread(target=_run_feedback_maintenance, name="ai-feedback", daemon=True)
+                    learning_thread.start()
+            if once:
+                return
             time.sleep(settings.PMS_JOB_POLL_SECONDS)
 
 

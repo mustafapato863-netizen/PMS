@@ -10,7 +10,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from models.ai_schemas import AiApprovedPatternItem, AiApprovePatternRequest
+from models.ai_schemas import (
+    AiApprovedPatternItem,
+    AiApprovePatternRequest,
+    AiPatternPreviewCase,
+    AiPatternPreviewResponse,
+    AiPatternRouteSnapshot,
+    AiPreviewPatternRequest,
+    SessionFilterContext,
+)
 from models.models import AiApprovedPattern, AiInteractionTrace, AuditLog
 from services.ai.config import redact_secrets
 from services.ai.domain_policies import MONTH_ALIASES
@@ -150,6 +158,13 @@ _ANCHOR_TOKENS: tuple[str, ...] = (
     "<METRIC_BOOKINGS>",
 )
 
+_LEADING_DISPLAY_VERBS = frozenset({"display", "list"})
+
+
+def _without_display_verb(normalized: str) -> str:
+    first, _, rest = normalized.partition(" ")
+    return rest if rest and first in _LEADING_DISPLAY_VERBS else normalized
+
 
 @dataclass
 class PatternMatchResult:
@@ -209,7 +224,30 @@ def normalize_pattern_prompt(
         if out_tokens and out_tokens[-1] == tok and tok.startswith("<"):
             continue
         out_tokens.append(tok)
-    return " ".join(out_tokens)
+    return _without_display_verb(" ".join(out_tokens))
+
+
+def _pattern_example(text: str, names: list[str]) -> tuple[str, str]:
+    if not text.strip():
+        raise ValueError("A non-empty pattern prompt is required.")
+    name_tokens = _build_name_token_set(names)
+    example = sanitize_prompt_for_router_training(
+        text.strip(), known_employee_names=names, run_syntactic_extraction=True,
+        _precomputed_tokens=name_tokens,
+    )
+    example = redact_secrets(example).strip()
+    if "<EMAIL>" in example or "<PHONE>" in example:
+        raise ValueError("Pattern prompt contains email or phone PII; remove personal contact details.")
+    normalized = normalize_pattern_prompt(example, known_employee_names=names)
+    if not normalized:
+        raise ValueError("Pattern normalized to empty text; provide descriptive query wording.")
+    for value in (example, normalized):
+        quarantined, reasons = assess_pii_quarantine(
+            value, original_text=value, _precomputed_tokens=name_tokens,
+        )
+        if quarantined:
+            raise ValueError(f"Pattern prompt failed PII check ({', '.join(reasons)}); remove personal identifiers.")
+    return example, normalized
 
 
 def _pattern_to_schema(row: AiApprovedPattern) -> AiApprovedPatternItem:
@@ -272,6 +310,7 @@ class ApprovedPatternMatcher:
         *,
         known_employee_names: list[str] | None = None,
         persona_tier: str | None = None,
+        candidate: AiApprovedPattern | None = None,
     ) -> PatternMatchResult | None:
         if self.db is None or not str(prompt or "").strip():
             return None
@@ -298,13 +337,16 @@ class ApprovedPatternMatcher:
         except Exception:
             return None
 
+        if candidate is not None:
+            rows.insert(0, candidate)
+
         best: PatternMatchResult | None = None
         for row in rows:
             row_tier = getattr(row, "persona_tier", None)
             if row_tier:
                 if not persona_tier or str(row_tier) != str(persona_tier):
                     continue
-            pat_str = str(row.normalized_pattern or "").strip()
+            pat_str = _without_display_verb(str(row.normalized_pattern or "").strip())
             if not pat_str:
                 continue
             if pat_str == norm_in:
@@ -321,12 +363,8 @@ class ApprovedPatternMatcher:
 
             pat_tokens = set(pat_str.split())
             pat_anchors = {t for t in pat_tokens if t in _ANCHOR_TOKENS}
-            if pat_anchors and in_anchors and not (pat_anchors & in_anchors):
-                continue
-            # Never confuse top vs bottom or drivers vs scorecard
-            if ("<RANK_TOP>" in pat_anchors and "<RANK_BOTTOM>" in in_anchors) or (
-                "<RANK_BOTTOM>" in pat_anchors and "<RANK_TOP>" in in_anchors
-            ):
+            # Similar wording cannot override a different explicit analysis or metric.
+            if in_anchors != pat_anchors:
                 continue
 
             pat_core = {
@@ -355,6 +393,73 @@ class ApprovedPatternMatcher:
                     score=score,
                 )
         return best
+
+    def preview_pattern(
+        self,
+        *,
+        trace_id: str,
+        payload: AiPreviewPatternRequest,
+        scope: dict[str, Any],
+    ) -> AiPatternPreviewResponse:
+        """Compare routing with an in-memory candidate under the reviewer's scope."""
+        from services.ai.router import HybridQueryRouter
+        from services.ai.trace_logger import TrainingTraceLogger
+
+        if scope.get("role") != "Admin":
+            raise PermissionError("Only Admin reviewers can preview routing patterns.")
+        try:
+            trace_uuid = uuid.UUID(trace_id)
+        except ValueError as exc:
+            raise LookupError("Interaction trace not found") from exc
+        trace = self.db.get(AiInteractionTrace, trace_uuid)
+        if trace is None or trace.feedback_rating not in ("up", "down"):
+            raise LookupError("Reviewed feedback trace not found")
+
+        names = TrainingTraceLogger(self.db)._collect_known_employee_names()
+        source_prompt = trace.sanitized_prompt or trace.prompt
+        _, normalized = _pattern_example(payload.corrected_pattern_prompt or source_prompt, names)
+        proposal = AiApprovedPattern(
+            id="preview",
+            normalized_pattern=normalized,
+            intent=payload.intent.strip(),
+            operation_kind=payload.operation_kind,
+            requested_parts=payload.requested_parts,
+            tool_choice=payload.tool_choice,
+            metric_hint=payload.metric_hint,
+        )
+        saved = trace.session_state if isinstance(trace.session_state, dict) else {}
+        session = SessionFilterContext.model_validate({
+            key: saved[key]
+            for key in ("team", "function", "region", "branch", "position", "performance_level", "month", "year")
+            if key in saved
+        })
+        before_router = HybridQueryRouter(scope=scope, db=self.db)
+        after_router = HybridQueryRouter(scope=scope, db=self.db, preview_pattern=proposal)
+
+        def summarize(result) -> AiPatternRouteSnapshot:
+            plan = result.plan
+            return AiPatternRouteSnapshot(
+                outcome=result.outcome, intent=plan.intent, operation=plan.operation_kind_v2,
+                team=plan.team, function=plan.function, region=result.confirmed_context.region,
+                branch=plan.branch, performance_level=plan.performance_level, periods=plan.periods,
+            )
+
+        cases = []
+        for label, example in (("original", source_prompt), ("paraphrase", payload.paraphrase), ("contrast", payload.contrast)):
+            if not (example and example.strip()):
+                continue
+            redacted, _ = _pattern_example(example, names)
+            before = before_router.resolve_and_validate(
+                prompt=redacted, session_state=session.model_copy(deep=True), provider_override="deterministic",
+            )
+            after = after_router.resolve_and_validate(
+                prompt=redacted, session_state=session.model_copy(deep=True), provider_override="deterministic",
+            )
+            cases.append(AiPatternPreviewCase(
+                case=label, before=summarize(before), after=summarize(after),
+                candidate_applied=after.matched_pattern_id == proposal.id,
+            ))
+        return AiPatternPreviewResponse(cases=cases)
 
     def approve_pattern_from_trace(
         self,
@@ -401,52 +506,17 @@ class ApprovedPatternMatcher:
             or row.prompt
             or ""
         ).strip()
-        if not raw_example:
-            raise ValueError("A non-empty pattern prompt is required.")
-
-        example_redacted = sanitize_prompt_for_router_training(
-            raw_example,
-            known_employee_names=all_names,
-            run_syntactic_extraction=True,
-            _precomputed_tokens=name_tokens,
-        )
-        example_redacted = redact_secrets(example_redacted).strip()
-        if "<EMAIL>" in example_redacted or "<PHONE>" in example_redacted:
-            raise ValueError(
-                "Pattern prompt contains email or phone PII; remove personal contact details before approving."
-            )
-        quarantined, q_reasons = assess_pii_quarantine(
-            example_redacted,
-            original_text=example_redacted,
-            _precomputed_tokens=name_tokens,
-        )
-        if quarantined:
-            raise ValueError(
-                f"Pattern prompt failed PII check ({', '.join(q_reasons)}); remove personal identifiers before approving."
-            )
-
-        normalized_pat = normalize_pattern_prompt(example_redacted, known_employee_names=all_names)
-        if not normalized_pat:
-            raise ValueError("Pattern normalized to empty text; provide descriptive query wording.")
-        norm_quarantined, norm_reasons = assess_pii_quarantine(
-            normalized_pat,
-            original_text=normalized_pat,
-            _precomputed_tokens=name_tokens,
-        )
-        if norm_quarantined:
-            raise ValueError(
-                f"Normalized pattern failed PII check ({', '.join(norm_reasons)})."
-            )
+        example_redacted, normalized_pat = _pattern_example(raw_example, all_names)
 
         if row.feedback_rating not in ("up", "down"):
             raise ValueError("Collect feedback on this answer before approving a pattern.")
 
-        existing = (
+        active_for_trace = (
             self.db.query(AiApprovedPattern)
-            .filter_by(source_trace_id=str(row.id), normalized_pattern=normalized_pat, is_active=True)
-            .first()
+            .filter_by(source_trace_id=str(row.id), is_active=True)
+            .all()
         )
-        if existing is not None:
+        if any(_without_display_verb(existing.normalized_pattern) == normalized_pat for existing in active_for_trace):
             raise ValueError("An active pattern already exists for this feedback. Deactivate it before replacing it.")
 
         review_res = FeedbackGovernanceService(self.db).review_feedback(
@@ -511,6 +581,49 @@ class ApprovedPatternMatcher:
         )
 
         return _pattern_to_schema(pat_row), review_res
+
+    def list_active_planner_guidance(self, *, limit: int = 8) -> list[dict[str, str]]:
+        """Return bounded, de-identified active Admin-approved guidance for the model-led planner.
+
+        Contains only sanitized interpretation/tool/metric guidance — never employee PII
+        or static scores/answers. Deactivated/revoked patterns are excluded immediately.
+        """
+        if self.db is None:
+            return []
+        try:
+            _ensure_pattern_tables_in_nonprod(self.db)
+            rows = (
+                self.db.query(AiApprovedPattern)
+                .filter(
+                    AiApprovedPattern.is_active.is_(True),
+                    AiApprovedPattern.verified_against_pms.is_(True),
+                )
+                .order_by(AiApprovedPattern.created_at.desc())
+                .limit(max(1, min(int(limit), 12)))
+                .all()
+            )
+        except Exception:
+            return []
+        guidance: list[dict[str, str]] = []
+        for row in rows:
+            example = str(row.example_prompt_redacted or row.normalized_pattern or "").strip()
+            if not example:
+                continue
+            item: dict[str, str] = {
+                "id": str(row.id)[:8],
+                "example": example[:180],
+                "intent": str(row.intent or ""),
+            }
+            if row.operation_kind:
+                item["operation"] = str(row.operation_kind)
+            if row.tool_choice:
+                item["tool"] = str(row.tool_choice)
+            if row.metric_hint:
+                item["metric_hint"] = str(row.metric_hint)
+            if row.review_notes:
+                item["note"] = str(row.review_notes)[:140]
+            guidance.append(item)
+        return guidance
 
     def deactivate_pattern(
         self,

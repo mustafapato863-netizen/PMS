@@ -69,6 +69,7 @@ function formatKpiEvidenceValue(
 function getProviderBadgeText(provider: string): string {
   switch (provider) {
     case 'cloudflare':
+    case 'nvidia':
     case 'gemini':
       return 'PMS AI';
     case 'deterministic':

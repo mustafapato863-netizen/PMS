@@ -124,11 +124,11 @@ function isAbortError(error: unknown): boolean {
  * Starts a request with the API timeout and the caller's signal linked to it. `release` unlinks both; until
  * then an abort (timeout or caller) also cancels the response BODY read, not only the wait for headers.
  */
-async function openWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<{ response: Response; release: () => void }> {
+async function openWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutOverride?: number): Promise<{ response: Response; release: () => void }> {
   const controller = new AbortController();
-  const timeoutMs = typeof FormData !== 'undefined' && init.body instanceof FormData
+  const timeoutMs = timeoutOverride ?? (typeof FormData !== 'undefined' && init.body instanceof FormData
     ? API_UPLOAD_TIMEOUT_MS
-    : API_TIMEOUT_MS;
+    : API_TIMEOUT_MS);
   const timeoutId = globalThis.setTimeout(() => {
     controller.abort(new DOMException('Request timed out', 'TimeoutError'));
   }, timeoutMs);
@@ -152,8 +152,8 @@ async function openWithTimeout(input: RequestInfo | URL, init: RequestInit): Pro
   }
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
-  const { response, release } = await openWithTimeout(input, init);
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutOverride?: number): Promise<Response> {
+  const { response, release } = await openWithTimeout(input, init, timeoutOverride);
   release(); // Default behaviour: the timeout and caller signal cover the headers only.
   return response;
 }
@@ -287,6 +287,7 @@ export interface ApiFetchBehaviour {
    * stalled body is cancelled too (the connection closes). Opt-in; other callers keep the headers-only link.
    */
   abortBody?: boolean;
+  timeoutMs?: number;
 }
 
 export async function apiFetch<T>(
@@ -294,10 +295,12 @@ export async function apiFetch<T>(
   options: RequestInit = {},
   behaviour: ApiFetchBehaviour = {},
 ): Promise<T> {
-  if (!behaviour.abortBody) return apiFetchInner<T>(endpoint, options, fetchWithTimeout);
+  if (!behaviour.abortBody) {
+    return apiFetchInner<T>(endpoint, options, (input, init) => fetchWithTimeout(input, init, behaviour.timeoutMs));
+  }
   const releases: Array<() => void> = [];
   const open = async (input: RequestInfo | URL, init: RequestInit) => {
-    const { response, release } = await openWithTimeout(input, init);
+    const { response, release } = await openWithTimeout(input, init, behaviour.timeoutMs);
     releases.push(release);
     return response;
   };

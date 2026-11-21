@@ -195,7 +195,8 @@ describe('ContextualAssistantPanel', () => {
     );
 
     await user.click(screen.getByTestId('contextual-assistant-launcher'));
-    await user.click(screen.getByText('Propose a corrective action for Booking Rate'));
+    await user.type(screen.getByPlaceholderText('Ask about this page…'), 'Propose a corrective action for Booking Rate');
+    await user.click(screen.getByRole('button', { name: 'Send question' }));
 
     const reviewBtn = await screen.findByTestId('contextual-assistant-review-action-btn');
     expect(reviewBtn).toBeInTheDocument();
@@ -352,7 +353,7 @@ describe('ContextualAssistantPanel', () => {
     });
   });
 
-  it('renders narrative bullets, up to 3 follow-ups, Different angle rephrase with variation_seed, and New chat reset', async () => {
+  it('renders narrative bullets, one follow-up, Different angle rephrase with variation_seed, and New chat reset', async () => {
     const user = userEvent.setup();
     mockApiFetch.mockImplementation(async (endpoint: string) => {
       if (endpoint === '/api/ai/chat') {
@@ -400,7 +401,7 @@ describe('ContextualAssistantPanel', () => {
     );
 
     await user.click(screen.getByTestId('contextual-assistant-launcher'));
-    expect(screen.getByText('Compare branch performance in this scope')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dismiss page suggestion' })).toBeInTheDocument();
 
     await user.click(screen.getByText('Explain this page'));
 
@@ -410,7 +411,8 @@ describe('ContextualAssistantPanel', () => {
     expect(screen.getByText('Bullet 3')).toBeInTheDocument();
     expect(screen.queryByText('Bullet 4 should be truncated')).not.toBeInTheDocument();
 
-    expect(screen.getByText('Followup 3')).toBeInTheDocument();
+    expect(screen.getByText('Followup 1')).toBeInTheDocument();
+    expect(screen.queryByText('Followup 2')).not.toBeInTheDocument();
     expect(screen.queryByText('Followup 4 truncated')).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId('rephrase-turn-0'));

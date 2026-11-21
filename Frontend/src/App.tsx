@@ -23,6 +23,7 @@ import { AiAvailabilityProvider } from './features/ai/aiAvailability';
 import { useAiAvailability } from './features/ai/aiAvailabilityContext';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
+import MaintenanceView from './pages/MaintenanceView';
 
 const DepartmentalSummaryView = lazy(() => import('./pages/DepartmentalSummaryView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
@@ -38,7 +39,6 @@ const ReportPreviewView = lazy(() => import('./pages/ReportPreviewView'));
 const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
-const MaintenanceView = lazy(() => import('./pages/MaintenanceView'));
 const MonthlyPresentationView = lazy(() => import('./pages/MonthlyPresentationView'));
 const PmsAiWorkspaceView = lazy(() => import('./pages/PmsAiWorkspaceView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -62,7 +62,7 @@ function AnimatedRoutes() {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
-          <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
+          <Route path="/maintenance" element={<MaintenanceView mode="maintenance" />} />
           <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />
           <Route
             path="/employee/:employeeId"
@@ -196,7 +196,7 @@ function AnimatedRoutes() {
         />
 
         {/* Maintenance / Status Page */}
-        <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
+        <Route path="/maintenance" element={<MaintenanceView mode="maintenance" />} />
 
         {/* 404 Page Not Found */}
         <Route path="*" element={<Suspense fallback={<RouteLoadingFallback />}><NotFound /></Suspense>} />
@@ -266,7 +266,7 @@ function AppContent() {
   if (!currentUser) {
     return (
       <Routes>
-        <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
+        <Route path="/maintenance" element={<MaintenanceView mode="maintenance" />} />
         <Route path="/login" element={<LoginView />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

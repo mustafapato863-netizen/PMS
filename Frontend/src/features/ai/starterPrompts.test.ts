@@ -15,8 +15,14 @@ describe('buildFallbackStarterPrompts', () => {
 
   it('uses the active function instead of Call Center', () => {
     const prompts = buildFallbackStarterPrompts({ functionName: 'Pharmacy', team: null, branch: null });
-    expect(prompts[0]?.label).toBe('Which team in Pharmacy dropped most?');
+    expect(prompts[0]?.label).toBe('Review Pharmacy performance');
     expect(prompts.map((item) => item.prompt).join(' ')).not.toMatch(/call center/i);
+  });
+
+  it('keeps Pharmacy scenarios when an old Call Center function is still selected', () => {
+    const prompts = buildFallbackStarterPrompts({ functionName: 'Call Center', team: 'Pharmacy' });
+    expect(prompts[0]?.label).toBe('Review Pharmacy performance');
+    expect(prompts.map((item) => item.prompt).join(' ')).not.toMatch(/call center|inbound|outbound/i);
   });
 
   it('keeps Call Center prompts when that function is selected and tailors KPI cards by team without fake percentages', () => {

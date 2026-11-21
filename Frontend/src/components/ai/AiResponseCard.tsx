@@ -15,6 +15,7 @@ import type {
   FeedbackCategoryType,
 } from '../../features/ai/types';
 import { apiFetch } from '../../lib/apiClient';
+import { useCopyAnswer } from './response/useCopyAnswer';
 import ExecutiveKpiStrip from './response/ExecutiveKpiStrip';
 import GuidedActionsRow from './response/GuidedActionsRow';
 import InlineActionProposalCard from './response/InlineActionProposalCard';
@@ -25,6 +26,9 @@ import {
   formatBasisWarning,
   formatManagerReadableText,
   getAuditCitations,
+  getAnswerText,
+  answerTextKey,
+  formatAnswerForClipboard,
 } from './response/responseFormatting';
 
 export interface AiResponseCardProps {
@@ -56,8 +60,7 @@ export default function AiResponseCard({
   const [flagReason, setFlagReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
+  const { copied, copyError, copyAnswer } = useCopyAnswer();
 
   const primaryCards = response.visual_cards.filter((c) => c.card_type !== 'decision_playbook');
   const playbookCards = response.visual_cards.filter((c) => c.card_type === 'decision_playbook');
@@ -66,10 +69,13 @@ export default function AiResponseCard({
     0,
   );
 
-  // Show the #1 most informative visual card directly above the fold;
-  // secondary visual cards & decision playbooks sit cleanly in progressive disclosure.
-  const leadVisualCard = primaryCards[0] ?? null;
-  const secondaryVisualCards = primaryCards.slice(1);
+  const briefOverview =
+    response.outcome === 'answer' &&
+    response.answer_detail === 'brief' &&
+    response.structured_query?.intent === 'current_value' &&
+    response.tool_calls?.some((call) => call.tool_name === 'get_executive_and_priority_insights');
+  const leadVisualCard = briefOverview ? null : primaryCards[0] ?? null;
+  const secondaryVisualCards = briefOverview ? primaryCards : primaryCards.slice(1);
 
   const [showPlaybook, setShowPlaybook] = useState<boolean>(primaryCards.length === 0);
   const [detailsOverride, setDetailsOverride] = useState<{
@@ -88,28 +94,19 @@ export default function AiResponseCard({
   const secondaryDeepLinks = primarySourceLink
     ? response.deep_links.filter((d) => d.route !== primarySourceLink.route)
     : response.deep_links;
-  const detailBullets = response.detail_bullets ?? [];
   const auditCitations = getAuditCitations(response);
 
+  const answerText = getAnswerText(response);
+  const brief = response.answer_detail === 'brief';
+  const visibleBullets = brief ? answerText.bullets.slice(0, briefOverview ? 2 : 4) : answerText.bullets;
+  const detailBullets = [...answerText.bullets.slice(visibleBullets.length), ...answerText.details];
   const hasExpandableDetails =
     primaryCards.length > 0 ||
+    (briefOverview && (response.summary_tiles?.length ?? 0) > 0) ||
     playbookCards.length > 0 ||
     secondaryDeepLinks.length > 0 ||
     detailBullets.length > 0 ||
     auditCitations.length > 0;
-
-  // Brief answers must already be complete in headline + narrative_bullets;
-  // filter out bullets that are verbatim or substring duplicates of the headline to eliminate redundancy.
-  const normalizedHeadline = (response.headline || '').trim().toLowerCase();
-  const visibleBullets = (response.narrative_bullets || []).filter((bullet) => {
-    const trimmed = (bullet || '').trim();
-    if (!trimmed) return false;
-    const lower = trimmed.toLowerCase();
-    if (lower === normalizedHeadline) return false;
-    if (normalizedHeadline.length > 20 && normalizedHeadline.includes(lower)) return false;
-    if (lower.length > 20 && lower.includes(normalizedHeadline)) return false;
-    return true;
-  });
 
   const handleFeedback = async (
     rating: 'up' | 'down',
@@ -142,28 +139,8 @@ export default function AiResponseCard({
     }
   };
 
-  const handleCopySummary = async () => {
-    const lines = [response.headline, ...visibleBullets.map((b) => `- ${b}`)].filter(
-      Boolean,
-    );
-    const text = lines.join('\n');
-    setCopyError(false);
-    try {
-      if (typeof navigator === 'undefined' || typeof navigator.clipboard?.writeText !== 'function') {
-        throw new Error('Clipboard API unavailable');
-      }
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // In insecure contexts or when clipboard permission is denied, never claim success.
-      setCopied(false);
-      setCopyError(true);
-    }
-  };
-
   const isLiveSynthesis =
-    (response.provider_used === 'cloudflare' || response.provider_used === 'gemini') &&
+    (response.provider_used === 'cloudflare' || response.provider_used === 'nvidia' || response.provider_used === 'gemini') &&
     response.answer_source !== 'fallback' &&
     response.answer_source !== 'deterministic';
   const capabilityMode = response.capability_mode ?? 'performance_query';
@@ -180,7 +157,7 @@ export default function AiResponseCard({
     capabilityMode !== 'off_topic';
 
   return (
-    <div className={compact ? 'block' : 'flex items-start gap-3'}>
+    <div className={compact ? 'ai-answer-enter block' : 'ai-answer-enter flex items-start gap-3'}>
       {/* Assistant Avatar Badge (full workspace view) */}
       {!compact && (
         <div
@@ -193,8 +170,8 @@ export default function AiResponseCard({
 
       {/* Main Executive Response Card */}
       <div
-        className={`min-w-0 flex-1 rounded-2xl border border-slate-200/90 bg-white ${
-          compact ? 'p-3.5 shadow-2xs' : 'p-4 sm:p-5 shadow-[0_4px_20px_rgb(15,23,42,0.04)]'
+        className={`min-w-0 flex-1 text-slate-900 dark:text-slate-100 ${
+          compact ? 'py-1' : 'py-0.5'
         }`}
       >
         {/* 0. Single Quiet Context Eyebrow + Verification Popover */}
@@ -209,21 +186,21 @@ export default function AiResponseCard({
         <p
           dir="auto"
           data-testid={compact ? 'contextual-assistant-direct-answer' : undefined}
-          className={`font-bold leading-relaxed text-slate-900 ${
+          className={`font-medium leading-relaxed text-slate-900 dark:text-slate-100 ${
             compact ? 'text-sm' : 'text-[15px] sm:text-base'
           }`}
         >
-          {formatManagerReadableText(response.headline)}
+          {answerText.headline}
         </p>
 
-        <ExecutiveKpiStrip tiles={response.summary_tiles ?? []} compact={compact} />
+        {!briefOverview && <ExecutiveKpiStrip tiles={response.summary_tiles ?? []} compact={compact} />}
 
         {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
         {visibleBullets.length > 0 && (
           <ul
             dir="auto"
             data-testid={compact ? 'contextual-assistant-bullets' : undefined}
-            className="mt-3 space-y-1.5 rounded-xl border border-slate-200/75 bg-slate-50/60 px-3.5 py-2.5 text-sm leading-relaxed text-slate-700"
+            className="mt-2 space-y-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300"
           >
             {visibleBullets.map((bullet, idx) => (
               <li key={idx} className="flex items-start gap-2">
@@ -281,8 +258,9 @@ export default function AiResponseCard({
           response.clarification.choices.length > 0 && (
           <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 p-3.5">
             {response.clarification.question &&
-            response.clarification.question.trim().toLowerCase() !==
-              response.headline.trim().toLowerCase() ? (
+            ![answerText.headline, ...visibleBullets].some((line) =>
+              answerTextKey(line) === answerTextKey(response.clarification?.question ?? ''),
+            ) ? (
               <p className="text-sm font-bold text-slate-900">
                 {response.clarification.question}
               </p>
@@ -339,6 +317,7 @@ export default function AiResponseCard({
         {/* Progressive Disclosure Details Region (Supporting Evidence, Playbook & Audit Citations) */}
         {detailsExpanded && (
           <div className="mt-3.5 space-y-3 border-t border-slate-100 pt-3">
+            {briefOverview && <ExecutiveKpiStrip tiles={response.summary_tiles ?? []} compact={compact} />}
             {detailBullets.length > 0 && (
               <div
                 data-testid="ai-detail-bullets"
@@ -439,7 +418,7 @@ export default function AiResponseCard({
           }
           showCopyButton={showCopyButton}
           copied={copied}
-          onCopySummary={() => void handleCopySummary()}
+          onCopySummary={() => void copyAnswer(formatAnswerForClipboard(answerText.headline, visibleBullets, detailsExpanded ? detailBullets : []))}
           isSending={isSending}
           feedback={feedback}
           showFlagForm={showFlagForm}

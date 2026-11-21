@@ -52,7 +52,7 @@ export interface AiCorrectiveActionDraftPayload {
 
 export interface AiCorrectiveActionSuggestionPayload {
   outcome: 'suggested' | 'insufficient_evidence' | 'model_unavailable' | 'draft_rejected';
-  provider_used: 'cloudflare' | 'gemini' | 'none';
+  provider_used: 'cloudflare' | 'nvidia' | 'gemini' | 'none';
   fallback_used?: boolean;
   fallback_reason?: string | null;
   validation_errors?: string[];

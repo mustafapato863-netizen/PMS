@@ -1,4 +1,4 @@
-"""Paired Workstream B (#99) conversation, claim-ledger, and Cloudflare/Gemini integration tests."""
+"""Paired Workstream B (#99) conversation, claim-ledger, and Cloudflare/Nvidia integration tests."""
 
 from __future__ import annotations
 
@@ -341,7 +341,7 @@ def test_local_evidence_synthesis_branch_bookings_rejects_swapped_values_and_fal
     install_scripted_provider(
         monkeypatch,
         [{"answer": "Dubai had 70 Inbound bookings in September 2026 and Sharjah had 112."}],
-        provider="gemini",
+        provider="nvidia",
     )
     res = synthesize_branch_bookings("Compare Dubai and Sharjah bookings in September 2026", digests)
     assert res is not None
@@ -442,7 +442,7 @@ def test_orchestrator_multi_turn_period_and_scope_override(monkeypatch: pytest.M
         assert "Outbound" in turn3.headline
 
 
-def test_orchestrator_cloudflare_rate_limit_falls_back_to_gemini_and_verifies_claims(
+def test_orchestrator_cloudflare_rate_limit_falls_back_to_nvidia_and_verifies_claims(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "false")
@@ -454,13 +454,13 @@ def test_orchestrator_cloudflare_rate_limit_falls_back_to_gemini_and_verifies_cl
         def generate(self, request: ProviderRequest) -> ProviderResponse:
             return ProviderResponse(
                 content=json.dumps({"answer": "Inbound scored 85.5% in September 2026."}),
-                provider="gemini",
-                model="gemini-2.5-flash",
+                provider="nvidia",
+                model="nvidia/nemotron-3.5-super-vl-120b-a12b",
                 outcome="success",
                 latency_ms=4.0,
                 attempts=[
                     ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="rate_limit", latency_ms=2.0),
-                    ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="success", latency_ms=4.0),
+                    ProviderAttempt(provider="nvidia", model="nvidia/nemotron-3.5-super-vl-120b-a12b", status="success", latency_ms=4.0),
                 ],
             )
 
@@ -473,11 +473,11 @@ def test_orchestrator_cloudflare_rate_limit_falls_back_to_gemini_and_verifies_cl
             )
         )
     assert resp.outcome == "answer"
-    assert resp.provider_used == "gemini"
+    assert resp.provider_used == "nvidia"
     assert "85.5%" in resp.headline
 
 
-def test_orchestrator_defense_in_depth_rejects_hallucinated_gemini_synthesis(
+def test_orchestrator_defense_in_depth_rejects_hallucinated_nvidia_synthesis(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "false")
@@ -487,7 +487,7 @@ def test_orchestrator_defense_in_depth_rejects_hallucinated_gemini_synthesis(
     install_scripted_provider(
         monkeypatch,
         [{"answer": "Inbound UAE averaged 99.9% in October 2026 because hiring paused."}],
-        provider="gemini",
+        provider="nvidia",
     )
     with _build_in_memory_db() as db:
         resp = PmsAiOrchestrator(db, ADMIN_SCOPE).run_chat_turn(

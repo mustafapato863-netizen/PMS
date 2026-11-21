@@ -121,31 +121,39 @@ def _record_location(record, location: str) -> bool:
 
 
 def _has_real_activity(record) -> bool:
-    if str(record.employee_name or "").strip().casefold() == "total":
+    if str(getattr(record, "employee_name", None) or "").strip().casefold() == "total":
         return False
-    if _number(record.evaluation.score) > 0:
+    eval_obj = getattr(record, "evaluation", None)
+    eval_score = getattr(eval_obj, "score", None) if eval_obj is not None else getattr(record, "score", None)
+    if _number(eval_score) > 0:
         return True
-    if any(_number(value.get("contribution")) > 0 for value in record.kpi_values or []):
+    kpi_values = getattr(record, "kpi_values", None) or []
+    if any(_number(value.get("contribution") if isinstance(value, dict) else getattr(value, "contribution", None)) > 0 for value in kpi_values):
         return True
+    calls = getattr(record, "calls", None)
+    geo = getattr(record, "geo", None)
+    bookings = getattr(geo, "bookings", None) if geo is not None else None
+    attended = getattr(geo, "attended", None) if geo is not None else None
     if any(
         _number(value) > 0
         for value in (
-            record.calls.inbound,
-            record.calls.outbound,
-            record.calls.total_handled,
-            record.calls.abandoned,
-            record.geo.bookings.dubai,
-            record.geo.bookings.sharjah,
-            record.geo.bookings.ajman,
-            record.geo.bookings.clinics,
-            record.geo.attended.dubai,
-            record.geo.attended.sharjah,
-            record.geo.attended.ajman,
-            record.geo.attended.clinics,
+            getattr(calls, "inbound", None),
+            getattr(calls, "outbound", None),
+            getattr(calls, "total_handled", None),
+            getattr(calls, "abandoned", None),
+            getattr(bookings, "dubai", None),
+            getattr(bookings, "sharjah", None),
+            getattr(bookings, "ajman", None),
+            getattr(bookings, "clinics", None),
+            getattr(attended, "dubai", None),
+            getattr(attended, "sharjah", None),
+            getattr(attended, "ajman", None),
+            getattr(attended, "clinics", None),
         )
     ):
         return True
-    return any(_number(value) > 0 for value in (record.raw_data or {}).values())
+    raw_data = getattr(record, "raw_data", None) or {}
+    return any(_number(value) > 0 for value in (raw_data.values() if isinstance(raw_data, dict) else ()))
 
 
 def _score(record) -> float:

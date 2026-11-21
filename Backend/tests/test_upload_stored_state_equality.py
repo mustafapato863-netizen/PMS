@@ -109,11 +109,12 @@ def test_the_upload_stores_the_same_state_as_before_the_change(tmp_path, monkeyp
     # after this upload fixture was frozen. Both are unrelated, additive
     # tables: the upload must not write to them, and the original upload-state
     # golden still has to match every existing table.
-    additive_tables = {"ai_user_memory", "ai_provider_configs"}
+    additive_tables = {"ai_user_memory", "ai_provider_configs", "ai_learning_runs"}
     assert set(state) - set(golden) <= additive_tables
     assert set(golden) <= set(state)
     assert state.get("ai_user_memory", []) == []
     assert state.get("ai_provider_configs", []) == []
+    assert state.get("ai_learning_runs", []) == []
     for table in golden:
         assert state[table] == golden[table], table
     assert list(tmp_path.iterdir()) == []

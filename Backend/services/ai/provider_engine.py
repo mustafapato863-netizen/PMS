@@ -1,10 +1,10 @@
 """Unified PMS AI Provider Engine (Phase 1).
 
 Provides a unified, provider-neutral abstraction for AI text and structured generation:
-1. Fixed provider hierarchy: Cloudflare Workers AI as primary, Google Gemini as fallback.
+1. Default provider hierarchy: NVIDIA NIM as primary, Cloudflare Workers AI as fallback.
    OpenAI is decommissioned: no adapter makes outbound requests to it.
 2. Bounded retries for transient failures on the primary provider (HTTP 500/502/503/504, network reset).
-3. Fallback to Gemini permitted ONLY for:
+3. Provider fallback is permitted only for:
    - Primary provider unavailability / disabled in config / missing credentials.
    - Primary rate/quota limits (HTTP 429).
    - Primary transient server errors after retries are exhausted.
@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from services.ai.config import redact_secrets
+from services.ai.provider_config_store import DEFAULT_NVIDIA_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ class TokenUsage:
 
 @dataclass
 class ProviderAttempt:
-    provider: str  # "cloudflare" | "gemini"
+    provider: str  # "nvidia" | "cloudflare"
     model: str
     status: str  # "success" | "rate_limited" | "timeout" | "transient_error" | "safety_refusal" | "client_error" | "schema_validation_failed" | "truncated" | "disabled" | "missing_key"
     latency_ms: float = 0.0
@@ -303,6 +304,7 @@ class ProviderRequest:
     user_role: str | None = None
     model: str | None = None
     use_alter_model: bool = False
+    task_role: str | None = None  # Assigned by the server, never supplied by chat clients.
 
     def validate_input(self) -> str | None:
         """Validate input before calling external providers."""
@@ -324,8 +326,8 @@ class ProviderRequest:
 @dataclass
 class ProviderResponse:
     content: str
-    provider: str  # "cloudflare" | "gemini" | "none"
-    model: str  # e.g. "gemini-2.5-flash", "gpt-4o-mini", "none"
+    provider: str  # "nvidia" | "cloudflare" | "none"
+    model: str
     outcome: str  # "success" | "fallback_success" | "provider_unavailable" | "rate_limited" | "timeout" | "safety_refusal" | "invalid_request" | "error"
     latency_ms: float = 0.0
     usage: TokenUsage = field(default_factory=TokenUsage)
@@ -356,11 +358,12 @@ class ProviderResponse:
 
 
 # ---------------------------------------------------------------------------
-# Configuration (Fixed Hierarchy: Cloudflare Workers AI Primary, Gemini Fallback)
+# Provider configuration
 # ---------------------------------------------------------------------------
 
 
-SUPPORTED_PROVIDERS = ("cloudflare", "gemini")
+SUPPORTED_PROVIDERS = ("nvidia", "cloudflare")
+NVIDIA_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
@@ -378,59 +381,62 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
 class UnifiedProviderConfig:
     """Configuration for AI provider hierarchy.
     
-    Default architecture: Cloudflare Workers AI is primary, Google Gemini is fallback.
+    NVIDIA chat always uses the configured alternate key.
     """
     primary_provider: str | None = None
     fallback_provider: str | None = None
     cloudflare_enabled: bool = True
-    gemini_enabled: bool = True
+    nvidia_enabled: bool = True
     fallback_enabled: bool = True
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
-    gemini_model: str = "gemini-2.5-flash"
+    nvidia_model: str = DEFAULT_NVIDIA_MODEL
     timeout_seconds: float = 10.0
     max_retries: int = 1
-    gemini_api_key: str = ""
+    nvidia_api_key: str = ""
     # Standby slots used for a single in-place retry on 401/403/429.
     cloudflare_standby_api_token: str = ""
     cloudflare_standby_account_id: str = ""
     cloudflare_auto_failover_key: bool = True
-    gemini_standby_api_key: str = ""
-    gemini_auto_failover_key: bool = True
+
+    task_routing_enabled: bool = False
+
+    def provider_order(self, request: ProviderRequest) -> tuple[str, str]:
+        if self.task_routing_enabled and request.task_role in {"routine", "investigation", "repair"}:
+            if request.task_role == "routine":
+                return "cloudflare", "nvidia"
+            return "nvidia", "cloudflare"
+        return self.effective_primary_provider, self.effective_fallback_provider
 
     @property
     def effective_primary_provider(self) -> str:
         if self.primary_provider in SUPPORTED_PROVIDERS:
             return self.primary_provider
-        if self.cloudflare_account_id and self.cloudflare_api_token:
-            return "cloudflare"
-        if not self.cloudflare_account_id and not self.cloudflare_api_token and self.gemini_api_key:
-            return "gemini"
-        return "cloudflare"
+        return "nvidia"
 
     @property
     def effective_fallback_provider(self) -> str:
         if self.fallback_provider in SUPPORTED_PROVIDERS and self.fallback_provider != self.effective_primary_provider:
             return self.fallback_provider
-        return "gemini" if self.effective_primary_provider == "cloudflare" else "cloudflare"
+        return "nvidia" if self.effective_primary_provider == "cloudflare" else "cloudflare"
 
 
 def load_unified_provider_config() -> UnifiedProviderConfig:
     """Load unified AI provider configuration from environment."""
     primary_provider = (
         os.environ.get("PMS_AI_PRIMARY_PROVIDER")
-        or "cloudflare"
+        or "nvidia"
     ).strip().casefold()
 
     fallback_provider = (
         os.environ.get("PMS_AI_FALLBACK_PROVIDER")
-        or "gemini"
+        or "cloudflare"
     ).strip().casefold()
 
     cloudflare_enabled = _parse_bool(os.environ.get("PMS_AI_CLOUDFLARE_ENABLED"), default=True)
-    gemini_enabled = _parse_bool(os.environ.get("PMS_AI_GEMINI_ENABLED"), default=True)
+    nvidia_enabled = _parse_bool(os.environ.get("PMS_AI_NVIDIA_ENABLED"), default=True)
     fallback_enabled = _parse_bool(os.environ.get("PMS_AI_FALLBACK_ENABLED"), default=True)
 
     cloudflare_account_id = (
@@ -460,12 +466,7 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         or "@cf/zai-org/glm-4.7-flash"
     ).strip()
 
-    gemini_model = (
-        os.environ.get("PMS_GEMINI_MODEL")
-        or os.environ.get("PMS_AI_GEMINI_MODEL")
-        or os.environ.get("GEMINI_MODEL")
-        or "gemini-2.5-flash"
-    ).strip()
+    nvidia_model = (os.environ.get("NVIDIA_FEEDBACK_MODEL") or DEFAULT_NVIDIA_MODEL).strip()
 
     try:
         raw_timeout = float(
@@ -483,18 +484,11 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
     except (TypeError, ValueError):
         max_retries = 1
 
-    gemini_api_key = (
-        os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("Gemini_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or ""
-    ).strip()
+    nvidia_api_key = (os.environ.get("NVIDIA_API_KEY_ALTER") or "").strip()
 
     cloudflare_standby_api_token = ""
     cloudflare_standby_account_id = ""
     cloudflare_auto_failover_key = True
-    gemini_standby_api_key = ""
-    gemini_auto_failover_key = True
 
     # Admin-managed database overrides win over the environment. The store is
     # best-effort: a missing table, disabled database, or bare unit test simply
@@ -503,9 +497,9 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         from services.ai import provider_config_store
 
         cf_runtime = provider_config_store.resolve_provider_config("cloudflare")
-        gm_runtime = provider_config_store.resolve_provider_config("gemini")
+        nv_runtime = provider_config_store.resolve_provider_config("nvidia")
         cloudflare_enabled = cf_runtime.enabled
-        gemini_enabled = gm_runtime.enabled
+        nvidia_enabled = nv_runtime.enabled
         cloudflare_account_id = cf_runtime.active_account_id or cloudflare_account_id
         cloudflare_api_token = cf_runtime.active_api_key or cloudflare_api_token
         cloudflare_standby_api_token = cf_runtime.standby_api_key
@@ -515,10 +509,8 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         cloudflare_auto_failover_key = cf_runtime.auto_failover_key
         cloudflare_model = cf_runtime.primary_model or cloudflare_model
         cloudflare_alter_model = cf_runtime.alternate_model or cloudflare_alter_model
-        gemini_api_key = gm_runtime.active_api_key or gemini_api_key
-        gemini_standby_api_key = gm_runtime.standby_api_key
-        gemini_auto_failover_key = gm_runtime.auto_failover_key
-        gemini_model = gm_runtime.primary_model or gemini_model
+        nvidia_api_key = nv_runtime.alternate_api_key
+        nvidia_model = nv_runtime.primary_model or nvidia_model
     except Exception:
         logger.warning(
             "AI provider config store unavailable; using environment defaults",
@@ -526,24 +518,23 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         )
 
     return UnifiedProviderConfig(
+        task_routing_enabled=_parse_bool(os.getenv("PMS_AI_TASK_ROUTING_ENABLED"), default=False),
         primary_provider=primary_provider,
         fallback_provider=fallback_provider,
         cloudflare_enabled=cloudflare_enabled,
-        gemini_enabled=gemini_enabled,
+        nvidia_enabled=nvidia_enabled,
         fallback_enabled=fallback_enabled,
         cloudflare_account_id=cloudflare_account_id,
         cloudflare_api_token=cloudflare_api_token,
         cloudflare_model=cloudflare_model,
         cloudflare_alter_model=cloudflare_alter_model,
-        gemini_model=gemini_model,
+        nvidia_model=nvidia_model,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
-        gemini_api_key=gemini_api_key,
+        nvidia_api_key=nvidia_api_key,
         cloudflare_standby_api_token=cloudflare_standby_api_token,
         cloudflare_standby_account_id=cloudflare_standby_account_id,
         cloudflare_auto_failover_key=cloudflare_auto_failover_key,
-        gemini_standby_api_key=gemini_standby_api_key,
-        gemini_auto_failover_key=gemini_auto_failover_key,
     )
 
 
@@ -587,19 +578,8 @@ def resolve_provider_model(
             )
         return default_model
 
-    if provider_lower == "gemini":
-        default_model = config.gemini_model or "gemini-2.5-flash"
-        req_model = getattr(request, "model", None) if request else None
-        if req_model:
-            req_model_clean = str(req_model).strip()
-            if req_model_clean in (default_model, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"):
-                return req_model_clean
-            logger.warning(
-                "Rejected unapproved Gemini model override %r; using server default %r",
-                req_model_clean,
-                default_model,
-            )
-        return default_model
+    if provider_lower == "nvidia":
+        return config.nvidia_model or DEFAULT_NVIDIA_MODEL
 
     return "unknown"
 
@@ -744,9 +724,15 @@ def _validate_schema_node(instance: Any, schema: dict[str, Any], path: str = "$"
 
     # 2. Enum validation (do not reflect model instance value)
     if "enum" in schema:
-        allowed = schema["enum"]
-        if instance not in allowed:
-            return False, f"Value at {path} is not in enum options"
+        is_nullable = (
+            (isinstance(expected_type, list) and "null" in expected_type)
+            or expected_type == "null"
+            or bool(schema.get("nullable"))
+        )
+        if not (instance is None and is_nullable):
+            allowed = schema["enum"]
+            if instance not in allowed:
+                return False, f"Value at {path} is not in enum options"
 
     # 3. Numeric bounds validation (do not reflect model instance value)
     if isinstance(instance, (int, float)) and not isinstance(instance, bool):
@@ -1042,7 +1028,7 @@ class CloudflareAIProviderAdapter:
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens or 2048
         if request.purpose in MODEL_LED_REQUEST_PURPOSES and resolved_model == "@cf/zai-org/glm-4.7-flash":
-            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            payload["chat_template_kwargs"] = {"enable_thinking": not (config.task_routing_enabled and request.task_role == "routine")}
         if request.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
@@ -1144,13 +1130,11 @@ class CloudflareAIProviderAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Gemini Provider Adapter
+# NVIDIA NIM Provider Adapter
 # ---------------------------------------------------------------------------
 
 
-class GeminiProviderAdapter:
-    """Invokes Google Gemini REST API (generateContent)."""
-
+class NvidiaProviderAdapter:
     def __init__(self, http_client: Callable[..., Any] | None = None) -> None:
         self._http_client = http_client or urllib.request.urlopen
 
@@ -1162,189 +1146,86 @@ class GeminiProviderAdapter:
         timeout: float,
         model: str | None = None,
     ) -> tuple[str, TokenUsage]:
-        try:
-            return self._execute_once(
-                request,
-                config,
-                timeout=timeout,
-                model=model,
-                api_key=config.gemini_api_key,
-            )
-        except (ProviderClientError, ProviderRateLimitError) as exc:
-            standby = config.gemini_standby_api_key
-            if config.gemini_auto_failover_key and standby and _is_key_switching_error(exc):
-                logger.warning(
-                    "Gemini active key rejected (HTTP %s); retrying once with the standby key",
-                    getattr(exc, "http_code", None),
-                )
-                return self._execute_once(
-                    request,
-                    config,
-                    timeout=timeout,
-                    model=model,
-                    api_key=standby,
-                )
-            raise
+        if not config.nvidia_api_key:
+            raise ProviderClientError("NVIDIA alternate API key is not configured", http_code=401)
 
-    def _execute_once(
-        self,
-        request: ProviderRequest,
-        config: UnifiedProviderConfig,
-        *,
-        timeout: float,
-        model: str | None = None,
-        api_key: str,
-    ) -> tuple[str, TokenUsage]:
-        if not api_key:
-            raise ProviderClientError("Gemini API key is not configured", http_code=401)
-
-        resolved_model = model or resolve_provider_model("gemini", config, request)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{resolved_model}:generateContent"
-
-        system_parts = []
+        resolved_model = model or resolve_provider_model("nvidia", config, request)
+        messages = [message.to_dict() for message in request.messages]
         if request.system_instruction:
-            system_parts.append({"text": request.system_instruction})
-
-        contents = []
-        for msg in request.messages:
-            if msg.role == "system":
-                system_parts.append({"text": msg.content})
-            elif msg.role in ("user", "human"):
-                contents.append({"role": "user", "parts": [{"text": msg.content}]})
-            elif msg.role in ("assistant", "model"):
-                contents.append({"role": "model", "parts": [{"text": msg.content}]})
-
-        if not contents and system_parts:
-            contents.append({"role": "user", "parts": [{"text": request.system_instruction or ""}]})
-            system_parts = []
-
-        generation_config: dict[str, Any] = {
-            "temperature": max(0.0, min(request.temperature, 2.0)),
+            messages.insert(0, {"role": "system", "content": request.system_instruction})
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+            "stream": False,
+            "temperature": max(0.0, min(request.temperature, 1.0)),
         }
         if request.max_tokens is not None:
-            generation_config["maxOutputTokens"] = max(256, request.max_tokens or 2048)
-        if request.purpose in MODEL_LED_REQUEST_PURPOSES:
-            if re.fullmatch(r"gemini-3(?:\.\d+)?-(?:flash(?:-lite)?|pro)(?:-preview(?:-\d+-\d+)?)?", resolved_model):
-                generation_config["thinkingConfig"] = {"thinkingLevel": "HIGH"}
-            elif resolved_model == "gemini-2.5-pro":
-                generation_config["thinkingConfig"] = {"thinkingBudget": 32768}
-            elif re.fullmatch(r"gemini-2\.5-flash(?:-lite)?(?:-preview(?:-\d+-\d+)?)?", resolved_model):
-                generation_config["thinkingConfig"] = {"thinkingBudget": 24576}
+            payload["max_tokens"] = request.max_tokens
         if request.response_format == "json":
-            generation_config["responseMimeType"] = "application/json"
-            if request.json_schema:
-                generation_config["responseSchema"] = request.json_schema
+            payload["response_format"] = {"type": "json_object"}
+        if resolved_model == DEFAULT_NVIDIA_MODEL:
+            default_effort = "none"
+            effort = os.getenv("PMS_AI_NVIDIA_REASONING_EFFORT", default_effort).strip().casefold()
+            payload["reasoning_effort"] = effort if effort in {"none", "low", "high"} else default_effort
 
-        payload: dict[str, Any] = {
-            "contents": contents,
-            "generationConfig": generation_config,
-        }
-        if system_parts:
-            payload["systemInstruction"] = {"parts": system_parts}
-
-        raw_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=raw_data,
+        http_request = urllib.request.Request(
+            NVIDIA_CHAT_COMPLETIONS_URL,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={
+                "Authorization": f"Bearer {config.nvidia_api_key}",
                 "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
+                "Accept": "application/json",
             },
             method="POST",
         )
-
-        t_call_start = time.perf_counter()
+        deadline = time.perf_counter() + timeout
         try:
-            with self._http_client(req, timeout=timeout) as resp:
-                elapsed_connect = time.perf_counter() - t_call_start
-                remaining_read = timeout - elapsed_connect
-                if remaining_read <= 0:
-                    raise ProviderTimeoutError(f"Gemini call timed out connecting after {elapsed_connect:.1f}s")
-                raw_response = _read_with_deadline(resp, remaining_read)
+            with self._http_client(http_request, timeout=timeout) as response:
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    raise ProviderTimeoutError("NVIDIA connection exceeded its deadline")
+                data = json.loads(_read_with_deadline(response, remaining))
         except urllib.error.HTTPError as exc:
-            raise _parse_http_error(exc, "Gemini") from exc
+            raise _parse_http_error(exc, "NVIDIA") from exc
         except (TimeoutError, socket.timeout) as exc:
-            raise ProviderTimeoutError(f"Gemini call timed out after {timeout:.1f}s") from exc
+            raise ProviderTimeoutError("NVIDIA response timed out") from exc
         except (urllib.error.URLError, ConnectionError, OSError) as exc:
-            if "timed out" in str(exc).casefold():
-                raise ProviderTimeoutError(f"Gemini connection timed out after {timeout:.1f}s") from exc
-            raise ProviderTransientError(f"Gemini connection reset or unreachable: {type(exc).__name__}") from exc
+            if isinstance(getattr(exc, "reason", None), (TimeoutError, socket.timeout)):
+                raise ProviderTimeoutError("NVIDIA connection timed out") from exc
+            raise ProviderTransientError("NVIDIA connection could not be completed") from exc
+        except (UnicodeError, ValueError) as exc:
+            raise ProviderTransientError("NVIDIA returned invalid JSON") from exc
 
-        if time.perf_counter() - t_call_start > timeout:
-            raise ProviderTimeoutError(f"Gemini call exceeded timeout deadline of {timeout:.1f}s")
-
-        try:
-            data = json.loads(raw_response)
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            raise ProviderTransientError("Gemini returned invalid non-JSON HTTP response body") from exc
-
+        if time.perf_counter() > deadline:
+            raise ProviderTimeoutError("NVIDIA response exceeded its deadline")
         if not isinstance(data, dict):
-            raise ProviderTransientError("Gemini returned unexpected non-object JSON payload")
-
-        # Check prompt-level safety block
-        prompt_feedback = data.get("promptFeedback") if isinstance(data.get("promptFeedback"), dict) else {}
-        block_reason = str(prompt_feedback.get("blockReason") or "").upper()
-        if block_reason and block_reason not in ("", "NONE"):
-            raise ProviderSafetyRefusalError(f"Gemini blocked prompt due to policy: {block_reason}")
-
-        candidates = data.get("candidates") or []
-        if not candidates or not isinstance(candidates, list):
-            raise ProviderSafetyRefusalError("Gemini returned zero candidates (possible safety filter)")
-
-        candidate = candidates[0] if isinstance(candidates[0], dict) else {}
-        finish_reason = str(candidate.get("finishReason") or "").upper()
-
-        if (
-            finish_reason in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALICIOUS", "OTHER"}
-            or "SAFETY" in finish_reason
-            or "BLOCK" in finish_reason
-            or "PROHIBIT" in finish_reason
-            or "SPII" in finish_reason
-            or "RECIT" in finish_reason
-        ):
-            raise ProviderSafetyRefusalError(f"Gemini candidate blocked by content filter: {finish_reason}")
-        if finish_reason == "MAX_TOKENS":
-            raise ProviderTruncatedError("Gemini candidate truncated due to max output tokens")
-
-        content_obj = candidate.get("content") if isinstance(candidate.get("content"), dict) else {}
-        raw_parts = content_obj.get("parts")
-        parts = [p for p in raw_parts if isinstance(p, dict)] if isinstance(raw_parts, list) else []
-        non_thought_parts = [
-            p for p in parts
-            if not p.get("thought") and isinstance(p.get("text"), str) and p["text"].strip()
-        ]
-        fallback_texts = [
-            p["text"] for p in parts
-            if isinstance(p.get("text"), str) and p["text"].strip()
-        ]
-        if non_thought_parts:
-            text_result = non_thought_parts[-1]["text"]
-        elif fallback_texts:
-            text_result = fallback_texts[-1]
-        else:
-            text_result = ""
-
-        if not text_result.strip():
-            raise ProviderTransientError("Gemini returned empty candidate text")
-
-        # Schema validation for structured requests
+            raise ProviderTransientError("NVIDIA returned an unexpected response envelope")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise ProviderEmptyResponseError("NVIDIA returned no completion")
+        choice = choices[0]
+        message = choice.get("message")
+        message = message if isinstance(message, dict) else {}
+        finish_reason = choice.get("finish_reason")
+        if message.get("refusal") or finish_reason in ("content_filter", "safety"):
+            raise ProviderSafetyRefusalError("NVIDIA declined the request")
+        if finish_reason == "length":
+            raise ProviderTruncatedError("NVIDIA response was truncated")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ProviderEmptyResponseError("NVIDIA returned no final answer")
         if request.response_format == "json":
-            valid, err = validate_structured_output(text_result, request.json_schema)
+            valid, error = validate_structured_output(content, request.json_schema or {"type": "object"})
             if not valid:
-                raise ProviderSchemaValidationError(f"Gemini JSON output validation failed: {err}")
+                raise ProviderSchemaValidationError(f"NVIDIA structured output failed validation: {error}")
 
-        usage_raw = data.get("usageMetadata") if isinstance(data.get("usageMetadata"), dict) else {}
-        usage = TokenUsage(
-            prompt_tokens=int(usage_raw.get("promptTokenCount") or 0),
-            completion_tokens=int(usage_raw.get("candidatesTokenCount") or 0),
-            total_tokens=int(usage_raw.get("totalTokenCount") or 0),
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        return content.strip(), TokenUsage(
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+            total_tokens=int(usage.get("total_tokens") or 0),
         )
-        return text_result.strip(), usage
-
-
-# ---------------------------------------------------------------------------
-# OpenAI (decommissioned)
-# ---------------------------------------------------------------------------
 
 
 class OpenAIProviderAdapter:
@@ -1375,27 +1256,26 @@ class OpenAIProviderAdapter:
 
 
 class UnifiedProviderEngine:
-    """Orchestrates primary (Cloudflare Workers AI) and fallback (Gemini) AI completion calls.
-    
-    Default hierarchy: Cloudflare Workers AI is primary, Google Gemini is fallback.
-    """
+    """Runs authorized generation with shared deadlines and fallback policies."""
 
     def __init__(
         self,
         config: UnifiedProviderConfig | None = None,
         *,
         cloudflare_adapter: CloudflareAIProviderAdapter | None = None,
-        gemini_adapter: GeminiProviderAdapter | None = None,
+        nvidia_adapter: NvidiaProviderAdapter | None = None,
     ) -> None:
         self.config = config or load_unified_provider_config()
         self.cloudflare_adapter = cloudflare_adapter or CloudflareAIProviderAdapter()
-        self.gemini_adapter = gemini_adapter or GeminiProviderAdapter()
+        self.nvidia_adapter = nvidia_adapter or NvidiaProviderAdapter()
+        self._retired_cloudflare_model = ""
+        self._retired_until = 0.0
 
     def _is_enabled(self, provider: str) -> bool:
         if provider == "cloudflare":
             return self.config.cloudflare_enabled
-        if provider == "gemini":
-            return self.config.gemini_enabled
+        if provider == "nvidia":
+            return self.config.nvidia_enabled
         return False
 
     def _get_model(self, provider: str, request: ProviderRequest | None = None) -> str:
@@ -1404,15 +1284,15 @@ class UnifiedProviderEngine:
     def _has_credentials(self, provider: str) -> bool:
         if provider == "cloudflare":
             return bool(self.config.cloudflare_account_id and self.config.cloudflare_api_token)
-        if provider == "gemini":
-            return bool(self.config.gemini_api_key)
+        if provider == "nvidia":
+            return bool(self.config.nvidia_api_key)
         return False
 
     def _get_adapter(self, provider: str) -> Any:
         if provider == "cloudflare":
             return self.cloudflare_adapter
-        if provider == "gemini":
-            return self.gemini_adapter
+        if provider == "nvidia":
+            return self.nvidia_adapter
         return None
 
     # -- Public API -----------------------------------------------------
@@ -1478,9 +1358,12 @@ class UnifiedProviderEngine:
         terminal_outcome: str | None = None
         terminal_detail: str | None = None
 
-        primary_name = self.config.effective_primary_provider
+        primary_name, fallback_name = self.config.provider_order(request)
         primary_adapter = self._get_adapter(primary_name)
         primary_model = self._get_model(primary_name, request)
+        if (primary_name == "cloudflare" and primary_model == self._retired_cloudflare_model
+                and time.monotonic() < self._retired_until and self.config.cloudflare_alter_model):
+            primary_model = self.config.cloudflare_alter_model
 
         if not self._is_enabled(primary_name):
             attempts.append(ProviderAttempt(
@@ -1521,6 +1404,9 @@ class UnifiedProviderEngine:
                     break
 
                 per_call_timeout = min(self.config.timeout_seconds, remaining_time)
+                if (self.config.task_routing_enabled and self.config.fallback_enabled and request.task_role == "routine"
+                        and self._is_enabled(fallback_name) and self._has_credentials(fallback_name)):
+                    per_call_timeout = min(per_call_timeout, remaining_time * 0.55)
                 t0 = time.perf_counter()
                 try:
                     try:
@@ -1586,6 +1472,15 @@ class UnifiedProviderEngine:
                         retry_count=retries,
                     ))
                     # STRICT BOUNDARY: Client errors (400, 401, 403) must NOT trigger fallback
+                    if (primary_name == "cloudflare" and exc.http_code == 410
+                            and self.config.cloudflare_alter_model
+                            and primary_model != self.config.cloudflare_alter_model):
+                        # A retired deployment can be replaced by the configured model
+                        # on this same account, once within the original deadline.
+                        self._retired_cloudflare_model = primary_model
+                        self._retired_until = time.monotonic() + 600
+                        primary_model = self.config.cloudflare_alter_model
+                        continue
                     allow_fallback = False
                     terminal_outcome = "invalid_request" if exc.http_code == 400 else "error"
                     terminal_detail = str(exc)
@@ -1708,7 +1603,6 @@ class UnifiedProviderEngine:
             return response
 
         # 4. Fallback Provider Loop
-        fallback_name = self.config.effective_fallback_provider
         fallback_adapter = self._get_adapter(fallback_name)
         fallback_model = self._get_model(fallback_name, request)
 
@@ -1920,7 +1814,7 @@ class UnifiedProviderEngine:
     def _record_observability(self, request: ProviderRequest, response: ProviderResponse) -> None:
         """Structured observability recording without logging sensitive content or secrets."""
         fallback_used = (
-            response.provider == self.config.effective_fallback_provider
+            response.provider == self.config.provider_order(request)[1]
             and response.outcome == "fallback_success"
         )
         attempt_summaries = [
@@ -1937,8 +1831,9 @@ class UnifiedProviderEngine:
             for a in response.attempts
         ]
         logger.info(
-            "UnifiedProviderEngine purpose=%s outcome=%s provider=%s model=%s latency_ms=%.1f tokens=%d neurons=%s cost=%s fallback_used=%s attempts=%s",
+            "UnifiedProviderEngine purpose=%s task_role=%s outcome=%s provider=%s model=%s latency_ms=%.1f tokens=%d neurons=%s cost=%s fallback_used=%s attempts=%s",
             request.purpose,
+            request.task_role,
             response.outcome,
             response.provider,
             response.model,

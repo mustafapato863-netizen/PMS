@@ -33,7 +33,7 @@ function provider(overrides: Partial<AiProviderConfigItem> & Pick<AiProviderConf
 
 const CLOUDFLARE = provider({
   provider: 'cloudflare',
-  label: 'Cloudflare Workers AI · Primary chat',
+  label: 'Cloudflare Workers AI · Fallback chat',
   primary_model: '@cf/ibm-granite/granite-4.0-h-micro',
   alternate_model: '@cf/zai-org/glm-4.7-flash',
   account_id_masked: 'acct••••1234',
@@ -42,23 +42,16 @@ const CLOUDFLARE = provider({
   alternate_key: { slot: 'alternate', configured: true, source: 'db', masked_preview: '••••3b9e' },
 });
 
-const GEMINI = provider({
-  provider: 'gemini',
-  label: 'Google Gemini · Fallback chat',
-  primary_model: 'gemini-2.5-flash',
-  primary_key: { slot: 'primary', configured: true, source: 'env', masked_preview: 'AIza••••9x1q' },
-});
-
 const NVIDIA = provider({
   provider: 'nvidia',
-  label: 'NVIDIA NIM · Feedback analyzer',
+  label: 'NVIDIA NIM · Primary chat and feedback',
   primary_model: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
   enabled: false,
   daily_limit: 50,
   primary_key: { slot: 'primary', configured: true, source: 'db', masked_preview: 'nvapi-••••7a2f' },
 });
 
-const PROVIDERS = [CLOUDFLARE, GEMINI, NVIDIA];
+const PROVIDERS = [CLOUDFLARE, NVIDIA];
 
 function listResponse() {
   return { success: true, providers: PROVIDERS };
@@ -79,14 +72,30 @@ describe('AI models & keys panel', () => {
     await renderPanel();
 
     expect(screen.getByTestId('provider-card-cloudflare')).toBeInTheDocument();
-    expect(screen.getByTestId('provider-card-gemini')).toBeInTheDocument();
     expect(screen.getByTestId('provider-card-nvidia')).toBeInTheDocument();
+    expect(screen.queryByTestId('provider-card-gemini')).not.toBeInTheDocument();
 
     const cloudflare = screen.getByTestId('provider-card-cloudflare');
     expect(within(cloudflare).getByText('••••7a2f')).toBeInTheDocument();
     expect(within(cloudflare).getByText('••••3b9e')).toBeInTheDocument();
     expect(within(cloudflare).getByText(/acct••••1234/)).toBeInTheDocument();
     expect(mockedApiFetch).toHaveBeenCalledWith('/api/ai/admin/providers');
+  });
+
+  it('shows supported providers when an older backend still returns Gemini', async () => {
+    mockedApiFetch.mockResolvedValueOnce({
+      success: true,
+      providers: [
+        { ...NVIDIA, provider: 'gemini', label: 'Google Gemini' },
+        ...PROVIDERS,
+      ],
+    });
+
+    await renderPanel();
+
+    expect(screen.getByTestId('provider-card-nvidia')).toBeInTheDocument();
+    expect(screen.queryByTestId('provider-card-gemini')).not.toBeInTheDocument();
+    expect(screen.getByText('2 of 2 providers configured')).toBeInTheDocument();
   });
 
   it('saves a replacement key without ever rendering it back', async () => {

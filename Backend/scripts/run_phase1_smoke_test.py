@@ -187,7 +187,7 @@ def main():
     print("--> Executing Run A: Deterministic Run (Model features disabled)...")
     os.environ["PMS_AI_INTENT_ENABLED"] = "false"
     os.environ["PMS_AI_SYNTHESIS_ENABLED"] = "false"
-    os.environ["PMS_AI_GEMINI_ROUTING_ENABLED"] = "false"
+    os.environ["PMS_AI_NVIDIA_ROUTING_ENABLED"] = "false"
     os.environ["PMS_AI_LOCAL_ROUTER_ENABLED"] = "false"
     os.environ["PMS_AI_CONVERSATION_STATE_ENABLED"] = "true"
     run_a_results = run_conversation_sequence("Run A: Deterministic")

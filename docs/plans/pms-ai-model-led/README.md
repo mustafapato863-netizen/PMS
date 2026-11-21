@@ -20,10 +20,25 @@
 
 ## Current Status
 
-- **Active Phase:** Phases 0–7 Complete; production rollout gates remain OPEN / AWAITING USER RELEASE AUTHORIZATION.
+- **Active plan:** The 20 November 2026 revision starts with Phase 0 baseline and cleanup. Prior phase reports describe their own implementation checkpoints. Live-provider, independent evaluation and production rollout gates remain open for this revision.
 - **Phase Boundary Rule:** No `git push`, no production migrations, and no live rollout authorized yet. Human gates `#97` (live provider verification) and `Vi` `#103` (Phase 9 sign-off) remain `PENDING`.
 - **Recovery Point:** `backups/snapshot_phase0_revalidated_20261117_132614/` captures the pre-edit current WIP; the tracked patch passed reverse-apply validation.
-- **UI Availability:** No local frontend/backend listener was present during the signed-in UI check; HTTP verification uses synthetic in-memory data.
+- **Chat UI:** The workspace and page assistant were verified in signed-in desktop, tablet and mobile browsers against a local synthetic database. Chat settings are grouped, pending turns have a single status and Stop action, and both surfaces share formatted answer text for display and copy.
+
+### Chat and answer-quality recheck
+
+- The workspace starts with a brief answer. The page assistant keeps charts and tables behind **View evidence** and suggests one follow-up. Both views account for the mobile navigation dock and honor reduced-motion preferences.
+- The analytical path preserves the requested country, month, level, rank cutoff, and metric unit. Expanding a request to the whole department clears the previous role and employee. Explicit booking-volume comparisons use branch counts. Planning and synthesis share an elapsed-time budget.
+- The 24-turn synthetic follow-up fixture has a verified manifest and its own denominator. The scorer checks values and units, requires explicit scope when specified, checks ordering and ties, and watches provider calls on request replay. It reports planner activity separately from answer synthesis and fallback. The deterministic and scripted-outage runs each passed 24 of 24.
+- The isolated live Flash-Lite run at `LOW` passed 24 of 24 semantic and critical checks across the combined PMS runtime. It used model synthesis on 14 turns, verified fallback text on 3, and deterministic answers on 7. Model-led planning with successful evidence ran on 17 turns and satisfied 16 of the 18 cases that expected model planning. Median first response was 3.9 seconds and p95 was 17.4 seconds in this run. A prior overlapping run had more provider fallback and lower accuracy. The evidence supports the combined runtime and leaves standalone model acceptance and production rollout open.
+- A controlled test runs the same question before approval, while guidance is active, and after revocation. A separate live synthetic run resolved an unfamiliar team term to the intended employee ranking after Admin approval, preserved the opposite ranking, and returned to unavailable evidence after revocation. This verifies one live guidance cycle. The optional NVIDIA analyzer requires its own credentials.
+
+Run from the Backend directory with the test database configuration:
+
+```powershell
+python scripts/run_phase6_independent_eval.py --fixture tests/fixtures/ai_phase6_followup_v2.json --modes baseline mocked --out ../.tmp/chat-eval-local.json
+python scripts/run_phase6_independent_eval.py --fixture tests/fixtures/ai_phase6_followup_v2.json --modes live --thinking-level LOW --pacing-ms 2000 --out ../.tmp/chat-eval-live.json
+```
 
 ---
 

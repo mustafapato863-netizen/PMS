@@ -2,7 +2,7 @@
 
 Executes all synthetic cases in ``pilot_corrective_action_cases.json`` against an
 isolated in-memory SQLite database and scripted ``UnifiedProviderEngine``
-(or live Cloudflare/Gemini providers when invoked with ``--live`` and
+(or live Cloudflare/Nvidia providers when invoked with ``--live`` and
 ``PMS_AI_RUN_LIVE_MODEL_TESTS=true``).
 
 Evaluates all 7 rubric dimensions:
@@ -50,7 +50,7 @@ from services.ai.corrective_action_drafter import (  # noqa: E402
 )
 from services.ai.provider_engine import (  # noqa: E402
     CloudflareAIProviderAdapter,
-    GeminiProviderAdapter,
+    NvidiaProviderAdapter,
     ProviderRateLimitError,
     ProviderSafetyRefusalError,
     ProviderTimeoutError,
@@ -102,7 +102,7 @@ class _ScriptedCloudflareAdapter(CloudflareAIProviderAdapter):
         return content, TokenUsage(prompt_tokens=180, completion_tokens=45, total_tokens=225)
 
 
-class _ScriptedGeminiAdapter(GeminiProviderAdapter):
+class _ScriptedNvidiaAdapter(NvidiaProviderAdapter):
     def __init__(self, scenario: str, mock_response: dict[str, Any] | None, log: list[_RecordedProviderCall]) -> None:
         self.scenario = scenario
         self.mock_response = mock_response
@@ -111,16 +111,16 @@ class _ScriptedGeminiAdapter(GeminiProviderAdapter):
     def execute(self, request, config=None, *, model: str = "", timeout: float = 5.0):
         self.log.append(
             _RecordedProviderCall(
-                provider="gemini",
-                model=model or (config.gemini_model if config else ""),
+                provider="nvidia",
+                model=model or (config.nvidia_model if config else ""),
                 system_instruction=request.system_instruction or "",
                 messages=[{"role": m.role, "content": m.content} for m in request.messages],
             )
         )
         if self.scenario in ("must_not_call", "cloudflare_safety_refusal"):
-            raise AssertionError(f"Gemini adapter must not be called for scenario={self.scenario}")
+            raise AssertionError(f"Nvidia adapter must not be called for scenario={self.scenario}")
         if self.scenario == "both_unavailable":
-            raise ProviderTransientError("Simulated Gemini 503 outage", http_code=503)
+            raise ProviderTransientError("Simulated Nvidia 503 outage", http_code=503)
         content = json.dumps(self.mock_response or {})
         return content, TokenUsage(prompt_tokens=180, completion_tokens=45, total_tokens=225)
 
@@ -355,22 +355,22 @@ def _evaluate_single_case(case: dict[str, Any], *, live: bool = False) -> CaseEv
         engine: UnifiedProviderEngine | None = None
         if not live:
             cf_adapter = _ScriptedCloudflareAdapter(scenario, case.get("mock_model_response"), call_log)
-            gm_adapter = _ScriptedGeminiAdapter(scenario, case.get("mock_model_response"), call_log)
+            gm_adapter = _ScriptedNvidiaAdapter(scenario, case.get("mock_model_response"), call_log)
             cfg = UnifiedProviderConfig(
                 primary_provider="cloudflare",
-                fallback_provider="gemini",
+                fallback_provider="nvidia",
                 cloudflare_enabled=True,
-                gemini_enabled=True,
+                nvidia_enabled=True,
                 fallback_enabled=True,
                 cloudflare_account_id="phase4-synthetic-acct",
                 cloudflare_api_token="phase4-synthetic-cf-token",
                 cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
-                gemini_api_key="phase4-synthetic-gemini-key",
-                gemini_model="gemini-2.5-flash",
+                nvidia_api_key="phase4-synthetic-nvidia-key",
+                nvidia_model="nvidia/nemotron-3.5-super-vl-120b-a12b",
                 timeout_seconds=5.0,
                 max_retries=0,
             )
-            engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=cf_adapter, gemini_adapter=gm_adapter)
+            engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=cf_adapter, nvidia_adapter=gm_adapter)
 
         employees = case.get("employees") or []
         req_emp_id = str(employees[0]["employee_id"]) if case.get("subject") == "employee" and employees else None
@@ -442,15 +442,18 @@ def _evaluate_single_case(case: dict[str, Any], *, live: bool = False) -> CaseEv
         if expected.get("outcome") == "insufficient_evidence" and call_log:
             evidence_ok = False
             failures.append(f"evidence_appropriateness: model called {len(call_log)} times on insufficient evidence")
-        if "provider_used" in expected and payload.provider_used != expected["provider_used"]:
+        expected_provider = expected.get("provider_used")
+        if expected_provider == "gemini":
+            expected_provider = "nvidia"  # Frozen cases describe the retired fallback.
+        if expected_provider and payload.provider_used != expected_provider:
             evidence_ok = False
             failures.append(f"evidence_appropriateness: expected provider_used={expected['provider_used']}, got {payload.provider_used}")
         if expected.get("fallback_reason") and payload.fallback_reason != expected["fallback_reason"]:
             evidence_ok = False
             failures.append(f"evidence_appropriateness: expected fallback_reason={expected['fallback_reason']}, got {payload.fallback_reason}")
-        if expected.get("gemini_called") is False and any(c.provider == "gemini" for c in call_log):
+        if expected.get("gemini_called") is False and any(c.provider == "nvidia" for c in call_log):
             evidence_ok = False
-            failures.append("evidence_appropriateness: gemini fallback was called after safety refusal")
+            failures.append("evidence_appropriateness: nvidia fallback was called after safety refusal")
         exp_reason_prefix = expected.get("expected_reason_prefix")
         if exp_reason_prefix and not any(r.startswith(exp_reason_prefix) for r in payload.insufficient_evidence_reasons):
             evidence_ok = False

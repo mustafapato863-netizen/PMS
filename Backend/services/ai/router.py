@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import difflib
 import re
+from time import perf_counter
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
+
+if TYPE_CHECKING:
+    from models.models import AiApprovedPattern
 
 from models.ai_schemas import (
     AiClarificationPrompt,
@@ -37,12 +41,18 @@ from services.ai.local_model_router import (
 from services.ai.domain_policies import (
     BRANCH_ALIASES,
     MONTH_ALIASES,
+    parse_query_rankings_spec,
+    asks_cohort_score,
+    asks_group_leader,
+    detect_explicit_score_measure,
+    explicit_kpi_question_kind,
     has_pms_performance_signal,
     is_arabic_text,
     is_bare_scope_or_period_refinement,
     is_broad_overview_prompt,
     is_explicit_correction_prompt,
     is_off_topic_prompt,
+    is_ranked_action_request,
     is_topic_switch_prompt,
     is_vague_dataless_prompt,
     normalize_prompt_lexical,
@@ -52,7 +62,7 @@ from services.ai.entity_resolver import (
     resolve_employee_from_candidates,
 )
 from services.ai.providers import (
-    GeminiStructuredRouterAdapter,
+    NvidiaStructuredRouterAdapter,
     ProviderCallMetrics,
     ProviderUnavailableError,
     is_prompt_safe_for_external_projection,
@@ -202,6 +212,8 @@ ORDERED_TEAM_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Human Resources", ("human resources", "hr team", "hr department", "in hr", "for hr")),
     ("IT", ("it team", "information technology", "it department", "in it", "for it")),
     ("Offshore Admin & Management", ("offshore admin & management", "offshore admin", "admin & management")),
+    ("Quality Management", ("quality management",)),
+    ("Administration", ("administration", "admin department")),
     ("CRM", ("crm", "customer relationship management", "crm corporate", "crm bsc", "crm management")),
     ("Nursing", ("nursing", "nursing corporate", "nursing bsc", "nursing management")),
     ("PMO", ("pmo", "project management office", "pmo corporate", "pmo bsc", "pmo management")),
@@ -291,6 +303,7 @@ class RouterValidationResult:
     route_used: str = "local_rules"
     provider_metrics: ProviderCallMetrics = field(default_factory=ProviderCallMetrics)
     shadow_plan: dict[str, Any] | None = None
+    matched_pattern_id: str | None = None
 
 
 REVERSE_MONTHS_BY_NUM: dict[int, str] = {v: k for k, v in MONTHS.items()}
@@ -308,6 +321,16 @@ def _format_period_label(period_key: str) -> str:
         return f"{m_name} {int(yr_s)}"
     except Exception:
         return "September 2026"
+
+
+def clean_planner_tool_arguments(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    filters = {"region", "country", "department", "team", "position", "branch", "performance_level",
+               "employee_name", "employee_id", "metric_id", "metric", "period"}
+    return {key: arg for key, arg in value.items() if arg is not None and not (
+        key in filters and isinstance(arg, str) and arg.strip().casefold() in {"", "none", "null", "undefined"}
+    )}
 
 
 def _extract_periods(
@@ -337,6 +360,15 @@ def _extract_periods(
         pk = _period_key_from_month_year(m_name, default_yr)
         if pk not in periods:
             periods.append(pk)
+
+    if not periods and re.search(r"\b(?:last|prev(?:ious)?|prior)\s+month\b", text_lower):
+        anchor_m = MONTHS.get(default_month) if default_month and default_month in MONTHS else None
+        anchor_y = default_yr
+        if anchor_m is None and re.match(r"^(20\d{2})-(0[1-9]|1[0-2])$", fallback_period):
+            anchor_y, anchor_m = map(int, fallback_period.split("-"))
+        if anchor_m is not None:
+            prev_y, prev_m = (anchor_y - 1, 12) if anchor_m == 1 else (anchor_y, anchor_m - 1)
+            periods.append(f"{prev_y:04d}-{prev_m:02d}")
 
     if not periods and default_month and default_month in MONTHS:
         periods.append(_period_key_from_month_year(default_month, default_yr))
@@ -414,7 +446,7 @@ _OVERALL_SCORE_REQUEST_RE = re.compile(
 _SPECIFIC_KPI_CUE_RE = re.compile(
     r"\b(?:quality\s+score|qa\s+score|qa\s+quality|bookings?|attended|attendance|"
     r"abandon|abondan|abandoned|reachability|aht|handle\s+time|rejection|"
-    r"waiting\s+time|cpl|leads|rework|team\s+sla|sla|atv|leakage|tender\s+compliance)\b"
+    r"wait(?:ing)?\s+time|cpl|leads|rework|team\s+sla|sla|atv|leakage|tender\s+compliance)\b"
 )
 
 
@@ -543,6 +575,8 @@ def _detect_metric_id(
             return "pre_approvals_ip_offshore:rejection"
 
     # Call Center metrics
+    if t_norm in {"inbound", "outbound"} and re.search(r"\bwait(?:ing)?\s+time\b", text_lower):
+        return f"{t_norm}:waitingtime"
     if any(k in text_lower for k in ("abandon", "abondan", "abandoned")):
         return "inbound:abandon_rate"
     if "reachability" in text_lower:
@@ -674,29 +708,31 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:is|was)\s+(?:a\s+)?new\s+joiner\b",
         r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+join\b",
         r"\b(?:how\s+did|what\s+did|how\s+is|how\s+was)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})\s+(?:score|perform|do|doing|rank)\b",
-        r"(?:employee|agent|for|about|trend of|trend for|score of|profile of|show me|check|look at)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})",
+        r"\b(?:employee|agent)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})",
+        r"\b(?:for|about|trend of|trend for|score of|profile of|show me|check|look at)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})",
         r"\bdid\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})\s+(?:have|had|record|recorded|make|made|generate|generated|deliver|delivered|meet|met|miss|missed|hit|exceed|exceeded|pass|passed|fail|failed|achieve|achieved|reach|reached|improve|improved|drop|dropped|change|changed)\b",
     ]
     stop_words = {
         "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
         "dxb", "shj", "ajm", "uae", "egy", "egypt",
         "rcm", "finance", "marketing", "pharmacy", "human", "resources", "hr", "it",
-        "nursing", "crm", "csr",
+        "nursing", "crm", "csr", "sales",
         "coding", "submission", "resubmission", "pre", "approvals", "preapprovals",
         "pre-approvals", "re-submission", "call-center",
         "prior", "auth", "authorization",
-        "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
+        "all", "team", "teams", "department", "departments", "division", "divisions",
+        "branch", "branches", "the", "his", "her", "and", "in",
         "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
         "lowest", "top", "bottom", "trend", "month", "months", "overall",
         "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
         "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
         "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
-        "scored", "scores", "scoring", "performed", "performing", "performance", "score",
+        "scored", "scores", "scoring", "performed", "performing", "performance", "score", "result", "results",
         "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
         "agent", "agents", "performer", "performers", "person", "people", "individual", "highest", "there", "anyone", "somebody",
         "recently", "new", "joiner", "joiners", "a", "an", "just",
         "booking", "bookings", "attendance", "attended", "abandon", "abandoned",
-        "reachability", "aht", "quality", "kpi", "kpis", "metric", "metrics",
+        "reachability", "aht", "quality", "pms", "kpi", "kpis", "metric", "metrics",
         "target", "targets", "gap", "gaps", "action", "actions", "corrective", "coaching",
         "plan", "proposal", "this", "page", "view", "dashboard", "scorecard",
         "presentation", "monthly", "summary", "executive", "managerial", "corporate",
@@ -708,7 +744,7 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         # "month") and return the residue ("Show", "that") as a person.
         "show", "tell", "give", "list", "find", "get", "display", "open",
         "please", "can", "me", "you", "my", "your", "our", "we",
-        "that", "those", "these", "last", "latest", "first", "next",
+        "that", "those", "these", "same", "last", "latest", "first", "next",
         "previous", "current", "published", "unpublished", "selected",
         "not", "been", "did", "does", "do", "would", "could", "should",
         "generated", "achieved", "recorded", "delivered", "leader", "leaders",
@@ -717,7 +753,7 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         "within", "check", "evaluate", "instead", "him",
         "let", "lets", "she", "he", "there", "here", "where", "how", "when", "why",
         "workforce", "analyst", "trainer", "quality", "assurance", "company", "everything", "things", "we", "they",
-        "waiting", "cpl", "leads", "rework",
+        "waiting", "wait", "cpl", "leads", "rework", "average", "avg", "mean", "cohort", "entire", "whole",
     }
     person_search_text = re.sub(
         r"^\s*not\s+[a-zA-Z]+(?:\s+[a-zA-Z]+)?\s*(?:,|—|-)+\s*",
@@ -729,6 +765,14 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
     # The other patterns introduce a name after a cue ("for", "employee", ...).
     for index, pat in enumerate(name_patterns):
         for m in re.finditer(pat, person_search_text, flags=re.IGNORECASE):
+            # "Which Inbound employee got …" ranks an unknown employee.
+            # The word after "employee" in that clause is not a supplied name.
+            if re.match(r"(?:employee|agent)\s", m.group(0), flags=re.IGNORECASE) and re.search(
+                r"\bwhich(?:\s+[\w-]+){0,4}\s+$",
+                person_search_text[:m.start()],
+                flags=re.IGNORECASE,
+            ):
+                continue
             if m.end() < len(person_search_text) and person_search_text[m.end()] == "-":
                 continue
             if index == 0 and re.match(
@@ -830,9 +874,11 @@ class HybridQueryRouter:
         published_periods: Iterable[str] | None = None,
         employee_candidates: Iterable[EmployeeHistoryCandidate] | None = None,
         db: Any = None,
+        preview_pattern: AiApprovedPattern | None = None,
     ) -> None:
         self.scope = scope
         self.db = db
+        self.preview_pattern = preview_pattern
         self.catalog = get_ai_catalog()
         self.published_periods: set[str] | None = (
             {str(p).strip() for p in published_periods if re.match(r"^\d{4}-(0[1-9]|1[0-2])$", str(p).strip())}
@@ -856,6 +902,7 @@ class HybridQueryRouter:
         bounded_context: BoundedIntentContext | None = None,
         precomputed_intent: LocalIntentResult | None = None,
         history: list[Any] | None = None,
+        turn_deadline: float | None = None,
     ) -> RouterValidationResult:
         cfg = get_ai_runtime_config()
         text = normalize_prompt_lexical((prompt or "").strip())
@@ -1071,6 +1118,7 @@ class HybridQueryRouter:
         # an explicit session team, or a short follow-up to a prior turn
         # about one side of the pair, is that context.
         ambiguous_bare_teams: list[str] = []
+        resolved_alias_region: str | None = None
         # Two or more distinct team mentions make this a team comparison:
         # comparisons skip the bare-alias clarification (section 4b) and are
         # handled downstream, so the bare names stay in teams_in_prompt.
@@ -1104,8 +1152,13 @@ class HybridQueryRouter:
                     )
                     if session_team in pair:
                         resolved_t = session_team
+                        resolved_alias_region = "EGY" if session_team == pair[0] else "UAE"
                     elif is_followup_like and prior_team in pair:
                         resolved_t = prior_team
+                        resolved_alias_region = "EGY" if prior_team == pair[0] else "UAE"
+                    elif (region_hint := (prior.region if prior else None) or session_state.region) in ("EGY", "UAE"):
+                        resolved_t = pair[0] if region_hint == "EGY" else pair[1]
+                        resolved_alias_region = region_hint
                     elif is_multi_team_prompt or not (
                         user_can_access_team(self.scope, pair[0])
                         or user_can_access_team(self.scope, pair[1])
@@ -1129,6 +1182,17 @@ class HybridQueryRouter:
         pos_team, detected_pos = _detect_position(lower)
         if pos_team and not teams_in_prompt:
             teams_in_prompt = [pos_team]
+
+        comparison_teams = list(teams_in_prompt) if len(teams_in_prompt) == 2 else []
+        if (
+            not teams_in_prompt
+            and prior
+            and prior.comparison_teams
+            and re.search(r"\b(?:both teams|those two teams|same two teams|the two teams)\b", lower)
+            and re.search(r"\b(?:compare|higher|lower|difference)\b", lower)
+        ):
+            comparison_teams = list(prior.comparison_teams)
+            teams_in_prompt = list(comparison_teams)
 
         asks_team_comparison = (
             len(teams_in_prompt) >= 2
@@ -1207,6 +1271,26 @@ class HybridQueryRouter:
             (matched_choice and matched_choice.employee_id)
             or _extract_person_query_from_prompt(text)
         )
+        is_cohort_followup_turn = bool(
+            prior
+            and lower.startswith(("what about ", "how about ", "and ", "and for ", "what of "))
+            and not is_topic_switch_prompt(text)
+            and prior.intent == "current_value"
+            and not prior.metric_id
+            and not prior.last_subject_employee_id
+            and (explicit_team or explicit_fn_from_prompt or has_explicit_month or detect_explicit_score_measure(text))
+        )
+        requests_cohort_score = bool(
+            (asks_cohort_score(lower) or is_cohort_followup_turn)
+            and (_is_explicit_overall_score_request(lower) or is_cohort_followup_turn)
+            and not has_named_person_reference
+        )
+        ranks_cohort_roles = bool(
+            explicit_team
+            and re.search(r"\b(?:roles?|positions?)\b", lower)
+            and re.search(r"\b(?:rank(?:ed|ing)?|highest|lowest|best|worst|top|bottom)\b", lower)
+            and not re.search(r"\b(?:who|their|his|her)\b", lower)
+        )
         has_standalone_analytical_cue = bool(
             re.search(
                 r"\b(?:score|scores|trend|trends|trajectory|ranking|rank|who\s+(?:is|was|leads|performed)|"
@@ -1249,6 +1333,17 @@ class HybridQueryRouter:
             and not is_explicit_correction
         )
         prior_eff = None if is_topic_switch else prior
+        explicit_score_measure = detect_explicit_score_measure(text)
+        eff_score_measure = (
+            explicit_score_measure
+            or (prior_eff.score_measure if (prior_eff is not None and prior_eff.score_measure) else None)
+            or "official"
+        )
+        ranked_action_request = is_ranked_action_request(text)
+        refers_prior_period_pair = bool(
+            prior_eff and prior_eff.comparison_type == "period" and len(prior_eff.periods) == 2
+            and re.search(r"\b(?:those|same|the)\s+two\s+(?:months|periods)\b", lower)
+        )
         is_deictic_context_ref = any(
             phrase in lower
             for phrase in (
@@ -1278,7 +1373,10 @@ class HybridQueryRouter:
                 or lower.startswith("what about ")
                 or lower.startswith("how about ")
                 or "compare it with" in lower
+                or refers_prior_period_pair
+                or ranked_action_request
                 or bool(re.search(r"\b(?:he|she|his|her|hers|they|them|their|theirs|that\s+agent|that\s+employee|this\s+person|that\s+person)\b", lower) and len(text.split()) <= 12)
+                or bool(explicit_score_measure and not explicit_team and not explicit_fn_from_prompt)
                 or len(text.split()) <= 5
             )
         )
@@ -1318,6 +1416,8 @@ class HybridQueryRouter:
             eff_region = "UAE"
         elif is_country_switch_egy or has_egy_hint:
             eff_region = "EGY"
+        elif resolved_alias_region and not asks_team_comparison:
+            eff_region = resolved_alias_region
         elif (
             not has_named_person_reference
             and is_short_followup
@@ -1382,7 +1482,8 @@ class HybridQueryRouter:
                 eff_team = session_state.team
 
         eff_pos = detected_pos
-        if not eff_pos and not is_country_followup and not _extract_person_query_from_prompt(text):
+        expands_roles = bool((explicit_team or explicit_fn_from_prompt) and (requests_cohort_score or ranks_cohort_roles))
+        if not eff_pos and not expands_roles and not is_country_followup and not has_named_person_reference:
             if matched_choice and matched_choice.position:
                 eff_pos = matched_choice.position
             elif is_short_followup and prior_eff and prior_eff.position:
@@ -1975,6 +2076,7 @@ class HybridQueryRouter:
             re.search(r"\battendance\b", lower)
             and not eff_team
             and not eff_metric
+            and (not eff_fn or eff_fn.casefold() == "call center")
             and "compliance" not in lower
             and "patient" not in lower
             and "booking" not in lower
@@ -2014,7 +2116,7 @@ class HybridQueryRouter:
                     c.performance_level != "Managerial"
                     or (caller_role != "Branch Director" and user_can_access_team_level(self.scope, c.team or "Inbound", "Managerial"))
                 )
-            ] or raw_choices[:2]
+            ]
             clar_prompt = AiClarificationPrompt(
                 code="AMBIGUOUS_ATTENDANCE_DEFINITION",
                 question=(
@@ -2051,13 +2153,11 @@ class HybridQueryRouter:
                 confirmed_context=preserved_ctx,
                 clarification=clar_prompt,
                 headline=clar_prompt.question,
-                narrative_bullets=[
-                    "Call Center tracks Patient Attendance Rate (Attended / Bookings, 70% weight) on Employee scorecards and Attendance Compliance (15% weight) on Managerial scorecards."
-                ],
+                narrative_bullets=[],
                 route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
-        if re.search(r"\bother\s+(?:kpi|metric)\b", lower) and not eff_team:
+        if re.search(r"\bother\s+(?:kpi|metric)\b", lower) and not eff_team and (not eff_fn or eff_fn.casefold() == "call center"):
             raw_other_choices = [
                 ClarificationChoice(
                     id="choice-inbound-abandon",
@@ -2076,7 +2176,7 @@ class HybridQueryRouter:
             ]
             filtered_other = [
                 c for c in raw_other_choices if not c.team or user_can_access_team(self.scope, c.team)
-            ] or raw_other_choices
+            ]
             clar_prompt = AiClarificationPrompt(
                 code="AMBIGUOUS_ABANDON_METRIC",
                 question=(
@@ -2113,14 +2213,12 @@ class HybridQueryRouter:
                 confirmed_context=preserved_other_ctx,
                 clarification=clar_prompt,
                 headline=clar_prompt.question,
-                narrative_bullets=[
-                    "Select Inbound Abandon Rate or Outbound Reachability below to continue."
-                ],
+                narrative_bullets=[],
                 route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
         if re.search(r"\b(?:new\s+joiners?|(?:just\s+)?join(?:ed|ing)?\b|when\s+did\b.*\bjoin|hire\s+date|joining\s+date|tenure)\b", lower):
-            target_t = eff_team or "Inbound"
+            target_t = eff_team or eff_fn or "your authorized scope"
             latest_lbl = _format_period_label(eff_periods[-1] if eff_periods else self.latest_published_period)
             person_q = (
                 matched_choice.employee_id
@@ -2259,7 +2357,7 @@ class HybridQueryRouter:
                         id="choice-employee-history",
                         label=f"Show tracked evaluation history in {target_t}",
                         prompt_to_send=f"Who is the best agent in {target_t} in {latest_lbl}?",
-                        team=target_t,
+                        team=eff_team,
                         performance_level=eff_level,
                     )
                 ],
@@ -2362,6 +2460,19 @@ class HybridQueryRouter:
             if (matched_choice and matched_choice.employee_id)
             else _extract_person_query_from_prompt(text)
         )
+        if not explicit_person_query and self.employee_candidates:
+            seen_names: set[str] = set()
+            unique_names: list[str] = []
+            for cand in self.employee_candidates:
+                cname = str(getattr(cand, "employee_name", "") or "").strip()
+                if len(cname.split()) >= 2 and cname.casefold() not in seen_names:
+                    seen_names.add(cname.casefold())
+                    unique_names.append(cname)
+            unique_names.sort(key=len, reverse=True)
+            for cname in unique_names:
+                if re.search(rf"(?<![a-z0-9]){re.escape(cname.casefold())}(?![a-z0-9])", lower):
+                    explicit_person_query = cname
+                    break
         candidate_level_filter = explicit_level or (
             matched_choice.performance_level
             if matched_choice and matched_choice.performance_level
@@ -2408,7 +2519,7 @@ class HybridQueryRouter:
                 if unscoped_emp_res.status == "unique":
                     emp_res = unscoped_emp_res
             if emp_res.status == "ambiguous":
-                target_t = eff_team or eff_fn or "Call Center"
+                target_t = eff_team or eff_fn or "your authorized scope"
                 cnt_word = _COUNT_WORDS.get(len(emp_res.matches), str(len(emp_res.matches)))
                 tok_title = explicit_person_query.strip().title()
                 question = f"I found {cnt_word} {tok_title}s in {target_t}. Which one do you mean?"
@@ -2592,6 +2703,43 @@ class HybridQueryRouter:
             )
 
 
+        if ranked_action_request and not resolved_employee_id:
+            ranked_people = [
+                item for item in (prior_eff.ranking_results if prior_eff else [])
+                if item.entity == "employee" and item.id
+            ]
+            if ranked_people and prior_eff and prior_eff.ranking_direction == "worst":
+                worst = ranked_people[0]
+                tied = [item for item in ranked_people if item.score == worst.score]
+                if len(tied) > 1:
+                    choices = [
+                        ClarificationChoice(id=f"ranked-action-{i}", label=item.name, prompt_to_send=text,
+                                            employee_id=item.id, employee_name=item.name, period=item.period,
+                                            team=prior_eff.team)
+                        for i, item in enumerate(tied[:5])
+                    ]
+                    clarification = AiClarificationPrompt(code="AMBIGUOUS_PERSON",
+                        question="These employees tied for the lowest score. Who should the action be for?",
+                        choices=choices)
+                    return RouterValidationResult(
+                        outcome="clarification", plan=StructuredQueryPlan(intent="clarify"),
+                        confirmed_context=prior_eff.model_copy(update={
+                            "pending_clarification_code": "AMBIGUOUS_PERSON",
+                            "pending_clarification_choices": choices,
+                        }),
+                        clarification=clarification, headline=clarification.question, route_used="local_rules",
+                    )
+                resolved_employee_id, resolved_employee_name = worst.id, worst.name
+                inherited_filters.append("employee")
+            if not resolved_employee_id:
+                clarification = AiClarificationPrompt(code="AMBIGUOUS_PERSON",
+                    question="Which employee should I draft an action for? Give me their name or list the lowest performers first.")
+                return RouterValidationResult(
+                    outcome="clarification", plan=StructuredQueryPlan(intent="clarify"),
+                    confirmed_context=prior_eff or ConfirmedQueryContext(), clarification=clarification,
+                    headline=clarification.question, route_used="local_rules",
+                )
+
         asks_person_role_or_ref = bool(
             re.search(r"\b(?:top\s+agent|top\s+performer|that\s+agent|that\s+employee|that\s+person|this\s+person|the\s+leader)\b", lower)
         )
@@ -2750,7 +2898,7 @@ class HybridQueryRouter:
                 )
             )
         )
-        if asks_trend and not has_explicit_month:
+        if asks_trend and not has_explicit_month and not refers_prior_period_pair:
             # A trend follow-up inherits the employee and metric, but its
             # window ends at the latest published period rather than the
             # single month used by the previous direct read.
@@ -2975,7 +3123,7 @@ class HybridQueryRouter:
             )
         )
         if has_ambiguous_ranking_metric:
-            target_t = eff_team if eff_team in ("Inbound", "Outbound") else "Inbound"
+            target_t = eff_team or eff_fn or "your authorized scope"
             t_prefix = target_t.casefold()
             latest_lbl = _format_period_label(eff_periods[-1] if eff_periods else self.latest_published_period)
             ranking_choices = [
@@ -3003,9 +3151,18 @@ class HybridQueryRouter:
                     performance_level=eff_level,
                 ),
             ]
+            if eff_team not in ("Inbound", "Outbound") or not user_can_access_team(self.scope, eff_team):
+                metrics = self.catalog.get_metrics_for_team(eff_team, position=eff_pos, performance_level=eff_level or "Employee") if eff_team and user_can_access_team_level(self.scope, eff_team, eff_level or "Employee") else []
+                ranking_choices = [
+                    ClarificationChoice(
+                        id=f"rank-{m.metric_id}", label=m.display_name, team=eff_team, metric_id=m.metric_id,
+                        prompt_to_send=f"Rank employees in {target_t} by {m.display_name} in {latest_lbl}.",
+                    )
+                    for m in metrics if m.performance_level.casefold() == (eff_level or "Employee").casefold()
+                ][:3]
             clar_rank = AiClarificationPrompt(
                 code="AMBIGUOUS_KPI_SCOPE",
-                question=f"Which ranking metric should be used to rank {eff_team or eff_fn or 'Call Center'} performers?",
+                question=f"Which ranking metric should be used to rank {target_t} performers?",
                 choices=ranking_choices,
             )
             plan_clar_rank = StructuredQueryPlan(
@@ -3047,9 +3204,7 @@ class HybridQueryRouter:
                 confirmed_context=preserved_rank_ctx,
                 clarification=clar_rank,
                 headline=clar_rank.question,
-                narrative_bullets=[
-                    f"Specify whether to rank {eff_team or 'Call Center'} agents by Booking Rate, Patient Attendance Rate, or Overall Weighted PMS Score."
-                ],
+                narrative_bullets=[],
                 route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
@@ -3177,7 +3332,7 @@ class HybridQueryRouter:
             )
 
         is_proposal_request = bool(
-            re.search(
+            ranked_action_request or re.search(
                 r"\b(?:propose|create|draft|suggest|recommend|build|write|generate)\s+(?:a\s+|an\s+)?(?:corrective\s+action|action\s+plan|coaching\s+action|improvement\s+action|pip|training\s+action)\b",
                 lower,
             )
@@ -3194,6 +3349,7 @@ class HybridQueryRouter:
         asks_scorecard_structure = bool(
             eff_level in ("Managerial", "Corporate")
             and not eff_metric
+            and not requests_cohort_score
             and any(k in lower for k in ("balanced scorecard", "bsc", "scorecard"))
         )
         asks_score_drivers = is_proposal_request or any(
@@ -3298,7 +3454,7 @@ class HybridQueryRouter:
             intent = "corrective_actions"
         elif asks_scorecard_structure:
             intent = "scorecard_structure"
-        elif asks_ranking_person:
+        elif asks_ranking_person or asks_group_leader(lower):
             intent = "ranking"
         elif asks_trend and not asks_ranking_person:
             intent = "trend"
@@ -3331,6 +3487,7 @@ class HybridQueryRouter:
                 text,
                 known_employee_names=[c.employee_name for c in self.employee_candidates if c.employee_name],
                 persona_tier=_passport.persona_tier.value if hasattr(_passport, "persona_tier") else None,
+                candidate=self.preview_pattern,
             )
         if matched_pattern is not None and matched_pattern.intent in (
             "current_value", "actual_vs_target", "score_drivers", "trend", "compare_periods",
@@ -3384,7 +3541,17 @@ class HybridQueryRouter:
                 )
             )
         )
-        if fell_into_default_current_value and matched_pattern is None and not has_valid_current_value_signal:
+        model_led_admin_active = bool(
+            cfg.model_led_pilot_enabled
+            and provider_override != "deterministic"
+            and str(self.scope.get("role") or "").strip() == "Admin"
+        )
+        if (
+            fell_into_default_current_value
+            and matched_pattern is None
+            and not has_valid_current_value_signal
+            and not (model_led_admin_active and not bare_refinement_without_prior and not is_vague_dataless_prompt(text))
+        ):
             if bare_refinement_without_prior or is_vague_dataless_prompt(text) or re.search(
                 r"\b(?:check|look|show|data|numbers?|stats|figures|analyze|review|summary|overview|anything|update|status)\b",
                 lower,
@@ -3482,6 +3649,82 @@ class HybridQueryRouter:
             if len(available_levels) == 1:
                 eff_level = next(iter(available_levels))
 
+        # Direction-aware ranking polarity: for lower_better KPIs (e.g. Waiting Time,
+        # Quality Errors, Abandon Rate), "lowest/shortest/fewest" asks for the smallest
+        # value (= best performance), while "highest/longest/most" asks for the largest
+        # value (= worst performance).
+        if intent == "ranking":
+            _m_def = None
+            if eff_metric:
+                _m_def = self.catalog.find_metric_definition(
+                    team=eff_team,
+                    kpi_key_or_label=eff_metric,
+                    position=eff_pos,
+                    performance_level=eff_level,
+                )
+                if _m_def is None:
+                    _m_def = self.catalog.find_metric_definition(
+                        team=None,
+                        kpi_key_or_label=eff_metric,
+                        position=eff_pos,
+                        performance_level=eff_level,
+                    )
+                if _m_def is None:
+                    _compact_metric = re.sub(r"[^a-z0-9]", "", str(eff_metric).casefold())
+                    _m_def = self.catalog.find_metric_definition(
+                        team=None,
+                        kpi_key_or_label=_compact_metric,
+                        position=eff_pos,
+                        performance_level=eff_level,
+                    )
+            _compact_m = re.sub(r"[^a-z0-9]", "", str(eff_metric or "").casefold())
+            _prompt_has_lower_better = bool(
+                re.search(
+                    r"\b(?:waiting\s+time|wait\s+time|abandon(?:ed|ment)?\s+rate|quality\s+errors?|rework(?:\s+percentage|\s+rate)?|response\s+time|rejection\s+rate|policy\s+rejection|no[- ]?shows?|cost\s+per\s+lead|\bcpl\b)\b",
+                    lower,
+                )
+            )
+            _is_lower_better = (
+                (_m_def is not None and getattr(_m_def, "direction", "higher_better") == "lower_better")
+                or any(
+                    tok in _compact_m
+                    for tok in (
+                        "waitingtime",
+                        "waittime",
+                        "abandonrate",
+                        "qualityerror",
+                        "rework",
+                        "responsetime",
+                        "rejectionrate",
+                        "noshow",
+                    )
+                )
+                or _prompt_has_lower_better
+            )
+            if _is_lower_better:
+                if re.search(r"\b(?:lowest|shortest|fewest|least|minimum|min)\b", lower) and not re.search(r"\b(?:worst|weakest|bottom)\b", lower):
+                    asks_worst = False
+                elif re.search(r"\b(?:highest|longest|most|maximum|max)\b", lower) and not re.search(r"\b(?:best|top)\b", lower):
+                    asks_worst = True
+
+        # Self-only first-person binding ("my Waiting Time", "how am I doing")
+        if (
+            (bool(self.scope.get("is_self_only")) or str(self.scope.get("role") or "") in {"Agent", "Employee"})
+            and not resolved_employee_id
+            and re.search(r"\b(?:my|me|i|myself)\b", lower)
+            and self.scope.get("employee_id")
+        ):
+            self_emp_id = str(self.scope.get("employee_id")).strip()
+            resolved_employee_id = self_emp_id
+            matched_self = next(
+                (c for c in self.employee_candidates if str(c.employee_id).strip().casefold() == self_emp_id.casefold()),
+                None,
+            )
+            if matched_self:
+                resolved_employee_name = matched_self.employee_name
+                if not eff_team and matched_self.team:
+                    eff_team = matched_self.team
+
         plan = StructuredQueryPlan(
             intent=intent,
             requested_parts=requested_parts,
@@ -3503,7 +3746,53 @@ class HybridQueryRouter:
             operation_kind_v2=op_kind_v2,  # type: ignore[arg-type]
             clarification_code="NONE",
             asks_decisions=any(w in lower for w in ("decision", "decisions", "recommend", "what happens if")),
+            score_measure=eff_score_measure,
         )
+        plan.verified_cohort_score = bool(
+            requests_cohort_score and (plan.team or plan.function)
+            and plan.intent == "current_value" and len(plan.periods) == 1
+            and not (plan.employee_id or plan.metric or plan.asks_decisions)
+            and parse_score_threshold_query(text) is None
+            and plan.requested_parts == ["current_value"]
+        )
+        # Keep explicit, fully scoped score comparisons on the exact PMS read path.
+        # Named KPI questions and compound requests continue through the planner.
+        overall_metric = str(explicit_metric or "").rsplit(":", 1)[-1] in ("", "overall_score")
+        if overall_metric and not (asks_ranking_person or asks_branch_comparison):
+            if (
+                not plan.employee_id
+                and comparison_teams
+                and len(eff_periods) == 1
+                and re.search(r"\b(?:compare|comparison|vs\.?|versus|difference)\b", lower)
+                and re.search(r"\b(?:scores?|scored|performance|points?)\b|two teams", lower)
+                and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target|trend)\b", lower)
+            ):
+                plan.comparison_teams = comparison_teams
+                plan.verified_comparison = "team_scores"
+                plan.team = plan.position = None
+                first_function, second_function = map(function_for_team, comparison_teams)
+                plan.function = first_function if first_function == second_function else None
+                plan.intent = plan.operation_kind_v2 = "compare_teams"
+            elif (
+                not asks_team_comparison
+                and (plan.team or plan.function or plan.employee_id)
+                and len(eff_periods) == 2
+                and re.search(r"\b(?:overall (?:pms )?score|average score|pms score|team score)\b", lower)
+                and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target)\b", lower)
+            ):
+                plan.verified_comparison = "employee_scores" if plan.employee_id else "period_scores"
+                plan.include_employee_position = bool(
+                    plan.employee_id and re.search(r"\b(?:positions?|titles?|job roles?)\b", lower)
+                )
+                plan.intent = "compare_periods"
+                plan.operation_kind_v2 = "trend" if plan.employee_id else "compare_periods"
+            if plan.verified_comparison:
+                plan.requested_parts = [plan.intent]
+        if ranked_action_request and plan.employee_id:
+            plan.intent = "score_drivers"
+            plan.requested_parts = ["score_drivers"]
+            plan.operation_kind_v2 = "score_drivers"
+            plan.single_person = True
 
         # 6. Pre-Cloud & Pre-Read RBAC Access Validation (NEVER substitute Dubai when Sharjah is requested!)
         def _check_rbac() -> RouterValidationResult | None:
@@ -3718,49 +4007,141 @@ class HybridQueryRouter:
         if pre_cloud_rbac is not None:
             return pre_cloud_rbac
 
+        scoped_overview = (
+            plan.intent == "current_value"
+            and len(explicit_periods) == 1
+            and bool(has_uae_country or has_egy_country or has_ksa_hint)
+            and not (plan.employee_id or explicit_person_query or explicit_metric or explicit_team)
+            and bool(re.search(r"\b(?:performance|overview|summary)\b", lower))
+        )
+
         # Phase 2: Model-led pilot path - structured tool calling when enabled for Admins
-        if cfg.model_led_pilot_enabled and str(self.scope.get("role") or "").strip() == "Admin":
+        if (
+            cfg.model_led_pilot_enabled
+            and not plan.verified_comparison
+            and not ranked_action_request
+            and not explicit_kpi_question_kind(text)
+            and not (asks_corrective_actions and re.search(r"\bopen\s+corrective\s+actions?\b", lower))
+            and provider_override != "deterministic"
+            and str(self.scope.get("role") or "").strip() == "Admin"
+            and matched_pattern is None
+        ):
             from services.ai.tool_registry import DeterministicToolRegistry
 
             # Authoritative tool schemas from DeterministicToolRegistry
             tool_schemas = DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS
+            tool_spec_lines = []
+            for t_name, t_schema in tool_schemas.items():
+                props = t_schema.get("properties") or {}
+                req_fields = set(t_schema.get("required") or [])
+                arg_parts = []
+                for p_name, p_meta in props.items():
+                    p_enum = p_meta.get("enum")
+                    p_type = "|".join(str(x) for x in p_enum) if isinstance(p_enum, list) else str(p_meta.get("type") or "any")
+                    star = "*" if p_name in req_fields else ""
+                    arg_parts.append(f"{p_name}{star}:{p_type}")
+                t_desc = str(t_schema.get("description") or "").strip()
+                tool_spec_lines.append(f"- {t_name}({', '.join(arg_parts)}): {t_desc}")
+            tools_catalog_block = "\n".join(tool_spec_lines)
+
+            # Build bounded authorized catalog summary (departments, teams, latest period)
+            try:
+                auth_catalog = self.catalog.get_authorized_catalog_payload(scope=self.scope)
+                auth_funcs = sorted({str(t.function) for t in auth_catalog.eligible_teams if getattr(t, "function", None)})
+                auth_teams = sorted({
+                    str(getattr(t, "value", None) or getattr(t, "label", None) or getattr(t, "team", None))
+                    for t in auth_catalog.eligible_teams
+                    if getattr(t, "value", None) or getattr(t, "label", None) or getattr(t, "team", None)
+                })
+            except Exception:
+                auth_funcs, auth_teams = [], []
+            catalog_summary_lines = []
+            if auth_funcs:
+                catalog_summary_lines.append(f"Authorized departments: {', '.join(auth_funcs[:20])}")
+            if auth_teams:
+                catalog_summary_lines.append(f"Authorized teams: {', '.join(auth_teams[:35])}")
+            if self.latest_published_period:
+                catalog_summary_lines.append(f"Latest published period: {self.latest_published_period}")
+            catalog_summary_block = ("\n" + "\n".join(catalog_summary_lines)) if catalog_summary_lines else ""
+
+            # Phase 5: Supply active, de-identified Admin-approved guidance to the model-led planner.
+            # Never injects static scores/answers; PMS always computes fresh verified evidence.
+            approved_guidance_block = ""
+            shared_guidance_block = ""
+            if self.db is not None:
+                try:
+                    active_guidance = ApprovedPatternMatcher(self.db).list_active_planner_guidance(limit=8)
+                    if active_guidance:
+                        g_lines = [
+                            f"- When phrasing resembles '{g['example']}': intent={g['intent']}"
+                            + (f", operation={g['operation']}" if g.get("operation") else "")
+                            + (f", tool={g['tool']}" if g.get("tool") else "")
+                            + (f", metric={g['metric_hint']}" if g.get("metric_hint") else "")
+                            + (f" ({g['note']})" if g.get("note") else "")
+                            for g in active_guidance
+                        ]
+                        approved_guidance_block = (
+                            "\nAdmin-approved interpretation guidance (apply only when intent matches; "
+                            "preserve contrasting intents and compute all scores fresh via PMS tools):\n"
+                            + "\n".join(g_lines)
+                        )
+                except Exception:
+                    approved_guidance_block = ""
+                from services.ai.shared_feedback_learning import shared_planner_guidance
+
+                shared_guidance_block = shared_planner_guidance(self.db)
 
             # Call provider with structured tool schemas
             from services.ai.provider_engine import ProviderMessage, ProviderRequest, get_unified_provider_engine
 
             # Build bounded identity + memory context for Pass 1 (<= 500 tokens / 2000 chars)
+            # Strip raw employee_code from external planner prompts unless self_only requires caller binding.
             identity_prefix = build_pass1_identity_context(self.scope)
+            if identity_prefix and not bool(self.scope.get("is_self_only")):
+                identity_prefix = re.sub(r'\s+employee_code="[^"]*"', "", identity_prefix)
             # Build bounded context for the model
             system_prompt = (
                 f"[PromptVersion: {MODEL_LED_PLANNER_PROMPT_VERSION}]\n"
                 + (f"{identity_prefix}\n" if identity_prefix else "")
-                + "You are the PMS AI Assistant. Your role is to understand the user's question, "
-                "select the appropriate tool(s) to fetch verified PMS data, and compose a concise answer. "
-                "Available tools: " + ", ".join(tool_schemas.keys()) + ". "
-                "Use 'explain_scoring_rules_and_targets' when asked how scores, weights, targets, achievement caps, or grade thresholds work. "
-                "Use 'simulate_kpi_improvement' for What-If questions ('if I improve X by N%, what score/grade will I reach?'). "
-                "For persona='self_only', bind first-person questions ('my score', 'how am I doing') to the caller's employee_code. "
-                "CRITICAL: Always return response_type 'tool_call' for ANY question asking about an employee's score, performance, KPI, metric, trend, ranking, or comparison across months/branches (including follow-ups like 'What was her score in August?' or 'How did it change?'). "
-                "Never return response_type 'conversational' for performance, score, or KPI questions; 'conversational' is ONLY for non-data greetings like 'hello'. "
-                "Follow-up handling: inherit subject employee, metric, or scope from Context, but when the user's question specifies a change (such as a new month like 'And in August?', or multi-month trend like 'how did it change over time?'), update the arguments accordingly (e.g. period '2026-08' or history tool). "
-                'For a request with two independent analytical parts, return both in "tool_calls" (at most two), e.g. '
-                '{"response_type":"tool_call","tool_calls":[{"tool_name":"get_employee_history","tool_arguments":{}},{"tool_name":"rank_employees","tool_arguments":{}}]}. '
-                'For a single analytical part, return {"response_type": "tool_call", "tool_name": "<tool>", "tool_arguments": {...}}. '
-                '{"response_type": "conversational", "direct_response": "..."} or '
-                '{"response_type": "clarification", "clarification_prompt": "...", "clarification_choices": [...]}'
+                + "You are the PMS AI Assistant planner. Understand the user's English performance question, "
+                "resolve conversational references from Context and Recent Dialogue, and select the right read-only PMS tool(s) with exact typed arguments.\n"
+                f"Authorized tools (* = required):\n{tools_catalog_block}{catalog_summary_block}{approved_guidance_block}{shared_guidance_block}\n"
+                "Tool selection rules:\n"
+                "Resolve four things before choosing a tool: requested entity or population, exact KPI or overall score, "
+                "explicit country/branch/level, and exact month(s). An explicit field overrides that field from memory. "
+                "If the question zooms out from a person or role to the entire team or department, clear the old person and role. "
+                "A cohort, staff average, or division is a group; never interpret these words as employee names.\n"
+                "1. Use 'query_rankings' for aggregate and overall-score rankings of departments, teams, positions (roles), branches, or employees. "
+                "Pass entity ('department'|'team'|'position'|'branch'|'employee'), sort_order ('desc'|'asc'), limit, region ('EGY'|'UAE'), department, team, position, period ('YYYY-MM'), group_by, performance_level, score_threshold, threshold_operator as applicable.\n"
+                "2. Follow-up drill-downs: when the user refers to 'in it', 'that department', 'the leading team', 'the top team', or 'the second one', resolve the exact entity name from Remembered Ranking Winner / Ranking Results in Context, and carry forward region and period unless the user explicitly changes country, month, team, person, or KPI. "
+                "When the user asks to re-order or reverse the previous list ('arrange them from lowest to top', 'reverse order'), keep the SAME Prior Ranking Entity (e.g. entity='department' with NO department/team filter), flip sort_order ('asc' vs 'desc'), and pass limit=20.\n"
+                "3. For Marketing when asked about its internal teams, pass entity='team' with department='Marketing' (or entity='position' with team='Marketing'); PMS ranks its measured roles.\n"
+                "For a cohort's mean or overall score use 'get_kpi_diagnosis' with metric_id='overall_score', "
+                "the requested team or department, period and performance_level. A dated Corporate or Managerial score is an actual evaluation. "
+                "For the person with the shortest/longest value of a named KPI use 'rank_employees' with that KPI, "
+                "the given team and period and limit=1. Choose direction by the raw extreme requested and the metric's polarity. "
+                "Retain the department in site comparisons. Report a missing figure for its requested month rather than borrowing a nearby month.\n"
+                "4. Use 'explain_scoring_rules_and_targets' when asked how scorecards are set up or how scoring, weights, targets, caps or grades work.\n"
+                "5. Use 'simulate_kpi_improvement' for What-If projections.\n"
+                "6. For persona='self_only', bind first-person questions ('my score', 'how am I doing') to the caller's employee_code.\n"
+                "7. CRITICAL: Always return response_type 'tool_call' for ANY question about scores, performance, KPIs, metrics, trends, rankings, or comparisons (including short follow-ups like 'And in August?'). "
+                "'conversational' is ONLY for non-data greetings like 'hello'. Ask 'clarification' ONLY when a missing choice materially changes the answer and cannot be resolved from Context.\n"
+                'For two independent analytical parts, return {"response_type":"tool_call","tool_calls":[{"tool_name":"...","tool_arguments":{...}},{"tool_name":"...","tool_arguments":{...}}]}. '
+                'For a single analytical part, return {"response_type":"tool_call","tool_name":"<tool>","tool_arguments":{...}}. '
+                'Or {"response_type":"conversational","direct_response":"..."} or {"response_type":"clarification","clarification_prompt":"...","clarification_choices":[...]}.'
             )
 
             # Include rich conversation context to enable follow-up resolution
             context_parts = []
-            eff_team_ctx = (explicit_team or plan.team or (teams_in_prompt[0] if teams_in_prompt else None) or session_state.team or (prior.team if prior else None) or (bounded_context.confirmed_team if bounded_context else None))
-            if eff_team_ctx and eff_team_ctx.casefold() not in ("all", ""):
-                context_parts.append(f"Team: {eff_team_ctx}")
-            eff_fn = (session_state.function or (prior.function if prior else None) or (bounded_context.confirmed_function if bounded_context else None))
-            if eff_fn and eff_fn.casefold() not in ("all", ""):
-                context_parts.append(f"Function: {eff_fn}")
-            eff_br = (session_state.branch or (prior.branch if prior else None) or (bounded_context.confirmed_branch if bounded_context else None))
-            if eff_br and eff_br.casefold() not in ("all", ""):
-                context_parts.append(f"Branch: {eff_br}")
+            for label, value in (
+                ("Team", plan.team),
+                ("Function", plan.function),
+                ("Country", eff_region),
+                ("Branch", plan.branch),
+                ("Performance level", plan.performance_level),
+            ):
+                if value and value.casefold() != "all":
+                    context_parts.append(f"{label}: {value}")
 
             # Check if an explicit employee was resolved from prompt vs inherited pronoun
             eff_emp_name = (matched_choice.employee_name if matched_choice else None) or resolved_employee_name or plan.employee_name or (prior.last_subject_employee_name if (prior and has_subject_pronoun) else None)
@@ -3784,27 +4165,60 @@ class HybridQueryRouter:
             elif re.search(r"\b(?:abandon|abandonment)\b", lower):
                 prompt_metric = "abandon_rate"
 
-            eff_metric = prompt_metric or (prior.metric_id if prior else None) or (bounded_context.confirmed_metric if bounded_context else None)
-            if eff_metric:
-                context_parts.append(f"Metric: {eff_metric}")
-            eff_period = (prior.periods[-1] if (prior and prior.periods) else None) or (f"{session_state.year:04d}-{MONTHS.get(session_state.month, 9):02d}" if (session_state.month and session_state.year) else None)
-            if eff_period:
-                context_parts.append(f"Period: {eff_period}")
+            context_metric = plan.metric or prompt_metric
+            if context_metric:
+                context_parts.append(f"Metric: {context_metric}")
+            if plan.periods:
+                context_parts.append(f"Period: {', '.join(plan.periods)}")
+            if prior and prior.ranking_winner:
+                context_parts.append(
+                    f"Prior Ranking Entity: {prior.ranking_winner.entity}; Remembered Ranking Winner: {prior.ranking_winner.entity}={prior.ranking_winner.name}"
+                )
+            if prior and getattr(prior, "ranking_results", None):
+                ranked_items = ", ".join(
+                    f"#{item.rank} {item.entity}={item.name}" + (f" ({item.score:.1f}%)" if item.score is not None else "")
+                    for item in prior.ranking_results[:5]
+                )
+                if ranked_items:
+                    context_parts.append(f"Remembered Ranking Results: [{ranked_items}]")
             context_summary = "; ".join(context_parts)
 
             recent_dialogue = []
             if history:
-                for msg in history[-40:]:
+                for msg in history[-8:]:
                     r_lbl = "User" if getattr(msg, "role", "") == "user" else "Assistant"
-                    c_snip = (getattr(msg, "content", "") or "")[:400].replace("\n", " ").strip()
+                    c_snip = (getattr(msg, "content", "") or "")[:320].replace("\n", " ").strip()
+                    c_snip = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[EMAIL]", c_snip)
+                    c_snip = re.sub(r"\b(?:SGHD\d+|EMP[-_]?\d+)\b", "[EMPLOYEE_ID]", c_snip, flags=re.IGNORECASE)
                     if c_snip:
                         recent_dialogue.append(f"{r_lbl}: {c_snip}")
             dialogue_str = ("\nRecent Dialogue:\n" + "\n".join(recent_dialogue)) if recent_dialogue else ""
 
+            # Build explicit union of tool argument properties so structured JSON
+            # decoders populate typed arguments
+            # cleanly instead of emitting empty objects.
+            merged_tool_arg_props: dict[str, Any] = {}
+            for _t_schema in tool_schemas.values():
+                for _p_name, _p_meta in (_t_schema.get("properties") or {}).items():
+                    if _p_name not in merged_tool_arg_props:
+                        _p_copy = dict(_p_meta)
+                        _p_type = _p_copy.get("type")
+                        if isinstance(_p_type, str):
+                            _p_copy["type"] = [_p_type, "null"]
+                        # Avoid conflicting narrow enums across different tools sharing a field name
+                        if _p_name in ("region", "threshold_operator", "performance_level", "direction", "entity", "sort_order", "group_by"):
+                            merged_tool_arg_props[_p_name] = _p_copy
+                        else:
+                            _p_copy.pop("enum", None)
+                            merged_tool_arg_props[_p_name] = _p_copy
+
             engine = get_unified_provider_engine()
+            planner_timeout = max(cfg.provider_timeout_seconds, 15.0)
+            if turn_deadline is not None:
+                planner_timeout = min(planner_timeout, turn_deadline - perf_counter())
             req = ProviderRequest(
+                system_instruction=system_prompt,
                 messages=[
-                    ProviderMessage(role="system", content=system_prompt),
                     ProviderMessage(role="user", content=f"Question: {text}\nContext: {context_summary}{dialogue_str}"),
                 ],
                 response_format="json",
@@ -3816,7 +4230,10 @@ class HybridQueryRouter:
                             "enum": ["tool_call", "conversational", "clarification"],
                         },
                         "tool_name": {"type": ["string", "null"]},
-                        "tool_arguments": {"type": ["object", "string", "null"]},
+                        "tool_arguments": {
+                            "type": ["object", "string", "null"],
+                            "properties": merged_tool_arg_props,
+                        },
                         "tool_calls": {
                             "type": "array",
                             "maxItems": 2,
@@ -3824,7 +4241,10 @@ class HybridQueryRouter:
                                 "type": "object",
                                 "properties": {
                                     "tool_name": {"type": "string"},
-                                    "tool_arguments": {"type": ["object", "string"]},
+                                    "tool_arguments": {
+                                        "type": ["object", "string"],
+                                        "properties": merged_tool_arg_props,
+                                    },
                                 },
                                 "required": ["tool_name", "tool_arguments"],
                                 "additionalProperties": False,
@@ -3838,15 +4258,46 @@ class HybridQueryRouter:
                 },
                 temperature=0.0,
                 max_tokens=None,
-                timeout_seconds=max(cfg.provider_timeout_seconds, 15.0),
+                timeout_seconds=planner_timeout,
                 purpose="model_led_router",
+                task_role="investigation" if (
+                    asks_ranking_person or asks_trend or (prior and is_short_followup)
+                    or parse_query_rankings_spec(text) is not None or is_broad_overview_prompt(text)
+                    or plan.operation_kind_v2 in {"ranking", "trend", "compare_periods", "compare_branches",
+                                                  "compare_teams", "score_drivers", "person_best_period", "person_worst_period"}
+                ) else "routine",
                 user_id=str(self.scope.get("user_id") or "") or None,
                 user_role=str(self.scope.get("role") or "") or None,
             )
 
             try:
+                if planner_timeout <= 0:
+                    raise TimeoutError
                 resp = engine.generate(req)
-                if resp.is_success:
+                if not resp.is_success:
+                    provider_metrics = metrics_from_provider_response(
+                        resp,
+                        provider_calls=max(len(resp.attempts), 1 if resp.usage.total_tokens > 0 else 0),
+                        fallback_outcome=resp.outcome or "provider_unavailable",
+                    )
+                    if resp.outcome == "safety_refusal":
+                        return RouterValidationResult(
+                            outcome="unsupported_request",
+                            plan=plan,
+                            confirmed_context=prior.model_copy() if prior else ConfirmedQueryContext(),
+                            route_used="model_led_pilot",
+                            provider_metrics=provider_metrics,
+                            headline="I cannot fulfill that request because it was blocked by the provider safety policy.",
+                            narrative_bullets=[],
+                            suggested_followups=["Ask about authorized PMS scorecards, KPIs, or team rankings."],
+                        )
+                    route_used = "local_rules"
+                if resp.is_success and plan.verified_cohort_score:
+                    # The planner has seen the question and scope; execution uses
+                    # the authoritative cohort and period resolved before the call.
+                    route_used = "model_led_pilot"
+                    provider_metrics = metrics_from_provider_response(resp, provider_calls=1)
+                elif resp.is_success:
                     import json
                     model_output = json.loads(resp.content)
                     route_used = "model_led_pilot"
@@ -3856,6 +4307,7 @@ class HybridQueryRouter:
                     )
 
                     confirmed_ctx = prior.model_copy() if prior else ConfirmedQueryContext()
+                    confirmed_ctx.score_measure = eff_score_measure
 
                     # Parse tool calls from model output
                     if model_output.get("response_type") == "tool_call":
@@ -3874,6 +4326,8 @@ class HybridQueryRouter:
                                         raw_args = {}
                                 if not isinstance(raw_args, dict):
                                     raw_args = {}
+                                else:
+                                    raw_args = clean_planner_tool_arguments(raw_args)
                                 parsed_calls.append({"tool_name": raw_name, "tool_arguments": raw_args})
                         if not parsed_calls:
                             raw_args = model_output.get("tool_arguments", {})
@@ -3882,9 +4336,10 @@ class HybridQueryRouter:
                                     raw_args = json.loads(raw_args)
                                 except Exception:
                                     raw_args = {}
+                            clean_args = clean_planner_tool_arguments(raw_args)
                             parsed_calls = [{
                                 "tool_name": str(model_output.get("tool_name") or "").strip(),
-                                "tool_arguments": raw_args if isinstance(raw_args, dict) else {},
+                                "tool_arguments": clean_args,
                             }]
                         for call in parsed_calls:
                             call_args = call["tool_arguments"]
@@ -3905,7 +4360,46 @@ class HybridQueryRouter:
                             "tool_arguments": tool_args,
                         }
                         plan.model_led_tool_calls = parsed_calls
-                        plan.intent = "current_value"
+                        if tool_name == "query_rankings" and not (asks_branch_comparison and asks_booking_count_prompt):
+                            plan.intent = "ranking"
+                            plan.operation_kind_v2 = "ranking"
+                            plan.single_person = False
+                            if isinstance(tool_args, dict):
+                                # Normalize country/region and enforce explicit user constraints
+                                raw_reg = str(tool_args.get("region") or tool_args.get("country") or "").strip().casefold()
+                                norm_reg = {"egypt": "EGY", "egy": "EGY", "uae": "UAE", "emirates": "UAE", "ksa": "KSA"}.get(raw_reg)
+                                if norm_reg:
+                                    tool_args["region"] = norm_reg
+                                elif eff_region and eff_region in ("EGY", "UAE", "KSA") and not tool_args.get("region"):
+                                    tool_args["region"] = eff_region
+                                if explicit_periods and not tool_args.get("period"):
+                                    tool_args["period"] = explicit_periods[-1]
+                                elif explicit_periods and tool_args.get("period") not in explicit_periods:
+                                    tool_args["period"] = explicit_periods[-1]
+                                elif not tool_args.get("period") and plan.periods:
+                                    tool_args["period"] = plan.periods[-1]
+                                if has_egy_country:
+                                    tool_args["region"] = "EGY"
+                                elif has_uae_country:
+                                    tool_args["region"] = "UAE"
+                                if not tool_args.get("entity"):
+                                    tool_args["entity"] = "department"
+                                tool_args.setdefault("score_measure", eff_score_measure)
+                                if explicit_score_measure is not None:
+                                    tool_args["score_measure"] = explicit_score_measure
+                                try:
+                                    from models.ai_schemas import QueryRankingsArgs
+                                    allowed_qr_fields = set(QueryRankingsArgs.model_fields.keys())
+                                    qr_payload = {k: v for k, v in tool_args.items() if k in allowed_qr_fields and v is not None}
+                                    plan.query_rankings_args = QueryRankingsArgs(**qr_payload)
+                                except Exception:
+                                    pass
+                        else:
+                            if isinstance(tool_args, dict) and tool_name in ("get_kpi_diagnosis", "get_score_trend", "compare_branches"):
+                                tool_args.setdefault("score_measure", eff_score_measure)
+                                if explicit_score_measure is not None:
+                                    tool_args["score_measure"] = explicit_score_measure
+                            plan.intent = "current_value"
                         return RouterValidationResult(
                             outcome="answer",
                             plan=plan,
@@ -3968,7 +4462,7 @@ class HybridQueryRouter:
                             narrative_bullets=[],
                             suggested_followups=[],
                         )
-                    elif model_output.get("response_type") == "clarification":
+                    elif model_output.get("response_type") == "clarification" and not scoped_overview:
                         # Model wants to clarify
                         plan.model_led_clarification = {
                             "prompt": model_output.get("clarification_prompt"),
@@ -3984,9 +4478,19 @@ class HybridQueryRouter:
                             narrative_bullets=[],
                             suggested_followups=[],
                         )
+                    elif model_output.get("response_type") == "clarification":
+                        # The validated country and month are enough for an overall review.
+                        route_used = "local_rules"
             except Exception as e:
-                # On any error, fall through to deterministic path
-                pass
+                # Preserve failure attribution when falling back to deterministic path
+                if provider_metrics is None or provider_metrics.fallback_outcome in ("none", "", "not_called"):
+                    provider_metrics = ProviderCallMetrics(
+                        provider_used="none",
+                        model_used="none",
+                        provider_calls=max(1, getattr(provider_metrics, "provider_calls", 0) if provider_metrics else 0),
+                        fallback_outcome="error",
+                    )
+                route_used = "local_rules"
 
 
         # Experimental TF-IDF classifier is offline-only and never trained from test fixtures during live requests.
@@ -4094,23 +4598,24 @@ class HybridQueryRouter:
                 plan.operation_kind_v2 = "trend"
                 route_used = "local_model_router"
 
-        should_call_gemini = provider_override != "deterministic" and (
-            provider_override == "gemini"
-            or (cfg.router_mode == "shadow" and cfg.can_call_gemini)
+        should_call_nvidia = provider_override != "deterministic" and (
+            provider_override == "nvidia"
+            or (cfg.router_mode == "shadow" and cfg.nvidia_routing_enabled)
             or (
                 cfg.router_mode == "hybrid"
-                and cfg.can_call_gemini
+                and cfg.nvidia_routing_enabled
                 and not has_explicit_local_action
                 and cfg.is_scope_allowed_for_cloud(eff_team or eff_fn)
             )
         )
-        if should_call_gemini:
+        if (should_call_nvidia and not plan.verified_comparison and not plan.verified_cohort_score and not ranked_action_request
+            and not explicit_kpi_question_kind(text) and (turn_deadline is None or turn_deadline > perf_counter())):
             if is_prompt_safe_for_external_projection(text):
                 eligible_team_names = [
                     t.value for t in self.catalog.get_eligible_scope_options(self.scope)["eligible_teams"]
                 ]
                 known_emp_names = [c.employee_name for c in self.employee_candidates if c.employee_name]
-                gem_res = GeminiStructuredRouterAdapter().propose_query_plan(
+                provider_result = NvidiaStructuredRouterAdapter().propose_query_plan(
                     prompt=text,
                     current_view={
                         "function": eff_fn,
@@ -4123,14 +4628,15 @@ class HybridQueryRouter:
                     candidate_metrics=list(self.catalog.metrics.keys())[:40],
                     candidate_branches=["dubai", "sharjah", "ajman", "clinics"],
                     known_employee_names=known_emp_names,
+                    timeout=max(0.001, turn_deadline - perf_counter()) if turn_deadline else None,
                 )
-                provider_metrics = gem_res.metrics
-                if gem_res.plan is not None:
-                    shadow_plan = gem_res.plan.model_dump()
-                    if provider_override == "gemini" or cfg.router_mode == "hybrid":
-                        route_used = "gemini_router"
-                        if gem_res.plan.intent:
-                            cand_intent = gem_res.plan.intent
+                provider_metrics = provider_result.metrics
+                if provider_result.plan is not None:
+                    shadow_plan = provider_result.plan.model_dump()
+                    if provider_override == "nvidia" or cfg.router_mode == "hybrid":
+                        route_used = "nvidia_router"
+                        if provider_result.plan.intent:
+                            cand_intent = provider_result.plan.intent
                             if (
                                 cand_intent == "scorecard_structure"
                                 and eff_level not in ("Managerial", "Corporate")
@@ -4157,55 +4663,55 @@ class HybridQueryRouter:
                             "scorecard_structure",
                             "corrective_actions",
                         }
-                        if gem_res.plan.requested_parts:
+                        if provider_result.plan.requested_parts:
                             cleaned_parts = [
                                 str(p).strip()
-                                for p in gem_res.plan.requested_parts
+                                for p in provider_result.plan.requested_parts
                                 if str(p).strip() in valid_parts
                             ]
                             if cleaned_parts:
                                 plan.requested_parts = cleaned_parts[:2]
                         elif plan.intent and plan.requested_parts == [intent]:
                             plan.requested_parts = [plan.intent]
-                        if gem_res.plan.team and not plan.team:
-                            cand_team = gem_res.plan.team.strip()
+                        if provider_result.plan.team and not plan.team:
+                            cand_team = provider_result.plan.team.strip()
                             if cand_team in self.catalog.teams or cand_team in eligible_team_names:
                                 plan.team = cand_team
                                 plan.function = function_for_team(cand_team) or plan.function
-                        if gem_res.plan.position and not plan.position:
-                            plan.position = gem_res.plan.position.strip()
-                        if gem_res.plan.branch and not plan.branch:
-                            cand_b = gem_res.plan.branch.strip().casefold()
+                        if provider_result.plan.position and not plan.position:
+                            plan.position = provider_result.plan.position.strip()
+                        if provider_result.plan.branch and not plan.branch:
+                            cand_b = provider_result.plan.branch.strip().casefold()
                             if cand_b in BRANCH_KEYS and not (plan.team and cand_b in plan.team.casefold()):
                                 plan.branch = cand_b
-                        if gem_res.plan.compare_branch and not plan.compare_branch:
-                            cand_cb = gem_res.plan.compare_branch.strip().casefold()
+                        if provider_result.plan.compare_branch and not plan.compare_branch:
+                            cand_cb = provider_result.plan.compare_branch.strip().casefold()
                             if cand_cb in BRANCH_KEYS:
                                 plan.compare_branch = cand_cb
-                        if gem_res.plan.metric and not plan.metric:
+                        if provider_result.plan.metric and not plan.metric:
                             cand_m = self.catalog.find_metric_definition(
                                 team=plan.team,
-                                kpi_key_or_label=gem_res.plan.metric,
+                                kpi_key_or_label=provider_result.plan.metric,
                                 position=plan.position,
                                 performance_level=plan.performance_level,
                             )
                             if cand_m is not None:
                                 plan.metric = cand_m.metric_id
-                            elif gem_res.plan.metric in self.catalog.metrics:
-                                plan.metric = gem_res.plan.metric
-                        if gem_res.plan.periods:
+                            elif provider_result.plan.metric in self.catalog.metrics:
+                                plan.metric = provider_result.plan.metric
+                        if provider_result.plan.periods:
                             valid_periods = [
                                 p
-                                for p in gem_res.plan.periods[:6]
+                                for p in provider_result.plan.periods[:6]
                                 if re.match(r"^\d{4}-(0[1-9]|1[0-2])$", str(p))
                             ]
                             if valid_periods:
                                 plan.periods = valid_periods
                                 eff_periods = valid_periods
-                        plan.single_person = bool(plan.single_person or gem_res.plan.single_person)
-                        if gem_res.plan.ranking_direction in ("best", "worst"):
-                            plan.ranking_direction = gem_res.plan.ranking_direction
-                elif provider_override == "gemini":
+                        plan.single_person = bool(plan.single_person or provider_result.plan.single_person)
+                        if provider_result.plan.ranking_direction in ("best", "worst"):
+                            plan.ranking_direction = provider_result.plan.ranking_direction
+                elif provider_override == "nvidia":
                     raise AiProviderUnavailableError(
                         "The AI routing provider is temporarily unavailable. Please retry your request."
                     )
@@ -4245,7 +4751,7 @@ class HybridQueryRouter:
                     f"The latest published period with verified PMS data is {latest_human} ({self.latest_published_period})."
                 ],
                 suggested_followups=[
-                    f"What is {plan.team or eff_team or 'Inbound'} score in {latest_human}?"
+                    f"Show {plan.team or plan.function or 'overall'} performance in {latest_human}."
                 ],
             )
 
@@ -4258,9 +4764,10 @@ class HybridQueryRouter:
             branches=plan.branches,
             region=eff_region,
             performance_level=plan.performance_level,
-            metric_id=plan.metric,
+            metric_id="overall_score" if plan.verified_comparison else plan.metric,
             candidate_metrics=discussed_metrics,
             periods=plan.periods,
+            comparison_teams=plan.comparison_teams,
             comparison_type=(
                 "period"
                 if plan.intent == "compare_periods"
@@ -4282,6 +4789,7 @@ class HybridQueryRouter:
                     and (prior_eff.intent == "ranking" or prior_eff.prior_ranking_intent)
                 )
             ),
+            score_measure=eff_score_measure,
         )
 
         return RouterValidationResult(
@@ -4292,4 +4800,5 @@ class HybridQueryRouter:
             route_used=route_used,
             provider_metrics=provider_metrics,
             shadow_plan=shadow_plan,
+            matched_pattern_id=matched_pattern.pattern_id if matched_pattern else None,
         )

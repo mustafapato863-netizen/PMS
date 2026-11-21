@@ -20,6 +20,9 @@ _LEXICAL_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b(?:agnts|agnt)\b", re.I), "agents"),
     # Common typos in "departments" / "department"
     (re.compile(r"\b(?:deparments|departmnts|deparment|departmnt)\b", re.I), "departments"),
+    # Common typos in months / team words
+    (re.compile(r"\baugest\b", re.I), "August"),
+    (re.compile(r"\bsupport\s+postions?\b", re.I), "support positions"),
     # Common typos in "overview" / "summary"
     (re.compile(r"\b(?:ovreview|overveiw)\b", re.I), "overview"),
     (re.compile(r"\b(?:sumary|summarry)\b", re.I), "summary"),
@@ -178,6 +181,7 @@ class ParsedPromptSignals:
     asks_worst_agent: bool = False
     asks_trend: bool = False
     asks_single_person: bool = False
+    asks_average_overall_score: bool = False
     detected_month: str | None = None
     detected_year: int | None = None
     detected_kpi: str | None = None
@@ -556,7 +560,7 @@ def build_call_center_guardrails() -> list[AiGuardrailItem]:
         ),
         AiGuardrailItem(
             label="Official PMS Scoring Engine",
-            description="Uses ratio aggregation, weighted AHT, 100% KPI cap, and Bookings/Attended volumes.",
+            description="Uses published PMS results and the scoring rules for the selected department, level, and period.",
             verified=True,
         ),
     ]
@@ -564,9 +568,11 @@ def build_call_center_guardrails() -> list[AiGuardrailItem]:
 
 def build_call_center_starter_prompts(session_state: SessionFilterContext) -> list[AiStarterPrompt]:
     """Role- and filter-aware starter prompts for the empty state and scenario explorer."""
+    team_cf = (session_state.team or "").strip().casefold()
     is_cc = (
-        (session_state.function or "").casefold() == "call center"
-        or (session_state.team or "").casefold() in ("inbound", "outbound", "call center", "support positions")
+        team_cf in ("inbound", "outbound", "call center", "support positions")
+        if team_cf not in ("", "all")
+        else (session_state.function or "").strip().casefold() == "call center"
     )
     team_label = (
         session_state.team
@@ -577,13 +583,14 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
     scope_suffix = f" in {branch_label}" if branch_label else ""
 
     if not is_cc and team_label != "Call Center":
+        named_scope = team_label != "All authorized departments"
         return [
             AiStarterPrompt(
-                id="team-drop",
-                label=f"Which team in {team_label} dropped most?",
-                subtitle="Identify the team with the largest performance drop and see key drivers.",
-                badge="TEAM",
-                prompt=f"Which team in {team_label} dropped the most this month{scope_suffix}, what is the main KPI driver, and what decisions do you recommend?",
+                id="scope-review",
+                label=f"Review {team_label} performance" if named_scope else "Review overall performance",
+                subtitle="See the published score and key findings for the selected period.",
+                badge="PERFORMANCE",
+                prompt=f"Review {team_label} performance{scope_suffix}" if named_scope else f"Review overall performance{scope_suffix}",
                 category="team",
                 icon_key="users",
             ),
@@ -634,7 +641,6 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
             ),
         ]
 
-    team_cf = (session_state.team or "").strip().casefold()
     if team_cf == "inbound":
         cc_kpi_prompt = AiStarterPrompt(
             id="inbound-kpi-decisions",
@@ -783,12 +789,12 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
 
 
 _GREETING_PROMPT_RE = re.compile(
-    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*$",
+    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening|how\s+(?:are\s+you|r\s+u)(?:\s+doing)?)(?:\s+there)?[\s!.,?]*$",
     re.I,
 )
 _THANKS_PROMPT_RE = re.compile(
     r"^\s*(?:thanks|thank you|thx|ty|many thanks|thanks a lot|thank you so much|"
-    r"got it,?\s*thanks|ok\s*thanks|okay\s*thanks|appreciate it|great,?\s*thanks|"
+    r"got it,?\s*thanks|ok(?:ay)?,?\s*(?:thanks|thank you)|appreciate it|great,?\s*thanks|"
     r"thanks,?\s*(?:that was helpful|that helps)|thank you,?\s*(?:that was helpful|that helps))[\s!.,?]*$",
     re.I,
 )
@@ -1018,8 +1024,34 @@ def is_greeting_or_thanks_prompt(prompt: str) -> Literal["greeting", "thanks"] |
     return None
 
 
+def is_ranked_action_request(prompt: str) -> bool:
+    return bool(re.search(
+        r"\b(?:recommend(?:ed)?|recommened|suggest(?:ed)?)\s+(?:a\s+)?(?:corrective\s+)?action\s+"
+        r"for\s+(?:the\s+)?(?:worst|lowest|bottom)\s+(?:one|employee|agent|performer)\b",
+        prompt, re.I,
+    ))
+
+
+def explicit_kpi_question_kind(prompt: str) -> Literal["weight", "gap", "impact"] | None:
+    lower = prompt.casefold()
+    if (
+        re.search(r"\bweights?\b", lower)
+        and re.search(r"\b(?:what|how much|tell me|show)\b", lower)
+        and re.search(r"\b(?:kpi|metric|indicator)\b", lower)
+    ):
+        return "weight"
+    if re.search(r"\bkpi\b.*\b(?:largest|biggest|greatest)\s+gap\b", lower):
+        return "gap"
+    if re.search(r"\bwhich\s+kpi\b.*\b(?:affects?|effects?|impact(?:s|ed)?|drags?|drove|drives?)\b", lower):
+        return "impact"
+    if re.search(r"\bdiagnose\b.*\bperformance gap\b.*\bemployees\b", lower):
+        return "impact"
+    return None
+
+
 def is_capabilities_help_prompt(prompt: str) -> bool:
     text = (prompt or "").strip()
+    text = re.sub(r"^(?:hello|hey|good morning|good afternoon|good evening)[,!]\s*", "", text, flags=re.I)
     if not text:
         return False
     if _CAPABILITIES_ANALYTICAL_EXCLUDE_RE.search(text):
@@ -1117,7 +1149,7 @@ def has_pms_performance_signal(prompt: str) -> bool:
         return True
     if re.search(r"\b(?:sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", text, re.I):
         return True
-    if _PMS_ANALYTICAL_INTENT_RE.search(text):
+    if _PMS_ANALYTICAL_INTENT_RE.search(text) or asks_group_leader(text):
         return True
     lower = text.casefold()
     if any(
@@ -1142,18 +1174,37 @@ def has_pms_performance_signal(prompt: str) -> bool:
 # Composable ranking intent (deterministic fallback for the model-led planner)
 # ---------------------------------------------------------------------------
 
+def asks_group_leader(prompt: str) -> bool:
+    return bool(re.search(
+        r"\bwhich\s+(?:department|division|team|role|branch)\s+"
+        r"(?:led|leads|came\s+(?:in\s+first|first|out\s+ahead)|finished\s+first|topped\s+the\s+ranking)\b",
+        prompt, re.I,
+    ))
+
+
+def asks_cohort_score(prompt: str) -> bool:
+    return bool(re.search(
+        r"\b(?:overall\s+(?:(?:employee|managerial|corporate|pms)\s+)*scores?"
+        r"|(?:average|avg|mean|official|monthly\s+review)\s+(?:(?:employee|agent|team|department|overall|pms|performance|monthly\s+review)\s+)*scores?"
+        r"|scores?\s+overall"
+        r"|(?:what|how\s+much)\s+did\b.{0,50}\bscore\b"
+        r"|(?:team|department|cohort)(?:'s)?\s+(?:official\s+)?score\b"
+        r"|score(?:d)?\s+(?:at|on)\s+(?:the\s+)?(?:managerial|corporate)\s+(?:level|scorecard))\b",
+        prompt, re.I,
+    ))
+
+
 _RANKING_CUE_RE = re.compile(
-    r"\b(?:top|best|highest|lowest|bottom|worst|rank(?:ed|ing)?|arrange|order|sort)\b",
+    r"\b(?:tops?|best|highest|lowest|shortest|longest|bottom|worst|rank(?:ed|ing)?|arrange|order|sort|finished\s+first)\b",
     re.I,
 )
 _ENTITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    # Employees win when both a person word and a group word are present:
-    # "top 5 employes in every dep" is an employee ranking grouped by dep.
     ("employee", re.compile(
         r"\b(?:employees?|employes?|agents?|staff|people|persons?|performers?|reps?|associates?)\b", re.I
     )),
     ("department", re.compile(r"\b(?:departments?|deps?|depts?|division(?:s)?|sections?)\b", re.I)),
     ("team", re.compile(r"\bteams?\b", re.I)),
+    ("position", re.compile(r"\b(?:roles?|positions?|job\s+titles?)\b", re.I)),
     ("branch", re.compile(r"\bbranches\b|\bbranch\b", re.I)),
 )
 _GROUP_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -1165,6 +1216,7 @@ _N_RE = re.compile(
     r"\b(?:top|bottom|best|worst|highest|lowest|first|last)\s+(\d{1,2})\b|\b(\d{1,2})\s+(?:top|bottom|best|worst)\b",
     re.I,
 )
+_RANK_COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
 _THRESHOLD_RE = re.compile(
     r"\b(?:under|below|less\s+than|at\s+most|<)\s*(\d{1,3}(?:\.\d+)?)\s*%?"
     r"|\b(?:over|above|more\s+than|exceed(?:s|ing)?|>)\s*(\d{1,3}(?:\.\d+)?)\s*%?",
@@ -1189,12 +1241,47 @@ def _history_text(history: list[Any] | None) -> str:
     return " \n ".join(chunks)
 
 
+_EMPLOYEE_AVERAGE_MEASURE_RE = re.compile(
+    r"\b(?:"
+    r"(?:average|mean|raw)\s+(?:employee|agent|staff|individual)(?:\s+pms|\s+overall)?\s+scores?|"
+    r"(?:employee|agent|staff)\s+(?:average|mean)(?:\s+pms|\s+overall)?\s+scores?|"
+    r"average\s+(?:of\s+)?(?:employee|agent|staff|individual)\s+scores?|"
+    r"average\s+across\s+(?:all\s+)?(?:employees?|agents?|staff)|"
+    r"(?:cohort(?:'s)?|staff(?:'s)?|employees?'?|agents?'?)\s+(?:average|mean)(?:\s+pms|\s+overall)?\s+scores?|"
+    r"(?:average|mean)\s+(?:pms\s+|overall\s+)?scores?\s+for\s+[\w\s&-]+?\s+(?:staff|employees?|agents?)|"
+    r"among\s+[\w\s&-]*?\b(?:employees?|agents?|staff)\b.*\b(?:average|mean)(?:\s+pms|\s+overall)?\s+scores?|"
+    r"average\s+overall\s+score"
+    r")\b",
+    re.I,
+)
+_OFFICIAL_MEASURE_RE = re.compile(
+    r"\b(?:"
+    r"official(?:\s+(?:team|department|function|pms|monthly\s+review))?\s+scores?|"
+    r"monthly\s+review(?:\s+team|\s+department|\s+function)?\s+scores?"
+    r")\b",
+    re.I,
+)
+
+
+def detect_explicit_score_measure(prompt: str) -> Literal["official", "employee_average"] | None:
+    """Detect whether the user explicitly requests Monthly Review official vs employee-average scoring."""
+    text = str(prompt or "").strip()
+    if not text:
+        return None
+    if _EMPLOYEE_AVERAGE_MEASURE_RE.search(text):
+        return "employee_average"
+    if _OFFICIAL_MEASURE_RE.search(text):
+        return "official"
+    return None
+
+
 def parse_query_rankings_spec(
     prompt: str,
     *,
     history: list[Any] | None = None,
     known_departments: list[str] | None = None,
     known_metrics: list[str] | None = None,
+    known_positions: list[str] | None = None,
 ) -> QueryRankingsArgs | None:
     """Derive a composable ranking spec from a prompt (and prior memory).
 
@@ -1206,16 +1293,37 @@ def parse_query_rankings_spec(
     if not text.strip():
         return None
     history_text = _history_text(history)
-    combined = f"{history_text}\n{text}"
-
-    if not _RANKING_CUE_RE.search(text) and not _THRESHOLD_RE.search(text):
+    asks_which_entity_led = asks_group_leader(text) or re.search(
+        r"\bwhich\s+employee\s+(?:led|leads|came\s+first)\b", text, re.I,
+    )
+    if not (_RANKING_CUE_RE.search(text) or _THRESHOLD_RE.search(text) or asks_which_entity_led):
         return None
 
-    entity: str | None = None
-    for candidate, pattern in _ENTITY_PATTERNS:
-        if pattern.search(text):
-            entity = candidate
-            break
+    # Mask compound team names containing entity nouns (e.g. "Support Positions")
+    # so "Positions" inside a team name is never mistaken for entity="position".
+    scan_text = re.sub(r"\bsupport\s+positions\b", "support_team", text, flags=re.I)
+    scan_text = re.sub(
+        r"\bemployee\s+(?=(?:results?|scores?|departments?|teams?|performance)\b)",
+        "",
+        scan_text,
+        flags=re.I,
+    )
+    mentions = [(match.start(), candidate) for candidate, pattern in _ENTITY_PATTERNS if (match := pattern.search(scan_text))]
+    entity = min(mentions)[1] if mentions else None
+    # Explicit person/performer nouns take precedence over incidental "their role"/"their position"
+    if any(cand == "employee" for _, cand in mentions) and entity == "position":
+        entity = "employee"
+    position = next((
+        name for name in sorted(known_positions or [], key=len, reverse=True)
+        if re.search(rf"\b{re.escape(name)}s?\b", text, re.I)
+    ), None)
+    who_asks_for_group = re.search(
+        r"^\s*who\s+(?:is|was|are|were)\s+(?:the\s+)?"
+        r"(?:best|worst|top|bottom|highest|lowest)\s+(?:departments?|teams?|branches|branch|roles?|positions?)\b",
+        text, re.I,
+    )
+    if (re.search(r"^\s*who\b", text, re.I) and not who_asks_for_group) or (position and entity in (None, "position")):
+        entity = "employee"
     if entity is None:
         for candidate, pattern in _ENTITY_PATTERNS:
             if pattern.search(history_text):
@@ -1225,14 +1333,17 @@ def parse_query_rankings_spec(
         entity = "employee" if re.search(r"\b(?:who|employe|employes|agent|people)\b", text, re.I) else "department"
 
     lower = text.casefold()
+    names_pair = bool(re.search(r"\bboth\s+(?:employee\s+)?names\b", lower))
+    if names_pair:
+        entity = "employee"
     explicit_low_to_high = re.search(
         r"lowest\s+to\s+top|bottom\s+to\s+top|from\s+lowest|low\s+to\s+high|ascending", lower
     )
     explicit_high_to_low = re.search(
         r"top\s+to\s+lowest|highest\s+to\s+lowest|from\s+top|high\s+to\s+low|descending", lower
     )
-    asc_cue = re.search(r"\b(?:lowest|bottom|worst|least)\b", lower)
-    desc_cue = re.search(r"\b(?:top|best|highest|most)\b", lower)
+    asc_cue = re.search(r"\b(?:lowest|shortest|bottom|worst|least)\b", lower)
+    desc_cue = re.search(r"\b(?:top|best|highest|longest|most)\b", lower)
     if explicit_low_to_high:
         sort_order = "asc"
     elif explicit_high_to_low:
@@ -1243,6 +1354,27 @@ def parse_query_rankings_spec(
     n_match = _N_RE.search(text)
     raw_n = next((g for g in n_match.groups() if g), None) if n_match else None
     n = max(1, min(int(raw_n), 50)) if raw_n else None
+    if n is None:
+        count_word = re.search(
+            r"\b(?:which|top|best|bottom|worst|highest|lowest|rank|list)\s+(?:the\s+)?(one|two|three|four|five)\b",
+            lower,
+        )
+        if count_word:
+            n = _RANK_COUNT_WORDS[count_word[1]]
+        elif names_pair:
+            n = 2
+        elif entity == "employee" and re.search(r"\b(?:name|find|identify|which|the)\s+(?:the\s+)?(?:employee|agent|person)\s+with\b", lower):
+            n = 1
+        elif asks_which_entity_led or re.search(
+            r"^\s*(?:who\s+(?:is|was)|(?:what|which)\s+(?:(?:was|is)\s+)?(?:the\s+)?(?:best\s+)?"
+            r"(?:department|division|team|role|position|branch)\b)", lower,
+        ):
+            n = 1
+        elif (
+            entity == "employee" and _RANKING_CUE_RE.search(lower)
+            and re.search(r"\bwhich\s+(?:[\w-]+\s+){0,3}(?:employee|agent|performer)\b", lower)
+        ):
+            n = 1
 
     group_by = "none"
     for candidate, pattern in _GROUP_PATTERNS:
@@ -1257,11 +1389,9 @@ def parse_query_rankings_spec(
     per_group_limit = min(max(n or 3, 1), 20) if group_by != "none" else 5
     limit = n or (per_group_limit if group_by != "none" else (50 if is_full_arrange else 10))
 
-    region: str | None = None
-    for candidate, pattern in _REGION_PATTERNS:
-        if pattern.search(text) or pattern.search(history_text):
-            region = candidate
-            break
+    region = next((candidate for candidate, pattern in _REGION_PATTERNS if pattern.search(text)), None)
+    if region is None:
+        region = next((candidate for candidate, pattern in _REGION_PATTERNS if pattern.search(history_text)), None)
 
     department: str | None = None
     for name in known_departments or []:
@@ -1274,15 +1404,16 @@ def parse_query_rankings_spec(
             department = name
             break
 
-    # "lowest 3 in same dep" / "top 5 in Sales" ranks employees inside that single department
-    if department and entity in {"department", "team"} and group_by == "none":
+    # "lowest 3 in same dep" / "top 5 in Sales" / "top 3 in the leading team" ranks employees inside that container
+    if entity in {"department", "team", "position"} and group_by == "none":
+        dept_pattern = rf"|\b(?:in|within|inside|from|of)\s+(?:the\s+)?{re.escape(department)}\b" if department else ""
         container_ref = re.search(
-            r"\b(?:in|within|inside|from|of)\s+(?:the\s+)?(?:same|that|this|previous)\s+(?:departments?|deps?|depts?|teams?)\b"
-            rf"|\b(?:in|within|inside|from|of)\s+(?:the\s+)?{re.escape(department)}\b",
-            text,
+            r"\b(?:in|within|inside|from|of)\s+(?:the\s+)?(?:same|that|this|previous|leading|top|best|first|second|third|winning|runner[- ]up)\s+(?:departments?|deps?|depts?|teams?|roles?|positions?|one)\b"
+            + dept_pattern,
+            scan_text,
             re.I,
         )
-        if container_ref:
+        if container_ref and (not mentions or min(mentions)[0] >= container_ref.start()):
             entity = "employee"
 
     metric_id: str | None = None
@@ -1309,9 +1440,11 @@ def parse_query_rankings_spec(
         region=region,
         department=department,
         team=None,
+        position=position,
         branch=None,
         metric_id=metric_id,
         period=None,
         score_threshold=threshold,
         threshold_operator=operator,
+        score_measure=detect_explicit_score_measure(text),
     )

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import uuid
+from contextlib import nullcontext
+from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -67,6 +70,44 @@ def test_redact_secrets_scrubs_nvidia_api_keys():
 def test_nvidia_model_strips_accidental_free_suffix(monkeypatch):
     monkeypatch.setenv("NVIDIA_FEEDBACK_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b:free")
     assert nemotron_analyzer._nvidia_model() == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+
+
+def test_nvidia_retry_shares_the_original_deadline(monkeypatch):
+    now = 0.0
+    attempts = []
+
+    def time_out(_request, *, timeout):
+        nonlocal now
+        attempts.append(timeout)
+        now += timeout
+        raise TimeoutError()
+
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_api_key", lambda: "test-key")
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_standby_api_key", lambda: "")
+    monkeypatch.setattr(nemotron_analyzer, "_timeout_seconds", lambda: 5.0)
+    monkeypatch.setattr(nemotron_analyzer, "time", SimpleNamespace(monotonic=lambda: now, sleep=lambda _seconds: None))
+    monkeypatch.setattr(nemotron_analyzer.urllib.request, "urlopen", time_out)
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        nemotron_analyzer._post_nvidia_chat_completions([])
+    assert attempts == [5.0]
+
+
+def test_hosted_nemotron_requests_final_json_with_reasoning_disabled(monkeypatch):
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_api_key", lambda: "test-key")
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_standby_api_key", lambda: "")
+
+    def complete(request, *, timeout):
+        payload = json.loads(request.data)
+        assert payload["reasoning_effort"] == "none"
+        assert payload["response_format"] == {"type": "json_object"}
+        assert "max_tokens" not in payload
+        reply = {"choices": [{"message": {"content": '{"root_cause_category":"wrong_tool"}'}}]}
+        return nullcontext(SimpleNamespace(read=lambda: json.dumps(reply).encode()))
+
+    monkeypatch.setattr(nemotron_analyzer.urllib.request, "urlopen", complete)
+    result = nemotron_analyzer._post_nvidia_chat_completions([], model=nemotron_analyzer.DEFAULT_NVIDIA_MODEL)
+    assert result == {"root_cause_category": "wrong_tool"}
 
 
 def test_analyzer_disabled_by_default_and_blocks_non_admin(monkeypatch):
@@ -187,6 +228,50 @@ def test_analyze_trace_persists_caches_and_enforces_screenshot_attestation(monke
     reset_local_analyzer_budget()
 
 
+def test_empty_provider_payload_is_not_persisted_as_feedback_analysis(monkeypatch):
+    monkeypatch.setenv("PMS_AI_FEEDBACK_ANALYZER_ENABLED", "true")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-invalid-response")
+    monkeypatch.setattr(nemotron_analyzer, "_consume_daily_budget", lambda: True)
+    monkeypatch.setattr(nemotron_analyzer, "_post_nvidia_chat_completions", lambda *_a, **_k: {})
+    db = _setup_db()
+    trace = _seed_trace(db, prompt="Show Inbound performance", sanitized_prompt="Show Inbound performance")
+    service = NemotronFeedbackAnalyzerService(db)
+
+    trace_result = service.analyze_trace(trace_id=str(trace.id), caller_role="Admin")
+    cluster_result = service.analyze_cluster(scope_team="Inbound", caller_role="Admin")
+
+    assert trace_result.outcome == "provider_error"
+    assert cluster_result.outcome == "provider_error"
+    assert "nemotron_analysis" not in (trace.structured_response or {})
+
+
+def test_trace_cache_is_bound_to_evidence_and_model(monkeypatch):
+    monkeypatch.setattr(nemotron_analyzer, "is_feedback_analyzer_configured", lambda: True)
+    monkeypatch.setattr(nemotron_analyzer, "_consume_daily_budget", lambda: True)
+    model = "test-model-a"
+    monkeypatch.setattr(nemotron_analyzer, "_nvidia_model", lambda: model)
+    calls = []
+
+    def diagnose(_messages, *, model):
+        calls.append(model)
+        return {"root_cause_category": "wrong_tool", "root_cause_summary": "The selected tool measures the wrong KPI."}
+
+    monkeypatch.setattr(nemotron_analyzer, "_post_nvidia_chat_completions", diagnose)
+    db = _setup_db()
+    trace = _seed_trace(db, prompt="Show Inbound performance", sanitized_prompt="Show Inbound performance")
+    service = NemotronFeedbackAnalyzerService(db)
+    args = {"trace_id": str(trace.id), "caller_role": "Admin"}
+
+    assert service.analyze_trace(**args).model_requested == "test-model-a"
+    assert service.analyze_trace(**args).cached
+    trace.feedback_reason = "The selected month was wrong"
+    db.commit()
+    assert not service.analyze_trace(**args).cached
+    model = "test-model-b"
+    assert service.analyze_trace(**args).model_requested == "test-model-b"
+    assert calls == ["test-model-a", "test-model-a", "test-model-b"]
+
+
 def test_cluster_batch_analysis_summarizes_redacted_traces(monkeypatch):
     reset_local_analyzer_budget()
     monkeypatch.setenv("PMS_AI_FEEDBACK_ANALYZER_ENABLED", "true")
@@ -264,3 +349,11 @@ def test_export_bundle_enriches_approved_trace_with_redacted_nemotron_analysis()
     item = bundle.items[0]
     assert item.root_cause_category == "intent_misclassification"
     assert item.suggested_dpo_chosen_outline == "Return the Inbound agent ranking table for September 2026."
+def test_suggested_pattern_uses_supported_operation_when_model_invents_a_label():
+    suggestion = nemotron_analyzer._coerce_suggested_pattern({
+        "corrected_pattern_prompt": "Compare the two teams' overall scores",
+        "intent": "compare_teams",
+        "operation_kind": "score_difference",
+    })
+    assert suggestion is not None
+    assert suggestion.operation_kind == "compare_teams"

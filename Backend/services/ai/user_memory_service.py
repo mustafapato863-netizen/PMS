@@ -69,11 +69,11 @@ class UserMemoryService:
                 pass
             return None
 
-    def save_memory(self, user_id: str | uuid.UUID, updates: dict[str, Any]) -> None:
+    def save_memory(self, user_id: str | uuid.UUID, updates: dict[str, Any]) -> bool:
         """Upsert user memory with the given updates (merged into existing)."""
         uid = _coerce_user_uuid(user_id)
         if uid is None:
-            return
+            return False
         try:
             row = self.db.query(AiUserMemory).filter(AiUserMemory.user_id == uid).first()
             if row is None:
@@ -82,7 +82,9 @@ class UserMemoryService:
 
             if "preferences" in updates and isinstance(updates["preferences"], dict):
                 existing = dict(row.preferences or {})
-                existing.update(updates["preferences"])
+                requested = {key: value for key, value in updates["preferences"].items() if key in self.PREFERENCE_FIELDS}
+                existing["_consented_fields"] = sorted(set(existing.get("_consented_fields") or []) | set(requested))
+                existing.update(requested)
                 row.preferences = existing
 
             if "query_patterns" in updates and isinstance(updates["query_patterns"], dict):
@@ -103,11 +105,13 @@ class UserMemoryService:
 
             row.last_accessed_at = datetime.now(timezone.utc)
             self.db.commit()
+            return True
         except Exception:
             try:
                 self.db.rollback()
             except Exception:
                 pass
+            return False
 
     def get_memory_text(self, memory: dict[str, Any] | None) -> str:
         """Convert user memory to a compact, XML-safe text block for prompt injection."""
@@ -155,82 +159,42 @@ class UserMemoryService:
         escaped = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("`", "&#96;")
         return f"<VERIFIED_USER_MEMORY>\n[User Memory]\n{escaped}\n</VERIFIED_USER_MEMORY>"
 
-    def extract_and_persist_turn_signals(
-        self,
-        user_id: str | uuid.UUID,
-        prompt: str,
-        *,
-        topic: str | None = None,
-        team: str | None = None,
-        kpi: str | None = None,
-    ) -> bool:
-        """Deterministic zero-LLM post-turn extraction and atomic persistence.
+    def load_personalization(self, user_id: str | uuid.UUID, *, include_empty: bool = False) -> dict[str, Any] | None:
+        """Only explicitly saved fields can influence a future chat."""
+        memory = self.load_memory(user_id)
+        if memory is None:
+            return None
+        prefs = memory.get("preferences") or {}
+        approved = prefs.get("_consented_fields") or []
+        selected = {key: prefs[key] for key in approved if key in self.PREFERENCE_FIELDS and key in prefs}
+        return {"preferences": selected} if selected or include_empty else None
 
-        Must be called OUTSIDE ReadOnlySessionGuard (e.g., right after trace logging).
-        """
-        uid = _coerce_user_uuid(user_id)
-        if uid is None:
-            return False
+    PREFERENCE_FIELDS = frozenset({"detail_level", "communication_style", "preferred_metrics", "preferred_teams"})
+
+    @staticmethod
+    def requested_preferences(prompt: str) -> dict[str, str]:
+        """A one-off instruction or an observed topic stays within the conversation."""
         text = str(prompt or "").strip()
-        if not text:
-            return False
-
-        memory = self.load_memory(uid) or {}
-        updates: dict[str, Any] = {}
-
-        # 1. Extract explicit preference / goal cues deterministically
-        prefs = dict(memory.get("preferences") or {})
-        prefs_changed = False
-        if _PREF_BRIEF_RE.search(text):
+        consent = re.match(r"^(?:please\s+)?(?:remember(?:\s+that)?|save my preference(?:\s+to)?)\s+(.+)$", text, re.I)
+        if consent is None:
+            return {}
+        preference = consent.group(1).split(".")[0]
+        if re.search(r"\b(?:not|never|dislike|avoid|don['’]t|no longer)\b", preference, re.I):
+            return {}
+        prefs = {}
+        if _PREF_BRIEF_RE.search(preference) or re.search(r"\b(?:short|brief) (?:answers|replies)\b", preference, re.I):
             prefs["detail_level"] = "brief"
-            prefs_changed = True
-        elif _PREF_DETAILED_RE.search(text):
+        elif _PREF_DETAILED_RE.search(preference):
             prefs["detail_level"] = "detailed"
-            prefs_changed = True
-
-        if _PREF_FORMAL_RE.search(text):
+        if _PREF_FORMAL_RE.search(preference):
             prefs["communication_style"] = "formal"
-            prefs_changed = True
-        elif _PREF_CASUAL_RE.search(text):
+        elif _PREF_CASUAL_RE.search(preference):
             prefs["communication_style"] = "casual"
-            prefs_changed = True
+        return prefs
 
-        goal_match = _GOAL_RE.search(text)
-        if goal_match:
-            prefs["goal"] = goal_match.group(1).strip()[:120]
-            prefs_changed = True
-
-        if prefs_changed:
-            updates["preferences"] = prefs
-
-        # 2. Update bounded query patterns
-        patterns = dict(memory.get("query_patterns") or {})
-        topics = list(patterns.get("frequent_topics") or [])
-        teams = dict(patterns.get("frequent_teams") or {})
-        kpis = dict(patterns.get("frequent_kpis") or {})
-
-        if topic and topic not in topics:
-            topics.append(str(topic)[:50])
-            topics = topics[-self.MAX_FREQUENT_ITEMS :]
-        if team:
-            t_key = str(team)[:60]
-            teams[t_key] = int(teams.get(t_key, 0)) + 1
-            if len(teams) > self.MAX_FREQUENT_ITEMS:
-                teams = dict(sorted(teams.items(), key=lambda kv: -kv[1])[: self.MAX_FREQUENT_ITEMS])
-        if kpi:
-            k_key = str(kpi)[:60]
-            kpis[k_key] = int(kpis.get(k_key, 0)) + 1
-            if len(kpis) > self.MAX_FREQUENT_ITEMS:
-                kpis = dict(sorted(kpis.items(), key=lambda kv: -kv[1])[: self.MAX_FREQUENT_ITEMS])
-
-        patterns["frequent_topics"] = topics
-        patterns["frequent_teams"] = teams
-        patterns["frequent_kpis"] = kpis
-        patterns["query_count"] = int(patterns.get("query_count", 0)) + 1
-        updates["query_patterns"] = patterns
-
-        self.save_memory(uid, updates)
-        return True
+    def extract_and_persist_turn_signals(self, user_id: str | uuid.UUID, prompt: str, **_context: Any) -> bool:
+        prefs = self.requested_preferences(prompt)
+        return bool(prefs) and self.save_memory(user_id, {"preferences": prefs})
 
     def record_query(self, user_id: str | uuid.UUID, topic: str | None = None, team: str | None = None, kpi: str | None = None) -> None:
         """Record a query pattern for future personalization."""

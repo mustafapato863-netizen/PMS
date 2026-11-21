@@ -745,6 +745,14 @@ class TrainingTraceLogger:
         redacted_digest = redact_nested_payload(
             tool_digest, _precomputed_tokens=name_tokens
         )
+        # This server-generated UUID links a replay to the exact approved pattern.
+        # Treating its digit groups as free text can corrupt that proof.
+        pattern_id = tool_digest.get("approved_pattern_id")
+        if isinstance(redacted_digest, dict) and isinstance(pattern_id, str):
+            try:
+                redacted_digest["approved_pattern_id"] = str(uuid.UUID(pattern_id))
+            except ValueError:
+                pass
         if isinstance(redacted_digest, dict) and is_quarantined:
             redacted_digest = dict(redacted_digest)
             redacted_digest["pii_quarantine"] = {

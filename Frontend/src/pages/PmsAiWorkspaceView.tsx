@@ -5,10 +5,8 @@ import {
   Bell,
   Brain,
   Calendar,
-  ChevronDown,
   History,
   Info,
-  Lock,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
@@ -110,6 +108,37 @@ function makeEmptyChatSession(chatKey: string, conversationId: string | null = n
     abortController: null,
     requestSeq: 0,
   };
+}
+
+type ActiveFilterChipItem = {
+  key: 'region' | 'function' | 'team' | 'position' | 'branch' | 'performance_level';
+  label: string;
+  resetValue: string;
+};
+
+function ActiveFilterChips({
+  chips,
+  onRemove,
+}: {
+  chips: ActiveFilterChipItem[];
+  onRemove: (key: ActiveFilterChipItem['key'], value: string) => void;
+}) {
+  return (
+    <>
+      {chips.map((chip) => (
+        <button
+          key={`${chip.key}-${chip.label}`}
+          type="button"
+          title={`Remove ${chip.label} filter`}
+          onClick={() => onRemove(chip.key, chip.resetValue)}
+          className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-blue-200/80 bg-blue-50/50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100/70"
+        >
+          <span>{chip.label}</span>
+          <X size={11} />
+        </button>
+      ))}
+    </>
+  );
 }
 
 export default function PmsAiWorkspaceView() {
@@ -516,76 +545,79 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     [functionParam, selectedTeam, positionParam, selectedBranch, regionParam, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
-  const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function' | 'region' | 'position', value: string) => {
-    cancelActiveChatInFlight();
-    const next = new URLSearchParams(searchParams);
-    if (value === 'All' || value === 'all' || !value) {
-      next.delete(key);
-    } else {
-      next.set(key, value);
-    }
-    if (key === 'function' || key === 'region') {
-      next.delete('team');
-      next.delete('position');
-      setSelectedTeam('All');
-    }
-    if (key === 'region') {
-      next.delete('branch');
-      setSelectedBranch('all');
-    }
-    if (key === 'team' || key === 'performance_level') next.delete('position');
-    setSearchParams(next, { replace: true });
-    if (key === 'function' || key === 'region') {
-      updateSession(activeChatKeyRef.current, (prev) => ({
-        ...prev,
-        lastConfirmedQuery: key === 'region' ? {} : null,
-      }));
-    }
-    if (key === 'team') {
-      setSelectedTeam(value);
-      updateSession(activeChatKeyRef.current, (prev) => ({
-        ...prev,
-        lastConfirmedQuery: prev.lastConfirmedQuery
-          ? {
-              ...prev.lastConfirmedQuery,
-              team: value !== 'All' ? value : null,
-              position: null,
-              metric_id: null,
-              last_subject_employee_id: null,
-              last_subject_employee_name: null,
-            }
-          : null,
-      }));
-    }
-    if (key === 'branch') {
-      setSelectedBranch(value);
-      updateSession(activeChatKeyRef.current, (prev) => ({
-        ...prev,
-        lastConfirmedQuery: prev.lastConfirmedQuery
-          ? {
-              ...prev.lastConfirmedQuery,
-              branch: value !== 'all' ? value : null,
-              compare_branch: null,
-            }
-          : null,
-      }));
-    }
-    if (key === 'performance_level') {
-      setSelectedLevel(value);
-      updateSession(activeChatKeyRef.current, (prev) => ({
-        ...prev,
-        lastConfirmedQuery: prev.lastConfirmedQuery
-          ? {
-              ...prev.lastConfirmedQuery,
-              performance_level: value !== 'All' ? value : null,
-              metric_id: null,
-              last_subject_employee_id: null,
-              last_subject_employee_name: null,
-            }
-          : null,
-      }));
-    }
-  };
+  const handleFilterChange = useCallback(
+    (key: 'team' | 'branch' | 'performance_level' | 'function' | 'region' | 'position', value: string) => {
+      cancelActiveChatInFlight();
+      const next = new URLSearchParams(searchParams);
+      if (value === 'All' || value === 'all' || !value) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+      if (key === 'function' || key === 'region') {
+        next.delete('team');
+        next.delete('position');
+        setSelectedTeam('All');
+      }
+      if (key === 'region') {
+        next.delete('branch');
+        setSelectedBranch('all');
+      }
+      if (key === 'team' || key === 'performance_level') next.delete('position');
+      setSearchParams(next, { replace: true });
+      if (key === 'function' || key === 'region') {
+        updateSession(activeChatKey, (prev) => ({
+          ...prev,
+          lastConfirmedQuery: key === 'region' ? {} : null,
+        }));
+      }
+      if (key === 'team') {
+        setSelectedTeam(value);
+        updateSession(activeChatKey, (prev) => ({
+          ...prev,
+          lastConfirmedQuery: prev.lastConfirmedQuery
+            ? {
+                ...prev.lastConfirmedQuery,
+                team: value !== 'All' ? value : null,
+                position: null,
+                metric_id: null,
+                last_subject_employee_id: null,
+                last_subject_employee_name: null,
+              }
+            : null,
+        }));
+      }
+      if (key === 'branch') {
+        setSelectedBranch(value);
+        updateSession(activeChatKey, (prev) => ({
+          ...prev,
+          lastConfirmedQuery: prev.lastConfirmedQuery
+            ? {
+                ...prev.lastConfirmedQuery,
+                branch: value !== 'all' ? value : null,
+                compare_branch: null,
+              }
+            : null,
+        }));
+      }
+      if (key === 'performance_level') {
+        setSelectedLevel(value);
+        updateSession(activeChatKey, (prev) => ({
+          ...prev,
+          lastConfirmedQuery: prev.lastConfirmedQuery
+            ? {
+                ...prev.lastConfirmedQuery,
+                performance_level: value !== 'All' ? value : null,
+                metric_id: null,
+                last_subject_employee_id: null,
+                last_subject_employee_name: null,
+              }
+            : null,
+        }));
+      }
+    },
+    [activeChatKey, cancelActiveChatInFlight, searchParams, setSearchParams, updateSession],
+  );
 
   const watchingQueryKey = [
     'pms-ai-watching',
@@ -1203,7 +1235,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const watchingAlertCount = watchingData?.alerts?.length ?? 0;
 
   return (
-    <div className="min-h-full bg-gradient-to-br from-[#EDF4FC] via-[#F5F9FD] to-[#EBF3FA] px-3 py-3 sm:px-5">
+    <div className="min-h-full bg-slate-50 dark:bg-slate-950 px-3 py-3 sm:px-5">
       <div className="mx-auto max-w-[1440px]">
         <div className="flex min-h-0 flex-col gap-4 lg:flex-row lg:items-stretch">
           {/* Left Rail (desktop lg:+) / Slide-over Drawer (< lg): Recent chats */}
@@ -1249,16 +1281,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
           {/* Center Conversation-First Workspace */}
           <section
             aria-label="PMS AI analytical conversation workspace"
-            className="relative flex h-[calc(100dvh-108px)] min-h-[520px] min-w-0 flex-1 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_10px_35px_rgb(15,23,42,0.06)]"
+            className="ai-workspace-chat relative flex h-[calc(100dvh-104px)] min-h-[420px] min-w-0 flex-1 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
           >
-            {/* Seamless Top Radial Aurora Glow */}
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_75%_65%_at_50%_0%,rgba(56,189,248,0.16),rgba(16,185,129,0.06)_55%,transparent_100%)]"
-              aria-hidden="true"
-            />
-
-            {/* Clean 3-Zone Top Header Bar */}
-            <div className="relative z-30 border-b border-slate-100/90 bg-white/95 px-4 py-2.5 backdrop-blur-md sm:px-6">
+            <div className="relative z-30 border-b border-slate-100/90 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-950 sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-xs">
@@ -1268,6 +1293,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     <h1 className="text-base font-extrabold tracking-tight text-slate-900">
                       PMS AI
                     </h1>
+                    {isSelfOnly && <span data-testid="ai-self-only-pill" className="text-xs text-slate-600">My 360°</span>}
                     <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
                       <Calendar size={12} className="text-blue-600" />
                       {fullPeriodLabel}
@@ -1286,44 +1312,15 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
                 {/* Unified Scope Popover Trigger + Active Filter Chips + Actions */}
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  {isSelfOnly ? (
-                    <span data-testid="ai-self-only-pill" className="inline-flex cursor-default items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs font-semibold text-blue-800">
-                      <Lock size={13} className="text-blue-600" />
-                      My 360°
-                    </span>
-                  ) : (
                   <button
                     type="button"
                     aria-expanded={showFilters}
-                    aria-label={showFilters ? 'Hide scope filters' : 'Show scope filters'}
-                    onClick={() => setShowFilters((prev) => !prev)}
-                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      showFilters || activeFilterChips.length > 0
-                        ? 'border-blue-200 bg-blue-50/80 text-blue-800'
-                        : 'border-slate-200/90 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700'
-                    }`}
+                    onClick={() => setShowFilters((previous) => !previous)}
+                    className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
                   >
-                    <SlidersHorizontal size={13} className="text-blue-600" />
-                    <span className="max-w-[200px] truncate">Scope: {activeScopeSummary}</span>
-                    <ChevronDown
-                      size={13}
-                      className={`transition-transform ${showFilters ? 'rotate-180' : ''}`}
-                    />
+                    <SlidersHorizontal size={15} />
+                    <span>Chat settings</span>
                   </button>
-                  )}
-
-                  {!isSelfOnly && activeFilterChips.map((chip) => (
-                    <button
-                      key={`${chip.key}-${chip.label}`}
-                      type="button"
-                      title={`Remove ${chip.label} filter`}
-                      onClick={() => handleFilterChange(chip.key, chip.resetValue)}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-blue-200/80 bg-blue-50/50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100/70"
-                    >
-                      <span>{chip.label}</span>
-                      <X size={11} />
-                    </button>
-                  ))}
 
                   <button
                     type="button"
@@ -1345,6 +1342,53 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       </span>
                     )}
                   </button>
+
+                  {(turns.length > 0 || conversationId !== null) && (
+                    <button
+                      type="button"
+                      data-testid="ai-new-chat-btn"
+                      aria-label="New chat"
+                      title="New chat"
+                      onClick={startNewChat}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
+                    >
+                      <RotateCcw size={12} />
+                      <span className="hidden sm:inline">New chat</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Collapsible Scope Filter Tray — hidden for self-only users */}
+              {!isSelfOnly && (
+              <ScopeFilterBar
+                availableRegions={catalogData?.eligible_regions ?? []}
+                selectedRegion={regionParam}
+                availablePositions={availablePositions}
+                selectedPosition={positionParam}
+                availableFunctions={availableFunctions}
+                selectedFunction={sessionState.function}
+                availableTeams={availableTeams}
+                selectedTeam={selectedTeam}
+                availableBranches={availableBranches}
+                selectedBranch={selectedBranch}
+                availableLevels={availableLevels}
+                selectedLevel={selectedLevel}
+                answerDetail={answerDetail}
+                onFilterChange={handleFilterChange}
+                onChangeAnswerDetail={(mode) => setAnswerDetail(mode)}
+                className={
+                  showFilters
+                    ? 'mt-2.5 flex w-full rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5'
+                    : 'hidden'
+                }
+              />
+              )}
+
+              {showFilters && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Chat options">
+                  {!isSelfOnly && <span className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400">{activeScopeSummary}</span>}
+                  {!isSelfOnly && <ActiveFilterChips chips={activeFilterChips} onRemove={handleFilterChange} />}
 
                   <button
                     type="button"
@@ -1387,18 +1431,6 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     </button>
                   )}
 
-                  <span
-                    data-testid="ai-memory-indicator"
-                    title="Conversation memory: 256k context window"
-                    className="hidden cursor-default items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/80 px-2 py-1.5 text-xs font-semibold text-slate-500 md:inline-flex"
-                  >
-                    <Brain size={12} />
-                    256k memory
-                    {turns.length > 0 && (
-                      <span className="tabular-nums text-slate-400">· {turns.length} turns</span>
-                    )}
-                  </span>
-
                   <button
                     type="button"
                     data-testid="ai-memory-drawer-btn"
@@ -1425,44 +1457,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     <span className="hidden sm:inline">Privacy</span>
                   </button>
 
-                  {(turns.length > 0 || conversationId !== null) && (
-                    <button
-                      type="button"
-                      data-testid="ai-new-chat-btn"
-                      onClick={startNewChat}
-                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
-                    >
-                      <RotateCcw size={12} />
-                      <span>New chat</span>
-                    </button>
-                  )}
                 </div>
-              </div>
-
-              {/* Collapsible Scope Filter Tray — hidden for self-only users */}
-              {!isSelfOnly && (
-              <ScopeFilterBar
-                availableRegions={catalogData?.eligible_regions ?? []}
-                selectedRegion={regionParam}
-                availablePositions={availablePositions}
-                selectedPosition={positionParam}
-                availableFunctions={availableFunctions}
-                selectedFunction={sessionState.function}
-                availableTeams={availableTeams}
-                selectedTeam={selectedTeam}
-                availableBranches={availableBranches}
-                selectedBranch={selectedBranch}
-                availableLevels={availableLevels}
-                selectedLevel={selectedLevel}
-                answerDetail={answerDetail}
-                onFilterChange={handleFilterChange}
-                onChangeAnswerDetail={(mode) => setAnswerDetail(mode)}
-                className={
-                  showFilters
-                    ? 'mt-2.5 flex w-full rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5'
-                    : 'hidden'
-                }
-              />
               )}
 
               {/* First-person pronoun auto-binding hint for self-only users */}
@@ -1561,30 +1556,30 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   />
                 )
               ) : (
-                <div className="mx-auto max-w-4xl space-y-5">
+                <div className="mx-auto max-w-[46rem] space-y-7">
                   {turns.map((turn) => (
-                    <div key={turn.id} className="space-y-3.5">
+                    <div key={turn.id} className="space-y-3">
                       {/* Right-aligned User Prompt Bubble */}
                       <div className="flex items-center justify-end gap-2.5">
                         <div
                           dir="auto"
-                          className="max-w-xl rounded-2xl rounded-br-xs bg-blue-600 px-4 py-2.5 text-sm font-medium leading-relaxed text-white shadow-xs"
+                          className="max-w-[86%] whitespace-pre-wrap break-words rounded-2xl bg-blue-50 px-4 py-2.5 text-sm font-medium leading-relaxed text-slate-900 dark:bg-slate-800 dark:text-slate-100"
                         >
                           {turn.userPrompt}
                         </div>
                         <div
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200"
                           aria-hidden="true"
                         >
                           {userInitials}
                         </div>
                       </div>
 
-                      {/* Left-aligned Live Step-by-Step Progress Card */}
                       {turn.isPending && (
                         <AiThinkingProgressCard
                           onStop={() => {
                             activeSession.abortController?.abort();
+                            setPromptInput((draft) => draft || turn.userPrompt);
                             updateSession(activeChatKey, (prev) => ({
                               ...prev,
                               isSending: false,

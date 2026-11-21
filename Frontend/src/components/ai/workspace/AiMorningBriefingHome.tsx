@@ -53,12 +53,11 @@ export default function AiMorningBriefingHome({
           <Sparkles size={22} />
         </div>
 
-        <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[26px]">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[26px]">
           Hi {firstName}, how can I help?
         </h2>
-        <p className="mx-auto mt-1.5 max-w-lg text-sm leading-relaxed text-slate-500">
-          Get instant executive summaries, diagnose KPI bottlenecks, compare branches, or draft
-          coaching actions across <span className="font-semibold text-slate-700">{scopeSummaryLabel}</span>.
+        <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+          Ask about {scopeSummaryLabel}, or start with a suggestion.
         </p>
       </div>
 
@@ -160,7 +159,7 @@ export default function AiMorningBriefingHome({
         <div className="mt-5">
           <div
             data-testid="ai-starter-suggestions"
-            className={`grid w-full grid-cols-1 gap-3 ${
+            className={`grid w-full grid-cols-1 gap-2 ${
               starterCards.length >= 4 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
             }`}
           >
@@ -171,31 +170,14 @@ export default function AiMorningBriefingHome({
                   key={item.id}
                   type="button"
                   onClick={() => onSelectPrompt(item.prompt)}
-                  className="group flex cursor-pointer flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-sm"
+                  className="group flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-900"
+                  title={item.subtitle || undefined}
                 >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                        <CardIcon size={12} aria-hidden="true" />
-                        <span>{item.badge || 'Guided Workflow'}</span>
-                      </span>
-                      <ArrowRight
-                        size={14}
-                        className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600"
-                      />
-                    </div>
-                    <p className="mt-2.5 line-clamp-2 text-sm font-bold text-slate-900">
+                    <CardIcon size={15} aria-hidden="true" className="shrink-0 text-blue-600 dark:text-blue-400" />
+                    <span dir="auto" className="flex-1 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
                       {item.label}
-                    </p>
-                  </div>
-                  {item.subtitle && (
-                    <p
-                      dir="auto"
-                      className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500"
-                    >
-                      {item.subtitle}
-                    </p>
-                  )}
+                    </span>
+                    <ArrowRight size={14} aria-hidden="true" className="shrink-0 text-slate-400 group-hover:text-blue-600" />
                 </button>
               );
             })}

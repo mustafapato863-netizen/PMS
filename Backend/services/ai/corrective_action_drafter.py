@@ -9,7 +9,7 @@ Flow, for one authorized subject (employee or team) and reporting period:
    scored KPI furthest below target).
 3. Decide insufficient evidence in code. The model is not called when there
    is no complete, below-target KPI to address.
-4. Send the configured provider (Cloudflare primary, Gemini fallback, via
+4. Send the configured provider (NVIDIA primary, Cloudflare fallback, via
    ``provider_engine``) only the
    minimum needed: function/team/position/level/period, the focus KPI's
    actual/target/direction, names of other below-target KPIs and
@@ -855,7 +855,7 @@ def _default_evidence_choice(
 
 
 class CorrectiveActionDrafter:
-    """Evidence -> minimal prompt -> Cloudflare/Gemini provider -> validated, unapproved draft."""
+    """Evidence -> minimal prompt -> NVIDIA/Cloudflare provider -> validated, unapproved draft."""
 
     def __init__(
         self,
@@ -1055,7 +1055,7 @@ class CorrectiveActionDrafter:
                 fallback_reason="prompt_exceeds_context", **fallback_fields, **common,
             ))
 
-        # Unified Provider Engine (Cloudflare Workers AI primary, Gemini fallback)
+        # Unified Provider Engine (NVIDIA NIM primary, Cloudflare fallback)
         engine = self._provider_engine or get_unified_provider_engine()
         request_schema = copy.deepcopy(_RESPONSE_SCHEMA.get("schema", _RESPONSE_SCHEMA))
         schema_props = request_schema.get("properties")
@@ -1075,6 +1075,7 @@ class CorrectiveActionDrafter:
             max_tokens=_MAX_OUTPUT_TOKENS,
             timeout_seconds=synthesis_timeout_seconds(),
             purpose="corrective_action_draft",
+            task_role="investigation",
         )
         resp = engine.generate(req)
         model_version = resp.model or None
@@ -1098,8 +1099,8 @@ class CorrectiveActionDrafter:
                 **fallback_fields, **common,
             ))
 
-        # Exactly "cloudflare" or "gemini"; anything else is treated as the primary.
-        provider_used = resp.provider if resp.provider in ("cloudflare", "gemini") else "cloudflare"
+        # Exactly "cloudflare" or "nvidia"; anything else is treated as the primary.
+        provider_used = resp.provider if resp.provider in ("cloudflare", "nvidia") else "cloudflare"
 
         raw, parsed_ok = _parse_json_response(resp.content)
         clean: dict[str, Any] | None = None
@@ -1138,6 +1139,7 @@ class CorrectiveActionDrafter:
                 max_tokens=_MAX_OUTPUT_TOKENS,
                 timeout_seconds=synthesis_timeout_seconds(),
                 purpose="corrective_action_draft_repair",
+                task_role="repair",
             )
             repair_resp = engine.generate(repair_req)
             if repair_resp.latency_ms is not None:
@@ -1145,7 +1147,7 @@ class CorrectiveActionDrafter:
             if repair_resp.is_success:
                 provider_used = (
                     repair_resp.provider
-                    if repair_resp.provider in ("cloudflare", "gemini")
+                    if repair_resp.provider in ("cloudflare", "nvidia")
                     else provider_used
                 )
                 model_version = repair_resp.model or model_version

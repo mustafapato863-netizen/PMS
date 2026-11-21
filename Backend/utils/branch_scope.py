@@ -157,7 +157,18 @@ def project_record_for_branch(record: Any, branch: str | None) -> Any:
 
     bookings_val = max(b_bookings or 0.0, 0.0)
     attended_val = max(b_attended or 0.0, 0.0)
+    if bookings_val <= 0.0 and attended_val <= 0.0:
+        return record
     new_actual = (attended_val / bookings_val) if bookings_val > 0 else 0.0
+
+    kpi_values_orig = _value(record, "kpi_values")
+    if not isinstance(kpi_values_orig, list) or not any(
+        str(_value(kpi, "kpi_key", "")).casefold() == "attendance"
+        or "attend" in str(_value(kpi, "label", "")).casefold()
+        or "attend" in str(_value(kpi, "kpi_key", "")).casefold()
+        for kpi in kpi_values_orig
+    ):
+        return record
 
     if hasattr(record, "model_copy"):
         cloned = record.model_copy(deep=True)

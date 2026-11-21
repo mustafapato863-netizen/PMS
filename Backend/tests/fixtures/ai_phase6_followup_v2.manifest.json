@@ -1,0 +1,9 @@
+{
+  "schema_version": "pms-ai-phase6-holdout-manifest-v1",
+  "frozen_at_utc": "2026-11-20T13:13:21.368090+00:00",
+  "fixture": "Backend/tests/fixtures/ai_phase6_followup_v2.json",
+  "fixture_sha256": "a6f572a660111885707539c4c5b9a0b807a3393570e9b4ccfa31d4a809d62988",
+  "session_count": 7,
+  "turn_count": 24,
+  "data_boundary": "strictly_synthetic_zero_pii"
+}

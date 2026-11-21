@@ -133,3 +133,24 @@ def test_workspace_region_and_branch_coexistence():
     attend = next((k for k in ws.kpi_diagnosis if k.key == "Attendance"), None)
     assert attend is not None
     assert attend.people_below_target == 0  # 76% is above target
+
+
+def test_project_record_for_branch_preserves_non_geo_branch_scores():
+    """Pharmacy / non-Call-Center rows with explicit branch and zero geo bookings must keep their original score."""
+    pharmacy_rec = PerformanceRecord(
+        id="PH_1",
+        employee_id="PH-01",
+        employee_name="Aisha Pharmacy",
+        team="Pharmacy",
+        month="June",
+        year=2026,
+        region="UAE",
+        position="Pharmacist",
+        performance_level="Employee",
+        status="On Track",
+        raw_data={"Branch": "Dubai"},
+        evaluation=EvaluationData(score=88.5, grade="B"),
+        kpi_values=[],
+    )
+    projected = project_record_for_branch(pharmacy_rec, "dubai")
+    assert projected.evaluation.score == 88.5

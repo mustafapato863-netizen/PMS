@@ -192,7 +192,7 @@ def _run_in_process_checks() -> tuple[dict[str, Any], list[float], dict[str, Any
     from services.ai import feature_gate
     from services.ai.provider_engine import (
         CloudflareAIProviderAdapter,
-        GeminiProviderAdapter,
+        NvidiaProviderAdapter,
         ProviderMessage,
         ProviderRequest,
         ProviderTimeoutError,
@@ -374,11 +374,11 @@ def _run_in_process_checks() -> tuple[dict[str, Any], list[float], dict[str, Any
             finally:
                 ai_workspace._live_verify_in_flight = orig_in_flight
 
-        class _TimeoutCloudflare(CloudflareAIProviderAdapter):
+        class _TimeoutNvidia(NvidiaProviderAdapter):
             def execute(self, request, config, *, model="", timeout=1.0):
                 raise ProviderTimeoutError("Simulated primary timeout")
 
-        class _RateLimitGemini(GeminiProviderAdapter):
+        class _RateLimitCloudflare(CloudflareAIProviderAdapter):
             def execute(self, request, config, *, model="", timeout=1.0):
                 from services.ai.provider_engine import ProviderRateLimitError
 
@@ -387,19 +387,19 @@ def _run_in_process_checks() -> tuple[dict[str, Any], list[float], dict[str, Any
         t_fb_start = time.perf_counter()
         fb_engine = UnifiedProviderEngine(
             UnifiedProviderConfig(
-                primary_provider="cloudflare",
-                fallback_provider="gemini",
+                primary_provider="nvidia",
+                fallback_provider="cloudflare",
                 cloudflare_enabled=True,
-                gemini_enabled=True,
+                nvidia_enabled=True,
                 fallback_enabled=True,
                 cloudflare_account_id="acct-rehearsal",
                 cloudflare_api_token="tok-rehearsal",
-                gemini_api_key="gem-rehearsal",
+                nvidia_api_key="nv-rehearsal",
                 timeout_seconds=1.0,
                 max_retries=0,
             ),
-            cloudflare_adapter=_TimeoutCloudflare(),
-            gemini_adapter=_RateLimitGemini(),
+            nvidia_adapter=_TimeoutNvidia(),
+            cloudflare_adapter=_RateLimitCloudflare(),
         )
         fb_resp = fb_engine.generate(
             ProviderRequest(

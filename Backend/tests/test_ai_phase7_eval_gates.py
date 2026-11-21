@@ -150,7 +150,7 @@ def test_provider_on_and_qwen_on_report_blocked_when_live_env_unset(monkeypatch)
 def test_provider_on_reports_blocked_when_credentials_missing(monkeypatch):
     mod = _load_runner_module()
     monkeypatch.setenv("PMS_AI_RUN_LIVE_MODEL_TESTS", "true")
-    for var in ("CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+    for var in ("CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "NVIDIA_API_KEY_ALTER", "GOOGLE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     res = mod.evaluate_mode("provider-on")
     assert res["status"] == "blocked"
