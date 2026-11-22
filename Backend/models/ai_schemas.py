@@ -70,6 +70,8 @@ OperationKindV2 = Literal[
     "score_drivers",
     "scorecard_structure",
     "corrective_actions",
+    "guide_lookup",
+    "target_assessment",
 ]
 
 MetricValueKindType = Literal[
@@ -104,6 +106,7 @@ class QueryOperationV2(BaseModel):
     direction: Literal["best", "worst", "higher", "lower"] | None = None
     limit: int = Field(default=1, ge=1, le=10)
     include_ties: bool = True
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class QueryRankingsArgs(BaseModel):
@@ -208,6 +211,8 @@ class ConfirmedQueryContext(BaseModel):
     ranking_winner: RankingWinner | None = None
     ranking_results: list[RankingResultReference] = Field(default_factory=list)
     score_measure: Literal["official", "employee_average"] | None = None
+    action_state: str | None = None
+    workflow_kind: str | None = None
 
 
 class StructuredQueryPlan(BaseModel):
@@ -244,6 +249,9 @@ class StructuredQueryPlan(BaseModel):
     include_employee_position: bool = False
     verified_cohort_score: bool = False
     score_measure: Literal["official", "employee_average"] = "official"
+    action_state: str | None = None
+    guide_query: str | None = None
+    hypothetical_target: float | None = None
 
 
 class TypedMetricEvidence(BaseModel):

@@ -5193,27 +5193,84 @@ class DeterministicToolRegistry:
         function: str | None = None,
         month: str | None = None,
         year: int | None = None,
+        region: str | None = None,
         state: str | None = None,
         open_only: bool = False,
+        today: Any = None,
+        apply_period_filter: bool = True,
     ) -> ToolExecutionResult:
-        resolved = self.ctx.resolve_filters(team=team, function=function, month=month, year=year)
-        ca_service = CorrectiveActionService(self.ctx.db)
-        follow_up = ca_service.list_follow_up(
-            self.ctx.scope,
-            state=state,
-            team=resolved["team"],
-            month=resolved["month"],
-            region=resolved["region"],
+        # Preserve optional period rule: when month and year are not explicitly
+        # requested for a guided follow-up read, query across the authorized scope.
+        req_month = month if apply_period_filter else None
+        req_year = year if apply_period_filter else None
+        resolved = self.ctx.resolve_filters(
+            team=team,
+            function=function,
+            month=req_month,
+            year=req_year,
         )
+        effective_region = region or resolved.get("region")
+        effective_month = resolved["month"] if (apply_period_filter and (month or year)) else None
+        effective_year = resolved["year"] if (apply_period_filter and (month or year)) else None
+        effective_state = (state or "").strip().casefold() or None
+
+        try:
+            ca_service = CorrectiveActionService(self.ctx.db, today=today) if today is not None else CorrectiveActionService(self.ctx.db)
+            follow_up = ca_service.list_follow_up(
+                self.ctx.scope,
+                state=effective_state,
+                team=resolved["team"],
+                month=effective_month,
+                region=effective_region,
+            )
+        except Exception as exc:
+            logger.warning("CorrectiveActionService.list_follow_up failed: %s", exc)
+            return ToolExecutionResult(
+                tool_name="get_corrective_actions_status",
+                arguments={
+                    **resolved,
+                    "month": effective_month,
+                    "year": effective_year,
+                    "state": effective_state,
+                },
+                records_evaluated=0,
+                digest={
+                    "status": "unavailable",
+                    "error": "corrective_actions_read_failed",
+                    "total_actions": 0,
+                    "actions": [],
+                    "record_ids": [],
+                    "action_state": effective_state,
+                    "scope": resolved["team"] or resolved["function"] or "your authorized scope",
+                    "period": f"{effective_month} {effective_year}" if effective_month and effective_year else None,
+                    "open_actions_only": open_only,
+                },
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                resolved_month=effective_month,
+                resolved_year=effective_year,
+            )
+
         actions = list(follow_up.get("actions") or [])
         if open_only:
             actions = [action for action in actions if action.get("status") in OPEN_ACTION_STATUSES]
-        if resolved["year"]:
-            actions = [action for action in actions if action.get("year") == resolved["year"]]
-        if not resolved["team"] and (resolved["function"] or "").casefold() == "call center":
-            actions = [
-                a for a in actions if str(a.get("team") or "").casefold() in ("inbound", "outbound", "call center")
-            ]
+        if effective_year:
+            actions = [action for action in actions if action.get("year") == effective_year]
+        if not resolved["team"] and resolved["function"]:
+            fn_keys = function_team_keys(resolved["function"])
+            if fn_keys:
+                actions = [
+                    a for a in actions if str(a.get("team") or "").strip().casefold() in fn_keys
+                ]
+            elif (resolved["function"] or "").casefold() == "call center":
+                actions = [
+                    a for a in actions if str(a.get("team") or "").casefold() in ("inbound", "outbound", "call center")
+                ]
+
+        # Count all matching authorized records BEFORE limiting displayed rows.
+        total_matching = len(actions)
+        all_record_ids = [str(act.get("id")) for act in actions if act.get("id") is not None]
 
         items: list[AiEntityListItem] = []
         action_digest: list[dict[str, Any]] = []
@@ -5221,36 +5278,48 @@ class DeterministicToolRegistry:
             emp_name = act.get("employee_name") or act.get("team") or "Team Action"
             f_state = str(act.get("follow_up_state") or "open")
             sev = "critical" if f_state == "overdue" else ("warning" if f_state in ("due_soon", "upcoming") else "good")
-            action_text = sanitize_untrusted_text(act.get("action_text") or act.get("plan_title") or "", 150)
+            action_text = sanitize_untrusted_text(
+                act.get("manager_action") or act.get("action_text") or act.get("plan_title") or "",
+                150,
+            )
+            due_str = str(act.get("due_date") or "").strip() or None
+            team_str = str(act.get("team") or "").strip()
+            subtitle_parts = [p for p in (team_str, f"Due {due_str}" if due_str else None, action_text) if p]
             items.append(
                 AiEntityListItem(
                     id=str(act.get("id") or emp_name),
                     title=f"{emp_name} · {act.get('action_type') or 'Action'}",
-                    subtitle=f"{act.get('team', '')} · {action_text}",
+                    subtitle=" · ".join(subtitle_parts),
                     badge_text=f_state.replace("_", " ").title(),
                     severity=sev,  # type: ignore[arg-type]
                     metric_value=str(act.get("status") or "Open"),
-                    route_link=build_verified_deep_link("/corrective-actions", team=resolved["team"], month=resolved["month"]),
+                    route_link=build_verified_deep_link("/corrective-actions", team=resolved["team"], month=effective_month),
                 )
             )
             action_digest.append(
                 {
+                    "id": str(act.get("id")) if act.get("id") is not None else None,
                     "employee_name": emp_name,
-                    "team": act.get("team"),
+                    "team": team_str or None,
+                    "due_date": due_str,
+                    "owner": (act.get("owner") or {}).get("name") if isinstance(act.get("owner"), dict) else None,
                     "action_type": act.get("action_type"),
                     "status": act.get("status"),
                     "follow_up_state": f_state,
                     "action_text": action_text,
+                    "month": act.get("month"),
+                    "year": act.get("year"),
                 }
             )
 
+        state_display = effective_state.replace("_", " ") if effective_state else "tracked"
         cards: list[StructuredVisualCard] = []
         if items:
             cards.append(
                 StructuredVisualCard(
                     card_type="entity_list",
-                    title="Corrective Actions & Decisions Follow-Up",
-                    subtitle=f"{len(actions)} active/tracked corrective actions in scope",
+                    title=f"Corrective Actions Follow-Up ({state_display.title()})",
+                    subtitle=f"{total_matching} matching {state_display} corrective actions in scope",
                     items=items,
                 )
             )
@@ -5258,37 +5327,394 @@ class DeterministicToolRegistry:
             cards.append(
                 StructuredVisualCard(
                     card_type="guardrail_notice",
-                    title="No Corrective Actions Recorded for Active Filter",
+                    title="No Matching Corrective Actions",
                     subtitle="Read-only governance check",
-                    notice_text="No open or historical corrective actions matched the current team/period filter.",
+                    notice_text=f"0 {state_display} corrective actions matched your authorized scope and filters.",
                 )
             )
 
+        scope_text = resolved["team"] or resolved["function"] or "All authorized teams"
         citations = [
-            SourceCitationPill(label=f"Scope · {resolved['team'] or resolved['function'] or 'Call Center'}", category="scope"),
-            SourceCitationPill(label=f"Actions Tracked · {len(actions)}", category="metric"),
+            SourceCitationPill(label=f"Scope · {scope_text}", category="scope"),
+            SourceCitationPill(label=f"Actions ({state_display}) · {total_matching}", category="metric"),
         ]
         deep_links = [
             DeepLinkCta(
                 label="Open Corrective Actions →",
-                route=build_verified_deep_link("/corrective-actions", team=resolved["team"], month=resolved["month"]),
+                route=build_verified_deep_link("/corrective-actions", team=resolved["team"], month=effective_month),
                 icon_key="actions",
             )
         ]
 
         return ToolExecutionResult(
             tool_name="get_corrective_actions_status",
-            arguments=resolved,
-            records_evaluated=len(actions),
+            arguments={
+                **resolved,
+                "month": effective_month,
+                "year": effective_year,
+                "state": effective_state,
+            },
+            records_evaluated=total_matching,
             digest={
-                "total_actions": len(actions),
+                "status": "ok",
+                "total_actions": total_matching,
+                "displayed_actions": len(action_digest),
+                "record_ids": all_record_ids,
+                "action_state": effective_state,
                 "summary": follow_up.get("summary"),
                 "actions": action_digest,
-                "scope": resolved["team"] or resolved["function"] or "your scope",
-                "period": f"{resolved['month']} {resolved['year']}" if resolved["month"] and resolved["year"] else None,
+                "scope": resolved["team"] or resolved["function"] or "your authorized scope",
+                "period": f"{effective_month} {effective_year}" if effective_month and effective_year else None,
                 "open_actions_only": open_only,
             },
             visual_cards=cards,
+            citations=citations,
+            deep_links=deep_links,
+            resolved_month=effective_month,
+            resolved_year=effective_year,
+        )
+
+    @_read_only_tool
+    def execute_guide_lookup(
+        self,
+        *,
+        query: str,
+        page_id: str | None = None,
+        team: str | None = None,
+        function: str | None = None,
+        month: str | None = None,
+        year: int | None = None,
+        max_results: int = 3,
+    ) -> ToolExecutionResult:
+        """Retrieve verified, authorization-filtered PMS product guide sections locally."""
+        from services.ai.product_guide import get_product_guide, search_product_guide
+
+        ss_for_nav = self.ctx.session_state.model_copy(
+            update={
+                "team": team if team is not None else self.ctx.session_state.team,
+                "function": function if function is not None else self.ctx.session_state.function,
+                "month": month if month is not None else self.ctx.session_state.month,
+                "year": year if year is not None else self.ctx.session_state.year,
+            }
+        )
+        try:
+            loaded = get_product_guide()
+            matches = search_product_guide(
+                query,
+                scope=self.ctx.scope,
+                session_state=ss_for_nav,
+                max_results=max_results,
+                page_id=page_id,
+                guide=loaded,
+            )
+        except Exception as exc:
+            logger.warning("Product guide lookup failed: %s", exc)
+            return ToolExecutionResult(
+                tool_name="guide_lookup",
+                arguments={"query": query, "page_id": page_id, "team": team},
+                records_evaluated=0,
+                digest={
+                    "status": "unavailable",
+                    "error": "guide_unavailable",
+                    "guide_version": None,
+                    "sections": [],
+                },
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+            )
+
+        sections_payload: list[dict[str, Any]] = []
+        nav_targets: list[dict[str, Any]] = []
+        seen_routes: set[str] = set()
+        deep_links: list[DeepLinkCta] = []
+        citations: list[SourceCitationPill] = []
+
+        for m in matches:
+            sec = m.section
+            nav = m.navigation_target
+            sections_payload.append(
+                {
+                    "id": sec.id,
+                    "title": sec.title,
+                    "page_id": sec.page_id,
+                    "version": sec.version,
+                    "summary": sec.summary,
+                    "steps": list(sec.steps),
+                    "score": m.score,
+                    "route": nav.route if nav else None,
+                    "label": nav.label if nav else None,
+                }
+            )
+            citations.append(
+                SourceCitationPill(label=f"Guide · {sec.title} (v{sec.version})", category="scope")
+            )
+            if nav and nav.route not in seen_routes:
+                seen_routes.add(nav.route)
+                nav_targets.append(nav.model_dump())
+                dl_icon = nav.icon_key if nav.icon_key in ("insights", "team", "employee", "planning", "actions", "bsc") else "insights"
+                deep_links.append(
+                    DeepLinkCta(label=nav.label, route=nav.route, icon_key=dl_icon)
+                )
+
+        return ToolExecutionResult(
+            tool_name="guide_lookup",
+            arguments={"query": query, "page_id": page_id, "team": team},
+            records_evaluated=len(sections_payload),
+            digest={
+                "status": "ok" if sections_payload else "empty",
+                "guide_version": loaded.guide_version,
+                "sections": sections_payload,
+                "navigation_targets": nav_targets,
+            },
+            visual_cards=[],
+            citations=citations[:3],
+            deep_links=deep_links[:3],
+        )
+
+    @_read_only_tool
+    def execute_reachability_target_assessment(
+        self,
+        *,
+        team: str = "Outbound",
+        region: str | None = None,
+        branch: str | None = None,
+        month: str | None = None,
+        year: int | None = None,
+        hypothetical_target: float | None = None,
+    ) -> ToolExecutionResult:
+        """Assess Outbound Reachability target vs actuals, scoring basis, coverage, and optional hypothetical target."""
+        from config.loader import GLOBAL_KPI_ACHIEVEMENT_CAP
+        from models.models import EvaluationRevision, Team as OrmTeam, TeamConfigurationVersion
+
+        resolved = self.ctx.resolve_filters(
+            team=team,
+            function="Call Center",
+            branch=branch,
+            month=month,
+            year=year,
+        )
+        eff_region = region or resolved.get("region")
+        cat_def = get_ai_catalog().find_metric_definition(
+            team="Outbound",
+            kpi_key_or_label="Reachability",
+            performance_level="Employee",
+        )
+        kpi_weight = float(getattr(cat_def, "weight_percent", 10.0) or 10.0)
+        kpi_unit = str(getattr(cat_def, "unit", "%") or "%")
+        kpi_direction = str(getattr(cat_def, "direction", "higher_better") or "higher_better")
+
+        # Gather all authorized Outbound Employee records across published periods
+        all_records = self.ctx.get_scoped_records()
+        outbound_keys = selection_team_keys("Outbound") | {"outbound"}
+        by_period: dict[tuple[int, int, str], dict[str, Any]] = {}
+
+        for rec in all_records:
+            r_team = str(_record_field(rec, "team", "") or "").strip()
+            if r_team.casefold() not in outbound_keys:
+                continue
+            if str(_record_field(rec, "performance_level", "Employee") or "Employee").casefold() != "employee":
+                continue
+            if eff_region and _shared_record_region(rec, r_team).casefold() != str(eff_region).casefold():
+                continue
+            if resolved["branch"]:
+                if not record_matches_branch(rec, resolved["branch"]):
+                    continue
+                rec = project_record_for_branch(rec, resolved["branch"])
+            y_val = int(_record_field(rec, "year", 0) or 0)
+            m_str = str(_record_field(rec, "month", "") or "").strip()
+            m_ord = MONTH_ORDER.get(m_str, 0)
+            if not (y_val and m_ord):
+                continue
+            bucket = by_period.setdefault(
+                (y_val, m_ord, m_str),
+                {"total_records": 0, "actuals": [], "targets": [], "achievements": []},
+            )
+            bucket["total_records"] += 1
+            snap = self._extract_record_kpi_snapshot(rec, "reachability", "Outbound", None)
+            if snap is not None and snap.get("numeric_value") is not None:
+                bucket["actuals"].append(float(snap["numeric_value"]))
+                if snap.get("target_numeric") is not None:
+                    bucket["targets"].append(float(snap["target_numeric"]))
+                if snap.get("achievement") is not None:
+                    bucket["achievements"].append(float(snap["achievement"]))
+
+        # Inspect TeamConfigurationVersion vs EvaluationRevision for approved-not-yet-applied Outbound targets
+        pending_approved_targets: list[dict[str, Any]] = []
+        applied_revisions_by_period: dict[tuple[int, int], str] = {}
+        try:
+            orm_teams = self.ctx.db.query(OrmTeam).all()
+            out_team_ids = [t.id for t in orm_teams if str(t.name or "").strip().casefold() in outbound_keys]
+            if out_team_ids:
+                active_revs = (
+                    self.ctx.db.query(EvaluationRevision)
+                    .filter(
+                        EvaluationRevision.team_id.in_(out_team_ids),
+                        EvaluationRevision.status == "active",
+                    )
+                    .all()
+                )
+                active_ver_ids = {r.version_id for r in active_revs}
+                for r in active_revs:
+                    applied_revisions_by_period[(int(r.year), int(r.month))] = f"Applied revision (version {str(r.version_id)[:8]})"
+
+                approved_vers = (
+                    self.ctx.db.query(TeamConfigurationVersion)
+                    .filter(
+                        TeamConfigurationVersion.team_id.in_(out_team_ids),
+                        TeamConfigurationVersion.status.in_(["approved", "published"]),
+                        TeamConfigurationVersion.is_active.is_(True),
+                    )
+                    .all()
+                )
+                for ver in approved_vers:
+                    if ver.id in active_ver_ids:
+                        continue
+                    snap_cfg = ver.config_snapshot if isinstance(ver.config_snapshot, dict) else {}
+                    t_map = snap_cfg.get("targets") if isinstance(snap_cfg.get("targets"), dict) else {}
+                    raw_other = t_map.get("Other") if "Other" in t_map else t_map.get("Reachability")
+                    if raw_other is not None:
+                        target_pct = float(raw_other) * 100.0 if float(raw_other) <= 1.0 else float(raw_other)
+                        pending_approved_targets.append(
+                            {
+                                "period": f"{ver.effective_month} {ver.effective_year}",
+                                "version_number": ver.version_number,
+                                "approved_target_pct": round(target_pct, 1),
+                                "applied": False,
+                            }
+                        )
+        except Exception as exc:
+            logger.debug("Optional monthly evaluation version lookup skipped: %s", exc)
+
+        period_rows: list[dict[str, Any]] = []
+        for (y_val, m_ord, m_str) in sorted(by_period.keys()):
+            b = by_period[(y_val, m_ord, m_str)]
+            actuals = b["actuals"]
+            targets = b["targets"]
+            sample_size = len(actuals)
+            total_recs = b["total_records"]
+            avg_actual = round(sum(actuals) / sample_size, 1) if sample_size else None
+            avg_target = round(sum(targets) / len(targets), 1) if targets else None
+            if avg_actual is not None and avg_target and avg_target > 0:
+                attainment = round(min((avg_actual / avg_target) * 100.0, GLOBAL_KPI_ACHIEVEMENT_CAP * 100.0), 1)
+            else:
+                attainment = None
+            period_rows.append(
+                {
+                    "period": f"{m_str} {y_val}",
+                    "period_key": f"{y_val}-{m_ord:02d}",
+                    "actual": avg_actual,
+                    "applied_target": avg_target,
+                    "measured_attainment": attainment,
+                    "sample_size": sample_size,
+                    "total_records": total_recs,
+                    "coverage_pct": round((sample_size / total_recs) * 100.0, 1) if total_recs else 0.0,
+                    "scoring_basis": applied_revisions_by_period.get((y_val, m_ord), "Published workbook / baseline rules"),
+                }
+            )
+
+        # Evaluate hypothetical target impact on the latest period with verified actuals
+        latest_with_data = next((row for row in reversed(period_rows) if row["actual"] is not None), None)
+        hypothetical_calc: dict[str, Any] | None = None
+        if hypothetical_target is not None and hypothetical_target > 0 and latest_with_data is not None:
+            actual_val = float(latest_with_data["actual"])
+            current_tgt = latest_with_data["applied_target"]
+            current_att = latest_with_data["measured_attainment"]
+            new_att = round(min((actual_val / float(hypothetical_target)) * 100.0, GLOBAL_KPI_ACHIEVEMENT_CAP * 100.0), 1)
+            hypothetical_calc = {
+                "period": latest_with_data["period"],
+                "actual_reachability_pct": actual_val,
+                "current_applied_target_pct": current_tgt,
+                "current_measured_attainment_pct": current_att,
+                "hypothetical_target_pct": round(float(hypothetical_target), 1),
+                "hypothetical_measured_attainment_pct": new_att,
+                "attainment_delta_pp": round(new_att - float(current_att), 1) if current_att is not None else None,
+                "cap_pct": round(GLOBAL_KPI_ACHIEVEMENT_CAP * 100.0, 1),
+            }
+
+        # Compare explanations (target change vs underlying performance decline) & note missing evidence
+        missing_evidence: list[str] = []
+        valid_periods = [r for r in period_rows if r["actual"] is not None]
+        if len(valid_periods) < 2:
+            missing_evidence.append(
+                "At least two comparable published periods with Outbound Reachability actuals and targets are needed to separate a target change from a performance decline."
+            )
+        if not valid_periods or all(r["applied_target"] is None for r in valid_periods):
+            missing_evidence.append("Verified applied target values are missing in the stored Outbound records.")
+
+        explanation_comparison = ""
+        if len(valid_periods) >= 2:
+            prev_p, curr_p = valid_periods[-2], valid_periods[-1]
+            actual_diff = round(float(curr_p["actual"]) - float(prev_p["actual"]), 1)
+            target_changed = (
+                prev_p["applied_target"] is not None
+                and curr_p["applied_target"] is not None
+                and abs(float(curr_p["applied_target"]) - float(prev_p["applied_target"])) >= 0.1
+            )
+            if target_changed and abs(actual_diff) < 1.0:
+                explanation_comparison = (
+                    f"Target change explanation fits better: actual Reachability stayed near {curr_p['actual']:.1f}% "
+                    f"({actual_diff:+.1f} pp vs {prev_p['period']}) while the applied target shifted from "
+                    f"{prev_p['applied_target']:.1f}% to {curr_p['applied_target']:.1f}%."
+                )
+            elif not target_changed and actual_diff < -0.5:
+                explanation_comparison = (
+                    f"Performance decline explanation fits better: applied target stayed constant at "
+                    f"{curr_p['applied_target']:.1f}%, while actual Reachability fell by {abs(actual_diff):.1f} pp "
+                    f"from {prev_p['actual']:.1f}% ({prev_p['period']}) to {curr_p['actual']:.1f}% ({curr_p['period']})."
+                )
+            elif target_changed and actual_diff < -0.5:
+                explanation_comparison = (
+                    f"Both factors contributed: applied target changed ({prev_p['applied_target']:.1f}% → {curr_p['applied_target']:.1f}%) "
+                    f"AND actual Reachability declined by {abs(actual_diff):.1f} pp ({prev_p['actual']:.1f}% → {curr_p['actual']:.1f}%)."
+                )
+            else:
+                explanation_comparison = (
+                    f"Actual Reachability moved {actual_diff:+.1f} pp ({prev_p['actual']:.1f}% → {curr_p['actual']:.1f}%) "
+                    f"against applied target {curr_p['applied_target']:.1f}%."
+                    if curr_p["applied_target"] is not None
+                    else f"Actual Reachability moved {actual_diff:+.1f} pp ({prev_p['actual']:.1f}% → {curr_p['actual']:.1f}%)."
+                )
+
+        citations = [
+            SourceCitationPill(label="KPI · Outbound Reachability (Other · 10% weight)", category="metric"),
+            SourceCitationPill(label=f"Periods Evaluated · {len(valid_periods)}", category="period"),
+        ]
+        deep_links = [
+            DeepLinkCta(
+                label="Open Outbound Team Dashboard →",
+                route=build_verified_deep_link("/team/outbound", team="Outbound", month=resolved["month"]),
+                icon_key="team",
+            )
+        ]
+
+        return ToolExecutionResult(
+            tool_name="assess_reachability_target",
+            arguments={
+                "team": "Outbound",
+                "region": resolved["region"],
+                "branch": resolved["branch"],
+                "hypothetical_target": hypothetical_target,
+            },
+            records_evaluated=sum(r["sample_size"] for r in valid_periods),
+            digest={
+                "status": "ok" if valid_periods else "insufficient_evidence",
+                "kpi_definition": {
+                    "kpi_key": "Other",
+                    "display_name": "Reachability",
+                    "team": "Outbound",
+                    "weight_percent": kpi_weight,
+                    "unit": kpi_unit,
+                    "direction": kpi_direction,
+                    "aggregation": "average",
+                },
+                "periods": period_rows,
+                "pending_approved_targets": pending_approved_targets,
+                "hypothetical_assessment": hypothetical_calc,
+                "explanation_comparison": explanation_comparison,
+                "missing_evidence": missing_evidence,
+            },
+            visual_cards=[],
             citations=citations,
             deep_links=deep_links,
             resolved_month=resolved["month"],

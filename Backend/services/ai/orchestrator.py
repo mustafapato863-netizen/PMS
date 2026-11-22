@@ -4166,6 +4166,26 @@ class PmsAiOrchestrator:
                 restr_resp.context_version = new_ver
             return restr_resp
 
+        if cfg.guided_reads_enabled:
+            from services.ai.guided_reads import try_execute_guided_read_turn
+
+            guided_resp = try_execute_guided_read_turn(
+                orchestrator=self,
+                req=req,
+                t0=t0,
+                active_conversation_id=active_conversation_id,
+                claimed_turn=claimed_turn,
+                claimed_context_version=claimed_context_version,
+                claimed_token=claimed_token,
+                active_context_version=active_context_version,
+                conv_service=conv_service,
+                eff_ctx_label_initial=eff_ctx_label_initial,
+                initial_scope_banner=initial_scope_banner,
+                cfg=cfg,
+            )
+            if guided_resp is not None:
+                return guided_resp
+
         preference_request = self.user_memory_service.requested_preferences(req.prompt) if self.user_memory_service else {}
         if preference_request:
             capability_mode = "capabilities_help"

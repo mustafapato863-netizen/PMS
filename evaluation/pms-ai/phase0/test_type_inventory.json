@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 65,
-  "case_count": 861,
+  "file_count": 67,
+  "case_count": 873,
   "files_by_label": {
-    "synthetic": 17,
-    "mocked": 45,
+    "synthetic": 18,
+    "mocked": 46,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -208,6 +208,16 @@
         "mocked"
       ],
       "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_guided_reads.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 6,
       "evidence_status": "partial",
       "note": ""
     },
@@ -409,6 +419,16 @@
       ],
       "cases": 13,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_product_guide.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 6,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {

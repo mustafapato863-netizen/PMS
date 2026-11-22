@@ -104,6 +104,7 @@ class AiRuntimeConfig:
     redact_raw_prompts: bool
     conversation_state_enabled: bool = True
     model_led_pilot_enabled: bool = False
+    guided_reads_enabled: bool = False
 
     def is_scope_allowed_for_cloud(self, team_or_function: str | None) -> bool:
         if "*" in self.pilot_scopes:
@@ -161,6 +162,9 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     model_led_pilot_enabled = _parse_bool(
         os.environ.get("PMS_AI_MODEL_LED_PILOT_ENABLED"), default=False
     )
+    guided_reads_enabled = _parse_bool(
+        os.environ.get("PMS_AI_GUIDED_READS_ENABLED"), default=False
+    )
 
     return AiRuntimeConfig(
         router_mode=router_mode,
@@ -172,6 +176,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         redact_raw_prompts=redact_raw_prompts,
         conversation_state_enabled=conversation_state_enabled,
         model_led_pilot_enabled=model_led_pilot_enabled,
+        guided_reads_enabled=guided_reads_enabled,
     )
 
 

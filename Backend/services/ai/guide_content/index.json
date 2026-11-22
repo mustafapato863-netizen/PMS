@@ -1,0 +1,168 @@
+{
+  "guide_version": "1.0.0",
+  "sections": [
+    {
+      "id": "corrective-actions-navigation",
+      "title": "Finding Corrective Actions",
+      "file": "corrective-actions.md",
+      "heading": "Finding Corrective Actions",
+      "page_id": "corrective_actions",
+      "audiences": [
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Executive",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director"
+      ],
+      "synonyms": [
+        "where can i see corrective actions",
+        "where are corrective actions",
+        "open corrective actions",
+        "find corrective actions",
+        "corrective action page",
+        "corrective actions screen",
+        "action tracker",
+        "الاجراءات التصحيحية",
+        "الإجراءات التصحيحية",
+        "وين الاجراءات التصحيحية"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "id": "corrective-actions-followup",
+      "title": "Following Up on Overdue Actions",
+      "file": "corrective-actions.md",
+      "heading": "Following Up on Overdue Actions",
+      "page_id": "corrective_actions",
+      "audiences": [
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Executive",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director"
+      ],
+      "synonyms": [
+        "where to follow up",
+        "corrective action follow-up",
+        "follow up corrective actions",
+        "follow-up tab",
+        "overdue corrective actions follow up",
+        "how to track overdue actions",
+        "past due actions follow up",
+        "متابعة الاجراءات التصحيحية",
+        "الاجراءات المتأخرة",
+        "الإجراءات المتأخرة"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "id": "corrective-actions-filters",
+      "title": "Filtering Corrective Actions by State and Team",
+      "file": "corrective-actions.md",
+      "heading": "Filtering Corrective Actions by State and Team",
+      "page_id": "corrective_actions",
+      "audiences": [
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Executive",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director"
+      ],
+      "synonyms": [
+        "filter corrective actions",
+        "action states",
+        "completed corrective actions",
+        "due this week actions",
+        "upcoming actions",
+        "no due date actions",
+        "cancelled actions",
+        "all actions vs follow-up",
+        "حالة الاجراءات التصحيحية"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "id": "pms-overview",
+      "title": "PMS System Overview",
+      "file": "overview.md",
+      "heading": "PMS System Overview",
+      "page_id": "overview",
+      "audiences": ["*"],
+      "synonyms": [
+        "tell me brief for system",
+        "tell me breef for system",
+        "system overview",
+        "what is pms",
+        "about pms",
+        "product overview",
+        "how does pms work",
+        "summary of the system",
+        "what can i do in pms",
+        "نظرة عامة على النظام",
+        "ملخص النظام"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "id": "team-dashboard-navigation",
+      "title": "Checking a Specific Team",
+      "file": "team-dashboard.md",
+      "heading": "Checking a Specific Team",
+      "page_id": "team_dashboard",
+      "audiences": [
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Executive",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director",
+        "Function Viewer"
+      ],
+      "synonyms": [
+        "how can i check specific team",
+        "how can i check specfic team",
+        "open team dashboard",
+        "view a team",
+        "find a specific team",
+        "select team performance",
+        "check team score",
+        "switch team",
+        "كيف اشوف فريق معين",
+        "لوحة الفريق"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "id": "monthly-evaluation-workflow",
+      "title": "Monthly Evaluation Settings Workflow",
+      "file": "monthly-evaluation.md",
+      "heading": "Monthly Evaluation Settings Workflow",
+      "page_id": "monthly_evaluation",
+      "audiences": ["Admin"],
+      "synonyms": [
+        "monthly evaluation",
+        "monthly evaluation settings",
+        "save preview approve apply",
+        "how to approve monthly evaluation",
+        "how to apply monthly evaluation",
+        "revise this month",
+        "edit kpi targets and weights",
+        "monthly rules settings",
+        "اعدادات التقييم الشهري",
+        "التقييم الشهري"
+      ],
+      "version": "1.0.0"
+    }
+  ]
+}
