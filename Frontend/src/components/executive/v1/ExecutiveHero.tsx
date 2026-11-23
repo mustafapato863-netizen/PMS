@@ -20,19 +20,30 @@ import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { formatPeriod } from '../../../features/executive/compose';
 import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
-import { Chip, GradePill, StatusPill } from './ExecPrimitives';
+import { Chip, GradePill, StatusPill, gradeGradientVar } from './ExecPrimitives';
 import ScoreTrendChart from './ScoreTrendChart';
 import { heroHeadline, heroNarrative, heroStatusLabel } from './execModel';
 
-function Stat({ label, value, valueColor, sub, subColor, icon: Icon }: { label: string; value: ReactNode; valueColor: string; sub: ReactNode; subColor?: string; icon: LucideIcon }) {
+function Stat({ label, value, valueColor, sub, subColor, icon: Icon, barScore, barGradient }: { label: string; value: ReactNode; valueColor: string; sub: ReactNode; subColor?: string; icon: LucideIcon; barScore?: number | null; barGradient?: string }) {
   return (
-    <div className="relative flex min-w-0 flex-col gap-[8px] rounded-[16px] border p-[14px]" style={{ background: `color-mix(in srgb, ${valueColor} 5%, var(--bg-surface))`, borderColor: `color-mix(in srgb, ${valueColor} 10%, var(--exec-card-border))` }}>
-      <div className="flex min-h-[30px] items-start justify-between gap-[6px]">
-        <span className="text-xs font-semibold leading-[1.5] text-[var(--text-muted)]">{label}</span>
-        <span aria-hidden="true" className="flex size-[28px] shrink-0 items-center justify-center rounded-[9px]" style={{ background: `color-mix(in srgb, ${valueColor} 9%, transparent)`, color: valueColor }}><Icon className="size-[17px]" strokeWidth={1.8} /></span>
+    <div
+      className="pms-glass-stage relative flex min-w-0 flex-col gap-[8px] overflow-hidden rounded-[16px] p-[15px] transition-shadow hover:shadow-md"
+      style={{
+        backgroundImage: `radial-gradient(circle at 100% 0%, color-mix(in srgb, ${valueColor} 10%, transparent) 0%, transparent 65%), var(--pms-glass-stage-bg)`,
+        borderColor: `color-mix(in srgb, ${valueColor} 16%, var(--pms-glass-card-border))`,
+      }}
+    >
+      <div className="flex min-h-[28px] items-start justify-between gap-[6px]">
+        <span className="text-xs font-semibold leading-[1.4] text-[var(--text-muted)]">{label}</span>
+        <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 dark:border-white/10" style={{ background: `color-mix(in srgb, ${valueColor} 10%, transparent)`, color: valueColor }}><Icon className="size-[16px]" strokeWidth={1.85} /></span>
       </div>
       <span className="text-display-hero font-bold leading-[1.1] tracking-[-0.04em] tabular-nums" style={{ color: valueColor }}>{value}</span>
-      <span className="text-xs font-medium leading-[1.5]" style={{ color: subColor ?? 'var(--text-muted)' }}>{sub}</span>
+      {barScore != null && (
+        <div aria-hidden="true" className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+          <div className="h-full rounded-full" style={{ width: `${Math.max(4, Math.min(100, barScore))}%`, background: barGradient ?? valueColor }} />
+        </div>
+      )}
+      <span className="text-xs font-medium leading-[1.45]" style={{ color: subColor ?? 'var(--text-muted)' }}>{sub}</span>
     </div>
   );
 }
@@ -97,7 +108,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
   const healthyTeamsCount = scoredTeams.filter((t) => (t.score ?? 0) >= 90).length;
 
   return (
-    <section aria-labelledby="exec-hero-title" className="grid gap-[24px] rounded-[22px] border border-[var(--insights-summary-border)] bg-[var(--insights-summary-bg)] p-[18px] shadow-[var(--insights-summary-shadow)] sm:p-[26px] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+    <section aria-labelledby="exec-hero-title" className="pms-glass-surface grid gap-[24px] rounded-[22px] p-[18px] sm:p-[26px] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       <div className="flex min-w-0 flex-col gap-[20px]">
         <div className="flex flex-wrap items-center justify-between gap-[8px]">
           <div className="flex flex-wrap items-center gap-[8px]">
@@ -206,8 +217,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
         <h2 id="exec-hero-title" className="text-[clamp(22px,2vw,28px)] font-bold leading-[1.22] tracking-[-0.035em] text-[var(--insights-heading)]">{heroHeadline(summary)}</h2>
         {narrative && <p className="text-[14px] leading-[1.7] text-[var(--text-secondary)]">{narrative}</p>}
         <div className={`grid grid-cols-2 gap-[10px] ${statCount === 3 || statCount === 5 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
-          <Stat icon={ChartNoAxesColumnIncreasing} label={hero.score_basis === 'leader_scorecard' ? 'Leader scorecard' : hero.score_basis === 'team_scorecard' ? 'Team score' : 'People average'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
-          <Stat icon={BarChart3} label="Gap" value={fmtSigned(hero.gap)} valueColor={toneColor(scoreTone(hero.gap))} sub={`vs target ${fmtScore(hero.target, 0)}`} />
+          <Stat icon={ChartNoAxesColumnIncreasing} label={hero.score_basis === 'leader_scorecard' ? 'Leader scorecard' : hero.score_basis === 'team_scorecard' ? 'Team score' : 'People average'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} barScore={hero.score} barGradient={gradeGradientVar(hero.score)} />
+          <Stat icon={BarChart3} label="Gap" value={fmtSigned(hero.gap)} valueColor={toneColor(scoreTone(hero.gap))} sub={`vs target ${fmtScore(hero.target, 0)}`} barScore={hero.score} barGradient={hero.gap !== null && hero.gap < 0 ? 'var(--pms-grad-grade-e)' : 'var(--pms-grad-grade-a)'} />
           <Stat
             icon={hero.change !== null && hero.change < 0 ? TrendingDown : TrendingUp}
             label={previousLabel}
@@ -215,6 +226,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
             valueColor={toneColor(changeTone)}
             sub={hero.previous_score !== null ? `${arrow(hero.change)} ${fmtScore(hero.previous_score)} → ${fmtScore(hero.score)}` : (period.range ? 'No earlier range to compare' : 'No previous month')}
             subColor={toneColor(changeTone)}
+            barScore={hero.change !== null ? Math.min(100, Math.max(18, 50 + hero.change * 5)) : null}
+            barGradient={changeTone === 'bad' ? 'var(--pms-grad-grade-e)' : changeTone === 'good' ? 'var(--pms-grad-grade-a)' : 'var(--pms-grad-accent)'}
           />
           {comparison && comparison.score !== null && (
               <Stat icon={Users}
@@ -222,6 +235,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                 value={fmtSigned(comparison.difference)}
                 valueColor={toneColor(scoreTone(comparison.difference))}
                 sub={`${comparison.label}: ${fmtScore(comparison.score)}`}
+                barScore={comparison.score}
+                barGradient={scoreTone(comparison.difference) === 'bad' ? 'var(--pms-grad-grade-d)' : 'var(--pms-grad-grade-a)'}
               />
           )}
         </div>

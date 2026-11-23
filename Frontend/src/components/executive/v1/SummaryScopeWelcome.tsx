@@ -50,7 +50,7 @@ export default function SummaryScopeWelcome({ role, user, scope }: {
   ].filter(Boolean).join(' · ') : null;
 
   return (
-    <div aria-label="About your performance scope" className="mt-2 flex items-start gap-3 rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-4 py-3 text-sm">
+    <div aria-label="About your performance scope" className="pms-glass-surface mt-2 flex items-start gap-3 rounded-[14px] px-4 py-3 text-sm">
       <ShieldCheck aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-[var(--insights-accent)]" />
       <div className="min-w-0">
         <p className="font-semibold text-[var(--insights-heading)]">Welcome{user?.name?.trim() ? `, ${user.name.trim()}` : ''}.</p>

@@ -638,3 +638,47 @@
     border-radius: 18px !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────── */
+/*  ENHANCED FROSTED-GLASS & SMOOTH GRADIENT UTILITIES             */
+/* ────────────────────────────────────────────────────────────── */
+.rf-page--executive,
+.rf-page--corrective-actions,
+.rf-page--insights {
+  background: var(--pms-glass-page-bg);
+  border-radius: 20px;
+}
+
+.pms-glass-surface {
+  background: var(--pms-glass-card-bg);
+  border: 1px solid var(--pms-glass-card-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.pms-glass-surface--interactive:hover {
+  border-color: var(--pms-glass-card-border-hover);
+  box-shadow: var(--pms-glass-card-shadow-hover);
+}
+
+.pms-glass-stage {
+  background: var(--pms-glass-stage-bg);
+  border: 1px solid var(--pms-glass-stage-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .pms-glass-stage {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.pms-glass-well {
+  background: var(--pms-glass-well-bg);
+  border: 1px solid var(--pms-glass-well-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}

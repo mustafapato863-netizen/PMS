@@ -16,12 +16,12 @@ export function SectionCard({
   children: ReactNode;
 }) {
   const surface = tone === 'muted'
-    ? 'border-[var(--insights-muted-surface-border)] bg-[var(--insights-muted-surface)]'
-    : 'border-[var(--insights-card-border)] bg-[var(--bg-surface)]';
+    ? 'pms-glass-stage'
+    : 'pms-glass-surface';
   return (
     <section
       aria-labelledby={labelledBy}
-      className={`flex min-w-0 flex-col rounded-[12px] border px-[24px] ${surface} ${className}`}
+      className={`flex min-w-0 flex-col rounded-[16px] px-[24px] ${surface} ${className}`}
     >
       {children}
     </section>
@@ -124,9 +124,16 @@ export function ShareBar({
   track?: string;
 }) {
   const width = Math.max(0, Math.min(100, percent));
+  const gradient = color.includes('negative')
+    ? 'var(--pms-grad-grade-e)'
+    : color.includes('positive')
+      ? 'var(--pms-grad-grade-a)'
+      : color.includes('accent')
+        ? 'var(--pms-grad-accent)'
+        : color;
   return (
-    <span aria-hidden="true" className="flex h-[8px] min-w-0 flex-1 overflow-hidden rounded-[4px]" style={{ background: track }}>
-      <span className="h-[8px] rounded-[4px]" style={{ width: `${width}%`, background: color }} />
+    <span aria-hidden="true" className="flex h-[8px] min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: track }}>
+      <span className="h-[8px] rounded-full transition-[width] duration-300 ease-out" style={{ width: `${width}%`, background: gradient }} />
     </span>
   );
 }

@@ -8,11 +8,16 @@ import { Link } from 'react-router-dom';
 import { getGradeClassOrNull, getGradeTone } from '../../../constants/grades';
 import { isLowerBetter, toneColor, type Tone } from '../../../features/executive/format';
 
+export function gradeGradientVar(score: number | null | undefined): string {
+  const grade = getGradeClassOrNull(score ?? null);
+  return `var(--pms-grad-grade-${grade ? grade.toLowerCase() : 'na'})`;
+}
+
 export function ExecCard({ children, className = '', as: Tag = 'section', ...rest }: { children: ReactNode; className?: string; as?: 'section' | 'div' | 'article'; 'aria-label'?: string; 'aria-labelledby'?: string; 'data-testid'?: string }) {
   return (
     <Tag
       {...rest}
-      className={`flex min-w-0 flex-col gap-[16px] rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[20px] py-[18px] shadow-[var(--exec-card-shadow)] ${className}`}
+      className={`pms-glass-surface flex min-w-0 flex-col gap-[16px] rounded-[16px] px-[22px] py-[20px] ${className}`}
     >
       {children}
     </Tag>
@@ -24,19 +29,19 @@ export function ExecCardHeader({ icon: Icon, iconBg, iconColor, title, subtitle,
 }) {
   return (
     <div className="flex w-full flex-wrap items-center gap-[10px]">
-      <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-[8px]" style={{ background: iconBg }}>
-        <Icon className="size-[17px]" style={{ color: iconColor }} strokeWidth={1.75} />
+      <span aria-hidden="true" className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 shadow-2xs dark:border-white/10" style={{ background: iconBg }}>
+        <Icon className="size-[17px]" style={{ color: iconColor }} strokeWidth={1.8} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <h2 id={titleId} className="text-[15px] font-semibold leading-normal text-[var(--insights-heading)]">{title}</h2>
-        {subtitle && <p className="text-[12px] leading-normal text-[var(--text-muted)]">{subtitle}</p>}
+        <h2 id={titleId} className="text-[16px] font-bold leading-normal tracking-[-0.015em] text-[var(--insights-heading)]">{title}</h2>
+        {subtitle && <p className="text-[12.5px] leading-normal text-[var(--text-muted)]">{subtitle}</p>}
       </div>
       {action}
     </div>
   );
 }
 
-const softButton = 'inline-flex shrink-0 items-center gap-[4px] rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)] transition-colors hover:bg-[var(--insights-accent-tag)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]';
+const softButton = 'inline-flex shrink-0 items-center gap-[4px] rounded-[10px] border border-[var(--insights-accent-border)] bg-[var(--pms-grad-panel-info)] px-[11px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)] shadow-2xs transition-all hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]';
 
 export function SoftLink({ to, children, ariaLabel }: { to: string; children: ReactNode; ariaLabel?: string }) {
   return (
@@ -56,12 +61,19 @@ export function SoftButton({ onClick, children, icon: Icon, disabled, title }: {
   );
 }
 
-export function ScoreBar({ score, color }: { score: number | null; color: string }) {
+export function ScoreBar({ score, color, showThreshold90 = false }: { score: number | null; color?: string; showThreshold90?: boolean }) {
   if (score === null) return null;
   const width = Math.max(0, Math.min(100, score));
+  const fill = gradeGradientVar(score) || color;
   return (
-    <div aria-hidden="true" className="h-[8px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
-      <div className="h-full rounded-full" style={{ width: `${width}%`, background: color }} />
+    <div aria-hidden="true" className="relative h-[8px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+      <div className="h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none" style={{ width: `${width}%`, background: fill }} />
+      {showThreshold90 && (
+        <span
+          className="pointer-events-none absolute top-0 bottom-0 w-[2px] bg-[var(--insights-heading)]/30"
+          style={{ left: '90%' }}
+        />
+      )}
     </div>
   );
 }
