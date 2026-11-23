@@ -38,7 +38,7 @@ const CHECKLIST = [
   ['Functions', 'Every function once, with its score, gap, and six-month trend'],
   ['Region split', 'People average and each region’s share of the gap'],
   ['Direction-aware drivers', 'Red is weight × gap. Green is the change since last month'],
-  ['Teams at risk + grade mix', 'Score under 90%, ranked by share of the gap, with the missed KPI'],
+  ['Teams at risk + grade mix', 'Score under 90%, ranked from worst score, with the missed KPI'],
   ['Corrective actions', 'Open, overdue and due-this-week with the most urgent items'],
 ];
 

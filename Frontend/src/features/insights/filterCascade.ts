@@ -20,6 +20,7 @@ import {
 export const INSIGHT_FUNCTIONS = [
   'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
   'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
+  'ER Dr', 'Radiology', 'Qlty&Case-Mngt',
 ] as const;
 
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
@@ -67,6 +68,12 @@ function helperBelongs(team: string, teamFunction: string): boolean {
         return isPreApprovalsUaeTeam(name);
       case 'administration':
         return identity(name) === 'administration' || identity(name) === 'offshore admin & management';
+      case 'er dr':
+        return identity(name) === 'er dr';
+      case 'radiology':
+        return identity(name) === 'radiology' || identity(name) === 'radiologist';
+      case 'qlty&case-mngt':
+        return identity(name) === 'qlty&case-mngt';
       default:
         return identity(name) === identity(teamFunction);
     }

@@ -760,6 +760,16 @@ def test_function_for_team_maps_source_teams_to_parent_domains():
     assert function_for_team("Administration") == "Administration"
     assert functions_for_team("Offshore Admin & Management") == ["Administration"]
     assert function_team_keys("Administration") == {"administration", "offshore admin & management"}
+    # New UAE clinical functions (Radiologist team -> Radiology function).
+    assert function_for_team("ER Dr") == "ER Dr"
+    assert functions_for_team("ER Dr") == ["ER Dr"]
+    assert function_for_team("Radiologist") == "Radiology"
+    assert function_for_team("Radiology") == "Radiology"
+    assert functions_for_team("Radiologist") == ["Radiology"]
+    assert function_for_team("Qlty&Case-Mngt") == "Qlty&Case-Mngt"
+    assert functions_for_team("Qlty&Case-Mngt") == ["Qlty&Case-Mngt"]
+    assert function_for_team("Quality Management") == "Quality Management"
+    assert function_team_keys("Radiology") == {"radiology", "radiologist"}
 
 
 def test_region_options_follow_selected_team_and_level():

@@ -70,6 +70,9 @@ const SLUGS: Record<ExecutiveFunction, string> = {
   IT: 'it',
   Administration: 'administration',
   'Quality Management': 'quality-management',
+  'ER Dr': 'er-dr',
+  Radiology: 'radiology',
+  'Qlty&Case-Mngt': 'quality-case-management',
 };
 
 export function functionSlug(name: ExecutiveFunction): string {

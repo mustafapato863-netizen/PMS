@@ -78,6 +78,9 @@ export function normalizeFunctionSlug(rawSlugOrName: string): string {
   if (s === 'sales') return 'sales';
   if (s === 'pharmacy') return 'pharmacy';
   if (s === 'quality-management') return 'quality-management';
+  if (s === 'er-dr' || s === 'erdr') return 'er-dr';
+  if (s === 'radiology' || s === 'radiologist') return 'radiology';
+  if (s === 'quality-case-management' || s === 'qlty-and-case-mngt' || s === 'qlty-case-mngt') return 'quality-case-management';
   return s || 'call-center';
 }
 
@@ -106,6 +109,12 @@ export function canonicalFunctionNameFromSlug(functionSlug: string): string {
       return 'Pharmacy';
     case 'quality-management':
       return 'Quality Management';
+    case 'er-dr':
+      return 'ER Dr';
+    case 'radiology':
+      return 'Radiology';
+    case 'quality-case-management':
+      return 'Qlty&Case-Mngt';
     default:
       return functionSlug
         .split('-')
@@ -2826,7 +2835,7 @@ function resubmissionPooledScore(records: ExecRecord[]): number | null {
 }
 
 /**
- * Generic real-data builder for ANY function (RCM, Marketing, IT, Call Center, Human Resources, Administration, Finance, CSR, Sales, Pharmacy).
+ * Generic real-data builder for ANY function (RCM, Marketing, IT, Call Center, Human Resources, Administration, Finance, CSR, Sales, Pharmacy, Quality Management, ER Dr, Radiology, Qlty&Case-Mngt).
  */
 export function buildFunctionDeepDiveFromRecords(
   functionSlug: string,
