@@ -135,7 +135,7 @@ export default function InsightsHeader({
   regionOptions: FilterOption[];
   onRegionChange: (value: string) => void;
   branch?: string;
-  branchOptions?: Branch[];
+  branchOptions?: FilterOption[];
   onBranchChange?: (value: string) => void;
   functionValue: string;
   functionOptions: FilterOption[];
@@ -214,7 +214,7 @@ export default function InsightsHeader({
             label="Functions"
             ariaLabel="Function"
             value={functionValue}
-            options={options}
+            options={functionOptions}
             allLabel="All functions"
             onChange={onFunctionChange}
             widthClass="w-[168px]"
