@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowedFunctionsFor, functionFromSlug, functionSlug, isTeamInFunctions } from './functions';
+import { allowedFunctionsFor, executiveFunctionForTeam, functionFromSlug, functionSlug, isTeamInFunctions } from './functions';
 import { teamPath } from '../../types';
 import { FIXTURE_TEAM_FUNCTIONS } from './executive.fixture';
 
@@ -8,8 +8,9 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual([
       'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
       'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
+      'ER Dr', 'Radiology', 'Qlty&Case-Mngt',
     ]);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(11);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(14);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -23,7 +24,7 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Function Viewer')).toEqual([]);
   });
 
-  it.each(['Sales', 'CSR', 'Pharmacy'] as const)('keeps %s grants isolated and round-trips their summary route', (name) => {
+  it.each(['Sales', 'CSR', 'Pharmacy', 'ER Dr', 'Radiology', 'Qlty&Case-Mngt'] as const)('keeps %s grants isolated and round-trips their summary route', (name) => {
     expect(allowedFunctionsFor('Function Director', [name])).toEqual([name]);
     expect(isTeamInFunctions(name, [name])).toBe(true);
     expect(isTeamInFunctions('Coding', [name])).toBe(false);
@@ -41,6 +42,10 @@ describe('function slugs and team paths', () => {
     expect(functionFromSlug('it')).toBe('IT');
     expect(functionFromSlug('administration')).toBe('Administration');
     expect(functionFromSlug('quality-management')).toBe('Quality Management');
+    expect(functionSlug('ER Dr')).toBe('er-dr');
+    expect(functionFromSlug('er-dr')).toBe('ER Dr');
+    expect(functionFromSlug('radiology')).toBe('Radiology');
+    expect(functionFromSlug('quality-case-management')).toBe('Qlty&Case-Mngt');
     expect(functionFromSlug('treasury')).toBeNull();
   });
 
@@ -67,5 +72,18 @@ describe('isTeamInFunctions (Function Viewer page scope)', () => {
     expect(isTeamInFunctions('Pre-Approvals OP Final', ['Pre-Approvals'])).toBe(true);
     expect(isTeamInFunctions('Coding', ['Pre-Approvals'])).toBe(false);
     expect(isTeamInFunctions('Pre-Approvals IP Offshore', ['Pre-Approvals'], FIXTURE_TEAM_FUNCTIONS)).toBe(false);
+  });
+});
+
+describe('executiveFunctionForTeam (clinical functions)', () => {
+  it('maps the new UAE clinical teams to their own functions', () => {
+    expect(executiveFunctionForTeam('ER Dr')).toBe('ER Dr');
+    expect(executiveFunctionForTeam('Radiologist')).toBe('Radiology');
+    expect(executiveFunctionForTeam('Radiology')).toBe('Radiology');
+    expect(executiveFunctionForTeam('Qlty&Case-Mngt')).toBe('Qlty&Case-Mngt');
+  });
+
+  it('leaves Quality Management mapped to itself', () => {
+    expect(executiveFunctionForTeam('Quality Management')).toBe('Quality Management');
   });
 });

@@ -24,6 +24,12 @@ describe('insights filter cascade', () => {
     expect(teamBelongsToFunction('Pre-Approvals OP Dubai', 'Pre-Approvals')).toBe(true);
     expect(teamBelongsToFunction('Marketing', 'Marketing')).toBe(true);
     expect(teamBelongsToFunction('Sales', 'Marketing')).toBe(false);
+    expect(teamBelongsToFunction('Radiologist', 'Radiology')).toBe(true);
+    expect(teamBelongsToFunction('Radiology', 'Radiology')).toBe(true);
+    expect(teamBelongsToFunction('ER Dr', 'ER Dr')).toBe(true);
+    expect(teamBelongsToFunction('Qlty&Case-Mngt', 'Qlty&Case-Mngt')).toBe(true);
+    expect(teamBelongsToFunction('Radiologist', 'RCM')).toBe(false);
+    expect(teamBelongsToFunction('ER Dr', 'Call Center')).toBe(false);
   });
 
   it('builds function and team options from the API team list', () => {
@@ -35,6 +41,15 @@ describe('insights filter cascade', () => {
     ]);
     expect(teamOptionsFor(apiTeams, 'Pre-Approvals')).toEqual(['Pre-Approvals IP Final', 'Pre-Approvals OP Final']);
     expect(teamOptionsFor(apiTeams)).toContain('Sales');
+  });
+
+  it('lists the clinical functions and their teams', () => {
+    expect(functionOptionsFor({ teams: ['ER Dr', 'Radiologist', 'Qlty&Case-Mngt', 'Quality Management'] })).toEqual([
+      'Quality Management', 'ER Dr', 'Radiology', 'Qlty&Case-Mngt',
+    ]);
+    expect(teamOptionsFor(['ER Dr', 'Radiologist', 'Qlty&Case-Mngt'], 'Radiology')).toEqual(['Radiologist']);
+    expect(teamOptionsFor(['ER Dr', 'Radiologist', 'Qlty&Case-Mngt'], 'ER Dr')).toEqual(['ER Dr']);
+    expect(teamOptionsFor(['ER Dr', 'Radiologist', 'Qlty&Case-Mngt'], 'Qlty&Case-Mngt')).toEqual(['Qlty&Case-Mngt']);
   });
 
   it('keeps the single team param for team-only endpoints and sends function= to the workspace API', () => {

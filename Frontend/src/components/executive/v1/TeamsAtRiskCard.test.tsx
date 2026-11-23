@@ -46,8 +46,10 @@ describe('TeamsAtRiskCard', () => {
       team('Unscored team', null, []),
     ]} /></MemoryRouter>);
 
-    expect(screen.getByText('Score under 90%, ranked by share of the gap')).toBeInTheDocument();
+    expect(screen.getByText('Score under 90%, ranked from worst score')).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(3);
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Grade E team', 'Grade D team', 'Grade C team']);
+    expect(screen.getByText('Grade E team is the lowest-scoring team at 60.0%.')).toBeInTheDocument();
     expect(screen.getByText('Grade C team')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Grade C team' })).toHaveAttribute('href', '/team/grade-c-team?region=UAE');
     expect(screen.getByText('Grade C')).toBeInTheDocument();
@@ -98,6 +100,25 @@ describe('TeamsAtRiskCard', () => {
     expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Scores can be affected by evaluation settings.');
     expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Comparable raw performance is unchanged.');
     expect(screen.getAllByTestId('risk-row')).toHaveLength(2);
+  });
+
+  it('ranks worst score first, breaks score ties by gap share, and puts unscored teams last', () => {
+    render(<MemoryRouter><TeamsAtRiskCard teams={[
+      { ...team('Better score, big gap', 85, ['grade_c']), gap_share_percent: 40, employees: 10 },
+      { ...team('Worst score, small gap', 70, ['grade_d']), gap_share_percent: 5, employees: 10 },
+      { ...team('Worst score, big gap', 70, ['grade_d']), gap_share_percent: 30, employees: 10 },
+      { ...team('Unscored team', null, []), gap_share_percent: 50, employees: 10 },
+    ]} /></MemoryRouter>);
+
+    expect(screen.getByText('Worst score, big gap is the lowest-scoring team at 70.0%.')).toBeInTheDocument();
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Worst score, big gap', 'Worst score, small gap', 'Better score, big gap',
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Show all teams' }));
+    expect(screen.getByText('Every team in the selected scope, ranked from worst score')).toBeInTheDocument();
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Worst score, big gap', 'Worst score, small gap', 'Better score, big gap', 'Unscored team',
+    ]);
   });
 
   it('keeps the selected branch and level when opening a team dashboard', () => {

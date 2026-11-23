@@ -6,6 +6,7 @@ import type { User } from '../types';
 import type { ExecutiveSummary } from '../features/executive/types';
 import { composeExecutiveSummary, monthsBetween, periodOf, previousRangeOf, toExecRecords, type ComposeInput } from '../features/executive/compose';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from '../features/executive/executive.fixture';
+import { presentationTeamName } from '../features/team/countryTeamIdentity';
 import type { UseExecutiveSummaryArgs } from '../features/executive/useExecutiveSummary';
 import DepartmentalSummaryView from './DepartmentalSummaryView';
 import { periodOptionsFor } from '../features/executive/viewModel';
@@ -269,6 +270,30 @@ describe('Corporate sections', () => {
     expect(screen.getByTestId('corrective-action-insights')).toBeInTheDocument();
     expect(screen.queryByTestId('action-tile-due-this-week')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Corrective Actions' })).not.toBeInTheDocument();
+  });
+
+  it('ranks Teams at risk from the worst score and names the lowest-scoring team', () => {
+    renderAt();
+    const atRisk = (state.summary?.teams ?? [])
+      .filter((team) => team.score !== null && team.score < 90)
+      .sort((a, b) => (a.score ?? 0) - (b.score ?? 0)
+        || (b.gap_share_percent ?? 0) - (a.gap_share_percent ?? 0)
+        || a.team.localeCompare(b.team));
+    expect(atRisk.length).toBeGreaterThan(0);
+    expect(screen.getByText('Score under 90%, ranked from worst score')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('risk-row');
+    expect(rows.map((row) => row.querySelector('a, button')?.textContent)).toEqual(atRisk.map((team) => presentationTeamName(team.team, null)));
+    expect(screen.getByText(`${atRisk[0].team} is the lowest-scoring team at ${(atRisk[0].score ?? 0).toFixed(1)}%.`)).toBeInTheDocument();
+  });
+
+  it('shows the Gap card against the 100% target without a separate Target card', () => {
+    renderAt();
+    // Scoped to the hero: other cards on the page (e.g. the Team KPIs table) still have a Target column.
+    const heroHeading = screen.getByRole('heading', { name: /^June 2026 company performance/ });
+    const hero = heroHeading.closest('section');
+    expect(hero).not.toBeNull();
+    expect(within(hero as HTMLElement).getByText('vs target 100%')).toBeInTheDocument();
+    expect(within(hero as HTMLElement).queryByText('Target')).not.toBeInTheDocument();
   });
 
   it('keeps the full board for a role that cannot open Insights', () => {

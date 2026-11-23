@@ -16,13 +16,13 @@ const TEAM_LEVELS = new Set(['All', 'Employee', 'Managerial', 'Corporate']);
 export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam }: { teams: ExecutiveTeam[]; rangeLabel?: string | null; onSelectTeam?: (team: string) => void }) {
   const [showAllTeams, setShowAllTeams] = useState(false);
   const [searchParams] = useSearchParams();
-  const rank = (team: ExecutiveTeam) => team.gap_share_percent ?? (team.score === null ? -1 : Math.max(100 - team.score, 0) * Math.max(team.employees, 0));
+  // Worst score first; unscored teams last. Ties break on the larger gap share, then alphabetically.
   const rows = (showAllTeams ? [...teams] : teams.filter((team) => team.score !== null && team.score < 90)).sort((left, right) => {
-      const share = rank(right) - rank(left);
-      if (share !== 0) return share;
       if (left.score === null) return right.score === null ? left.team.localeCompare(right.team) : 1;
       if (right.score === null) return -1;
-      return left.score - right.score || left.team.localeCompare(right.team);
+      return left.score - right.score
+        || (right.gap_share_percent ?? 0) - (left.gap_share_percent ?? 0)
+        || left.team.localeCompare(right.team);
     });
   const head = 'text-xs font-semibold text-[var(--text-muted)]';
   const teamHref = (team: ExecutiveTeam) => {
@@ -57,7 +57,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
         iconBg={showAllTeams ? 'var(--insights-accent-soft)' : 'var(--pms-grade-d-badge-bg)'}
         iconColor={showAllTeams ? 'var(--insights-accent-text)' : 'var(--pms-grade-d-text)'}
         title={showAllTeams ? 'All teams' : 'Teams at risk'}
-        subtitle={`${showAllTeams ? 'Every team in the selected scope, ranked by share of the gap' : 'Score under 90%, ranked by share of the gap'}${rangeLabel ? ` · ${rangeLabel}` : ''}`}
+        subtitle={`${showAllTeams ? 'Every team in the selected scope, ranked from worst score' : 'Score under 90%, ranked from worst score'}${rangeLabel ? ` · ${rangeLabel}` : ''}`}
         action={<button type="button" aria-expanded={showAllTeams} onClick={() => setShowAllTeams((value) => !value)} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">{showAllTeams ? 'Show at-risk teams' : 'Show all teams'}</button>}
       />
       {rows.length ? (
@@ -65,7 +65,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
         {!showAllTeams && (
           <p className="text-[13px] leading-[1.5] text-[var(--text-secondary)]">
             {rows.length === 1 ? '1 team is under 90.' : `${rows.length} teams are under 90.`}
-            {rows[0].gap_share_percent != null && rows[0].gap_share_percent > 0 ? ` ${rows[0].team} carries the most of it, ${formatShare(rows[0].gap_share_percent)}% of the company gap.` : ''}
+            {rows[0].score !== null ? <span>{` ${rows[0].team} is the lowest-scoring team at ${fmtScore(rows[0].score)}.`}</span> : ''}
           </p>
         )}
         <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col">
@@ -79,7 +79,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
             <span role="columnheader" className={`${head} hidden w-[150px] md:block`}>Why flagged</span>
           </div>
           {rows.map((team, index) => {
-            const lead = !showAllTeams && index === 0 && team.gap_share_percent != null && team.gap_share_percent > 0;
+            const lead = !showAllTeams && index === 0;
             return (
             <div role="row" key={team.team} className={`flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0 ${lead ? 'rounded-[10px] bg-[color-mix(in_srgb,var(--insights-negative)_8%,transparent)]' : ''}`} data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">

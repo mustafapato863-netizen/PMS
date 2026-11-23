@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
 Version `2.1.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
-Input fingerprint `99c1de8a233b8611d5dcecf360ca719284ea26427900307ea29e5cfc50655c8b`.
+Input fingerprint `eaa7fc915a349b265601be0a46c30274ad026450e56ff0090cc9bbc970dc5a23`.
 
 This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. The runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` use the same roadmap vocabulary (Phase 2, issue #94); `CERTIFIED` is never emitted.
 
@@ -46,7 +46,7 @@ Alias conflicts are filed under `open_questions.unresolved_naming_and_hierarchy`
 ## Counts
 
 - Countries: 3 (EGY, UAE, shared)
-- Functions: 18 (Administration, CRM, CSR, Call Center, ER Dr, Finance, Human Resources, IT, Marketing, Nursing, PMO, Pharmacy, Pre-Approvals, Qlty&Case-Mngt, Quality Management, RCM, Radiologist, Sales)
+- Functions: 18 (Administration, CRM, CSR, Call Center, ER Dr, Finance, Human Resources, IT, Marketing, Nursing, PMO, Pharmacy, Pre-Approvals, Qlty&Case-Mngt, Quality Management, RCM, Radiology, Sales)
 - Teams: 32
 - Positions: 57
 - Position/level pairs: 58

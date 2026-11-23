@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   HelpCircle,
   Layers,
-  Target,
   TrendingDown,
   TrendingUp,
   Upload,
@@ -90,7 +89,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
   const comparison = hero.comparison;
   const upload = !meta.unavailable.includes('upload_meta') ? status.last_upload : null;
   const isFunction = scope.view === 'function';
-  const statCount = (isFunction ? 3 : 4) + (comparison?.score != null ? 1 : 0);
+  const statCount = 3 + (comparison?.score != null ? 1 : 0);
   const chartTitle = scope.view === 'corporate' ? 'Company score — last 6 months' : scope.view === 'managerial' ? 'Team score — last 6 months' : `${hero.label} score — last 6 months`;
 
   const scoredTeams = summary.teams.filter((t) => t.score !== null);
@@ -175,7 +174,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                       2. Why does it matter?
                     </strong>
                     <p className="mt-[4px]">
-                      <strong>Gap</strong> on the headline is the score minus 100. A score of 90% or more is still short of that target when the gap is negative. Each function card shows that score, its gap, the change since last month, and the six-month trend. Regions and teams are ranked by their share of the gap: missing points times people. A team under <strong>90%</strong> is listed, with the KPI that missed.
+                      <strong>Gap</strong> on the headline is the score minus 100. A score of 90% or more is still short of that target when the gap is negative. Each function card shows that score, its gap, the change since last month, and the six-month trend. Regions are ranked by their share of the gap: missing points times people. Teams at risk are ranked from the worst score first. A team under <strong>90%</strong> is listed, with the KPI that missed.
                     </p>
                   </div>
 
@@ -186,7 +185,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                     <ul className="mt-[4px] list-disc space-y-[3px] pl-[16px] text-xs">
                       <li>Open a function card to see its summary. Start with the lowest score.</li>
                       <li>Red drivers are weight × gap to target. Green drivers are the change since last month.</li>
-                      <li>Use <em>Teams at risk</em> for the teams that carry the gap, then confirm a corrective action.</li>
+                      <li>Use <em>Teams at risk</em>, starting with the lowest-scoring team, then confirm a corrective action.</li>
                     </ul>
                   </div>
                 </div>
@@ -209,11 +208,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
         {narrative && <p className="text-[14px] leading-[1.7] text-[var(--text-secondary)]">{narrative}</p>}
         <div className={`grid grid-cols-2 gap-[10px] ${statCount === 3 || statCount === 5 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
           <Stat icon={ChartNoAxesColumnIncreasing} label={hero.score_basis === 'leader_scorecard' ? 'Leader scorecard' : hero.score_basis === 'team_scorecard' ? 'Team score' : 'People average'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
-          {/* Function view (Figma 48:3): no separate Target tile; the gap names the target. */}
-          {!isFunction && (
-            <Stat icon={Target} label="Target" value={fmtScore(hero.target, 1)} valueColor="var(--insights-accent-text)" sub={scope.view === 'corporate' ? 'Company-wide' : 'Score target'} />
-          )}
-          <Stat icon={BarChart3} label="Gap" value={fmtSigned(hero.gap)} valueColor={toneColor(scoreTone(hero.gap))} sub={isFunction ? `vs target ${fmtScore(hero.target, 0)}` : 'score − target'} />
+          <Stat icon={BarChart3} label="Gap" value={fmtSigned(hero.gap)} valueColor={toneColor(scoreTone(hero.gap))} sub={`vs target ${fmtScore(hero.target, 0)}`} />
           <Stat
             icon={hero.change !== null && hero.change < 0 ? TrendingDown : TrendingUp}
             label={previousLabel}

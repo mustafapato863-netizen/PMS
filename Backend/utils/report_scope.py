@@ -95,6 +95,10 @@ _CALL_CENTER_KEYS = {
 
 _ADMINISTRATION_KEYS = {"administration", "offshore admin & management"}
 
+_ER_DR_KEYS = {"er dr"}
+_RADIOLOGY_KEYS = {"radiology", "radiologist"}
+_QLTY_CASE_MNGT_KEYS = {"qlty&case-mngt"}
+
 _RCM_KEYS = {
     "rcm",
     "coding",
@@ -151,6 +155,12 @@ def _exact_team_keys(value: str) -> set[str]:
         return {base, f"{base}_management"}
     if normalized in _ADMINISTRATION_KEYS:
         return set(_ADMINISTRATION_KEYS)
+    if normalized in _RADIOLOGY_KEYS:
+        return set(_RADIOLOGY_KEYS)
+    if normalized in _ER_DR_KEYS:
+        return set(_ER_DR_KEYS)
+    if normalized in _QLTY_CASE_MNGT_KEYS:
+        return set(_QLTY_CASE_MNGT_KEYS)
     return {normalized}
 
 
@@ -168,6 +178,12 @@ def _team_keys(value: str) -> set[str]:
         return _CALL_CENTER_KEYS
     if normalized in {"rcm", "rcm_management"}:
         return _RCM_KEYS | {"rcm_management"}
+    if normalized in _RADIOLOGY_KEYS:
+        return set(_RADIOLOGY_KEYS)
+    if normalized in _ER_DR_KEYS:
+        return set(_ER_DR_KEYS)
+    if normalized in _QLTY_CASE_MNGT_KEYS:
+        return set(_QLTY_CASE_MNGT_KEYS)
     return _exact_team_keys(value)
 
 
@@ -254,6 +270,9 @@ _FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
     "RCM": _RCM_KEYS,
     "Pre-Approvals": _PRE_APPROVALS_UAE_KEYS,
     "Administration": _ADMINISTRATION_KEYS,
+    "ER Dr": _ER_DR_KEYS,
+    "Radiology": _RADIOLOGY_KEYS,
+    "Qlty&Case-Mngt": _QLTY_CASE_MNGT_KEYS,
 }
 
 
@@ -274,7 +293,9 @@ def function_for_team(team_name: str) -> str | None:
 
     ``Inbound`` -> ``Call Center``, ``Coding`` -> ``RCM``,
     ``Pre-Approvals OP Dubai`` -> ``RCM`` (also listed under ``Pre-Approvals``
-    by :func:`functions_for_team`), ``Marketing`` -> ``Marketing``.
+    by :func:`functions_for_team`), ``Marketing`` -> ``Marketing``,
+    ``Radiologist`` -> ``Radiology``, ``ER Dr`` -> ``ER Dr``,
+    ``Qlty&Case-Mngt`` -> ``Qlty&Case-Mngt``.
     """
     functions = functions_for_team(team_name)
     return functions[0] if functions else None
