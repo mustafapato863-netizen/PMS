@@ -150,6 +150,87 @@ def test_summary_is_period_bounded_and_sql_scoped():
         db.close()
 
 
+def test_same_team_display_name_keeps_country_data_and_permissions_separate(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.routers import performance
+    from config import settings
+    from config.database import get_db
+    from models.report_schemas import ReportConfiguration
+    from services.database_record_source import DatabaseRecordSource
+    from services.insights_service import InsightAccessError, InsightsService
+    from services.planning_service import PlanningService
+    from services.report_service import ReportAccessError, ReportService
+
+    with _session() as db:
+        for name, country, code, score in (("Coding EGY", "EGY", "CODER-EG", 81), ("Coding", "UAE", "CODER-AE", 93)):
+            team = Team(id=uuid.uuid4(), name=name, db_name=name, region=country)
+            db.add(team)
+            db.flush()
+            employee = Employee(id=uuid.uuid4(), employee_id=code, name=code, team_id=team.id, region=country)
+            db.add(employee)
+            db.flush()
+            db.add(PerformanceRecord(
+                id=uuid.uuid4(), employee_id=employee.id, team_id=team.id, region="Egypt" if country == "EGY" else country,
+                month="June", year=2026, score=score, grade="B", status="Meets", performance_level="Employee",
+            ))
+        db.commit()
+
+        scopes = {
+            "admin": {**_scope(), "role": "Admin"},
+            "egy-manager": {**_scope(), "accessible_teams": ["Coding EGY"], "accessible_team_levels": [("Coding EGY", "Employee")]},
+        }
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", True)
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES", ())
+        monkeypatch.setattr(performance, "require_authenticated_scope", lambda _db, request: scopes[request.headers["x-test-user"]])
+        monkeypatch.setattr(performance, "get_current_user_scope", lambda _db, request: scopes[request.headers["x-test-user"]])
+        app = FastAPI()
+        app.dependency_overrides[get_db] = lambda: db
+        app.include_router(performance.router, prefix="/api")
+
+        with TestClient(app) as client:
+            for country, code, score in (("EGY", "CODER-EG", 81), ("UAE", "CODER-AE", 93)):
+                params = {"team": "Coding", "region": country}
+                headers = {"x-test-user": "admin", "x-user-role": "Admin"}
+                summary = client.get("/api/performance/summary", params={**params, "period": "2026-06"}, headers=headers)
+                assert summary.status_code == 200
+                assert summary.json()["data"]["current"]["average_score"] == score
+                roster = client.get("/api/performance/records", params={**params, "period": "2026-06"}, headers=headers)
+                assert [row["employee_id"] for row in roster.json()["data"]["items"]] == [code]
+                evidence = client.get("/api/performance/summary-records", params=params, headers=headers)
+                assert [row["employee_id"] for row in evidence.json()["data"]] == [code]
+                export = client.get("/api/performance/export", params={**params, "format": "csv"}, headers=headers)
+                assert export.status_code == 200
+                assert code in export.text
+                assert ("CODER-AE" if country == "EGY" else "CODER-EG") not in export.text
+
+            headers = {"x-test-user": "egy-manager", "x-user-role": "Manager"}
+            egypt = client.get("/api/performance/team/Coding", params={"region": "Egypt"}, headers=headers)
+            assert [row["employee_id"] for row in egypt.json()["data"]] == ["CODER-EG"]
+            assert client.get("/api/performance/team/Coding", params={"region": "UAE"}, headers=headers).status_code == 403
+            uae_roster = client.get("/api/performance/records", params={"team": "Coding", "region": "UAE", "period": "2026-06"}, headers=headers)
+            assert uae_roster.json()["data"]["items"] == []
+
+        report = ReportConfiguration(
+            report_type="team", report_name="Coding performance", start_month="June", start_year=2026,
+            team="Coding", region="Egypt", output_format="excel",
+        )
+        preview = ReportService(db).preview(report, scopes["egy-manager"])
+        assert preview["record_count"] == 1
+        assert preview["table_preview"][0]["Employee ID"] == "CODER-EG"
+        with pytest.raises(ReportAccessError):
+            ReportService(db).preview(report.model_copy(update={"team": "Coding", "region": "UAE"}), scopes["egy-manager"])
+
+        source = DatabaseRecordSource(db)
+        insights = InsightsService(source, PlanningService(source, db=db), db=db)
+        filters = {"team": "Coding", "month": "June", "year": 2026, "sections": "team_summaries"}
+        egypt_insights = insights.generate_workspace(scopes["egy-manager"], region="Egypt", **filters)
+        assert [(team.team, team.current_score) for team in egypt_insights.team_summaries] == [("Coding EGY", 81)]
+        with pytest.raises(InsightAccessError):
+            insights.generate_workspace(scopes["egy-manager"], region="UAE", **filters)
+
+
 def test_inbound_summary_booking_rate_uses_inbound_calls():
     def row(name, team, bookings, inbound, handled):
         return SummaryRecord(

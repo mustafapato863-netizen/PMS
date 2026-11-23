@@ -292,11 +292,13 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
         ? effectiveSelectedLevel === 'Employee'
         : !performanceLevel || effectiveSelectedLevel === performanceLevel;
     // Exact match for every item. Only an item that opts in (Administration) also stays active on its sub-pages.
-    const itemPath = item.path.split('?')[0];
+    const [itemPath, itemQuery] = item.path.split('?');
     const onPath = pathname === itemPath || (item.matchSubpaths === true && pathname.startsWith(`${itemPath}/`));
-    const active = onPath && levelMatches;
+    const itemCountry = parseTeamCountry(new URLSearchParams(itemQuery).get('region'));
+    const activeCountry = parseTeamCountry(assigned.region ?? searchParams.get('region')) ?? 'UAE';
+    const active = onPath && levelMatches && (scopedDirector || !itemCountry || itemCountry === activeCountry);
     const destination = resetQuery
-      ? `${item.path}${performanceLevel ? `?performance_level=${performanceLevel}` : ''}`
+      ? withTeamQuery(item.path, performanceLevel ? `performance_level=${performanceLevel}` : undefined)
       : linkFor(item.path, performanceLevel);
     return (
       <Link

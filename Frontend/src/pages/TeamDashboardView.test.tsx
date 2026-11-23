@@ -68,6 +68,9 @@ const EXPECTED_TITLE: Record<string, string> = {
   'Administration': 'Administration',
   'Call Center': 'Call Center',
   'CSR': 'CSR',
+  'ER Dr': 'ER Dr',
+  'Qlty&Case-Mngt': 'Qlty&Case-Mngt',
+  'Radiologist': 'Radiologist',
   'Finance': 'Finance',
   'Human Resources': 'Human Resources',
   'IT': 'IT',
@@ -134,6 +137,20 @@ describe('team page resolution', () => {
     fireEvent.click(screen.getByRole('button', { name: /filters/i }));
     expect(document.querySelector('option[value="June"]')).toBeInTheDocument();
     expect(document.querySelector('option[value="March"]')).not.toBeInTheDocument();
+  });
+
+  it('switches between the two Coding teams without carrying country-specific filters', () => {
+    renderTeamPage('/team/coding?region=UAE&branch=sharjah&period=2026-06&selected_kpi=old');
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }));
+    const country = screen.getByRole('combobox', { name: 'Region' });
+    expect(within(country).queryByRole('option', { name: 'All Regions' })).not.toBeInTheDocument();
+    expect(performanceState.teamConfigCalls).toHaveBeenCalledWith('Coding');
+    performanceState.teamConfigCalls.mockClear();
+    fireEvent.change(country, { target: { value: 'EGY' } });
+    expect(screen.getByTestId('team-location-probe')).toHaveTextContent('/team/coding?region=EGY&period=2026-06');
+    expect(performanceState.teamConfigCalls).toHaveBeenCalledWith('Coding EGY');
+    expect(performanceState.teamConfigCalls).not.toHaveBeenCalledWith('Coding');
+    expect(performanceState.teamDataCalls.mock.calls.at(-1)?.slice(0, 3)).toEqual(['Coding EGY', '2026-06', 'EGY']);
   });
 
   it('includes both Egyptian re-submission source aliases in available periods', () => {

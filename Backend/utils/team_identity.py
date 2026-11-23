@@ -13,6 +13,37 @@ from models.models import Team, UserTeamAssignment
 TeamLevel = Literal["employee", "management"]
 MANAGEMENT_PERFORMANCE_LEVELS = {"Managerial", "Corporate"}
 EGYPT_RESUBMISSION_TEAM_ALIASES = frozenset({"resubmission", "re-submission egy"})
+_COUNTRY_CODES = {
+    "egy": "EGY",
+    "egypt": "EGY",
+    "offshore egy": "EGY",
+    "offshore egypt": "EGY",
+    "uae": "UAE",
+    "united arab emirates": "UAE",
+}
+_EGYPT_SOURCE_TEAMS = {
+    "coding": "Coding EGY",
+    "submission": "Submission EGY",
+    "re-submission": "Resubmission",
+}
+
+
+def normalize_team_country(region: str | None) -> str | None:
+    key = " ".join(str(region or "").casefold().replace("_", " ").replace("-", " ").split())
+    return _COUNTRY_CODES.get(key)
+
+
+def team_country_filter_values(region: str) -> set[str]:
+    """Accept both country codes and labels already stored on records."""
+    country = normalize_team_country(region)
+    return {region.strip().casefold()} | {name for name, code in _COUNTRY_CODES.items() if code == country}
+
+
+def team_name_for_country(team: str, region: str | None) -> str:
+    """Resolve shared display names to the stored team inside the requested country."""
+    if normalize_team_country(region) == "EGY":
+        return _EGYPT_SOURCE_TEAMS.get(team.strip().casefold(), team)
+    return team
 
 
 def logical_team_name(team: Team) -> str:

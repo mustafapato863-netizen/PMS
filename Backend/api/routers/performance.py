@@ -29,7 +29,7 @@ from models.performance_read_schemas import PerformanceCatalogData, PerformanceR
 from exports.report_exporter import ReportExporter
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
 from utils.performance_levels import PERFORMANCE_LEVELS, normalize_performance_level
-from utils.team_identity import dedupe_egypt_resubmission_records, logical_team_name
+from utils.team_identity import dedupe_egypt_resubmission_records, logical_team_name, team_name_for_country
 from config.loader import ConfigurationError, load_team_config, resolve_team_config
 from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import bsc_template_service
@@ -280,7 +280,7 @@ def get_all_records(
     response.headers["X-PMS-Performance-Route"] = "legacy"
     try:
         scope = get_current_user_scope(db, request)
-        if team and not user_can_access_team(scope, team):
+        if team and not user_can_access_team(scope, team_name_for_country(team, region)):
             raise HTTPException(status_code=403, detail="Access denied for this team")
 
         records = _get_dashboard_records(
@@ -742,7 +742,7 @@ def get_monthly_records(
             raise HTTPException(status_code=422, detail="period is required for the bounded records route")
         try:
             scope = get_current_user_scope(db, request)
-            if team and not user_can_access_team(scope, team):
+            if team and not user_can_access_team(scope, team_name_for_country(team, region)):
                 raise HTTPException(status_code=403, detail="Access denied for this team")
             records = _get_dashboard_records(
                 db,
@@ -868,7 +868,7 @@ def get_team_yearly_records(
 ):
     try:
         scope = get_current_user_scope(db, request)
-        if not user_can_access_team(scope, team_name):
+        if not user_can_access_team(scope, team_name_for_country(team_name, region)):
             raise HTTPException(status_code=403, detail="Access denied for this team")
         team_records = _get_dashboard_records(
             db,
@@ -912,7 +912,7 @@ def get_by_grade(
             raise HTTPException(status_code=400, detail="month is required")
 
         scope = get_current_user_scope(db, request)
-        if not user_can_access_team(scope, team_name):
+        if not user_can_access_team(scope, team_name_for_country(team_name, region)):
             raise HTTPException(status_code=403, detail="Access denied for this team")
         filtered = _get_dashboard_records(
             db,
@@ -958,7 +958,7 @@ def get_by_status(
             raise HTTPException(status_code=400, detail="month is required")
 
         scope = get_current_user_scope(db, request)
-        if not user_can_access_team(scope, team_name):
+        if not user_can_access_team(scope, team_name_for_country(team_name, region)):
             raise HTTPException(status_code=403, detail="Access denied for this team")
         filtered = _get_dashboard_records(
             db,
@@ -1106,6 +1106,7 @@ def export_report(
                 if not any(user_can_access_team(scope, source_team) for source_team in group_teams):
                     raise HTTPException(status_code=403, detail="Access denied for this RCM group")
                 rcm_filter_teams &= group_teams
+        effective_team = team_name_for_country(effective_team, region)
         if effective_team != "All":
             if effective_team.casefold() == "rcm":
                 has_rcm_access = user_can_access_team(scope, "RCM")

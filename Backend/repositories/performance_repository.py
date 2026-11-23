@@ -8,7 +8,7 @@ from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team, UploadLog
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
-from utils.team_identity import logical_team_name
+from utils.team_identity import logical_team_name, team_country_filter_values, team_name_for_country
 from utils.months import MONTH_NUMBERS
 from utils.regions import REGION_WHITESPACE, first_region
 import logging
@@ -31,8 +31,8 @@ CALL_CENTER_TEAM = "call center"
 # select Inbound or Outbound alone.
 CALL_CENTER_SOURCES = ("inbound", "outbound", "call center")
 
-def _team_filter_values(team: str) -> tuple[str, ...]:
-    normalized = str(team).strip().casefold()
+def _team_filter_values(team: str, region: str | None = None) -> tuple[str, ...]:
+    normalized = team_name_for_country(team, region).strip().casefold()
     if normalized == MERGED_OP_FINAL_TEAM:
         return MERGED_OP_FINAL_SOURCES
     if normalized == MERGED_IP_FINAL_TEAM:
@@ -234,7 +234,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         employee_search: str | None = None,
     ):
         if team:
-            team_values = set(_team_filter_values(team))
+            team_values = set(_team_filter_values(team, region))
             query = query.filter(_team_name_clause(team_values))
         if month and month.lower() != "all":
             query = query.filter(PerformanceRecord.month == month)
@@ -269,7 +269,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             query = query.filter(position_value == str(position).casefold())
         if region:
             region_value = func.lower(_row_region())
-            query = query.filter(region_value == str(region).casefold())
+            query = query.filter(region_value.in_(team_country_filter_values(region)))
         if branch:
             query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
         if score_lt is not None:
@@ -388,7 +388,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         query = self._apply_scope(query, scope)
 
         if team:
-            normalized_team = _team_filter_values(team)
+            normalized_team = _team_filter_values(team, region)
             query = query.filter(or_(
                 func.lower(logical_team_name).in_(normalized_team),
                 func.lower(Team.name).in_(normalized_team),
@@ -409,7 +409,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         if position:
             query = query.filter(PerformanceRecord.position_name == position)
         if region:
-            query = query.filter(PerformanceRecord.region == region)
+            query = query.filter(func.lower(func.trim(PerformanceRecord.region)).in_(team_country_filter_values(region)))
 
         return [
             (str(emp_id), str(team_name), str(record_month), int(record_year))

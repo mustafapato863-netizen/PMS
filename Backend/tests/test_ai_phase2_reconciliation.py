@@ -108,6 +108,24 @@ def test_resolver_does_not_map_hyphenated_re_submission_egy():
     assert resolve_canonical_team_name("re-submission egy") == "re-submission egy"
 
 
+def test_shared_coding_page_replaces_previous_country_context():
+    from models.ai_schemas import AiChatRequest, ConfirmedQueryContext, PageContextV1
+    from services.ai.contextual_assistant import apply_page_context_to_request
+
+    request = AiChatRequest(
+        prompt="What was the score here?",
+        page_context=PageContextV1(page_id="team_dashboard", team_id="Coding", region="Egypt"),
+        session_state=SessionFilterContext(
+            team="Coding", region="UAE",
+            last_confirmed_query=ConfirmedQueryContext(team="Coding", region="UAE", metric_id="coding:old"),
+        ),
+    )
+    updated, _ = apply_page_context_to_request(request)
+    assert (updated.session_state.team, updated.session_state.region) == ("Coding EGY", "EGY")
+    confirmed = updated.session_state.last_confirmed_query
+    assert (confirmed.team, confirmed.region, confirmed.metric_id) == ("Coding EGY", "EGY", None)
+
+
 # --- Router: bare-alias clarification ------------------------------------
 
 

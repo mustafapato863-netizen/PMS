@@ -60,6 +60,7 @@ from services.tracking_indicators import tracking_definitions, tracking_indicato
 import utils.kpi_direction as _kd
 from utils.scoring_rules import score_percent
 from utils.branch_scope import BRANCH_KEYS, project_record_for_branch, record_matches_branch
+from utils.team_identity import normalize_team_country, team_country_filter_values, team_name_for_country
 from utils.report_scope import (
     filter_records_by_scope,
     filter_records_by_team_levels,
@@ -1312,11 +1313,13 @@ class InsightsService:
         for filter_key, record_key in mapping.items():
             selected = filters.get(filter_key)
             if selected:
-                if filter_key == "region" and selected_branch:
+                if filter_key == "region":
+                    if str(selected).casefold() == "uae" and str(selected_branch).casefold() in BRANCH_KEYS:
+                        continue
+                    region_values = team_country_filter_values(str(selected))
                     result = [
                         record for record in result
-                        if str(_value(record, "region", "")).casefold() == str(selected).casefold()
-                        or (str(selected).casefold() == "uae" and str(selected_branch).casefold() in BRANCH_KEYS)
+                        if str(_value(record, "region", "")).strip().casefold() in region_values
                     ]
                     continue
                 result = [record for record in result if str(_value(record, record_key, "")).casefold() == str(selected).casefold()]
@@ -2830,6 +2833,10 @@ class InsightsService:
         def wanted(name: str) -> bool:
             return sections is None or name in sections
 
+        if region := normalize_team_country(filters.get("region")):
+            filters["region"] = region
+            if filters.get("team"):
+                filters["team"] = team_name_for_country(filters["team"], region)
         self._validate_scope(filters, scope)
         windowed = self._windowed_records(scope, filters, sections)
         period_source: list[Any] | None = None

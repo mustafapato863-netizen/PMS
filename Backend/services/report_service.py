@@ -38,7 +38,7 @@ from utils.report_scope import (
     user_can_access_team,
     user_can_access_team_level,
 )
-from utils.team_identity import logical_team_name
+from utils.team_identity import logical_team_name, normalize_team_country
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 
 
@@ -249,14 +249,7 @@ class ReportService:
         """Compare the region aliases used by the UI, employees, teams, and uploads."""
 
         text = str(value or "").strip()
-        if not text:
-            return None
-        normalized = " ".join(text.casefold().replace("_", " ").replace("-", " ").split())
-        if normalized in {"egypt", "egy", "offshore egy", "offshore egypt"}:
-            return "EGY"
-        if normalized in {"uae", "united arab emirates"}:
-            return "UAE"
-        return text
+        return normalize_team_country(text) or text or None
 
     @classmethod
     def _regions_match(cls, left: Any, right: Any) -> bool:
@@ -479,7 +472,7 @@ class ReportService:
             if configuration.position and str(value("position", "") or "").casefold() != configuration.position.casefold():
                 return False
             canonical_region = self._canonical_report_region(configuration)
-            if canonical_region and str(value("region", "") or "").casefold() != canonical_region.casefold():
+            if canonical_region and not self._regions_match(value("region"), canonical_region):
                 return False
             if configuration.grade:
                 evaluation = value("evaluation", {})

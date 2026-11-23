@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from utils.team_identity import team_name_for_country
+
 
 REPORT_TYPES = Literal[
     "executive",
@@ -112,6 +114,12 @@ class ReportConfiguration(BaseModel):
         if normalized not in {"pdf", "pptx", "excel"}:
             raise ValueError("Output format must be either pdf, pptx, or excel")
         return normalized
+
+    @model_validator(mode="after")
+    def resolve_team_scope(self):
+        if self.team:
+            self.team = team_name_for_country(self.team, self.region)
+        return self
 
     @model_validator(mode="after")
     def validate_period(self):

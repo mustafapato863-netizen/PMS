@@ -277,11 +277,22 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const assigned = directorScope(role, currentUser);
   const sharedCountry = countryForSharedRoute(
     canonicalTeamId,
-    searchParams.get('region') ?? legacyRedirect?.region,
+    legacyRedirect?.region ?? searchParams.get('region'),
     assigned.regionLocked ? assigned.region : null,
   );
-  const sourceTeams = sharedCountry && canonicalTeamId ? [...sourceNamesFor(canonicalTeamId, sharedCountry)] : [];
+  const sourceTeams = useMemo(
+    () => sharedCountry && canonicalTeamId ? [...sourceNamesFor(canonicalTeamId, sharedCountry)] : [],
+    [canonicalTeamId, sharedCountry],
+  );
   const scopedTeamName = sourceTeams[0] || teamName;
+  const canSwitchCountry = Boolean(sharedCountry && !assigned.branchLocked && !assigned.regionLocked && (
+    !currentUser || hasAllTeamsScope(role, currentUser) || functionScope.restricted
+    || (['EGY', 'UAE'] as const).every((country) => sourceNamesFor(canonicalTeamId, country).some((source) =>
+      currentUser.accessible_teams?.some((team) => normalizeTeamName(team) === normalizeTeamName(source)),
+    ))
+  ));
+  const lockedRegionLabel = assigned.regionLocked ? assigned.regionLabel
+    : sharedCountry && !canSwitchCountry ? (sharedCountry === 'EGY' ? 'Egypt (EGY)' : 'UAE') : undefined;
   useEffect(() => {
     if (legacyRedirect) {
       const next = new URLSearchParams(searchParams);
@@ -389,15 +400,19 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { data: teamConfig } = useTeamConfig(workflowConfigTeam);
   const { data: inboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Inbound' : '');
   const { data: outboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Outbound' : '');
-  const region = assigned.regionLocked ? (assigned.region === 'EGY' || assigned.region === 'UAE' ? assigned.region : 'All') : sharedCountry
-    ? sharedCountry
+  const region = sharedCountry ?? (assigned.regionLocked
+    ? parseTeamCountry(assigned.region) ?? 'All'
     : regionSelection?.teamName === teamName
     ? regionSelection.value
-    : isPreApprovalsParent ? 'UAE' : isCallCenterParent ? 'EGY' : teamName ? (teamConfig?.region ?? 'All') : 'All';
+    : isPreApprovalsParent ? 'UAE' : isCallCenterParent ? 'EGY' : teamName ? (teamConfig?.region ?? 'All') : 'All');
   const setRegion = (value: 'All' | 'EGY' | 'UAE') => {
-    if (sharedCountry && (value === 'EGY' || value === 'UAE') && !assigned.regionLocked) {
+    if (sharedCountry) {
+      if (!canSwitchCountry || value === 'All' || value === sharedCountry) return;
       const next = new URLSearchParams(searchParams);
       next.set('region', value);
+      for (const key of ['branch', 'branches', 'location', 'position', 'position_view', 'selected_kpi', 'employee_ids']) {
+        next.delete(key);
+      }
       setSearchParams(next);
       return;
     }
@@ -613,7 +628,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     });
 
     return map;
-  }, [prevPeriodKey, previousPeriodAgents, teamName, location, weightsList, isCallCenterParent, callCenterChannel]);
+  }, [prevPeriodKey, previousPeriodAgents, matchesRouteTeam, location, weightsList, isCallCenterParent, callCenterChannel]);
 
   // Table state
   const [search, setSearch] = useState('');
@@ -776,9 +791,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const currentRowYear = (rows || []).find((row) => row.raw.year)?.raw.year;
     if (currentRowYear) return currentRowYear;
     return allAgents.find((agent) =>
-      agent.identity.month === activeMonthName && (!teamName || sameTeam(agent.identity.team, teamName)) && agent.year
+      agent.identity.month === activeMonthName && matchesRouteTeam(agent.identity.team) && agent.year
     )?.year;
-  }, [rows, allAgents, activeMonthName, teamName, monthSelector]);
+  }, [rows, allAgents, activeMonthName, matchesRouteTeam, monthSelector]);
   const insightPeriodKey = insightYear && MONTH_NUMBER[activeMonthName]
     ? `${insightYear}-${String(MONTH_NUMBER[activeMonthName]).padStart(2, '0')}`
     : undefined;
@@ -786,7 +801,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const teamInsightsQuery = useInsightsWorkspace(
     {
       periodKey: insightPeriodKey,
-      team: teamName || undefined,
+      team: scopedTeamName || undefined,
       region: region === 'All' ? undefined : region,
       performanceLevel: performanceLevel === 'All' ? undefined : performanceLevel,
     },
@@ -802,9 +817,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   );
   const teamPerformanceInsights = useMemo(
     () => (teamInsightsQuery.data?.priority_insights || []).filter((insight) =>
-      !insight.team || sameTeam(insight.team, teamName)
+      !insight.team || matchesRouteTeam(insight.team)
     ),
-    [teamInsightsQuery.data?.priority_insights, teamName],
+    [teamInsightsQuery.data?.priority_insights, matchesRouteTeam],
   );
   const allActions = getAllActions();
   const teamActionsThisMonth = useMemo(() => {
@@ -1593,7 +1608,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       submissionContribution: preApprovalsIpMetrics?.submissionContribution,
       dynamicKpis,
     };
-  }, [prevPeriodKey, previousPeriodAgents, teamName, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel, isEgyptInbound]);
+  }, [prevPeriodKey, previousPeriodAgents, matchesRouteTeam, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel, isEgyptInbound]);
 
   // Filter and compute Top 3 / Bottom 3 performers on the fly
   const rosterData = useMemo(() => {
@@ -1669,9 +1684,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Trend line: avg score over months (team-filtered)
   const trendData = useMemo(() => {
-    let filteredAgents = (teamName || sourceTeams.length)
-      ? allAgents.filter((a) => matchesRouteTeam(a.identity.team))
-      : allAgents;
+    let filteredAgents = allAgents.filter((a) => matchesRouteTeam(a.identity.team));
 
     if (isCallCenterParent && callCenterChannel !== 'all') {
       filteredAgents = filteredAgents.filter((a) => isCallCenterChannelTeam(a.identity.team, callCenterChannel));
@@ -1715,7 +1728,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         }),
       };
     });
-  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, getCallCenterThreeGroupSummary, activeTeamWeights, isCallCenterParent, isCallCenterAggregate, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
+  }, [dashboardMonths, allAgents, matchesRouteTeam, location, getCanonicalTeamScore, getCallCenterThreeGroupSummary, activeTeamWeights, isCallCenterParent, isCallCenterAggregate, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
 
   const performanceBullets = useMemo(() => {
     const bullets: Array<{
@@ -2046,13 +2059,14 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           : callCenterChannel === 'outbound'
             ? 'Outbound'
             : CALL_CENTER_TEAM
-      : teamName || 'All';
+      : scopedTeamName || 'All';
     const params = new URLSearchParams({
       month: month === 'All' ? 'All' : month,
       team: exportTeam,
       format: 'excel',
       performance_level: performanceLevel,
     });
+    if (sharedCountry) params.set('region', sharedCountry);
     if (isPreApprovalsParent) params.set('workflow', preApprovalsWorkflow);
     if (isCallCenterParent) params.set('channel', callCenterChannel);
     if (isRcmParent) params.set('domain', rcmDomain);
@@ -2067,7 +2081,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `PMS_${displayName}_${month}.xlsx`;
+      a.download = `PMS_${[displayName, sharedCountry, month].filter(Boolean).join('_')}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -2129,7 +2143,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           displayName={displayName}
           month={month}
           lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
-          lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
+          lockedRegion={lockedRegionLabel}
           breadcrumbs={breadcrumbs}
           uniqueMonths={dashboardMonths}
           setMonth={(m) => {
@@ -2169,7 +2183,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           setRcmEgyptTeam={handleEgyTeamChange}
           rcmEgyptTeamOptions={egyptTeamOptions}
           onBack={() => navigate('/executive')}
-          showRegionFilter={teamId === 'all'}
+          showRegionFilter={teamId === 'all' || canSwitchCountry}
+          allowAllRegions={!sharedCountry}
           performanceLevel={performanceLevel}
           setPerformanceLevel={(level) => {
             setPerformanceLevel(level);
@@ -2283,7 +2298,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         displayName={displayName}
         month={month}
         lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
-        lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
+        lockedRegion={lockedRegionLabel}
         breadcrumbs={breadcrumbs}
         uniqueMonths={dashboardMonths}
         setMonth={(m) => {
@@ -2323,7 +2338,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         setRcmEgyptTeam={handleEgyTeamChange}
         rcmEgyptTeamOptions={egyptTeamOptions}
         onBack={() => navigate('/executive')}
-        showRegionFilter={teamId === 'all'}
+        showRegionFilter={teamId === 'all' || canSwitchCountry}
+        allowAllRegions={!sharedCountry}
         performanceLevel={performanceLevel}
         setPerformanceLevel={(level) => {
           setPerformanceLevel(level);

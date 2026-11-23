@@ -22,6 +22,7 @@ from urllib.parse import urlencode
 from typing import Any
 
 from utils.months import month_number
+from utils.team_identity import normalize_team_country, team_name_for_country
 
 from sqlalchemy.orm import Session
 
@@ -167,7 +168,7 @@ def _current_evidence_revision(db: Session) -> str:
     return f"{evaluation_cache_identity(db)}:d{CacheInvalidationService.get_data_version()}"
 
 
-def normalize_team_name(raw: str | None) -> str | None:
+def normalize_team_name(raw: str | None, *, region: str | None = None) -> str | None:
     if not raw:
         return None
     cleaned = raw.strip()
@@ -176,9 +177,7 @@ def normalize_team_name(raw: str | None) -> str | None:
     slug = cleaned.casefold().replace("_", "-").replace(" ", "-")
     if slug in {"call-center", "rcm", "pre-approvals-uae"}:
         return None
-    if slug in _TEAM_SLUG_TO_CANONICAL:
-        return _TEAM_SLUG_TO_CANONICAL[slug]
-    return cleaned
+    return team_name_for_country(_TEAM_SLUG_TO_CANONICAL.get(slug, cleaned), region)
 
 
 def normalize_function_name(raw: str | None, team: str | None = None) -> str | None:
@@ -341,7 +340,8 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
 
     ss = req.session_state.model_copy(deep=True)
     norm_team = normalize_team_name(
-        pc.selected_entity_id if pc.selected_entity_type == "team" and pc.selected_entity_id else pc.team_id
+        pc.selected_entity_id if pc.selected_entity_type == "team" and pc.selected_entity_id else pc.team_id,
+        region=pc.region,
     )
     norm_fn = normalize_function_name(pc.function_id, norm_team)
     norm_pos = (
@@ -365,7 +365,7 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
         else None
     )
     norm_region = (
-        pc.region.strip().upper()
+        (normalize_team_country(pc.region) or pc.region.strip().upper())
         if pc.region and pc.region.strip().casefold() not in {"all", ""}
         else None
     )
@@ -432,6 +432,8 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
             lcq.position = norm_pos
             lcq.metric_id = resolved_metric_id
             lcq.metric_display_name = resolved_metric_display
+        if norm_team and norm_region:
+            lcq.region = norm_region
         if norm_fn and lcq.function and lcq.function.casefold() != norm_fn.casefold():
             lcq.function = norm_fn
         if norm_branch != lcq.branch:
@@ -450,6 +452,7 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
             team=ss.team,
             function=ss.function,
             position=ss.position,
+            region=ss.region,
             branch=ss.branch,
             branches=[ss.branch] if ss.branch else [],
             performance_level=ss.performance_level or "Employee",
@@ -478,7 +481,8 @@ def validate_page_context_scope(
     lower = (req.prompt or "").casefold()
     # Check if prompt relies on page context rather than naming a different explicit team
     norm_team = normalize_team_name(
-        pc.selected_entity_id if pc.selected_entity_type == "team" and pc.selected_entity_id else pc.team_id
+        pc.selected_entity_id if pc.selected_entity_type == "team" and pc.selected_entity_id else pc.team_id,
+        region=pc.region,
     )
     norm_fn = normalize_function_name(pc.function_id, norm_team)
     norm_level = (

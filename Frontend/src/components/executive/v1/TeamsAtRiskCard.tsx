@@ -3,7 +3,7 @@ import { AlertTriangle, TrendingDown, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath, withTeamQuery } from '../../../types';
-import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
+import { presentationTeamName, sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
 import { MONTHS } from '../../../features/executive/compose';
 import { FLAG_LABEL, FLAG_ORDER, formatShare } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
@@ -44,7 +44,9 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
       params.set('year', pYear);
       params.set('month', MONTHS[Number(pMonth) - 1]);
     }
-    return withTeamQuery(teamPath(team.source_team || team.team), params);
+    const sourceTeam = team.source_team || team.team;
+    if (sharedTeamRoute(sourceTeam)) params.delete('region');
+    return withTeamQuery(teamPath(sourceTeam), params);
   };
 
   return (
