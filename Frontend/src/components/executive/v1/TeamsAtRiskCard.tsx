@@ -65,7 +65,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
         {!showAllTeams && (
           <p className="text-[13px] leading-[1.5] text-[var(--text-secondary)]">
             {rows.length === 1 ? '1 team is under 90.' : `${rows.length} teams are under 90.`}
-            {rows[0].score !== null ? ` ${rows[0].team} is the lowest-scoring team at ${fmtScore(rows[0].score)}.` : ''}
+            {rows[0].score !== null ? <span>{` ${rows[0].team} is the lowest-scoring team at ${fmtScore(rows[0].score)}.`}</span> : ''}
           </p>
         )}
         <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col">

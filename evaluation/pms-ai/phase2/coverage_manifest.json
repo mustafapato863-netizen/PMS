@@ -3741,7 +3741,7 @@
       "Qlty&Case-Mngt",
       "Quality Management",
       "RCM",
-      "Radiologist",
+      "Radiology",
       "Sales"
     ],
     "levels": [
@@ -6242,7 +6242,7 @@
       {
         "basis": "template",
         "country": "UAE",
-        "function": "Radiologist",
+        "function": "Radiology",
         "level": "Employee",
         "needs": {
           "kpi_actual": {
@@ -7512,9 +7512,9 @@
       "db_name": "Radiologist",
       "explanation_source": "Backend/config/teams/radiologist.json",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "functions": [
-        "Radiologist"
+        "Radiology"
       ],
       "id": "team:Radiologist",
       "kind": "team",
@@ -7811,7 +7811,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "99c1de8a233b8611d5dcecf360ca719284ea26427900307ea29e5cfc50655c8b",
+  "inputs_fingerprint": "eaa7fc915a349b265601be0a46c30274ad026450e56ff0090cc9bbc970dc5a23",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -14087,7 +14087,7 @@
       "definition_issues": [],
       "direction": "higher_better",
       "effective_from": null,
-      "function": "Radiologist",
+      "function": "Radiology",
       "key": "PerformanceScore",
       "label": "Performance Score",
       "level": "Employee",
@@ -34049,7 +34049,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34073,7 +34073,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34097,7 +34097,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34121,7 +34121,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34144,7 +34144,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34168,7 +34168,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
@@ -34192,7 +34192,7 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Radiologist",
+      "function": "Radiology",
       "level": "Employee",
       "measure": "",
       "missing_evidence": [
