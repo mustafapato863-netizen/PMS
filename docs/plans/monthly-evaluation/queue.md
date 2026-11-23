@@ -9,7 +9,8 @@ Policy D-001 approved by user: Admin-only for ALL Evaluation Settings stages. Se
 | Phase | Brief | State | Dependency / gate |
 |---|---|---|---|
 | 0 Audit and golden baseline | phase-0-brief.md | Source/test slice reviewed; partial, draft PR #24 | a68898f; CI 37831220705 passed; golden/rollout gates remain |
-| 1 Schema/evidence | phase-1-brief.md | Queued, not dispatched | Accepted Phase 0; verified schema and business defaults |
+| 1A Existing groundwork reconciliation | phase-1a-brief.md | Prepared for isolated Grok dispatch | e6947b4; reviewed source/schema plus D-001/D-002; no activation |
+| 1B Monthly bindings/immutable applied evidence | phase-1-brief.md (refine) | Queued, not dispatched | Accepted 1A; remaining schema/lifecycle contracts |
 | 2 Catalog/resolver | phase-2-brief.md | Queued, not dispatched | Accepted Phase 1 |
 | 3 Lifecycle API | phase-3-brief.md | Queued, not dispatched | Accepted Phase 2 |
 | 4 Actual ingestion | phase-4-brief.md | Queued, not dispatched | Accepted Phases 2–3 |

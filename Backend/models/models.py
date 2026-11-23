@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func, false
+from sqlalchemy.sql import func, false, true
 from config.database import Base
 from utils.performance_levels import PerformanceLevel
 from utils.user_identity import default_user_full_name
@@ -332,6 +332,85 @@ class ProcessingJob(Base):
     )
 
 
+class TeamConfigurationVersion(Base):
+    """Existing team configuration version groundwork.
+
+    Coverage lives on this table. Legacy performance rows keep a null
+    configuration_version_id until a later phase assigns one. Team CASCADE and
+    actor SET NULL match the migrated foreign keys; they are not a retention
+    guarantee.
+    """
+
+    __tablename__ = "team_configuration_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    team_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("teams.id", ondelete="CASCADE", name="team_configuration_versions_team_id_fkey"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False)
+    effective_month = Column(String(20), nullable=False)
+    effective_year = Column(SmallInteger, nullable=False)
+    config_snapshot = Column(JSON, nullable=False)
+    config_checksum = Column(String(64), nullable=False)
+    created_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", name="team_configuration_versions_created_by_user_id_fkey"),
+        nullable=True,
+    )
+    published_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", name="team_configuration_versions_published_by_user_id_fkey"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    effective_from_month = Column(SmallInteger, nullable=False)
+    effective_from_year = Column(SmallInteger, nullable=False)
+    effective_until_month = Column(SmallInteger, nullable=True)
+    effective_until_year = Column(SmallInteger, nullable=True)
+    preview_snapshot = Column(JSON, nullable=True)
+    total_weight = Column(Numeric(7, 4), nullable=True)
+    overall_score = Column(Numeric(10, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=true())
+
+    team = relationship("Team")
+    created_by_user = relationship("User", foreign_keys=[created_by_user_id])
+    published_by_user = relationship("User", foreign_keys=[published_by_user_id])
+    performance_records = relationship("PerformanceRecord", back_populates="configuration_version")
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "version_number", name="uq_team_config_version"),
+        CheckConstraint(
+            "effective_from_month BETWEEN 1 AND 12",
+            name="ck_team_config_effective_from_month",
+        ),
+        CheckConstraint(
+            "effective_until_month IS NULL OR effective_until_month BETWEEN 1 AND 12",
+            name="ck_team_config_effective_until_month",
+        ),
+        CheckConstraint(
+            "effective_until_year IS NULL OR "
+            "(effective_until_year * 12 + effective_until_month) >= "
+            "(effective_from_year * 12 + effective_from_month)",
+            name="ck_team_config_effective_range",
+        ),
+        Index(
+            "idx_team_config_coverage",
+            "team_id",
+            "status",
+            "effective_from_year",
+            "effective_from_month",
+            "effective_until_year",
+            "effective_until_month",
+        ),
+    )
+
+
 class PerformanceRecord(Base):
     __tablename__ = "performance_records"
 
@@ -357,11 +436,26 @@ class PerformanceRecord(Base):
     # Excel evidence (calls, geo, actuals and raw columns) without JSON files.
     record_payload = Column(JSON_COMPAT_TYPE, nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Nullable: existing rows are not assigned a historical version.
+    configuration_version_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "team_configuration_versions.id",
+            ondelete="SET NULL",
+            name="fk_performance_records_configuration_version",
+        ),
+        nullable=True,
+    )
 
     # Relationships
     employee = relationship("Employee", back_populates="performance_records")
     team = relationship("Team")
     kpi_values = relationship("KPIValue", back_populates="performance_record")
+    configuration_version = relationship(
+        "TeamConfigurationVersion",
+        foreign_keys=[configuration_version_id],
+        back_populates="performance_records",
+    )
 
     __table_args__ = (
         CheckConstraint(f"performance_level IN ('{PerformanceLevel.EMPLOYEE.value}', '{PerformanceLevel.MANAGERIAL.value}', '{PerformanceLevel.CORPORATE.value}')", name='ck_performance_record_level'),
