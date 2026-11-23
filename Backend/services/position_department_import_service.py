@@ -29,6 +29,7 @@ REGION_BY_TEAM = {
     "human resources": "EGY",
     "it": "EGY",
     "offshore admin & management": "EGY",
+    "quality management": "EGY",
     "call center": "EGY",
     "marketing": "EGY",
     "pharmacy": "UAE",

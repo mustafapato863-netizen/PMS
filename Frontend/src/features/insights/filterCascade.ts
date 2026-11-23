@@ -19,7 +19,7 @@ import {
  */
 export const INSIGHT_FUNCTIONS = [
   'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
-  'Finance', 'Human Resources', 'IT', 'Administration',
+  'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
 ] as const;
 
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */

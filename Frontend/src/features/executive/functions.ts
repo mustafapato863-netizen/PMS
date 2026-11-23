@@ -69,6 +69,7 @@ const SLUGS: Record<ExecutiveFunction, string> = {
   'Human Resources': 'human-resources',
   IT: 'it',
   Administration: 'administration',
+  'Quality Management': 'quality-management',
 };
 
 export function functionSlug(name: ExecutiveFunction): string {

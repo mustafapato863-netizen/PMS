@@ -308,3 +308,85 @@ def test_position_import_stores_percent_rates_and_ticket_compliance():
         assert float(august["achievement_ratio"]) == pytest.approx(0.9)
     finally:
         session.close()
+
+
+def test_quality_management_template_import_and_engine_registration():
+    from config.loader import load_team_config, resolve_position_config, validate_team_config
+    from services.ai.catalog import get_ai_catalog
+    from services.ai.router import _detect_position, _detect_teams_in_prompt
+    from utils.report_scope import function_for_team
+
+    config = load_team_config("Quality Management")
+    ok, errs = validate_team_config(config)
+    assert ok, errs
+    assert config["region"] == "EGY"
+    assert function_for_team("Quality Management") == "Quality Management"
+    assert resolve_position_config(config, "Employee", "Infection Control Consultant")["kpis"]
+    assert resolve_position_config(config, "Employee", "Senior Quality Specialist")["kpis"]
+
+    catalog = get_ai_catalog()
+    assert "Quality Management" in catalog.teams
+    assert catalog.teams["Quality Management"].region == "EGY"
+    assert "Infection Control Consultant" in catalog.teams["Quality Management"].positions
+    assert "Senior Quality Specialist" in catalog.teams["Quality Management"].positions
+    assert _detect_teams_in_prompt("how did quality management perform in october 2026?") == ["Quality Management"]
+    assert _detect_position("show senior quality specialist performance") == ("Quality Management", "Senior Quality Specialist")
+    assert _detect_position("show infection control consultant performance") == ("Quality Management", "Infection Control Consultant")
+
+    workbook = Workbook()
+    data = workbook.active
+    data.title = "KPI's Data"
+    data.append(DATA_HEADERS)
+    october = datetime(2026, 10, 1)
+    for row in [
+        ["70209", "Quality Management", "Mohamed samak", "Infection Control Consultant", "Managerial", october,
+         "Internal Process", "Infection Control Policy Compliance Rate", "Higher is Better", 0.35, 0.95, "%", 0.95, "%", 1],
+        ["70209", "Quality Management", "Mohamed samak", "Infection Control Consultant", "Managerial", october,
+         "Learning & Growth", "Staff Infection Control Training Completion Rate", "Higher is Better", 0.3, 1, "%", 1, "%", 1],
+        ["70209", "Quality Management", "Mohamed samak", "Infection Control Consultant", "Managerial", october,
+         "Internal Process", "Audit Findings Resolution Rate", "Higher is Better", 0.35, 0.9, "%", 0.9, "%", 1],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "Initiated the new Documentation Management System (DMS) project", "Higher is Better", 0.2, 0.95, "%", 0.93, "%", 0.9789473684210527],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "Pursued ISO certification for Telehealth services", "Higher is Better", 0.2, 1, "%", 0.95, "%", 0.95],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "JCI AJMAN branch preparation ", "Higher is Better", 0.15, 0.9, "%", 0.9, "%", 1],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "Completed all targeted department policies — 10+ department policies reviewed and edited", "Higher is Better", 0.15, 1, "%", 1, "%", 1],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "Completed all ISO documentation requirements — 50+ policies and SOPs, risk assessment, and objectives created and reviewed", "Higher is Better", 0.15, 1, "%", 1, "%", 1],
+        ["70178", "Quality Management", "Mostafa Ahmed Ramadan Mohammed", "Senior Quality Specialist\xa0", "Employee", october,
+         "Internal Process", "Job description completion — most of the Administration and Medical departments finalized", "Higher is Better", 0.15, 1, "%", 0.9, "%", 0.9],
+    ]:
+        data.append(row)
+
+    payload = io.BytesIO()
+    workbook.save(payload)
+
+    session = _db()
+    try:
+        result = import_uploaded_management_template(
+            session,
+            payload.getvalue(),
+            updated_by="tester",
+            source_filename="Template_Managment.xlsx",
+        )
+        assert result["position_records"] == 2
+        assert result["position_teams"] == ["Quality Management"]
+
+        team = session.query(Team).filter(Team.name == "Quality Management").one()
+        assert team.region == "EGY"
+        assert team.team_level == "employee"
+
+        records = {r.record_payload["employee_id"]: r for r in session.query(PerformanceRecord).all()}
+        assert set(records) == {"70209", "70178"}
+        assert records["70209"].position_name == "Infection Control Consultant"
+        assert records["70209"].record_payload["source_performance_level"] == "Managerial"
+        assert float(records["70209"].score) == pytest.approx(100.0, abs=0.05)
+
+        assert records["70178"].position_name == "Senior Quality Specialist"
+        assert records["70178"].record_payload["source_performance_level"] == "Employee"
+        assert float(records["70178"].score) == pytest.approx(97.08, abs=0.05)
+        assert len(records["70178"].record_payload["kpi_values"]) == 6
+    finally:
+        session.close()

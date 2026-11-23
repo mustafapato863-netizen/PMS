@@ -682,6 +682,7 @@ describe('position department sidebar', () => {
       { team: 'Human Resources', region: 'EGY', performance_level: 'Employee', position: 'HR Specialist' },
       { team: 'IT', region: 'EGY', performance_level: 'Employee', position: 'IT Technical Support' },
       { team: 'Offshore Admin & Management', region: 'EGY', performance_level: 'Employee', position: 'Offshore PMO' },
+      { team: 'Quality Management', region: 'EGY', performance_level: 'Employee', position: 'Infection Control Consultant' },
     ];
     mockedApiFetch.mockImplementation(async (path) => {
       if (path === '/api/config/teams') {
@@ -692,6 +693,7 @@ describe('position department sidebar', () => {
             { team: 'Human Resources', performance_levels: { Employee: {} } },
             { team: 'IT', performance_levels: { Employee: {} } },
             { team: 'Offshore Admin & Management', performance_levels: { Employee: {} } },
+            { team: 'Quality Management', performance_levels: { Employee: {} } },
           ],
         } as never;
       }
@@ -715,6 +717,7 @@ describe('position department sidebar', () => {
 
     expect(await screen.findByRole('link', { name: 'Human Resources' })).toHaveAttribute('href', '/team/human-resources?performance_level=Employee');
     expect(screen.getByRole('link', { name: 'IT' })).toHaveAttribute('href', '/team/it?performance_level=Employee');
+    expect(screen.getByRole('link', { name: 'Quality Management' })).toHaveAttribute('href', '/team/quality-management?performance_level=Employee');
     const administration = screen.getAllByRole('link', { name: 'Administration' });
     expect(administration.find((link) => link.getAttribute('href')?.startsWith('/team/administration')))
       .toHaveAttribute('href', '/team/administration?performance_level=Employee');

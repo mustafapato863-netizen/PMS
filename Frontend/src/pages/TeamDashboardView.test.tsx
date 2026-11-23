@@ -72,6 +72,7 @@ const EXPECTED_TITLE: Record<string, string> = {
   'Human Resources': 'Human Resources',
   'IT': 'IT',
   'Offshore Admin & Management': 'Administration',
+  'Quality Management': 'Quality Management',
   'Coding': 'Coding',
   'Coding EGY': 'Coding',
   'Inbound': 'Inbound',

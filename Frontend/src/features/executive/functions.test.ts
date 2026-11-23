@@ -7,9 +7,9 @@ describe('allowedFunctionsFor', () => {
   it('gives global roles all current functions regardless of accessible_functions', () => {
     expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual([
       'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
-      'Finance', 'Human Resources', 'IT', 'Administration',
+      'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
     ]);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(10);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(11);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -40,6 +40,7 @@ describe('function slugs and team paths', () => {
     expect(functionFromSlug('human-resources')).toBe('Human Resources');
     expect(functionFromSlug('it')).toBe('IT');
     expect(functionFromSlug('administration')).toBe('Administration');
+    expect(functionFromSlug('quality-management')).toBe('Quality Management');
     expect(functionFromSlug('treasury')).toBeNull();
   });
 

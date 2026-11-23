@@ -102,6 +102,7 @@ TEAM_ALIASES: dict[str, str] = {
     "human resources": "Human Resources",
     "hr": "Human Resources",
     "offshore admin & management": "Offshore Admin & Management",
+    "quality management": "Quality Management",
     "finance": "Finance",
     "crm": "CRM",
     "nursing": "Nursing",
