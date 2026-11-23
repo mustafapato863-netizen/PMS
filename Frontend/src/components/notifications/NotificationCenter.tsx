@@ -27,7 +27,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
 
   return (
     <div
-      className="w-96 max-h-[600px] bg-[var(--bg-surface)]/95 backdrop-blur-xl rounded-2xl
+      className="w-[min(24rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] max-h-[min(600px,calc(100dvh-7rem))] max-sm:w-full bg-[var(--bg-surface)]/95 backdrop-blur-xl rounded-2xl
         shadow-xl border border-[var(--border-light)] flex flex-col overflow-hidden"
     >
       {/* Header */}
