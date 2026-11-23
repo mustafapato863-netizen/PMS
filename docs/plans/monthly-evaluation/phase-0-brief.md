@@ -1,0 +1,21 @@
+<task>
+Implement only Phase 0 of PMS-EVAL-001: runtime/source inventory and golden calculation baseline, preparing a safe contract for the monthly targets, weights and KPI-direction feature. Read docs/plans/monthly-evaluation-settings-plan.md fully and docs/plans/monthly-evaluation/dispatch-contract.md fully. Follow their safety constraints. Do not implement schemas, new APIs or application behavior yet.
+
+Baseline is main commit 2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a. Your isolated branch is codex/evaluation-phase-0-audit. The canonical plan and queued prompts are supplied untracked inputs: do not change them. Write only docs/plans/monthly-evaluation/phase-0-audit.md, a machine-readable inventory without employee data if useful, and new narrowly named Backend/tests/test_evaluation_baseline_*.py (with small synthetic fixtures under a matching new tests fixture directory). No application source edits.
+
+Deliverables:
+1. Trace actual synchronous and queued upload/scoring/persistence, employee/team/position/Managerial/Corporate paths, historical reporting evidence, caches and every listed downstream consumer. Verify code references; do not just repeat the plan. Inventory all tracked team definitions dynamically, position/level scopes, synthetic parent versus source identities; identify how DB-only teams enter the runtime catalog.
+2. Audit existing team_configuration_versions/coverage/performance version migrations and ORM mappings, partitions and management config/snapshots. Separate migration-source facts, disposable migrated schema observations, and unknown real-local schema. Do not claim actual runtime schema was inspected without evidence. Do not read .env or connect to any database except disposable tests you create; ask the orchestrator for a verified read-only local inventory if required. Record exact missing evidence as a gate, not a reason to invent tables.
+3. Add characterization tests using current production calculation/resolution functions and synthetic evidence: higher/lower better, unchanged baseline, workbook/precomputed paths, Marketing aggregation-weight separation, management monthly snapshots if accessible safely, raw-input support boundaries, July/August different targets (55%/65%, 60% actual), no historical reinterpretation and narrow grant hierarchy. Tests must characterize actual current behavior, including deficiencies, without pretending a future resolver exists. Record which unsupported scenarios become implementation tests in later phases. Avoid asserting known wrong behavior as desired policy.
+4. Build an all-team coverage and recomputation-support matrix (target/weight/direction, raw vs precomputed, level/position, consumer integration), explicit business decision list, and proposed concrete Phase 1 reuse strategy/contracts backed by findings.
+5. Do not activate any new permissions or policies. Suggested initial defaults are proposals: Admin approval/apply; Performance Team draft/preview only via explicit capability; exact month; explicit copy-forward; workbook mode by default; explicit fixed-target opt-in/conflict handling; approve separate from apply.
+</task>
+<verification_loop>
+First inspect test isolation. Run only new baseline tests plus relevant existing scoring/config/scope tests, using synthetic fixtures and safe local process state. Prefix shell commands with rtk. Independently report actual command/output; do not run a database-writing full suite until isolation is verified. No frontend gates needed if unchanged. Check git diff whitespace. No weakening of existing tests. Phase 0 may be partial if live schema/catalog/golden data audit is unavailable; identify exactly what must be supplied before Phase 1.
+</verification_loop>
+<action_safety>
+Do not commit, push, create PRs, deploy, migrate/seed any existing database, read secrets, change grants, change application source or stop/restart running services. No production browser/API calls. Use apply_patch for file edits. No autonomous dispatch of other phases or broad implementation subagents.
+</action_safety>
+<structured_output_contract>
+Report complete/partial/blocked, touched files, exact tests and counts, audit facts versus inferences, decision/blocker list, next-phase contract and any scope deviations. Leave changes uncommitted for Codex review.
+</structured_output_contract>

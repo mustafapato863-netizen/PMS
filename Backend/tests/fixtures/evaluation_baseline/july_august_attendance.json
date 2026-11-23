@@ -1,0 +1,13 @@
+{
+  "scenario": "synthetic_higher_better_attendance",
+  "actual": 0.6,
+  "july_target": 0.55,
+  "august_target": 0.65,
+  "scale": "canonical_ratio",
+  "display_meaning": {
+    "actual": "60%",
+    "july_target": "55%",
+    "august_target": "65%"
+  },
+  "people": []
+}

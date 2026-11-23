@@ -1,0 +1,14 @@
+{
+  "definition": {
+    "key": "mb_cpl",
+    "label": "CPL",
+    "weight": 0.1,
+    "direction": "lower_better",
+    "unit": "AED",
+    "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}
+  },
+  "rows": [
+    {"actual_value": 20, "target_value": 10},
+    {"actual_value": 40, "target_value": 30}
+  ]
+}
