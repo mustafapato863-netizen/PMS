@@ -831,7 +831,7 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
 
     cat = get_ai_catalog()
     registry = cat.get_scope_certification_registry()
-    assert len(registry) == 18
+    assert len(registry) == 19
     assert all(r["enabled"] is True for r in registry)
     assert {r["team"] for r in registry if r["certified"] is True} == set()
 

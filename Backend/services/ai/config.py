@@ -70,6 +70,7 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
         "it",
         "administration",
         "offshore admin & management",
+        "quality management",
         "crm",
         "nursing",
         "pmo",
