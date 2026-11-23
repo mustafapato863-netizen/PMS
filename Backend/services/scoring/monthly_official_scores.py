@@ -19,6 +19,7 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 from config.loader import ConfigurationError, load_team_config
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.performance_dashboard_read_service import _has_real_activity
+from services.uae_published_scores import uses_published_score
 from utils.scoring_rules import score_percent
 from utils.team_identity import dedupe_egypt_resubmission_records, is_egypt_resubmission_team
 
@@ -1072,6 +1073,8 @@ def _record_display_score(record: Any) -> float | None:
         return None
     eval_obj = _val(record, "evaluation")
     raw = _val(eval_obj, "score") if eval_obj is not None else _val(record, "score")
+    if uses_published_score(_record_raw_data(record)):
+        return _finite_float(raw)
     return _normalize_performance_score(raw)
 
 
@@ -1132,6 +1135,18 @@ def official_team_score(
             score_basis="Monthly Review leader scorecard",
             employee_average=emp_avg_r1,
             sample_size=len(scores),
+        )
+
+    if any(uses_published_score(_record_raw_data(record)) for record in deduped):
+        return OfficialScoreResult(
+            entity_type="team",
+            entity_name=canonical_team,
+            measure="official",
+            score=emp_avg_r1,
+            score_basis="average published employee scores",
+            employee_average=emp_avg_r1,
+            sample_size=len(scores),
+            applied_pin=_records_use_applied_pin(deduped),
         )
 
     cfg = _resolve_team_config(deduped, canonical_team, configs=configs)

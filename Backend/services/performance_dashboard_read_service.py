@@ -25,6 +25,7 @@ from services.cache_service import CacheService
 from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.scoring_basis_comparison import compare_adjacent_records
+from services.uae_published_scores import uses_published_score
 from utils.branch_scope import record_matches_branch
 from utils.report_scope import canonical_scope_identity
 from utils.scoring_rules import letter_grade, score_percent
@@ -125,7 +126,7 @@ def _has_real_activity(record) -> bool:
         return False
     eval_obj = getattr(record, "evaluation", None)
     eval_score = getattr(eval_obj, "score", None) if eval_obj is not None else getattr(record, "score", None)
-    if _number(eval_score) > 0:
+    if _number(eval_score) > 0 or uses_published_score(getattr(record, "raw_data", None)):
         return True
     kpi_values = getattr(record, "kpi_values", None) or []
     if any(_number(value.get("contribution") if isinstance(value, dict) else getattr(value, "contribution", None)) > 0 for value in kpi_values):
@@ -157,12 +158,17 @@ def _has_real_activity(record) -> bool:
 
 
 def _score(record) -> float:
-    return score_percent(_number(record.evaluation.score))
+    value = _number(record.evaluation.score)
+    return value if uses_published_score(getattr(record, "raw_data", None)) else score_percent(value)
 
 
 def _stored_score(record) -> float:
     """Return the percentage score used by SQL cursor predicates (same rule as ``_score``)."""
-    return score_percent(_number(getattr(record, "score", 0)))
+    value = _number(getattr(record, "score", 0))
+    payload = getattr(record, "record_payload", None)
+    if isinstance(payload, dict) and uses_published_score(payload.get("raw_data")):
+        return value
+    return score_percent(value)
 
 
 def _grade(record, score: float) -> str:
@@ -845,4 +851,6 @@ class PerformanceDashboardReadService:
                 "evaluation": record.evaluation.model_dump(mode="json"),
                 "kpi_values": record.kpi_values,
             })
+            if uses_published_score(record.raw_data):
+                item["raw_data"] = {"ScoringMethod": record.raw_data["ScoringMethod"]}
         return item

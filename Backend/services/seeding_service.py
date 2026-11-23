@@ -63,6 +63,13 @@ from services.marketing_import_service import (
     legacy_offshore_sheet_enabled,
 )
 from utils.performance_status import status_for_grade
+from services.uae_published_scores import (
+    METHOD_ID as UAE_PUBLISHED_SCORE_METHOD,
+    has_published_score_columns,
+    published_kpi_values,
+    published_score,
+    uses_published_score,
+)
 from services.upload_record_collisions import (
     colliding_employee_ids,
     resolve_employee_month_collisions,
@@ -1090,7 +1097,7 @@ class DatabaseSeeder:
             records_to_clean_kpis = []
             kpis_to_insert = []
             record_thresholds: dict = {}
-            clinical_record_ids = set()
+            published_score_record_ids = set()
 
             # Build all workbook scope logs in memory. IDs are explicit, so
             # performance rows can reference them without one remote flush per
@@ -1214,8 +1221,8 @@ class DatabaseSeeder:
                 record_thresholds[db_record.id] = team_config.get("grade_thresholds") if team_config else None
                 if record.team == "CSR" and raw_data.get("ScoringMethod") == SHARJAH_CSR_METHOD_ID:
                     record_thresholds[db_record.id] = SHARJAH_CSR_GRADE_THRESHOLDS
-                if record.team in CLINICAL_TREND_TEAMS:
-                    clinical_record_ids.add(db_record.id)
+                if record.team in CLINICAL_TREND_TEAMS or uses_published_score(raw_data):
+                    published_score_record_ids.add(db_record.id)
 
                 if record.kpi_values:
                     for value in record.kpi_values:
@@ -1230,7 +1237,7 @@ class DatabaseSeeder:
                             weight_applied=safe_decimal(value.get("weight_applied")),
                             contribution=safe_decimal(value.get("contribution")),
                         ))
-                elif team_config and team_config.get("kpis"):
+                elif db_record.id not in published_score_record_ids and team_config and team_config.get("kpis"):
                     def _get_raw_val(data_dict: dict, col_name: str | None):
                         if not data_dict or not col_name:
                             return None
@@ -1322,7 +1329,7 @@ class DatabaseSeeder:
 
                 for rec_id, kv_list in kpi_by_rec.items():
                     rec = rec_map.get(rec_id)
-                    if rec and rec_id not in clinical_record_ids:
+                    if rec and rec_id not in published_score_record_ids:
                         final_score = self._score_from_kpi_rows(
                             kv_list,
                             final_total_cap=self._final_total_cap(rec, kv_list),
@@ -1566,6 +1573,15 @@ class DatabaseSeeder:
                     if not region_val or region_val == "NAN":
                         region_val = "UAE" if team_name in ["Sales", "Coding", "CSR", "Pharmacy", "Submission", "Re-Submission", "Pre-Approvals OP Dubai", "Pre-Approvals IP Final Dubai", "Pre-Approvals IP Elective Dubai", "Pre-Approvals OP Final SHJAJM", "Pre-Approvals IP Final SHJAJM"] else "EGY"
 
+                    row_dict = row.to_dict()
+                    if uses_published_score(row_dict):
+                        row_dict.pop("ScoringMethod")
+                    source_score = None
+                    if has_published_score_columns(team_name, region_val, performance_level, row_dict):
+                        source_score = published_score(team_name, row_dict)
+                        if source_score is None:
+                            continue
+
                     employee = Employee(
                         id=emp_id,
                         name=name,
@@ -1639,7 +1655,6 @@ class DatabaseSeeder:
                         )
                     )
 
-                    row_dict = row.to_dict()
                     team_trace["kpi_attempted"] = True
                     offshore_scored = None
                     if team_name == OFFSHORE_TEAM_NAME and performance_level == "Employee":
@@ -1647,7 +1662,15 @@ class DatabaseSeeder:
                         if offshore_period is not None and uses_new_method(*offshore_period):
                             offshore_config = load_team_config(team_name)
                             offshore_scored = score_offshore_row(row_dict, offshore_config)
-                    if offshore_scored is not None:
+                    if source_score is not None:
+                        score, grade = source_score
+                        row_dict["ScoringMethod"] = UAE_PUBLISHED_SCORE_METHOD
+                        config = resolve_team_config(load_team_config(team_name), performance_level, position)
+                        kpi_values = published_kpi_values(team_name, row_dict, score, config)
+                        scored_kpis = [value for value in kpi_values if not value.get("view_only")]
+                        achievements = {value["kpi_key"]: value["achievement_ratio"] for value in scored_kpis}
+                        weights_used = {value["kpi_key"]: value["weight_applied"] for value in scored_kpis}
+                    elif offshore_scored is not None:
                         score = offshore_scored.score
                         grade = offshore_scored.grade
                         kpi_values = offshore_kpi_values(offshore_scored, config_kpi_meta(offshore_config))
@@ -1704,7 +1727,9 @@ class DatabaseSeeder:
                         productivity_ach=achievements.get("Productivity") if "Productivity" in achievements else None,
                     )
 
-                    root_cause = self.analysis_service.run_root_cause_analysis(team_name, achievements, weights_used, row_dict)
+                    root_cause = None
+                    if source_score is None or weights_used:
+                        root_cause = self.analysis_service.run_root_cause_analysis(team_name, achievements, weights_used, row_dict)
                     if root_cause and kpi_values:
                         root_value = next((value for value in kpi_values if value["kpi_key"] == root_cause.kpi), None)
                         if root_value:
