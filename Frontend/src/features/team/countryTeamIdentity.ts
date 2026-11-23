@@ -46,6 +46,30 @@ const LEGACY_ROUTES: Record<string, { routeId: string; region: TeamCountry }> = 
 const exactKey = (value: string | null | undefined) =>
   String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+/**
+ * Final Pre-Approvals workstreams are user-facing merged teams backed by
+ * source workbooks. `canonicalTeamName` in types.ts merges these same source
+ * names; this file keeps its own copy of the mapping because types.ts
+ * imports `sharedTeamRoute` from here, so importing it back would cycle.
+ */
+const MERGED_TEAM_SOURCES: Record<string, string> = {
+  'pre-approvals op dubai': 'Pre-Approvals OP Final',
+  'pre-approvals op final shjajm': 'Pre-Approvals OP Final',
+  'pre-approvals ip final dubai': 'Pre-Approvals IP Final',
+  'pre-approvals ip final shjajm': 'Pre-Approvals IP Final',
+};
+
+/** Merged identity of a team name. A merged name maps to itself; other names pass through unchanged. */
+export function mergedTeamName(name: string | null | undefined): string {
+  const raw = String(name ?? '').trim();
+  return MERGED_TEAM_SOURCES[exactKey(raw)] ?? raw;
+}
+
+/** Same team after the Pre-Approvals Final merge (case-insensitive). */
+export function sameMergedTeam(left: string | null | undefined, right: string | null | undefined): boolean {
+  return exactKey(mergedTeamName(left)) === exactKey(mergedTeamName(right));
+}
+
 export const EGYPT_RESUBMISSION_TEAM_ALIASES = ['Resubmission', 'Re-Submission EGY'] as const;
 
 export function isEgyptResubmissionTeam(value: string | null | undefined): boolean {
@@ -229,5 +253,9 @@ export function recordMatchesCatalogTeam(input: {
   if (country && sourceNamesFor(input.catalogTeam, country).length) {
     return sameCountryBusinessTeam(input.recordTeam, input.catalogTeam, country);
   }
-  return exactKey(input.recordTeam) === exactKey(input.catalogTeam);
+  // Records carry the merged Final name (via canonicalTeamName) while the
+  // catalog keeps the source workbook names, so compare merged identities.
+  // The merge is idempotent: a merged name maps to itself and other names
+  // pass through unchanged, so this also covers the plain exact match.
+  return sameMergedTeam(input.recordTeam, input.catalogTeam);
 }

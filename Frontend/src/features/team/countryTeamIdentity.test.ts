@@ -8,6 +8,7 @@ import {
   distinctCatalogTeams,
   isEgyptResubmissionTeam,
   legacySharedTeamRedirect,
+  mergedTeamName,
   presentationTeamName,
   recordMatchesCatalogTeam,
   sameCountryBusinessTeam,
@@ -103,6 +104,96 @@ describe('country team identity', () => {
       recordRegion: 'EGY',
       catalogTeam: 'Pre-Approvals IP Offshore',
       catalogRegion: 'EGY',
+    })).toBe(false);
+  });
+
+  it('matches merged Pre-Approvals Final records to their source catalog teams', () => {
+    // The merge is idempotent: a merged name maps to itself, other names pass through.
+    expect(mergedTeamName('Pre-Approvals OP Final')).toBe('Pre-Approvals OP Final');
+    expect(mergedTeamName('Pre-Approvals OP Dubai')).toBe('Pre-Approvals OP Final');
+    expect(mergedTeamName('Pre-Approvals IP Final SHJAJM')).toBe('Pre-Approvals IP Final');
+    expect(mergedTeamName('Pharmacy')).toBe('Pharmacy');
+
+    // A merged OP Final record matches both OP source catalog teams.
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals OP Final',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals OP Dubai',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals OP Final',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals OP Final SHJAJM',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+
+    // A merged IP Final record matches both IP source catalog teams.
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals IP Final',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals IP Final Dubai',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals IP Final',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals IP Final SHJAJM',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+
+    // The merge works both ways: a source record matches the other source team.
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals OP Dubai',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals OP Final SHJAJM',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+
+    // A non-merged team still matches only itself.
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pharmacy',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pharmacy',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(true);
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pharmacy',
+      recordRegion: 'UAE',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals IP Final',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
+    })).toBe(false);
+
+    // The merge must not blur distinct teams or regions.
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals IP Final',
+      recordRegion: 'EGY',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals IP Offshore',
+      catalogRegion: 'EGY',
+      levels: ['Employee'],
+    })).toBe(false);
+    expect(recordMatchesCatalogTeam({
+      recordTeam: 'Pre-Approvals OP Final',
+      recordRegion: 'EGY',
+      recordLevel: 'Employee',
+      catalogTeam: 'Pre-Approvals OP Dubai',
+      catalogRegion: 'UAE',
+      levels: ['Employee'],
     })).toBe(false);
   });
 
