@@ -36,6 +36,50 @@
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.23), 0 0 0 4px color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 10%, transparent);
 }
 
+/* Docked (in-toolbar) trigger: the floating launcher's circular language,
+   sized to a toolbar row (~40px). It sits in-flow, never drags, and never
+   reads or writes a stored position. */
+.responsive-filter-docked {
+  position: relative;
+  flex: 0 0 auto;
+  height: 40px;
+}
+
+.responsive-filter-docked .responsive-filter-trigger {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 24%, var(--border-light));
+  border-radius: 999px;
+  color: var(--sgh-cyan-primary, #00A3E0);
+  background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12), 0 1px 4px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.responsive-filter-docked .responsive-filter-trigger:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 55%, var(--border-light));
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16), 0 0 0 4px color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 10%, transparent);
+}
+
+.responsive-filter-docked .responsive-filter-trigger:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 60%, white);
+  outline-offset: 3px;
+}
+
+.responsive-filter-docked .responsive-filter-trigger:hover .responsive-filter-tooltip,
+.responsive-filter-docked .responsive-filter-trigger:focus-visible .responsive-filter-tooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
 .responsive-filter-launcher .responsive-filter-trigger:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:focus-visible,
@@ -117,6 +161,11 @@
   box-shadow: 0 26px 80px rgba(15, 23, 42, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1);
   translate: 0 -50%;
   transform-origin: right center;
+}
+
+/* A docked panel sits below its trigger instead of centering vertically. */
+.responsive-filter-panel--docked[role='dialog'] {
+  translate: none;
 }
 
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__header,
@@ -325,6 +374,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .responsive-filter-launcher .responsive-filter-trigger,
+  .responsive-filter-docked .responsive-filter-trigger,
   .responsive-filter-tooltip,
   .responsive-filter-panel__close,
   .responsive-filter-panel__clear,
@@ -334,7 +384,8 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .responsive-filter-launcher .responsive-filter-trigger {
+  .responsive-filter-launcher .responsive-filter-trigger,
+  .responsive-filter-docked .responsive-filter-trigger {
     background: var(--bg-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

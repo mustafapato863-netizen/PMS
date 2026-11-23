@@ -3,7 +3,7 @@ import { isMonthAvailable, periodFromKey } from './model';
 
 export function presentationMonthOptions(
   records: Array<{ region: string | null; periodKey: string }>,
-  region: 'EGY' | 'UAE',
+  region: 'EGY' | 'UAE' | 'ALL',
   today: Date,
   displayedKey: string,
 ): Array<{ key: string; label: string }> {
@@ -15,7 +15,8 @@ export function presentationMonthOptions(
   };
 
   for (const record of records) {
-    if (normalizeRegion(record.region) !== region) continue;
+    // The All view lists months measured in either region.
+    if (region !== 'ALL' && normalizeRegion(record.region) !== region) continue;
     include(record.periodKey);
   }
   include(displayedKey);

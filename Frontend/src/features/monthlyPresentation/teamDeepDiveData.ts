@@ -4,6 +4,7 @@ import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import type { ObservationStatus } from '../ai/types';
 import {
   kpiRows,
+  normalizeRegion,
   periodFromKey,
   periodOf,
   trailingPeriods,
@@ -16,8 +17,10 @@ import {
   canonicalEgyptResubmissionTeam,
   dedupeEgyptResubmissionRecords,
   isEgyptResubmissionTeam,
+  parseTeamCountry,
   sameCountryBusinessTeam,
   sourceNamesFor,
+  type TeamCountry,
 } from '../team/countryTeamIdentity';
 import { compareScoringBasis } from '../evaluation/scoringBasisComparison';
 import { calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
@@ -35,12 +38,14 @@ import {
   fullGradeLabel,
   getBaselineFunctionDeepDive,
   mapWeakestKpiToOwner,
+  regionDisplayName,
   scopeRecordsToRegion,
   slugifyIdentifier,
   type AgentKeyKpiItem,
   type CallCenterDeepDiveData,
   type FullGradeLabel,
   type KpiMonthlyPoint,
+  type MonthlyRegion,
 } from './callCenterDeepDiveData';
 
 export type TeamSlug = string;
@@ -293,7 +298,7 @@ export interface TeamDeepDiveData {
   functionName: string;
   functionSlug?: string;
   siblingTeams?: TeamSibling[];
-  regionCode: 'EGY' | 'UAE';
+  regionCode: 'EGY' | 'UAE' | 'ALL';
   regionName: string;
   monthLabel: string;
   previousMonthLabel: string;
@@ -1795,14 +1800,14 @@ const CALL_CENTER_SIBLINGS: TeamSibling[] = [
   { slug: 'outbound', label: 'Outbound Agents' },
 ];
 
-function withCallCenterNav(data: TeamDeepDiveData, region: 'EGY' | 'UAE'): TeamDeepDiveData {
+function withCallCenterNav(data: TeamDeepDiveData, region: MonthlyRegion): TeamDeepDiveData {
   return {
     ...data,
     functionName: 'Call Center',
     functionSlug: 'call-center',
     siblingTeams: CALL_CENTER_SIBLINGS,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
   };
 }
 
@@ -1846,7 +1851,7 @@ function kpiFromBaseline(kpi: AgentKeyKpiItem, headcount: number): TeamKpiItem {
 
 function teamFromBaseline(
   located: { data: CallCenterDeepDiveData; teamIndex: number },
-  region: 'EGY' | 'UAE',
+  region: MonthlyRegion,
 ): TeamDeepDiveData {
   const team = located.data.agentTeams[located.teamIndex];
   const siblings = located.data.agentTeams.map((item) => ({
@@ -1902,7 +1907,7 @@ function teamFromBaseline(
     functionSlug: located.data.functionSlug,
     siblingTeams: siblings,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
     monthLabel: located.data.monthLabel,
     previousMonthLabel: located.data.previousMonthLabel,
     periodKey: located.data.periodKey,
@@ -1951,20 +1956,31 @@ function teamFromBaseline(
   };
 }
 
-function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTeam: string, region: 'EGY' | 'UAE'): ExecRecord[] {
-  const knownCountrySources = sourceNamesFor(teamSlug, region).length > 0 || sourceNamesFor(canonicalTeam, region).length > 0;
+function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTeam: string, region: MonthlyRegion): ExecRecord[] {
+  // In the All view the alias sources span both countries; in a single-region
+  // view only that region's sources count (unchanged behavior there).
+  const countries: TeamCountry[] = region === 'ALL' ? ['EGY', 'UAE'] : [region];
+  const knownCountrySources = countries.some(
+    (country) => sourceNamesFor(teamSlug, country).length > 0 || sourceNamesFor(canonicalTeam, country).length > 0,
+  );
+  // The country a shared business name belongs to comes from each record;
+  // the view region is only the fallback, so the All view still matches
+  // records to the catalog team in their own region.
+  const countryFor = (record: ExecRecord): TeamCountry =>
+    parseTeamCountry(normalizeRegion(record.region)) ?? (region === 'ALL' ? 'EGY' : region);
   const filtered = allRecords.filter((record) => {
+    const country = countryFor(record);
     if (knownCountrySources) {
       return (
-        sameCountryBusinessTeam(record.team, teamSlug, region)
-        || sameCountryBusinessTeam(record.team, canonicalTeam, region)
+        sameCountryBusinessTeam(record.team, teamSlug, country)
+        || sameCountryBusinessTeam(record.team, canonicalTeam, country)
       );
     }
     return (
       slugifyIdentifier(record.team) === teamSlug
       || record.team.toLowerCase() === canonicalTeam.toLowerCase()
-      || sameCountryBusinessTeam(record.team, teamSlug, region)
-      || sameCountryBusinessTeam(record.team, canonicalTeam, region)
+      || sameCountryBusinessTeam(record.team, teamSlug, country)
+      || sameCountryBusinessTeam(record.team, canonicalTeam, country)
     );
   });
   return dedupeEgyptResubmissionRecords(filtered);
@@ -1981,12 +1997,17 @@ function buildGenericTeamDeepDive(
   teamSlug: string,
   allRecords: ExecRecord[],
   actions: PMSAction[],
-  region: 'EGY' | 'UAE',
+  region: MonthlyRegion,
   requestedPeriodKey?: string,
 ): TeamDeepDiveData {
-  const sourceName = sourceNamesFor(teamSlug, region)[0];
+  // In the All view a shared team may be sourced from either country.
+  const sourceName = region === 'ALL'
+    ? (sourceNamesFor(teamSlug, 'EGY')[0] ?? sourceNamesFor(teamSlug, 'UAE')[0])
+    : sourceNamesFor(teamSlug, region)[0];
   const lookupSlug = sourceName ? slugifyIdentifier(sourceName) : teamSlug;
-  const located = region === 'UAE' ? null : locateBaselineTeam(lookupSlug);
+  // Only Egypt may borrow its September baseline team; UAE and the combined
+  // All view render the truthful empty state instead.
+  const located = region === 'EGY' ? locateBaselineTeam(lookupSlug) : null;
   const canonicalTeam = located?.data.agentTeams[located.teamIndex].canonicalTeam ?? sourceName ?? teamSlug;
   const teamRecords = recordsForSlug(allRecords, teamSlug, canonicalTeam, region);
   if (!teamRecords.length) {
@@ -2009,7 +2030,7 @@ function buildGenericTeamDeepDive(
       functionSlug: slugifyIdentifier(executiveFunctionForTeam(canonicalTeam) || 'team'),
       siblingTeams: [],
       regionCode: region,
-      regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+      regionName: regionDisplayName(region),
       monthLabel: fallbackFn.monthLabel,
       previousMonthLabel: fallbackFn.previousMonthLabel,
       periodKey: requestedPeriodKey || fallbackFn.periodKey,
@@ -2195,7 +2216,7 @@ function buildGenericTeamDeepDive(
     functionSlug: fnSlug,
     siblingTeams,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
     monthLabel: `${effective.month} ${effective.year}`,
     previousMonthLabel: previous?.month ?? 'August',
     periodKey: effective.key,
@@ -2295,7 +2316,7 @@ export function buildTeamDeepDiveFromRecords(
   teamSlug: TeamSlug,
   allRecords: ExecRecord[],
   actions: PMSAction[] = [],
-  region: 'EGY' | 'UAE' = 'EGY',
+  region: MonthlyRegion = 'EGY',
   requestedPeriodKey?: string,
 ): TeamDeepDiveData {
   const scopedRecords = scopeRecordsToRegion(allRecords, region);
@@ -2312,7 +2333,7 @@ export function buildTeamDeepDiveFromRecords(
 
   const teamRecords = scopedRecords.filter((r) => r.team === canonicalTeam);
   if (!teamRecords.length) {
-    if (region === 'UAE') {
+    if (region !== 'EGY') {
       return buildGenericTeamDeepDive(normalizedSlug, [], actions, region, requestedPeriodKey);
     }
     return withCallCenterNav(
@@ -2341,7 +2362,7 @@ export function buildTeamDeepDiveFromRecords(
   const before = inPeriod(teamRecords, previous);
 
   if (!current.length) {
-    if (region === 'UAE') {
+    if (region !== 'EGY') {
       return buildGenericTeamDeepDive(normalizedSlug, [], actions, region, requestedPeriodKey);
     }
     return withCallCenterNav({
@@ -2650,7 +2671,7 @@ export function buildTeamDeepDiveFromRecords(
     teamDisplayName: `${canonicalTeam} Agents`,
     functionName: 'Call Center',
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
     monthLabel: `${effective.month} ${effective.year}`,
     previousMonthLabel: previous?.month ?? 'August',
     periodKey: effective.key,
