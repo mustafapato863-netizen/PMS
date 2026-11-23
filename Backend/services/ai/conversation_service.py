@@ -426,6 +426,15 @@ class AiConversationService:
     def _is_turn_evidence_authorized(self, turn_row: AiTurn, eff_scope: dict[str, Any]) -> bool:
         """Revalidate access to the specific stored plan, response payload, and evidence items before replaying."""
         v_plan = turn_row.validated_plan if isinstance(turn_row.validated_plan, dict) else {}
+        if any(
+            isinstance(operation, dict) and operation.get("kind") == "roster_comparison"
+            for operation in (v_plan.get("operations") or [])
+        ):
+            # A roster comparison may span every team, region and branch in the
+            # original scope. The result depends on that whole scope.
+            summary = turn_row.evidence_summary or {}
+            if summary.get("scope_fingerprint") != compute_scope_fingerprint(eff_scope):
+                return False
         plan_scope = v_plan.get("scope") if isinstance(v_plan.get("scope"), dict) else {}
         resp = turn_row.response_payload if isinstance(turn_row.response_payload, dict) else {}
         struct_q = resp.get("structured_query") if isinstance(resp.get("structured_query"), dict) else {}

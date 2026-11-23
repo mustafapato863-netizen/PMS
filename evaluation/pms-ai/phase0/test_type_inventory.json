@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 67,
-  "case_count": 873,
+  "file_count": 68,
+  "case_count": 885,
   "files_by_label": {
     "synthetic": 18,
-    "mocked": 46,
+    "mocked": 47,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -479,6 +479,16 @@
       ],
       "cases": 1,
       "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_roster_comparison.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 12,
+      "evidence_status": "partial",
       "note": ""
     },
     {

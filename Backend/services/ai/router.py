@@ -3753,10 +3753,15 @@ class HybridQueryRouter:
                 )
             )
         )
-        model_led_admin_active = bool(
-            cfg.model_led_pilot_enabled
-            and provider_override != "deterministic"
-            and str(self.scope.get("role") or "").strip() == "Admin"
+        model_led_admin_active = cfg.can_use_model_led_planner(self.scope.get("role"), provider_override)
+        needs_semantic_plan = (
+            (fell_into_default_current_value and not has_valid_current_value_signal)
+            or (
+                intent == "compare_periods"
+                and not (explicit_metric or explicit_team or explicit_fn_from_prompt or resolved_employee_id)
+                and not (is_short_followup and has_active_prior)
+                and not re.search(r"\b(?:performance|scores?|kpis?|targets?|overview|summary)\b", lower)
+            )
         )
         if (
             fell_into_default_current_value
@@ -4235,19 +4240,20 @@ class HybridQueryRouter:
 
         # Phase 2: Model-led pilot path - structured tool calling when enabled for Admins
         if (
-            cfg.model_led_pilot_enabled
+            model_led_admin_active
             and not plan.verified_comparison
             and not ranked_action_request
             and not explicit_kpi_question_kind(text)
             and not (asks_corrective_actions and re.search(r"\bopen\s+corrective\s+actions?\b", lower))
-            and provider_override != "deterministic"
-            and str(self.scope.get("role") or "").strip() == "Admin"
             and matched_pattern is None
         ):
+            from services.ai.roster_comparison import ROSTER_TOOL_NAME, ROSTER_TOOL_SCHEMA
             from services.ai.tool_registry import DeterministicToolRegistry
 
-            # Authoritative tool schemas from DeterministicToolRegistry
-            tool_schemas = DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS
+            tool_schemas = {
+                **DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS,
+                ROSTER_TOOL_NAME: ROSTER_TOOL_SCHEMA,
+            }
             tool_spec_lines = []
             for t_name, t_schema in tool_schemas.items():
                 props = t_schema.get("properties") or {}
@@ -4346,8 +4352,14 @@ class HybridQueryRouter:
                 "4. Use 'explain_scoring_rules_and_targets' when asked how scorecards are set up or how scoring, weights, targets, caps or grades work.\n"
                 "5. Use 'simulate_kpi_improvement' for What-If projections.\n"
                 "6. For persona='self_only', bind first-person questions ('my score', 'how am I doing') to the caller's employee_code.\n"
-                "7. CRITICAL: Always return response_type 'tool_call' for ANY question about scores, performance, KPIs, metrics, trends, rankings, or comparisons (including short follow-ups like 'And in August?'). "
-                "'conversational' is ONLY for non-data greetings like 'hello'. Ask 'clarification' ONLY when a missing choice materially changes the answer and cannot be resolved from Context.\n"
+                "7. For changes in who or what appears between evaluation periods, use 'compare_evaluation_rosters' "
+                "with entity, baseline_period and target_period. Roster presence is independent of scores. "
+                "Use the dates and direction from the question or verified context and call it on its own.\n"
+                "8. Return 'tool_call' for supported data questions, even if the wording is unfamiliar. "
+                "Use catalog discovery when the unresolved detail can be found in PMS. "
+                "Ask one specific 'clarification' only when a missing user choice would change the result. "
+                "Return 'unsupported' if the question cannot be answered from the available tools. "
+                "Never give data, scores, or other PMS factual answers in a conversational response.\n"
                 'For two independent analytical parts, return {"response_type":"tool_call","tool_calls":[{"tool_name":"...","tool_arguments":{...}},{"tool_name":"...","tool_arguments":{...}}]}. '
                 'For a single analytical part, return {"response_type":"tool_call","tool_name":"<tool>","tool_arguments":{...}}. '
                 'Or {"response_type":"conversational","direct_response":"..."} or {"response_type":"clarification","clarification_prompt":"...","clarification_choices":[...]}.'
@@ -4393,6 +4405,9 @@ class HybridQueryRouter:
                 context_parts.append(f"Metric: {context_metric}")
             if plan.periods:
                 context_parts.append(f"Period: {', '.join(plan.periods)}")
+            if prior and prior.last_operation_kind == "roster_comparison" and len(prior.periods) == 2:
+                baseline_period, target_period = prior.periods
+                context_parts.append(f"Prior roster comparison: baseline {baseline_period}, target {target_period}")
             if prior and prior.ranking_winner:
                 context_parts.append(
                     f"Prior Ranking Entity: {prior.ranking_winner.entity}; Remembered Ranking Winner: {prior.ranking_winner.entity}={prior.ranking_winner.name}"
@@ -4450,7 +4465,7 @@ class HybridQueryRouter:
                     "properties": {
                         "response_type": {
                             "type": "string",
-                            "enum": ["tool_call", "conversational", "clarification"],
+                            "enum": ["tool_call", "conversational", "clarification", "unsupported"],
                         },
                         "tool_name": {"type": ["string", "null"]},
                         "tool_arguments": {
@@ -4484,7 +4499,7 @@ class HybridQueryRouter:
                 timeout_seconds=planner_timeout,
                 purpose="model_led_router",
                 task_role="investigation" if (
-                    asks_ranking_person or asks_trend or (prior and is_short_followup)
+                    needs_semantic_plan or asks_ranking_person or asks_trend or (prior and is_short_followup)
                     or bool(plan.position) or asks_score_drivers or asks_team_comparison or asks_branch_comparison
                     or len(text.split()) >= 8
                     or parse_query_rankings_spec(text) is not None or is_broad_overview_prompt(text)
@@ -4528,7 +4543,7 @@ class HybridQueryRouter:
                     route_used = "model_led_pilot"
                     provider_metrics = metrics_from_provider_response(
                         resp,
-                        provider_calls=1 if resp.usage.total_tokens > 0 else 0,
+                        provider_calls=max(len(resp.attempts), 1),
                     )
 
                     confirmed_ctx = prior.model_copy() if prior else ConfirmedQueryContext()
@@ -4585,7 +4600,21 @@ class HybridQueryRouter:
                             "tool_arguments": tool_args,
                         }
                         plan.model_led_tool_calls = parsed_calls
-                        if tool_name == "query_rankings" and not (asks_branch_comparison and asks_booking_count_prompt):
+                        if len(parsed_calls) > 1 and any(call["tool_name"] == ROSTER_TOOL_NAME for call in parsed_calls):
+                            return RouterValidationResult(
+                                outcome="unsupported_request",
+                                plan=StructuredQueryPlan(intent="unsupported", turn_kind_v2="unsupported"),
+                                confirmed_context=confirmed_ctx,
+                                route_used="model_led_pilot",
+                                provider_metrics=provider_metrics,
+                                headline="PMS can compare evaluation rosters in a separate question.",
+                            )
+                        if tool_name == ROSTER_TOOL_NAME:
+                            plan.intent = "compare_periods"
+                            plan.operation_kind_v2 = "roster_comparison"
+                            plan.requested_parts = ["roster_comparison"]
+                            plan.single_person = False
+                        elif tool_name == "query_rankings" and not (asks_branch_comparison and asks_booking_count_prompt):
                             plan.intent = "ranking"
                             plan.operation_kind_v2 = "ranking"
                             plan.single_person = False
@@ -4664,8 +4693,7 @@ class HybridQueryRouter:
                             suggested_followups=[],
                         )
                     elif model_output.get("response_type") == "conversational":
-                        direct_txt = model_output.get("direct_response") or ""
-                        # Guard: If model returned conversational for a performance question, convert to tool call
+                        # Recover the verified person lookup for an explicit employee question.
                         is_perf_q = any(
                             kw in lower for kw in (
                                 "score", "performance", "kpi", "target", "trend", "rank",
@@ -4703,36 +4731,41 @@ class HybridQueryRouter:
                                 narrative_bullets=[],
                                 suggested_followups=[],
                             )
-                        # Direct answer from model (for greetings, help, etc.)
-                        plan.model_led_direct_response = direct_txt
+                        provider_metrics.fallback_outcome = "invalid_response"
+                        route_used = "local_rules"
+                    elif model_output.get("response_type") == "unsupported":
                         return RouterValidationResult(
-                            outcome="answer",
-                            plan=plan,
+                            outcome="unsupported_request",
+                            plan=StructuredQueryPlan(intent="unsupported", turn_kind_v2="unsupported"),
                             confirmed_context=confirmed_ctx,
                             route_used="model_led_pilot",
                             provider_metrics=provider_metrics,
-                            headline=plan.model_led_direct_response or "",
-                            narrative_bullets=[],
-                            suggested_followups=[],
+                            headline="The available PMS reports do not provide the information needed to answer this question.",
                         )
                     elif model_output.get("response_type") == "clarification" and not scoped_overview:
-                        # Model wants to clarify
-                        plan.model_led_clarification = {
-                            "prompt": model_output.get("clarification_prompt"),
-                            "choices": model_output.get("clarification_choices", []),
-                        }
-                        return RouterValidationResult(
-                            outcome="clarification",
-                            plan=plan,
-                            confirmed_context=confirmed_ctx,
-                            route_used="model_led_pilot",
-                            provider_metrics=provider_metrics,
-                            headline=model_output.get("clarification_prompt") or "Clarification needed",
-                            narrative_bullets=[],
-                            suggested_followups=[],
-                        )
+                        question = model_output.get("clarification_prompt")
+                        if isinstance(question, str) and question.strip():
+                            focused_question = question.strip()[:300]
+                            plan.turn_kind_v2 = "clarification"
+                            plan.clarification_code = "AMBIGUOUS_KPI_SCOPE"
+                            return RouterValidationResult(
+                                outcome="clarification",
+                                plan=plan,
+                                confirmed_context=confirmed_ctx,
+                                route_used="model_led_pilot",
+                                provider_metrics=provider_metrics,
+                                headline=focused_question,
+                                clarification=AiClarificationPrompt(
+                                    code=plan.clarification_code, question=focused_question, choices=[],
+                                ),
+                            )
+                        provider_metrics.fallback_outcome = "invalid_response"
+                        route_used = "local_rules"
                     elif model_output.get("response_type") == "clarification":
                         # The validated country and month are enough for an overall review.
+                        route_used = "local_rules"
+                    else:
+                        provider_metrics.fallback_outcome = "invalid_response"
                         route_used = "local_rules"
             except Exception as e:
                 # Preserve failure attribution when falling back to deterministic path
@@ -4745,6 +4778,15 @@ class HybridQueryRouter:
                     )
                 route_used = "local_rules"
 
+            if needs_semantic_plan:
+                return RouterValidationResult(
+                    outcome="unavailable_data",
+                    plan=StructuredQueryPlan(intent="clarify", turn_kind_v2="clarification"),
+                    confirmed_context=prior or ConfirmedQueryContext(),
+                    route_used="local_rules",
+                    provider_metrics=provider_metrics,
+                    headline="I couldn't verify a PMS lookup for this question. Please try again in a moment.",
+                )
 
         # Experimental TF-IDF classifier is offline-only and never trained from test fixtures during live requests.
 
@@ -4812,7 +4854,7 @@ class HybridQueryRouter:
                 plan.operation_kind_v2 = precomputed_intent.intent
                 route_used = "local_model_router"
         elif (
-            not (cfg.model_led_pilot_enabled and str(self.scope.get("role") or "").strip() == "Admin")
+            not model_led_admin_active
             and provider_override == "auto"
             and local_intent_enabled()
             and matched_pattern is None

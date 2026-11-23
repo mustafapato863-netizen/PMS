@@ -106,6 +106,13 @@ class AiRuntimeConfig:
     model_led_pilot_enabled: bool = False
     guided_reads_enabled: bool = False
 
+    def can_use_model_led_planner(self, role: str | None, provider_override: str | None) -> bool:
+        return (
+            self.model_led_pilot_enabled
+            and (role or "").strip() == "Admin"
+            and provider_override != "deterministic"
+        )
+
     def is_scope_allowed_for_cloud(self, team_or_function: str | None) -> bool:
         if "*" in self.pilot_scopes:
             return True

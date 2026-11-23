@@ -83,6 +83,8 @@ Keep discovery under current RBAC, including role changes mid-conversation. Rest
 
 **Exit gate** · Live requests use typed lookups, then one shared scoring or ranking path. Explicit September stays September in plan, executed tool and answer. An unavailable September produces a clear unavailability result.
 
+For the Admin pilot, add unfamiliar phrasings to the same tool-selection checks. Include terse shorthand, a clearly stated question about an unsupported data source, and a simulated planner outage. For roster comparisons, verify that the model chooses the operation and that PMS checks the requested periods and authorized scope before calculating who appears in one evaluation period and is absent in the other. When the planner fails, use a verified fallback that answers the requested comparison or explain that the lookup could not be verified.
+
 ### Phase 3 · Preserve context and publish concise answers
 
 1. Save the verified subject, rank result references, metric and reporting scope using existing conversation state. Store references to results with rank order and evidence provenance where needed. Resolve later references against the owned, reauthorized conversation and use explicit changes immediately.
@@ -96,6 +98,7 @@ Keep discovery under current RBAC, including role changes mid-conversation. Rest
 
 1. Redirect callers to the shared lookup, validation and execution modules. Move traffic out of the old language heuristics gradually and verify each removal through import checks, regression tests and measured results.
 2. Use one shared deadline and budgets across discovery, planning, answer, repair and any provider failover. Start with up to three planning/discovery rounds, up to six authorized reads and one repair. Prefer one planning call and one read for straightforward questions. Choose provider-specific limits, reasoning effort and concurrency from Phase 1 measurements; do not apply an unverified high-effort setting globally.
+   Use the investigation task route when the local parser cannot establish the requested analytical operation, including short questions. Keep the same turn deadline and verify the actual provider and reasoning effort in staging.
 3. Reuse cached verified evidence by effective access scope, normalized plan, reporting/data revision and scoring configuration version. Invalidate after data uploads, scoring changes and grant changes. Preserve accurate limit and provider attribution.
 4. Maintain server-side daily user controls as configurable settings. Keep the current settings during the pilot until the daily cap is selected. Measure time from browser submission to the first usable answer and separate routing, lookup, synthesis and fallback timings. Report p50 and p95 by question family, along with provider attempts, cost coverage, cache hits and failure rates.
 

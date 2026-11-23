@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-MODEL_LED_PLANNER_PROMPT_VERSION = "model-led-planner-v3"
+MODEL_LED_PLANNER_PROMPT_VERSION = "model-led-planner-v4"
 MODEL_LED_SYNTHESIS_PROMPT_VERSION = "model-led-synthesis-v2"
 INTENT_CLASSIFIER_PROMPT_VERSION = "intent-classifier-v1"
 NARROW_EVIDENCE_SYNTHESIS_PROMPT_VERSION = "narrow-evidence-synthesis-v1"

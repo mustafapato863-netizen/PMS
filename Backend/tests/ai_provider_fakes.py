@@ -74,6 +74,7 @@ class ScriptedProviderEngine:
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature,
                 "purpose": request.purpose,
+                "task_role": request.task_role,
                 "json_schema": request.json_schema,
                 "timeout_seconds": request.timeout_seconds,
             }
