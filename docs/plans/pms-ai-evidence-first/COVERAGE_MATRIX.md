@@ -39,6 +39,7 @@ To prevent unwarranted claims of capability, every cell in this matrix is classi
 | **Shared** | `Human Resources` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — position-level KPIs only |
 | **Shared** | `IT` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — position-level KPIs only |
 | **Shared** | `Offshore Admin & Management` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — position-level KPIs only |
+| **Shared** | `Quality Management` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — position-level KPIs only |
 
 ---
 ### 2.2 UAE Operations

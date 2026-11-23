@@ -50,7 +50,7 @@
         "source": "Backend/config/teams/submission_egy.json#sheet_team"
       },
       {
-        "count": 54,
+        "count": 56,
         "mappings": [
           {
             "alias": "account manager",
@@ -227,6 +227,12 @@
             "target": "Support Positions / Inbound Team Leader"
           },
           {
+            "alias": "infection control consultant",
+            "country": null,
+            "kind": "position",
+            "target": "Quality Management / Infection Control Consultant"
+          },
+          {
             "alias": "it technical support",
             "country": null,
             "kind": "position",
@@ -317,6 +323,12 @@
             "target": "Resubmission / Resubmission Analyst"
           },
           {
+            "alias": "senior quality specialist",
+            "country": null,
+            "kind": "position",
+            "target": "Quality Management / Senior Quality Specialist"
+          },
+          {
             "alias": "sgh uae group nursing director",
             "country": null,
             "kind": "position",
@@ -380,7 +392,7 @@
         "source": "Backend/services/ai/catalog.py#POSITION_ENGLISH_ALIASES"
       },
       {
-        "count": 169,
+        "count": 174,
         "mappings": [
           {
             "alias": "CRM",
@@ -537,6 +549,12 @@
             "country": "UAE",
             "kind": "team",
             "target": "Pre-Approvals OP Final SHJAJM"
+          },
+          {
+            "alias": "Quality Management",
+            "country": "EGY",
+            "kind": "team",
+            "target": "Quality Management"
           },
           {
             "alias": "RCM",
@@ -1229,6 +1247,30 @@
             "target": "PMO"
           },
           {
+            "alias": "qm",
+            "country": "EGY",
+            "kind": "team",
+            "target": "Quality Management"
+          },
+          {
+            "alias": "quality department",
+            "country": "EGY",
+            "kind": "team",
+            "target": "Quality Management"
+          },
+          {
+            "alias": "quality management",
+            "country": "EGY",
+            "kind": "team",
+            "target": "Quality Management"
+          },
+          {
+            "alias": "quality team",
+            "country": "EGY",
+            "kind": "team",
+            "target": "Quality Management"
+          },
+          {
             "alias": "rcm",
             "country": "shared",
             "kind": "team",
@@ -1640,7 +1682,7 @@
         "source": "Frontend/src/features/team/countryTeamIdentity.ts#COUNTRY_ALIASES"
       },
       {
-        "count": 29,
+        "count": 30,
         "mappings": [
           {
             "alias": "administration",
@@ -1775,6 +1817,12 @@
             "target": "Pre-Approvals"
           },
           {
+            "alias": "quality-management",
+            "country": null,
+            "kind": "route-db",
+            "target": "Quality Management"
+          },
+          {
             "alias": "rcm",
             "country": null,
             "kind": "route-db",
@@ -1820,7 +1868,7 @@
         "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP"
       },
       {
-        "count": 58,
+        "count": 60,
         "mappings": [
           {
             "alias": "CSR",
@@ -1953,6 +2001,12 @@
             "country": null,
             "kind": "route",
             "target": "Pre-Approvals OP Final SHJAJM"
+          },
+          {
+            "alias": "Quality Management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality Management"
           },
           {
             "alias": "RCM",
@@ -2129,6 +2183,12 @@
             "target": "Pre-Approvals"
           },
           {
+            "alias": "quality-management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality Management"
+          },
+          {
             "alias": "rcm",
             "country": null,
             "kind": "route",
@@ -2174,7 +2234,7 @@
         "source": "Frontend/src/types.ts#TEAM_ID_MAP"
       },
       {
-        "count": 29,
+        "count": 30,
         "mappings": [
           {
             "alias": "administration",
@@ -2307,6 +2367,12 @@
             "country": null,
             "kind": "route-display",
             "target": "Pre-Approvals"
+          },
+          {
+            "alias": "quality-management",
+            "country": null,
+            "kind": "route-display",
+            "target": "Quality Management"
           },
           {
             "alias": "rcm",
@@ -3623,6 +3689,7 @@
       "PMO",
       "Pharmacy",
       "Pre-Approvals",
+      "Quality Management",
       "RCM",
       "Sales"
     ],
@@ -3878,6 +3945,16 @@
         "team": "Pre-Approvals OP Final SHJAJM"
       },
       {
+        "level": "Employee",
+        "position": "Infection Control Consultant",
+        "team": "Quality Management"
+      },
+      {
+        "level": "Employee",
+        "position": "Senior Quality Specialist",
+        "team": "Quality Management"
+      },
+      {
         "level": "Corporate",
         "position": "Group RCM Director",
         "team": "RCM"
@@ -3936,6 +4013,7 @@
       "Pre-Approvals IP Offshore",
       "Pre-Approvals OP Dubai",
       "Pre-Approvals OP Final SHJAJM",
+      "Quality Management",
       "RCM",
       "Re-Submission",
       "Resubmission",
@@ -3945,7 +4023,7 @@
     ]
   },
   "corrective_action_pilot": {
-    "cell_count": 70,
+    "cell_count": 72,
     "cells": [
       {
         "basis": "template",
@@ -4882,6 +4960,78 @@
         "position": "Web Developer",
         "subteam": "",
         "team": "Marketing"
+      },
+      {
+        "basis": "template",
+        "country": "EGY",
+        "function": "Quality Management",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "Infection Control Consultant",
+        "subteam": "",
+        "team": "Quality Management"
+      },
+      {
+        "basis": "template",
+        "country": "EGY",
+        "function": "Quality Management",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "Senior Quality Specialist",
+        "subteam": "",
+        "team": "Quality Management"
       },
       {
         "basis": "template",
@@ -6470,7 +6620,7 @@
     ],
     "counts_by_need": {
       "kpi_actual": {
-        "blocked": 70,
+        "blocked": 72,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
@@ -6479,19 +6629,19 @@
       "kpi_direction": {
         "blocked": 1,
         "not applicable": 0,
-        "partial": 69,
+        "partial": 71,
         "verified": 0,
         "verified no data": 0
       },
       "kpi_target": {
-        "blocked": 70,
+        "blocked": 72,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
         "verified no data": 0
       },
       "prior_corrective_actions": {
-        "blocked": 70,
+        "blocked": 72,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
@@ -6510,21 +6660,21 @@
   "counts": {
     "alias_conflicts": 37,
     "countries": 3,
-    "functions": 14,
-    "kpis": 402,
+    "functions": 15,
+    "kpis": 411,
     "kpis_not_in_score": 35,
     "levels": 3,
     "matrix_by_status": {
-      "blocked": 735,
+      "blocked": 749,
       "not applicable": 35,
       "partial": 14,
       "verified": 0,
       "verified no data": 0
     },
-    "matrix_cells": 784,
-    "position_level_pairs": 56,
-    "positions": 55,
-    "teams": 28,
+    "matrix_cells": 798,
+    "position_level_pairs": 58,
+    "positions": 57,
+    "teams": 29,
     "unexplained_active": 0
   },
   "doc_disagreements": [],
@@ -7106,6 +7256,36 @@
     },
     {
       "active": true,
+      "country": "EGY",
+      "db_name": "Quality Management",
+      "explanation_source": "Backend/config/teams/quality_management.json",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "functions": [
+        "Quality Management"
+      ],
+      "id": "team:Quality Management",
+      "kind": "team",
+      "missing_evidence": [
+        "teams.is_active is database state and was not read",
+        "upload_log / performance_records published months were not read"
+      ],
+      "ownership": {
+        "config_region": "EGY",
+        "named_owner": null,
+        "note": "Organizational scope from config region and rcm_group. Config files do not name a person owner.",
+        "rcm_group": null,
+        "scope": "EGY"
+      },
+      "rcm_domain": null,
+      "rcm_group": null,
+      "region": "EGY",
+      "source": "Backend/config/teams/quality_management.json",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "active": true,
       "country": "shared",
       "db_name": "RCM",
       "explanation_source": "Backend/config/teams/rcm.json",
@@ -7379,7 +7559,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "926b727c0c555cc22d1a05f4d5cc752ac12368df96a77b0b210255c38a139acb",
+  "inputs_fingerprint": "2fbdf5db57f453584d4bc62b4e831e2869c931ea4560835f8798405501948efd",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -13382,6 +13562,222 @@
       "team": "Pre-Approvals OP Final SHJAJM",
       "unit": "%",
       "weight": 0.4
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "infection_contro_policy_compliance_rate",
+      "label": "Infection Control Policy Compliance Rate",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Infection Control Consultant",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.35
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "infection_contro_staff_training_completion_rate",
+      "label": "Staff Infection Control Training Completion Rate",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Infection Control Consultant",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.3
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "infection_contro_audit_findings_resolution_rate",
+      "label": "Audit Findings Resolution Rate",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Infection Control Consultant",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.35
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_dms_project_initiation",
+      "label": "Initiated the new Documentation Management System (DMS) project",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.2
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_iso_telehealth_certification",
+      "label": "Pursued ISO certification for Telehealth services",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.2
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_jci_ajman_branch_preparation",
+      "label": "JCI AJMAN branch preparation",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.15
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_targeted_department_policies",
+      "label": "Completed all targeted department policies — 10+ department policies reviewed and edited",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.15
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_iso_documentation_requiremen",
+      "label": "Completed all ISO documentation requirements — 50+ policies and SOPs, risk assessment, and objectives created and reviewed",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.15
+    },
+    {
+      "actual_col": "Actual Value",
+      "aggregation_method": "weighted_average",
+      "basis": "template",
+      "country": "EGY",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Quality Management",
+      "key": "senior_quality_s_job_description_completion",
+      "label": "Job description completion — most of the Administration and Medical departments finalized",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "Senior Quality Specialist",
+      "region": "EGY",
+      "score_population": "pooled",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "target_col": "Target Value",
+      "team": "Quality Management",
+      "unit": "%",
+      "weight": 0.15
     },
     {
       "actual_col": "Actual Value",
@@ -22914,6 +23310,340 @@
       "status_basis": "not_checked",
       "subteam": "",
       "team": "Marketing"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Route id quality-management is present. Access was not checked with user_can_access_team.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Infection Control Consultant",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Infection Control Consultant.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Route id quality-management is present. Access was not checked with user_can_access_team.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
+    },
+    {
+      "basis": "template",
+      "country": "EGY",
+      "freshness": "published period not in the repo",
+      "function": "Quality Management",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "EGY",
+      "permission_check": "not_run",
+      "position": "Senior Quality Specialist",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/quality_management.json#performance_levels.Employee.positions.Senior Quality Specialist.kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Quality Management"
     },
     {
       "basis": "template",
