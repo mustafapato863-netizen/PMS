@@ -1682,7 +1682,7 @@
         "source": "Frontend/src/features/team/countryTeamIdentity.ts#COUNTRY_ALIASES"
       },
       {
-        "count": 30,
+        "count": 32,
         "mappings": [
           {
             "alias": "administration",
@@ -1713,6 +1713,12 @@
             "country": null,
             "kind": "route-db",
             "target": "CSR"
+          },
+          {
+            "alias": "er-dr",
+            "country": null,
+            "kind": "route-db",
+            "target": "ER Dr"
           },
           {
             "alias": "finance",
@@ -1817,6 +1823,12 @@
             "target": "Pre-Approvals"
           },
           {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route-db",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
             "alias": "quality-management",
             "country": null,
             "kind": "route-db",
@@ -1868,7 +1880,7 @@
         "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP"
       },
       {
-        "count": 60,
+        "count": 64,
         "mappings": [
           {
             "alias": "CSR",
@@ -1893,6 +1905,12 @@
             "country": null,
             "kind": "route",
             "target": "Coding EGY"
+          },
+          {
+            "alias": "ER Dr",
+            "country": null,
+            "kind": "route",
+            "target": "ER Dr"
           },
           {
             "alias": "Finance",
@@ -2003,6 +2021,12 @@
             "target": "Pre-Approvals OP Final SHJAJM"
           },
           {
+            "alias": "Qlty&Case-Mngt",
+            "country": null,
+            "kind": "route",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
             "alias": "Quality Management",
             "country": null,
             "kind": "route",
@@ -2079,6 +2103,12 @@
             "country": null,
             "kind": "route",
             "target": "CSR"
+          },
+          {
+            "alias": "er-dr",
+            "country": null,
+            "kind": "route",
+            "target": "ER Dr"
           },
           {
             "alias": "finance",
@@ -2183,6 +2213,12 @@
             "target": "Pre-Approvals"
           },
           {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
             "alias": "quality-management",
             "country": null,
             "kind": "route",
@@ -2234,7 +2270,7 @@
         "source": "Frontend/src/types.ts#TEAM_ID_MAP"
       },
       {
-        "count": 30,
+        "count": 32,
         "mappings": [
           {
             "alias": "administration",
@@ -2265,6 +2301,12 @@
             "country": null,
             "kind": "route-display",
             "target": "CSR"
+          },
+          {
+            "alias": "er-dr",
+            "country": null,
+            "kind": "route-display",
+            "target": "ER Dr"
           },
           {
             "alias": "finance",
@@ -2367,6 +2409,12 @@
             "country": null,
             "kind": "route-display",
             "target": "Pre-Approvals"
+          },
+          {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route-display",
+            "target": "Qlty&Case-Mngt"
           },
           {
             "alias": "quality-management",
@@ -3681,6 +3729,7 @@
       "CRM",
       "CSR",
       "Call Center",
+      "ER Dr",
       "Finance",
       "Human Resources",
       "IT",
@@ -3689,8 +3738,10 @@
       "PMO",
       "Pharmacy",
       "Pre-Approvals",
+      "Qlty&Case-Mngt",
       "Quality Management",
       "RCM",
+      "Radiologist",
       "Sales"
     ],
     "levels": [
@@ -3996,6 +4047,7 @@
       "Call Center",
       "Coding",
       "Coding EGY",
+      "ER Dr",
       "Finance",
       "Human Resources",
       "IT",
@@ -4013,8 +4065,10 @@
       "Pre-Approvals IP Offshore",
       "Pre-Approvals OP Dubai",
       "Pre-Approvals OP Final SHJAJM",
+      "Qlty&Case-Mngt",
       "Quality Management",
       "RCM",
+      "Radiologist",
       "Re-Submission",
       "Resubmission",
       "Sales",
@@ -4023,7 +4077,7 @@
     ]
   },
   "corrective_action_pilot": {
-    "cell_count": 72,
+    "cell_count": 75,
     "cells": [
       {
         "basis": "template",
@@ -5322,6 +5376,42 @@
         "team": "CSR"
       },
       {
+        "basis": "template",
+        "country": "UAE",
+        "function": "ER Dr",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "",
+        "subteam": "",
+        "team": "ER Dr"
+      },
+      {
         "basis": "corporate_bsc_catalog",
         "country": "UAE",
         "function": "Finance",
@@ -5608,6 +5698,42 @@
         "position": "SHJ Pharmacy Manager",
         "subteam": "",
         "team": "Pharmacy"
+      },
+      {
+        "basis": "template",
+        "country": "UAE",
+        "function": "Qlty&Case-Mngt",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "",
+        "subteam": "",
+        "team": "Qlty&Case-Mngt"
       },
       {
         "basis": "template",
@@ -6116,6 +6242,42 @@
       {
         "basis": "template",
         "country": "UAE",
+        "function": "Radiologist",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "",
+        "subteam": "",
+        "team": "Radiologist"
+      },
+      {
+        "basis": "template",
+        "country": "UAE",
         "function": "Sales",
         "level": "Corporate",
         "needs": {
@@ -6620,7 +6782,7 @@
     ],
     "counts_by_need": {
       "kpi_actual": {
-        "blocked": 72,
+        "blocked": 75,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
@@ -6629,19 +6791,19 @@
       "kpi_direction": {
         "blocked": 1,
         "not applicable": 0,
-        "partial": 71,
+        "partial": 74,
         "verified": 0,
         "verified no data": 0
       },
       "kpi_target": {
-        "blocked": 72,
+        "blocked": 75,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
         "verified no data": 0
       },
       "prior_corrective_actions": {
-        "blocked": 72,
+        "blocked": 75,
         "not applicable": 0,
         "partial": 0,
         "verified": 0,
@@ -6660,21 +6822,21 @@
   "counts": {
     "alias_conflicts": 37,
     "countries": 3,
-    "functions": 15,
-    "kpis": 411,
+    "functions": 18,
+    "kpis": 414,
     "kpis_not_in_score": 35,
     "levels": 3,
     "matrix_by_status": {
-      "blocked": 749,
+      "blocked": 770,
       "not applicable": 35,
       "partial": 14,
       "verified": 0,
       "verified no data": 0
     },
-    "matrix_cells": 798,
+    "matrix_cells": 819,
     "position_level_pairs": 58,
     "positions": 57,
-    "teams": 29,
+    "teams": 32,
     "unexplained_active": 0
   },
   "doc_disagreements": [],
@@ -6798,6 +6960,36 @@
       "source": "Backend/config/teams/csr.json",
       "subteam": "",
       "team": "CSR"
+    },
+    {
+      "active": true,
+      "country": "UAE",
+      "db_name": "ER Dr",
+      "explanation_source": "Backend/config/teams/er_dr.json",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "functions": [
+        "ER Dr"
+      ],
+      "id": "team:ER Dr",
+      "kind": "team",
+      "missing_evidence": [
+        "teams.is_active is database state and was not read",
+        "upload_log / performance_records published months were not read"
+      ],
+      "ownership": {
+        "config_region": "UAE",
+        "named_owner": null,
+        "note": "Organizational scope from config region and rcm_group. Config files do not name a person owner.",
+        "rcm_group": null,
+        "scope": "UAE"
+      },
+      "rcm_domain": null,
+      "rcm_group": null,
+      "region": "UAE",
+      "source": "Backend/config/teams/er_dr.json",
+      "subteam": "",
+      "team": "ER Dr"
     },
     {
       "active": true,
@@ -7256,6 +7448,36 @@
     },
     {
       "active": true,
+      "country": "UAE",
+      "db_name": "Qlty&Case-Mngt",
+      "explanation_source": "Backend/config/teams/qlty_case_mngt.json",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "functions": [
+        "Qlty&Case-Mngt"
+      ],
+      "id": "team:Qlty&Case-Mngt",
+      "kind": "team",
+      "missing_evidence": [
+        "teams.is_active is database state and was not read",
+        "upload_log / performance_records published months were not read"
+      ],
+      "ownership": {
+        "config_region": "UAE",
+        "named_owner": null,
+        "note": "Organizational scope from config region and rcm_group. Config files do not name a person owner.",
+        "rcm_group": null,
+        "scope": "UAE"
+      },
+      "rcm_domain": null,
+      "rcm_group": null,
+      "region": "UAE",
+      "source": "Backend/config/teams/qlty_case_mngt.json",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "active": true,
       "country": "EGY",
       "db_name": "Quality Management",
       "explanation_source": "Backend/config/teams/quality_management.json",
@@ -7283,6 +7505,36 @@
       "source": "Backend/config/teams/quality_management.json",
       "subteam": "",
       "team": "Quality Management"
+    },
+    {
+      "active": true,
+      "country": "UAE",
+      "db_name": "Radiologist",
+      "explanation_source": "Backend/config/teams/radiologist.json",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "functions": [
+        "Radiologist"
+      ],
+      "id": "team:Radiologist",
+      "kind": "team",
+      "missing_evidence": [
+        "teams.is_active is database state and was not read",
+        "upload_log / performance_records published months were not read"
+      ],
+      "ownership": {
+        "config_region": "UAE",
+        "named_owner": null,
+        "note": "Organizational scope from config region and rcm_group. Config files do not name a person owner.",
+        "rcm_group": null,
+        "scope": "UAE"
+      },
+      "rcm_domain": null,
+      "rcm_group": null,
+      "region": "UAE",
+      "source": "Backend/config/teams/radiologist.json",
+      "subteam": "",
+      "team": "Radiologist"
     },
     {
       "active": true,
@@ -7559,7 +7811,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "2fbdf5db57f453584d4bc62b4e831e2869c931ea4560835f8798405501948efd",
+  "inputs_fingerprint": "080cd9c7aa7845544b3807c2a469d6ebccaac2ee966a36d71fb1c3f407896794",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -8232,6 +8484,30 @@
       "team": "CSR",
       "unit": "%",
       "weight": 0.3
+    },
+    {
+      "actual_col": "PerformanceScore",
+      "aggregation_method": "average",
+      "basis": "template",
+      "country": "UAE",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "ER Dr",
+      "key": "PerformanceScore",
+      "label": "Performance Score",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "",
+      "region": "UAE",
+      "score_population": "employee",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "target_col": "$1",
+      "team": "ER Dr",
+      "unit": "%",
+      "weight": 1
     },
     {
       "actual_col": "Actual Value",
@@ -13564,6 +13840,30 @@
       "weight": 0.4
     },
     {
+      "actual_col": "PerformanceScore",
+      "aggregation_method": "average",
+      "basis": "template",
+      "country": "UAE",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Qlty&Case-Mngt",
+      "key": "PerformanceScore",
+      "label": "Performance Score",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "",
+      "region": "UAE",
+      "score_population": "employee",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "target_col": "$1",
+      "team": "Qlty&Case-Mngt",
+      "unit": "%",
+      "weight": 1
+    },
+    {
       "actual_col": "Actual Value",
       "aggregation_method": "weighted_average",
       "basis": "template",
@@ -13778,6 +14078,30 @@
       "team": "Quality Management",
       "unit": "%",
       "weight": 0.15
+    },
+    {
+      "actual_col": "PerformanceScore",
+      "aggregation_method": "average",
+      "basis": "template",
+      "country": "UAE",
+      "definition_issues": [],
+      "direction": "higher_better",
+      "effective_from": null,
+      "function": "Radiologist",
+      "key": "PerformanceScore",
+      "label": "Performance Score",
+      "level": "Employee",
+      "not_in_score": false,
+      "not_in_score_reason": null,
+      "position": "",
+      "region": "UAE",
+      "score_population": "employee",
+      "score_population_source": "aggregation.method on the KPI definition; ratio, sum, and weighted_average are pooled, average is per-employee",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "target_col": "$1",
+      "team": "Radiologist",
+      "unit": "%",
+      "weight": 1
     },
     {
       "actual_col": "Actual Value",
@@ -26005,6 +26329,173 @@
       "team": "CSR"
     },
     {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Route id er-dr is present. Access was not checked with user_can_access_team.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "ER Dr",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/er_dr.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "ER Dr"
+    },
+    {
       "basis": "corporate_bsc_catalog",
       "country": "UAE",
       "freshness": "published period not in the repo",
@@ -30378,6 +30869,173 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Route id quality-case-management is present. Access was not checked with user_can_access_team.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Qlty&Case-Mngt",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
       "function": "RCM",
       "level": "Employee",
       "measure": "",
@@ -33386,6 +34044,173 @@
       "status_basis": "not_checked",
       "subteam": "",
       "team": "Submission"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "No TEAM_ID_MAP route for this scope. Permission was not checked.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Radiologist"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "Radiologist",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/radiologist.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Radiologist"
     },
     {
       "basis": "template",

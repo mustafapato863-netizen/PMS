@@ -13,6 +13,8 @@ import logging
 from typing import Dict, Any, Optional
 from data_cleaning.standard_mappings import calculate_achievement, calculate_grade
 
+from services.csr_sharjah_scoring import SOURCE_COLUMNS as READ_COLUMNS
+
 logger = logging.getLogger(__name__)
 
 

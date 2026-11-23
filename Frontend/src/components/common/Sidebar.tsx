@@ -221,6 +221,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     if (item.region !== region || (scopedTeams && !scopedTeams.has(teamKey) && !(
       item.team === CALL_CENTER_TEAM && [...scopedTeams].some((team) => isCallCenterTeam(team))
     ))) return false;
+    if ('requiresData' in item && item.requiresData) return availableFromData.has(`${teamKey}:${level}`);
     return level === 'Employee'
       || configured[teamKey]?.includes(level)
       || availableFromData.has(`${teamKey}:${level}`);

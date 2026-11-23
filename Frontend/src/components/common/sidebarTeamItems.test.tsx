@@ -28,6 +28,9 @@ it('links each sidebar team item to its canonical team page', () => {
     ['Sales', '/team/sales'],
     ['CSR', '/team/csr'],
     ['Pharmacy', '/team/pharmacy'],
+    ['ER Dr', '/team/er-dr'],
+    ['Radiologist', '/team/radiologist'],
+    ['Qlty&Case-Mngt', '/team/quality-case-management'],
   ]);
 });
 

@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
 Version `2.1.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
-Input fingerprint `2fbdf5db57f453584d4bc62b4e831e2869c931ea4560835f8798405501948efd`.
+Input fingerprint `080cd9c7aa7845544b3807c2a469d6ebccaac2ee966a36d71fb1c3f407896794`.
 
 This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. The runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` use the same roadmap vocabulary (Phase 2, issue #94); `CERTIFIED` is never emitted.
 
@@ -32,12 +32,12 @@ Status words are only: verified, verified no data, partial, blocked, not applica
 
 ## Corrective-action pilot cells
 
-72 scorecard scopes. Plan: `docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md#First product pilot`.
+75 scorecard scopes. Plan: `docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md#First product pilot`.
 
-- kpi_actual: blocked 72
-- kpi_target: blocked 72
-- kpi_direction: partial 71, blocked 1
-- prior_corrective_actions: blocked 72
+- kpi_actual: blocked 75
+- kpi_target: blocked 75
+- kpi_direction: partial 74, blocked 1
+- prior_corrective_actions: blocked 75
 
 Each selectable scorecard scope the pilot would need. Actual and target numbers are not in the repo. Direction text is partial only when one config source states it and no second basis is waiting. That partial is not catalog partial_evidence. Runtime code is unchanged.
 
@@ -46,20 +46,20 @@ Alias conflicts are filed under `open_questions.unresolved_naming_and_hierarchy`
 ## Counts
 
 - Countries: 3 (EGY, UAE, shared)
-- Functions: 15 (Administration, CRM, CSR, Call Center, Finance, Human Resources, IT, Marketing, Nursing, PMO, Pharmacy, Pre-Approvals, Quality Management, RCM, Sales)
-- Teams: 29
+- Functions: 18 (Administration, CRM, CSR, Call Center, ER Dr, Finance, Human Resources, IT, Marketing, Nursing, PMO, Pharmacy, Pre-Approvals, Qlty&Case-Mngt, Quality Management, RCM, Radiologist, Sales)
+- Teams: 32
 - Positions: 57
 - Position/level pairs: 58
 - Levels: 3 (Corporate, Employee, Managerial)
-- KPIs: 411 (35 not in score)
-- Matrix cells: 798
+- KPIs: 414 (35 not in score)
+- Matrix cells: 819
 
 ### Matrix cells by status
 
 - verified: 0
 - verified no data: 0
 - partial: 14
-- blocked: 749
+- blocked: 770
 - not applicable: 35
 
 ## RCM Egypt and RCM UAE

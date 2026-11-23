@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getKPIsForAgent, type AgentRecord } from './types';
+import { resolveRecordGradeClass } from './hooks/usePerformanceData';
+import { resolveDisplayScore } from './utils/kpiScore';
 
 const csrAgent = {
   identity: { name: 'CSR Agent', month: 'June', team: 'CSR' },
@@ -22,4 +24,20 @@ describe('legacy CSR KPI cards', () => {
     expect(kpis.find((kpi) => kpi.label === 'Queries Handled')?.isLowerBetter).toBeFalsy();
     expect(kpis.find((kpi) => kpi.label === 'Rejection')?.isLowerBetter).toBe(true);
   });
+});
+
+it('shows the saved Sharjah CSR score, grade, and complaint deduction after the cutover', () => {
+  const record: AgentRecord = {
+    ...csrAgent,
+    identity: { ...csrAgent.identity, month: 'October' },
+    raw_data: { ScoringMethod: 'csr_sharjah_october_2026' },
+    evaluation: { ...csrAgent.evaluation, score: 89.9, grade: 'B' },
+    kpi_values: [{
+      kpi_key: 'Complaints', label: 'Complaints', unit: 'count', direction: 'lower_better',
+      actual_value: 1, target_value: 0, achievement_ratio: 0, weight_applied: 0, contribution: -0.20,
+    }],
+  };
+  expect(resolveDisplayScore(record, undefined)).toBe(89.9);
+  expect(resolveRecordGradeClass(record)).toBe('B');
+  expect(getKPIsForAgent(record)[0]?.contribution).toBe(-20);
 });

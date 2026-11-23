@@ -465,6 +465,9 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'IT': 'it',
   'Offshore Admin & Management': 'administration',
   'Quality Management': 'quality-management',
+  'ER Dr': 'er-dr',
+  Radiologist: 'radiologist',
+  'Qlty&Case-Mngt': 'quality-case-management',
 };
 
 export const TEAM_NAME_MAP: Record<string, string> = {
@@ -498,6 +501,9 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'it': 'IT',
   'administration': 'Administration',
   'quality-management': 'Quality Management',
+  'er-dr': 'ER Dr',
+  radiologist: 'Radiologist',
+  'quality-case-management': 'Qlty&Case-Mngt',
 };
 
 export const TEAM_DB_NAME_MAP: Record<string, string> = {
@@ -531,6 +537,9 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   'it': 'IT',
   'administration': 'Offshore Admin & Management',
   'quality-management': 'Quality Management',
+  'er-dr': 'ER Dr',
+  radiologist: 'Radiologist',
+  'quality-case-management': 'Qlty&Case-Mngt',
 };
 
 /** Letters and digits only: "Pre-Approvals IP Offshore", "pre-approvals-ip-offshore" and "PRE Approvals IP Offshore" share one key. */
@@ -1262,6 +1271,12 @@ function withInboundBookingRate(agent: AgentRecord, kpi: KPIConfig): KPIConfig {
   return { ...kpi, actual: rate, achievement, contribution };
 }
 
+export function usesStoredPeriodScore(agent: AgentRecord): boolean {
+  const team = agent.identity.team?.trim().toLowerCase();
+  return team === 'er dr' || team === 'radiologist' || team === 'qlty&case-mngt'
+    || (team === 'csr' && agent.raw_data?.ScoringMethod === 'csr_sharjah_october_2026');
+}
+
 export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   const team = agent.identity.team || 'Inbound';
   const actual = agent.actual || {};
@@ -1293,10 +1308,9 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
       achievement: Math.min(Math.max(kpi.achievement_ratio, 0), 1) * 100,
       weight: kpi.weight_applied,
       viewOnly: kpi.view_only === true || kpi.view_only === 1,
-      contribution: Math.min(
-        Math.max(kpi.contribution, 0),
-        Math.max(kpi.weight_applied, 0),
-      ) * 100,
+      contribution: usesStoredPeriodScore(agent) && kpi.kpi_key === 'Complaints'
+        ? kpi.contribution * 100
+        : Math.min(Math.max(kpi.contribution, 0), Math.max(kpi.weight_applied, 0)) * 100,
       evaluationPinned: kpi.evaluation_pinned === true,
     }));
   }

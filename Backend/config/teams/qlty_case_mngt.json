@@ -1,0 +1,29 @@
+{
+  "team": "Qlty&Case-Mngt",
+  "db_name": "Qlty&Case-Mngt",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 100,
+    "B": 89,
+    "C": 79,
+    "D": 69
+  },
+  "kpis": [
+    {
+      "key": "PerformanceScore",
+      "label": "Performance Score",
+      "weight": 1.0,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#4285F4",
+      "actual_col": "PerformanceScore",
+      "target_col": "$1",
+      "aggregation": {
+        "method": "average"
+      },
+      "capping": "capped_at_100"
+    }
+  ]
+}

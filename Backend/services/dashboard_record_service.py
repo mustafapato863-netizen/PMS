@@ -15,6 +15,8 @@ from config.loader import (
 )
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
+from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS
+from services.csr_sharjah_scoring import METHOD_ID as SHARJAH_CSR_METHOD_ID
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values, normalized_text_memo
 from services.outbound_period_basis import normalized_name_memo
 from services.preapprovals_offshore_scoring import NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID
@@ -559,7 +561,12 @@ class DashboardRecordService:
             payload = getattr(item, "record_payload", None)
             # Marketing's uploaded employee-month rows own their display definitions,
             # including KPIs not in the static catalog. Do not replace SQL numbers.
-            stored_metadata = _payload_kpi_metadata(payload) if _use_payload_kpi_metadata(
+            raw_payload = payload.get("raw_data") if isinstance(payload, dict) else None
+            use_stored_score = team_name in CLINICAL_TREND_TEAMS or (
+                team_name == "CSR" and isinstance(raw_payload, dict)
+                and raw_payload.get("ScoringMethod") == SHARJAH_CSR_METHOD_ID
+            )
+            stored_metadata = _payload_kpi_metadata(payload) if use_stored_score or _use_payload_kpi_metadata(
                 team_name, str(item.performance_level), payload
             ) else {}
 
@@ -574,6 +581,13 @@ class DashboardRecordService:
                 # The relational KPI values, normalised once and only when used. Elective Dubai keeps its
                 # configured KPIs.
                 if not scoped_cache:
+                    if use_stored_score:
+                        stored = relational_kpis()
+                        for value in stored:
+                            key = value["kpi_key"]
+                            value["direction"] = persisted_directions.get(key) or config_by_key.get(key, {}).get("direction")
+                        scoped_cache.append(stored)
+                        return stored
                     normalised = _normalise_kpi_values(
                         relational_kpis(), config, config_by_key, team_name, persisted_directions, memo
                     )
@@ -617,13 +631,13 @@ class DashboardRecordService:
                         inbound_calls=getattr(getattr(rich_record, "calls", None), "inbound", None),
                         geo=getattr(rich_record, "geo", None),
                     )
-                    repaired_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+                    repaired_kpis = [] if keep_stored_offshore_kpis or use_stored_score else build_legacy_employee_kpi_values(
                         team_name,
                         evidence_raw,
                         weights=persisted_weights,
                         config=config,
                     )
-                    canonical_kpis = _normalise_kpi_values(
+                    canonical_kpis = scoped_relational() if use_stored_score else _normalise_kpi_values(
                         repaired_kpis or scoped_relational() or rich_record.kpi_values,
                         config,
                         config_by_key,
@@ -637,7 +651,7 @@ class DashboardRecordService:
                         float(value.get("contribution", 0.0) or 0.0) > 0
                         for value in canonical_kpis
                     )
-                    if canonical_kpis and has_measured_contribution:
+                    if not use_stored_score and canonical_kpis and has_measured_contribution:
                         reconciled_score = round(
                             min(sum(float(value.get("contribution", 0.0)) for value in canonical_kpis), 1.0) * 100.0,
                             2,
@@ -694,19 +708,20 @@ class DashboardRecordService:
                 inbound_calls=fallback_calls.get("inbound") if isinstance(fallback_calls, dict) else None,
                 geo=payload.get("geo") if isinstance(payload, dict) else None,
             )
-            repaired_fallback_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+            repaired_fallback_kpis = [] if keep_stored_offshore_kpis or use_stored_score else build_legacy_employee_kpi_values(
                 team_name,
                 evidence_raw,
                 weights=persisted_weights,
                 config=config,
             ) if evidence_raw else []
             fallback_kpis = repaired_fallback_kpis or scoped_relational()
-            fallback_kpis = _normalise_kpi_values(
-                fallback_kpis, config, config_by_key, team_name, persisted_directions, memo
-            )
+            if not use_stored_score:
+                fallback_kpis = _normalise_kpi_values(
+                    fallback_kpis, config, config_by_key, team_name, persisted_directions, memo
+                )
             fallback_score = float(item.score)
             fallback_grade = item.grade
-            if fallback_kpis and any(
+            if not use_stored_score and fallback_kpis and any(
                 float(value.get("contribution", 0.0) or 0.0) > 0
                 for value in fallback_kpis
             ):

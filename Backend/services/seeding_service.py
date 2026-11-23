@@ -29,6 +29,13 @@ from services.preapprovals_offshore_scoring import (
     uses_new_method,
 )
 from services.action_history import DatabaseActionHistory
+from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS, import_clinical_trend
+from services.csr_sharjah_scoring import (
+    GRADE_THRESHOLDS as SHARJAH_CSR_GRADE_THRESHOLDS,
+    METHOD_ID as SHARJAH_CSR_METHOD_ID,
+    score_sharjah_csr,
+    uses_sharjah_csr_score,
+)
 from services.analysis_service import AnalysisService
 from config.loader import (
     load_team_config,
@@ -1083,6 +1090,7 @@ class DatabaseSeeder:
             records_to_clean_kpis = []
             kpis_to_insert = []
             record_thresholds: dict = {}
+            clinical_record_ids = set()
 
             # Build all workbook scope logs in memory. IDs are explicit, so
             # performance rows can reference them without one remote flush per
@@ -1204,6 +1212,10 @@ class DatabaseSeeder:
                 except Exception:
                     team_config = None
                 record_thresholds[db_record.id] = team_config.get("grade_thresholds") if team_config else None
+                if record.team == "CSR" and raw_data.get("ScoringMethod") == SHARJAH_CSR_METHOD_ID:
+                    record_thresholds[db_record.id] = SHARJAH_CSR_GRADE_THRESHOLDS
+                if record.team in CLINICAL_TREND_TEAMS:
+                    clinical_record_ids.add(db_record.id)
 
                 if record.kpi_values:
                     for value in record.kpi_values:
@@ -1310,7 +1322,7 @@ class DatabaseSeeder:
 
                 for rec_id, kv_list in kpi_by_rec.items():
                     rec = rec_map.get(rec_id)
-                    if rec:
+                    if rec and rec_id not in clinical_record_ids:
                         final_score = self._score_from_kpi_rows(
                             kv_list,
                             final_total_cap=self._final_total_cap(rec, kv_list),
@@ -1399,6 +1411,17 @@ class DatabaseSeeder:
         failed_teams = []
         marketing_report = marketing_result.report if marketing_result else None
         rcm_offshore_report = rcm_offshore_result.report if rcm_offshore_result else None
+
+        try:
+            clinical_records, clinical_employees = import_clinical_trend(excel_file)
+        except ValueError as exc:
+            raise UploadProcessingError(str(exc), {"failed_teams": []}) from exc
+        clinical_teams = list(dict.fromkeys(record.team for record in clinical_records))
+        all_new_records.extend(clinical_records)
+        all_new_employees.extend(clinical_employees)
+        detected_teams.extend(clinical_teams)
+        attempted_teams.extend(clinical_teams)
+        persisted_teams.update(clinical_teams)
 
         if marketing_result is not None:
             detected_teams.append("Marketing")
@@ -1633,6 +1656,11 @@ class DatabaseSeeder:
                             for key, value in offshore_scored.achievements.items()
                         }
                         weights_used = dict(offshore_scored.weights)
+                    elif team_name == "CSR" and uses_sharjah_csr_score(row_dict, performance_level):
+                        score, grade, kpi_values = score_sharjah_csr(row_dict)
+                        row_dict["ScoringMethod"] = SHARJAH_CSR_METHOD_ID
+                        achievements = {value["kpi_key"]: value["achievement_ratio"] for value in kpi_values}
+                        weights_used = {value["kpi_key"]: value["weight_applied"] for value in kpi_values}
                     elif performance_level == "Employee" and position:
                         score, grade, kpi_values = self.kpi_service.calculate_performance_multi_team(
                             team_name,
@@ -1767,6 +1795,7 @@ class DatabaseSeeder:
             logger.warning("upload_duplicate_employee_month: %s", warning["message"])
         all_new_employees = list({employee.id: employee for employee in all_new_employees}.values())
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
+        imported_teams.extend(clinical_teams)
         if marketing_result is not None:
             imported_teams.append("Marketing")
         if rcm_offshore_result is not None:

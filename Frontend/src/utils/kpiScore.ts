@@ -1,4 +1,4 @@
-import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, type AgentRecord, type RawData } from '../types';
+import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, usesStoredPeriodScore, type AgentRecord, type RawData } from '../types';
 
 function normalizeWeight(weight: number | undefined): number {
   if (!Number.isFinite(weight ?? NaN)) return 0;
@@ -166,6 +166,10 @@ export function resolveDisplayScore(
   agent: AgentRecord,
   teamWeights: Record<string, number> | undefined,
 ): number {
+  if (usesStoredPeriodScore(agent) && Number.isFinite(agent.evaluation?.score)) {
+    return agent.evaluation.score;
+  }
+
   // This team's historical SQL rows can retain an old evaluation score or
   // unrelated combined KPIs. Its canonical score is always the weighted sum
   // of the two workstream KPIs returned by getKPIsForAgent().

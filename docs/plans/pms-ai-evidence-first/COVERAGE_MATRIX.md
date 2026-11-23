@@ -58,6 +58,10 @@ To prevent unwarranted claims of capability, every cell in this matrix is classi
 | **Shared** | `CSR` | Employee | `partial` | `partial` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — score/actual-target partial: one repository parity check passed; permission check not run |
 | **Shared** | `Sales` | Employee | `partial` | `partial` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — score/actual-target partial: one repository parity check passed; permission check not run |
 
+| **Clinical** | `ER Dr` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — monthly spreadsheet scores available, AI route and permissions pending verification |
+| **Clinical** | `Radiologist` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — monthly spreadsheet scores available, AI route and permissions pending verification |
+| **RCM** | `Qlty&Case-Mngt` | Employee | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | `blocked` | Phase 2 manifest `evaluation/pms-ai/phase2/coverage_manifest.json` (inventory status) — monthly spreadsheet scores available, AI route and permissions pending verification |
+
 ### 2.2a Shared-scope teams (region `All`)
 
 Finance and RCM have config region `All`. They are listed here, not under Egypt or UAE, because their rows must never be folded into a single-country total without an approved attribution rule.

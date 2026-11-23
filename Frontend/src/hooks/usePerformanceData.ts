@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
-import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameEgyptRcmTeam, sameCanonicalTeam } from '../types';
+import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, usesStoredPeriodScore, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameEgyptRcmTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { performanceSessionKey } from '../lib/performanceSessionKey';
@@ -122,13 +122,12 @@ export function resolveHeadcountSnapshot(
 }
 
 export function resolveRecordGradeClass(record: AgentRecord, score?: number): import('../types').GradeClass {
-  // Every team and level grades the score with 95 / 90 / 80 / 70.
-  // A stored letter is only the fallback when that score is missing.
   const resolvedScore = score ?? normalizeScore(record.evaluation.score);
-  if (Number.isFinite(resolvedScore) && resolvedScore > 0) {
+  const storedGrade = record.evaluation.grade?.trim().toUpperCase();
+  // Date- and branch-specific scorebooks own their grade thresholds.
+  if (!usesStoredPeriodScore(record) && Number.isFinite(resolvedScore) && resolvedScore > 0) {
     return getGradeClass(resolvedScore);
   }
-  const storedGrade = record.evaluation.grade?.trim().toUpperCase();
   if (storedGrade === 'A' || storedGrade === 'B' || storedGrade === 'C' || storedGrade === 'D' || storedGrade === 'E') {
     return storedGrade;
   }

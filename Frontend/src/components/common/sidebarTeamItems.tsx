@@ -24,6 +24,8 @@ import {
   PhoneCall,
   Monitor,
   ShieldCheck,
+  Stethoscope,
+  ScanLine,
 } from 'lucide-react';
 import { teamPath } from '../../types';
 
@@ -72,4 +74,7 @@ export const TEAM_ITEMS = [
   { name: 'Sales', path: teamPath('Sales'), icon: <Target size={17} />, team: 'Sales', region: 'uae' },
   { name: 'CSR', path: teamPath('CSR'), icon: <Headphones size={17} />, team: 'CSR', region: 'uae' },
   { name: 'Pharmacy', path: teamPath('Pharmacy'), icon: <Pill size={17} />, team: 'Pharmacy', region: 'uae' },
+  { name: 'ER Dr', path: teamPath('ER Dr'), icon: <Stethoscope size={17} />, team: 'ER Dr', region: 'uae', requiresData: true },
+  { name: 'Radiologist', path: teamPath('Radiologist'), icon: <ScanLine size={17} />, team: 'Radiologist', region: 'uae', requiresData: true },
+  { name: 'Qlty&Case-Mngt', path: teamPath('Qlty&Case-Mngt'), icon: <ShieldCheck size={17} />, team: 'Qlty&Case-Mngt', region: 'uae', requiresData: true },
 ] as const;

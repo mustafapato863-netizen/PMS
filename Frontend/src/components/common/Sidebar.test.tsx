@@ -136,6 +136,24 @@ describe('Sidebar team icons', () => {
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
   });
 
+  it('links the imported clinical teams to their October Employee dashboards', () => {
+    const teams = [
+      ['ER Dr', 'er-dr'],
+      ['Radiologist', 'radiologist'],
+      ['Qlty&Case-Mngt', 'quality-case-management'],
+    ];
+    catalogState.scopes = teams.map(([team]) => ({ team, region: 'UAE', performance_level: 'Employee', position: '' }));
+    renderSidebar('/executive?period=2026-10&region=UAE');
+
+    for (const [name, route] of teams) {
+      const link = screen.getByRole('link', { name });
+      const destination = new URL(link.getAttribute('href')!, 'http://localhost');
+      expect(destination.pathname).toBe(`/team/${route}`);
+      expect(destination.searchParams.get('performance_level')).toBe('Employee');
+      expect(destination.searchParams.get('period')).toBe('2026-10');
+    }
+  });
+
   it('provides an accessible desktop collapse control', () => {
     const onToggleCollapsed = vi.fn();
     render(

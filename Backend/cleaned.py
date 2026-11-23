@@ -47,7 +47,7 @@ def drop_ignored_outbound_columns(df: pd.DataFrame, sheet_name: str) -> pd.DataF
     return cleaned
 
 
-def preserve_productivity_columns(df, column_name="Performance Grade"):
+def preserve_productivity_columns(df, column_name="Performance Grade", *, extra_columns=()):
     """Keep known productivity/utilization aliases that sit after the crop column.
 
     The crop is exact. A junk column after the grade stays dropped. Available
@@ -59,7 +59,8 @@ def preserve_productivity_columns(df, column_name="Performance Grade"):
     preserved = {
         column: df[column].copy()
         for column in df.columns
-        if _is_preserved_post_grade_column(column) and df.columns.get_loc(column) > col_index
+        if (_is_preserved_post_grade_column(column) or column in extra_columns)
+        and df.columns.get_loc(column) > col_index
     }
     cropped = df.iloc[:, : col_index + 1].copy()
     for column, series in preserved.items():
@@ -84,7 +85,10 @@ def clean_sheet_data(df, sheet_name, column_name="Performance Grade"):
     df.columns = [str(col).strip() for col in df.columns]
 
     if column_name in df.columns:
-        df = preserve_productivity_columns(df, column_name)
+        from services.csr_sharjah_scoring import SOURCE_COLUMNS
+
+        extra_columns = SOURCE_COLUMNS if sheet_name == "CSR" else ()
+        df = preserve_productivity_columns(df, column_name, extra_columns=extra_columns)
         logger.debug("Cropped %s to %s columns", sheet_name, df.shape[1])
 
     df = drop_ignored_outbound_columns(df, sheet_name)
