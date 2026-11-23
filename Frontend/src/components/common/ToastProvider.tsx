@@ -130,10 +130,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
 
-      {/* Toast viewport — fixed bottom-right */}
+      {/* Toast viewport — fixed bottom-right, lifted above the navigation dock on tablet/mobile */}
       <div
         aria-label="Notifications"
-        className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse items-end gap-2 pointer-events-none"
+        className="toast-above-dock fixed bottom-4 right-4 z-[9999] flex flex-col-reverse items-end gap-2 pointer-events-none"
       >
         <AnimatePresence mode="popLayout">
           {items.map((item) => (

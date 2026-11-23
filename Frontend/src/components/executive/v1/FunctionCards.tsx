@@ -279,13 +279,13 @@ function FunctionCard({
         </div>
 
         {!classic && card.gap_share_percent != null && card.gap_share_percent > 0 ? (
-          <span className="shrink-0 text-[10.5px] font-semibold text-[var(--insights-heading)]">
+          <span className="shrink-0 text-xs font-semibold text-[var(--insights-heading)]">
             {formatShare(card.gap_share_percent)}% of the gap
           </span>
         ) : classic && card.lowest_team && card.lowest_team.score < 85 ? (
           <span
             aria-hidden="true"
-            className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+            className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
             title={`Lowest team: ${card.lowest_team.team} (${card.lowest_team.score.toFixed(1)}%)`}
           >
             Low: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)

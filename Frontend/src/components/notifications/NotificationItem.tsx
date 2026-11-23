@@ -82,8 +82,9 @@ export function NotificationItem({ notification, onRemove }: NotificationItemPro
       onClick={handleClick}
       role="button"
       tabIndex={0}
-      onKeyPress={(e) => {
+      onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === ' ') e.preventDefault();
           handleClick();
         }
       }}
@@ -104,7 +105,7 @@ export function NotificationItem({ notification, onRemove }: NotificationItemPro
         <p className="text-xs text-[var(--text-muted)] mt-1">{timeAgo}</p>
       </div>
 
-      {/* Actions */}
+      {/* Actions — always visible on touch (no hover there); hover-reveal stays on desktop */}
       <div className="flex-shrink-0 flex items-center gap-1">
         {!notification.read && (
           <motion.button
@@ -115,7 +116,7 @@ export function NotificationItem({ notification, onRemove }: NotificationItemPro
               markNotificationAsRead(notification.id);
             }}
             aria-label="Mark as read"
-            className="p-1 text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-500/10\n              rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+            className="p-1 text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-500/10\n              rounded-lg transition-colors opacity-0 group-hover:opacity-100 max-md:opacity-100"
           >
             <Check size={14} aria-hidden="true" />
           </motion.button>
@@ -129,7 +130,7 @@ export function NotificationItem({ notification, onRemove }: NotificationItemPro
             onRemove?.();
           }}
           aria-label="Remove notification"
-          className="p-1 text-[var(--text-muted)] hover:text-red-600 hover:bg-red-500/10\n            rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+          className="p-1 text-[var(--text-muted)] hover:text-red-600 hover:bg-red-500/10\n            rounded-lg transition-colors opacity-0 group-hover:opacity-100 max-md:opacity-100"
         >
           <X size={14} aria-hidden="true" />
         </motion.button>

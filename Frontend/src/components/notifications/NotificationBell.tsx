@@ -69,7 +69,7 @@ export function NotificationBell() {
               aria-hidden="true"
             />
 
-            {/* Panel */}
+            {/* Panel — on phones this becomes a fixed sheet inside the viewport (see max-sm rules) */}
             <motion.div
               initial={{ opacity: 0, y: -8, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -77,7 +77,7 @@ export function NotificationBell() {
               transition={{ duration: 0.15, ease: 'easeOut' }}
               role="dialog"
               aria-label="Notification center"
-              className="absolute right-0 mt-2 z-50"
+              className="absolute right-0 mt-2 z-50 max-sm:fixed max-sm:inset-x-3 max-sm:top-[calc(var(--header-height,56px)+8px)] max-sm:mt-0"
             >
               <NotificationCenter onClose={() => setIsOpen(false)} />
             </motion.div>

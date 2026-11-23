@@ -133,9 +133,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                 ref={helpRef}
                 id={helpDialogId}
                 role="dialog"
-                aria-modal="true"
                 aria-label="Quick help and executive guide"
-                className="absolute right-0 top-full z-40 mt-[8px] w-[340px] rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] text-left shadow-xl sm:w-[390px]"
+                className="absolute right-0 top-full z-40 mt-[8px] w-[min(340px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] text-left shadow-xl sm:w-[min(390px,calc(100vw-2rem))]"
               >
                 <div className="flex items-center justify-between border-b border-[var(--exec-card-border)] pb-[10px]">
                   <span className="flex items-center gap-[6px] text-[14px] font-bold text-[var(--insights-heading)]">
@@ -146,7 +145,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                     type="button"
                     onClick={() => setIsHelpOpen(false)}
                     aria-label="Close executive guide"
-                    className="rounded-[6px] p-[4px] text-[var(--text-muted)] hover:bg-[var(--exec-chip-bg)] hover:text-[var(--text-primary)]"
+                    className="min-h-[44px] min-w-[44px] rounded-[6px] p-[10px] text-[var(--text-muted)] hover:bg-[var(--exec-chip-bg)] hover:text-[var(--text-primary)]"
                   >
                     <X className="size-[15px]" aria-hidden="true" />
                   </button>
@@ -250,4 +249,3 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
     </section>
   );
 }
-
