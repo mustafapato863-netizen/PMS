@@ -30,12 +30,12 @@ import { downloadCorrectiveActionsPowerPoint } from '../utils/correctiveActionPo
 
 const ACTION_TYPES: ActionType[] = ['Training', 'Reward', 'PIP', 'Monitor', 'Coaching'];
 
-const ACTION_STYLES: Record<ActionType, { label: string; className: string }> = {
-  Training: { label: 'Training', className: 'bg-blue-500/10 text-blue-700 dark:text-blue-300' },
-  Reward: { label: 'Reward', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
-  PIP: { label: 'PIP', className: 'bg-rose-500/10 text-rose-700 dark:text-rose-300' },
-  Monitor: { label: 'Monitor', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300' },
-  Coaching: { label: 'Coaching', className: 'bg-purple-500/10 text-purple-700 dark:text-purple-300' },
+const ACTION_STYLES: Record<ActionType, { label: string; className: string; accent: string }> = {
+  Training: { label: 'Training', className: 'border border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800 dark:border-sky-400/25 dark:from-sky-500/15 dark:to-blue-500/15 dark:text-sky-300', accent: 'var(--pms-grad-accent)' },
+  Reward: { label: 'Reward', className: 'border border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800 dark:border-emerald-400/25 dark:from-emerald-500/15 dark:to-teal-500/15 dark:text-emerald-300', accent: 'var(--pms-grad-grade-a)' },
+  PIP: { label: 'PIP', className: 'border border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800 dark:border-rose-400/25 dark:from-rose-500/15 dark:to-red-500/15 dark:text-rose-300', accent: 'var(--pms-grad-grade-e)' },
+  Monitor: { label: 'Monitor', className: 'border border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800 dark:border-amber-400/25 dark:from-amber-500/15 dark:to-orange-500/15 dark:text-amber-300', accent: 'var(--pms-grad-grade-c)' },
+  Coaching: { label: 'Coaching', className: 'border border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800 dark:border-violet-400/25 dark:from-violet-500/15 dark:to-purple-500/15 dark:text-violet-300', accent: 'var(--pms-grad-violet)' },
 };
 
 function formatDate(value: string): string {
@@ -114,13 +114,14 @@ function ActionCard({
   };
 
   return (
-    <article className="rf-action-card rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
+    <article className="pms-glass-surface pms-glass-surface--interactive rf-action-card relative overflow-hidden rounded-[16px] p-5">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: style.accent }} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-black text-[var(--text-primary)]">{action.employee_name || 'Unknown employee'}</h2>
           <p className="mt-1 truncate text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned team'} · {action.employee_id}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black uppercase tracking-wide ${style.className}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${style.className}`}>
           {style.label}
         </span>
       </div>
@@ -134,8 +135,8 @@ function ActionCard({
         </div>
       )}
       <p className="mt-4 whitespace-pre-line text-xs font-semibold leading-5 text-[var(--text-secondary)]">{action.action_text || 'No action details provided.'}</p>
-      <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2.5 text-xs leading-4 text-[var(--text-secondary)]">
-        <span className="font-black text-amber-700 dark:text-amber-300">Root-cause note: </span>
+      <div className="mt-4 rounded-xl border border-[var(--pms-grad-panel-warn-border)] px-3 py-2.5 text-xs leading-4 text-[var(--text-secondary)]" style={{ background: 'var(--pms-grad-panel-warn)' }}>
+        <span className="font-black text-amber-800 dark:text-amber-300">Root-cause note: </span>
         {formattedRootCause || 'No note recorded.'}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
@@ -268,9 +269,9 @@ export default function CorrectiveActionsView() {
 
   return (
     <div className="app-page-shell rf-page rf-page--corrective-actions executive-v1">
-      <header className="rf-page-hero flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="pms-glass-surface rf-page-hero flex flex-col gap-4 rounded-[20px] p-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-xs font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
+          <div className="flex items-center gap-2 text-[var(--insights-accent-text)]"><ClipboardCheck size={19} /><span className="text-xs font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--text-primary)]">Corrective Actions</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">Review corrective actions assigned to employees, with their notes and performance period.</p>
         </div>
@@ -279,18 +280,19 @@ export default function CorrectiveActionsView() {
             type="button"
             onClick={() => void handlePowerPointExport()}
             disabled={isExporting}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-sm transition-all hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-wait disabled:opacity-70"
+            style={{ background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' }}
           >
             <Download size={17} /> {isExporting ? 'Preparing PowerPoint…' : 'Export PowerPoint'}
           </button>
         )}
       </header>
 
-      <div role="tablist" aria-label="Corrective action views" className="flex gap-2">
-        <button type="button" role="tab" aria-selected={pageTab === 'all'} onClick={() => setPageTab('all')} className={`min-h-10 rounded-xl px-4 text-sm font-black ${pageTab === 'all' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>All actions</button>
-        <button type="button" role="tab" aria-selected={pageTab === 'follow-up'} onClick={() => setPageTab('follow-up')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black ${pageTab === 'follow-up' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
+      <div role="tablist" aria-label="Corrective action views" className="pms-glass-stage inline-flex w-fit gap-1.5 rounded-2xl p-1">
+        <button type="button" role="tab" aria-selected={pageTab === 'all'} onClick={() => setPageTab('all')} className={`min-h-10 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'all' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'all' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>All actions</button>
+        <button type="button" role="tab" aria-selected={pageTab === 'follow-up'} onClick={() => setPageTab('follow-up')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'follow-up' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'follow-up' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>
           Follow-up
-          {overdueCount > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
+          {overdueCount > 0 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
         </button>
       </div>
 
@@ -300,11 +302,11 @@ export default function CorrectiveActionsView() {
 
       {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} />}
 
-      {pageTab === 'all' && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
-        <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
+      {pageTab === 'all' && <section className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-info)', borderColor: 'var(--pms-grad-panel-info-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} /><p className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-violet)', borderColor: 'var(--pms-grad-panel-violet-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-violet)' }} /><p className="text-xs font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-pos)', borderColor: 'var(--pms-grad-panel-pos-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-a)' }} /><p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-warn)', borderColor: 'var(--pms-grad-panel-warn-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-c)' }} /><p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
       </section>}
 
       {pageTab === 'all' && <ResponsiveFilters

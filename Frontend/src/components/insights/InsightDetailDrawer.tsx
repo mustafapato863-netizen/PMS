@@ -45,7 +45,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
     <OverlayPortal>
     <div className="fixed inset-0 z-[100]" role="presentation">
       <button type="button" aria-label="Close insight details" className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px]" onClick={onClose} />
-      <aside role="dialog" aria-modal="true" aria-labelledby="insight-drawer-title" className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
+      <aside role="dialog" aria-modal="true" aria-labelledby="insight-drawer-title" className="pms-glass-surface absolute inset-y-0 right-0 flex w-full max-w-xl flex-col shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-light)] p-5 md:p-6">
           <div>
             <span data-testid="insight-drawer-severity" className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
@@ -59,7 +59,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
           <section>
             <h3 className="text-sm font-extrabold text-[var(--text-primary)]">What happened</h3>
             <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{insight.explanation}</p>
-            <div className="mt-3 rounded-xl border border-blue-500/15 bg-blue-500/5 p-3 text-xs text-[var(--text-secondary)]">
+            <div className="mt-3 rounded-xl border border-[var(--pms-grad-panel-info-border)] p-3 text-xs text-[var(--text-secondary)]" style={{ background: 'var(--pms-grad-panel-info)' }}>
               <strong>Why am I seeing this?</strong> {insight.priority_reason}
             </div>
           </section>

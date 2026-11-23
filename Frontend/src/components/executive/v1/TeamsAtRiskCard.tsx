@@ -81,7 +81,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
           {rows.map((team, index) => {
             const lead = !showAllTeams && index === 0;
             return (
-            <div role="row" key={team.team} className={`flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0 ${lead ? 'rounded-[10px] bg-[color-mix(in_srgb,var(--insights-negative)_8%,transparent)]' : ''}`} data-testid="risk-row">
+            <div role="row" key={team.team} className={`flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[11px] last:border-b-0 ${lead ? 'rounded-[12px] border border-[var(--pms-grad-panel-neg-border)]' : ''}`} style={lead ? { background: 'var(--pms-grad-panel-neg)' } : undefined} data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 {onSelectTeam ? (
                   <button type="button" title={`Review ${presentationTeamName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team, searchParams.get('region'))}</button>

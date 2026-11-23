@@ -44,8 +44,8 @@ function DriverRow({ driver, side, metric, max, note }: { driver: ExecutiveDrive
           <span className="text-[14px] font-bold" style={{ color: barColor }}>{fmtSigned(impact, '%', 2)}</span>
         </div>
       </div>
-      <div aria-hidden="true" className="h-[6px] w-full rounded-[3px] bg-[var(--insights-track)]">
-        <div className="h-full rounded-[3px]" style={{ width: `${width}%`, background: barColor }} />
+      <div aria-hidden="true" className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+        <div className="h-full rounded-full" style={{ width: `${width}%`, background: side === 'negative' ? 'var(--pms-grad-grade-e)' : 'var(--pms-grad-grade-a)' }} />
       </div>
     </li>
   );

@@ -87,8 +87,8 @@ function RankedActions({ title, rows, total, empty, testId }: {
                   <span className="font-medium text-[var(--text-primary)]">{row.label}</span>
                   <span className="shrink-0 rounded-full bg-[var(--bg-sunken)] px-[7px] py-[2px] text-xs font-semibold tabular-nums text-[var(--text-secondary)]">{row.count} {row.count === 1 ? 'action' : 'actions'}</span>
                 </div>
-                <div aria-hidden="true" className="h-[5px] overflow-hidden rounded-full bg-[var(--bg-sunken)]">
-                  <div className="h-full rounded-full bg-[var(--insights-accent)] transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${total ? row.count / total * 100 : 0}%` }} />
+                <div aria-hidden="true" className="h-[6px] overflow-hidden rounded-full bg-[var(--insights-track)]">
+                  <div className="h-full rounded-full transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${total ? row.count / total * 100 : 0}%`, background: 'var(--pms-grad-accent)' }} />
                 </div>
               </div>
             </li>
@@ -131,15 +131,15 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
       <ExecCardHeader titleId={titleId} icon={ShieldCheck} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)"
         title="Corrective actions" subtitle={`${scopeLabel} · ${period} · Decision patterns`} />
       {!data?.analytics ? <SoftEmpty>Action analysis isn't available for this view yet.</SoftEmpty> : <>
-        <div className={`grid gap-[10px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+        <div className={`grid gap-[12px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {metricCards.map(({ label, count, icon: Icon, accent }) => (
-            <div key={label} className="flex min-w-0 items-center gap-[10px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] px-[12px] py-[10px]">
-              <span aria-hidden="true" className={`flex size-[34px] shrink-0 items-center justify-center rounded-[9px] ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
+            <div key={label} className="pms-glass-stage flex min-w-0 items-center gap-[12px] rounded-[12px] px-[14px] py-[12px]">
+              <span aria-hidden="true" className={`flex size-[36px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 dark:border-white/10 ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
                 <Icon className="size-[17px]" strokeWidth={1.8} />
               </span>
               <div className="min-w-0">
-                <p className="text-xs leading-[1.3] text-[var(--text-muted)]">{label}</p>
-                <p className="mt-[3px] text-[23px] font-bold leading-none tabular-nums text-[var(--insights-heading)]">{count}</p>
+                <p className="text-xs font-medium leading-[1.3] text-[var(--text-muted)]">{label}</p>
+                <p className="mt-[3px] text-[24px] font-bold leading-none tabular-nums text-[var(--insights-heading)]">{count}</p>
               </div>
             </div>
           ))}

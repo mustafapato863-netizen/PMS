@@ -1,8 +1,7 @@
 import { Layers } from 'lucide-react';
-import { getGradeTone } from '../../../constants/grades';
 import type { ExecutiveLevel } from '../../../features/executive/types';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
-import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
+import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, gradeGradientVar } from './ExecPrimitives';
 
 export default function LevelBreakdownCard({ levels, title = 'Level breakdown', subtitle = 'Score, grade and headcount by performance level' }: { levels: ExecutiveLevel[]; title?: string; subtitle?: string }) {
   return (
@@ -11,7 +10,6 @@ export default function LevelBreakdownCard({ levels, title = 'Level breakdown', 
       {levels.length ? (
         <ul className="flex flex-col">
           {levels.map((level) => {
-            const tone = getGradeTone(level.score);
             return (
               <li key={level.level} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] py-[10px] last:border-b-0" data-testid="level-row">
                 <GradeSquare score={level.score} />
@@ -19,8 +17,8 @@ export default function LevelBreakdownCard({ levels, title = 'Level breakdown', 
                   <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{level.level}</span>
                   <span className="text-xs text-[var(--text-muted)]">{level.employees} {level.employees === 1 ? 'person' : 'people'}</span>
                 </span>
-                <span aria-hidden="true" className="hidden h-[6px] w-[90px] rounded-[3px] bg-[var(--insights-track)] sm:block">
-                  <span className="block h-full rounded-[3px]" style={{ width: `${Math.min(100, level.score ?? 0)}%`, background: tone.solid }} />
+                <span aria-hidden="true" className="hidden h-[7px] w-[110px] overflow-hidden rounded-full bg-[var(--insights-track)] sm:block">
+                  <span className="block h-full rounded-full" style={{ width: `${Math.min(100, level.score ?? 0)}%`, background: gradeGradientVar(level.score) }} />
                 </span>
                 <span className="flex w-[64px] flex-col items-end">
                   <ScoreText score={level.score} className="text-[13px]">{fmtScore(level.score)}</ScoreText>

@@ -27,7 +27,7 @@ export default function GradeDistributionCard({ distribution, previous, range = 
         <>
           <div aria-hidden="true" className="flex h-[10px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
             {GRADE_CLASSES.map((grade) => (
-              <div key={grade} style={{ width: `${distribution.percents[grade]}%`, background: gradeTokenVar(grade, 'solid') }} />
+              <div key={grade} style={{ width: `${distribution.percents[grade]}%`, background: `var(--pms-grad-grade-${grade.toLowerCase()})` }} />
             ))}
           </div>
           <ul className="flex flex-col gap-[10px]">
@@ -43,8 +43,8 @@ export default function GradeDistributionCard({ distribution, previous, range = 
                       <span className="text-[13px] font-bold text-[var(--insights-heading)]">{distribution.counts[grade]}</span>
                       <span className="w-[40px] text-right text-xs text-[var(--text-muted)]">{distribution.percents[grade].toFixed(1)}%</span>
                     </div>
-                    <div aria-hidden="true" className="h-[6px] w-full rounded-[3px] bg-[var(--insights-track)]">
-                      <div className="h-full rounded-[3px]" style={{ width: `${distribution.percents[grade]}%`, background: gradeTokenVar(grade, 'solid') }} />
+                    <div aria-hidden="true" className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+                      <div className="h-full rounded-full" style={{ width: `${distribution.percents[grade]}%`, background: `var(--pms-grad-grade-${grade.toLowerCase()})` }} />
                     </div>
                   </div>
                   <span

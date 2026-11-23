@@ -21,7 +21,7 @@ import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodL
 import { functionSlug } from '../../../features/executive/functions';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { getGradeTone } from '../../../constants/grades';
-import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
+import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText, gradeGradientVar } from './ExecPrimitives';
 import FunctionTrendChart from './FunctionTrendChart';
 import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
@@ -164,39 +164,42 @@ function FunctionCard({
   return (
     <article
       aria-label={`${card.function} function`}
-      className="group/fcard relative flex h-full min-w-0 flex-col gap-[8px] overflow-hidden rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[12px] shadow-[var(--exec-card-shadow)] transition-all duration-200 hover:border-[var(--border-medium)]"
+      className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[16px] p-[14px]"
+      style={{
+        backgroundImage: `radial-gradient(circle at 100% 0%, color-mix(in srgb, ${style.color} 10%, transparent) 0%, transparent 62%), var(--pms-glass-card-bg)`,
+      }}
     >
-      {/* Top Grade Accent Strip */}
+      {/* Smooth Linear-Gradient Top Grade Accent Strip */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-        style={{ background: tone.gauge }}
+        style={{ background: gradeGradientVar(card.score) }}
       />
 
       {/* Zone 1: Card Header + Top-Right Grade Pill (Full-width subtitle never truncates) */}
-      <div className="flex flex-col gap-[3px]">
+      <div className="flex flex-col gap-[4px]">
         <div className="flex items-center justify-between gap-[6px]">
-          <div className="flex min-w-0 items-center gap-[7px]">
-            <FunctionIcon fn={card.function} size={28} />
+          <div className="flex min-w-0 items-center gap-[8px]">
+            <FunctionIcon fn={card.function} size={32} />
             {onSelectFunction ? (
               <button
                 type="button"
-                className="truncate text-left text-[14.5px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
+                className="truncate text-left text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
                 aria-label={`Open ${card.function}`}
                 onClick={() => onSelectFunction(card.function)}
               >
                 {card.function}
               </button>
             ) : (
-              <h3 className="truncate text-[14.5px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
+              <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
                 {card.function}
               </h3>
             )}
           </div>
-          <GradePill score={card.score} className="!px-[7px] !py-[1.5px] !text-[10.5px]" />
+          <GradePill score={card.score} className="!px-[8px] !py-[2px] !text-[11px]" />
         </div>
 
-        <p className="truncate text-[11px] leading-[1.3] text-[var(--text-muted)]">
+        <p className="truncate text-[12px] leading-[1.35] text-[var(--text-muted)]">
           {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees}{' '}
           {card.employees === 1 ? 'person' : 'people'}
           {card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
@@ -204,44 +207,44 @@ function FunctionCard({
       </div>
 
       {markStart && card.score !== null && (
-        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--insights-negative)]">
+        <span className="inline-flex w-fit rounded-full bg-[var(--exec-neg-bg)] px-[8px] py-[2px] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--insights-negative)]">
           Start here
         </span>
       )}
 
-      {/* Zone 2: Unified Score + Non-Wrapping Gap / Delta + Score Bar */}
-      <div className="space-y-1.5 rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/45 px-2.5 py-2">
+      {/* Zone 2: Frosted Metric Stage (Score + GAP | VS MAY + Smooth Gradient Score Bar w/ 90% Marker) */}
+      <div className="pms-glass-stage space-y-2 rounded-[12px] px-3 py-2.5">
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex flex-col">
             <ScoreText
               score={card.score}
-              className="text-[22px] font-bold leading-none tracking-[-0.04em] tabular-nums"
+              className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums"
             >
               {fmtScore(card.score)}
             </ScoreText>
             {card.score !== null && !classic && (
-              <span className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
+              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
                 People average
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="flex flex-col items-end">
               <StatLabel>{classic ? 'Gap' : 'vs 100'}</StatLabel>
               <ToneText
                 tone={scoreTone(card.gap)}
-                className="whitespace-nowrap text-[11.5px] font-bold tabular-nums"
+                className="whitespace-nowrap text-[12px] font-bold tabular-nums"
               >
                 {arrow(card.gap)} {fmtSigned(card.gap)}
               </ToneText>
             </div>
-            <div className="h-5 w-px bg-[var(--exec-card-border)]" aria-hidden="true" />
+            <div className="h-6 w-px bg-[var(--exec-card-border)]" aria-hidden="true" />
             <div className="flex flex-col items-end">
               <StatLabel>{comparison}</StatLabel>
               <ToneText
                 tone={changeTone}
-                className="whitespace-nowrap text-[11.5px] font-semibold tabular-nums"
+                className="whitespace-nowrap text-[12px] font-semibold tabular-nums"
               >
                 {arrow(card.change)} {fmtSigned(card.change)}
               </ToneText>
@@ -249,7 +252,7 @@ function FunctionCard({
           </div>
         </div>
 
-        <ScoreBar score={card.score} color={tone.gauge} />
+        <ScoreBar score={card.score} color={tone.gauge} showThreshold90 />
       </div>
 
       {!classic && card.lowest_team && (
@@ -400,7 +403,7 @@ export default function FunctionCards({
   }, [cards, filterMode, sortMode]);
 
   return (
-    <section aria-labelledby="exec-functions-title" className="flex flex-col gap-[10px]">
+    <section aria-labelledby="exec-functions-title" className="pms-glass-well flex flex-col gap-[14px] rounded-[20px] p-[16px] sm:p-[20px]">
       <div className="flex flex-wrap items-center justify-between gap-[8px]">
         <div className="flex flex-wrap items-center gap-[8px]">
           <h2 id="exec-functions-title" className="text-[17px] font-bold text-[var(--insights-heading)]">

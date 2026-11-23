@@ -78,7 +78,7 @@ function TrackingIndicatorItem({ indicator, wide }: { indicator: InsightTracking
     : null;
 
   return (
-    <article className="min-w-0 rounded-[12px] border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-4">
+    <article className="pms-glass-stage min-w-0 rounded-[14px] p-4">
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-extrabold text-[var(--text-primary)]">{indicator.label}</h3>
@@ -132,7 +132,7 @@ export default function TrackingIndicatorsCard({ indicators }: { indicators: Ins
   return (
     <section
       aria-labelledby="tracking-indicators-title"
-      className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm"
+      className="pms-glass-surface rounded-[18px] p-5"
     >
       <h2 id="tracking-indicators-title" className="text-base font-extrabold text-[var(--text-primary)]">Tracking indicators</h2>
       <p className="mt-1 text-xs text-[var(--text-muted)]">Measured for information, not in the score. They do not change the score or any on-track count.</p>
