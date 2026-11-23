@@ -12,10 +12,12 @@ import {
   businessTeamName,
   distinctCatalogTeams,
   legacySharedTeamRedirect,
+  mergedTeamName,
   parseTeamCountry,
   presentationTeamName,
   recordMatchesCatalogTeam,
   sameCountryBusinessTeam,
+  sameMergedTeam,
 } from '../team/countryTeamIdentity';
 import { useSummaryRecords } from '../executive/useSummaryRecords';
 import { useActionStore } from '../../hooks/useActionStore';
@@ -68,6 +70,8 @@ import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
 import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
+import ResponsiveFilters from '../../components/common/ResponsiveFilters';
+import { CALL_CENTER_TEAM } from '../../types';
 import type { PageContextV1 } from '../ai/types';
 
 const TEAM_ACTION_PLANS_STORAGE_KEY = 'pms_team_action_plans_v1';
@@ -336,6 +340,14 @@ function MonthlyPresentationScreen({
     [searchParams, setSearchParams],
   );
 
+  // Kept up here because the header toolbar below uses this handler.
+  const handlePeriodChange = useCallback((key: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (!searchParams.has('period') && searchParams.has('month')) next.set('month', key);
+    else next.set('period', key);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const clock = useMemo(() => today ?? new Date(), [today]);
   const parsedUrlPeriod = periodFromKey(periodParam);
   const requestedPeriodKey = parsedUrlPeriod && isMonthAvailable(parsedUrlPeriod.key, clock)
@@ -451,7 +463,9 @@ function MonthlyPresentationScreen({
       region: MonthlyRegionFilter,
     ) => {
       return serverTeams.some((team) =>
-        (slugifyIdentifier(team.team) === teamSlug || (parseTeamCountry(region) !== null && sameCountryBusinessTeam(team.team, teamSlug, parseTeamCountry(region) as 'EGY' | 'UAE'))) &&
+        (slugifyIdentifier(team.team) === teamSlug
+          || slugifyIdentifier(mergedTeamName(team.team)) === teamSlug
+          || (parseTeamCountry(region) !== null && sameCountryBusinessTeam(team.team, teamSlug, parseTeamCountry(region) as 'EGY' | 'UAE'))) &&
         normalizeRegion(team.region) === region &&
         team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
       );
@@ -469,6 +483,7 @@ function MonthlyPresentationScreen({
     () => selectedPeriodRecords.filter((record) => {
       const metadata = serverTeams.find((team) =>
         (slugifyIdentifier(team.team) === slugifyIdentifier(record.team)
+          || sameMergedTeam(team.team, record.team)
           || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, record.team, parseTeamCountry(activeRegion) as 'EGY' | 'UAE'))) &&
         normalizeRegion(team.region) === activeRegion,
       );
@@ -718,7 +733,11 @@ function MonthlyPresentationScreen({
   const teamsInCurrentFunction = functionSlug
     ? teamsInActiveRegion.filter((team) => team.functions.some((name) => normalizeFunctionSlug(name) === functionSlug))
     : teamsInActiveRegion;
+  // 'Call Center' is a deprecated parent team (replaced by Inbound/Outbound);
+  // it never has its own records, so hide only that row from the box. RCM
+  // and the *_management teams stay listed until the user decides otherwise.
   const teamsWithoutData = teamsInCurrentFunction.filter((team) =>
+    team.team !== CALL_CENTER_TEAM &&
     !selectedPeriodRecords.some((record) => recordMatchesCatalogTeam({
       recordTeam: record.team,
       recordRegion: record.region,
@@ -1045,51 +1064,95 @@ function MonthlyPresentationScreen({
   );
 
   const [presentationMode, setPresentationMode] = useState(false);
+  // The global filter counts the always-applied region plus the function deep
+  // dive; the reporting month is a required dimension, not a filter (same as
+  // InsightsHeader, which does not count its period either). Only the
+  // function deep dive can be cleared, back to the overview.
+  const monthlyFilterActiveCount = (activeRegion ? 1 : 0) + (functionSlug ? 1 : 0);
+  const monthlyFilterClearableCount = functionSlug ? 1 : 0;
   const headerToolbar = (
     <>
-      {availableRegions.length > 1 && (
-        <div
-          role="tablist"
-          aria-label="Region filter"
-          className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
+    {availableRegions.length > 1 && (
+      <div
+        role="tablist"
+        aria-label="Region filter"
+        className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeRegion === 'EGY'}
+          data-testid="region-egy"
+          onClick={() => handleRegionChange('EGY')}
+          disabled={!availableRegions.includes('EGY')}
+          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+            activeRegion === 'EGY'
+              ? 'bg-white font-bold text-blue-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeRegion === 'EGY'}
-            data-testid="region-egy"
-            onClick={() => handleRegionChange('EGY')}
-            disabled={!availableRegions.includes('EGY')}
-            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-              activeRegion === 'EGY'
-                ? 'bg-white font-bold text-blue-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+          <EgyptFlag className="size-3.5" />
+          <span>Egypt (EGY)</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeRegion === 'UAE'}
+          data-testid="region-uae"
+          onClick={() => handleRegionChange('UAE')}
+          disabled={!availableRegions.includes('UAE')}
+          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+            activeRegion === 'UAE'
+              ? 'bg-white font-bold text-blue-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <UaeFlag className="size-3.5" />
+          <span>UAE</span>
+        </button>
+      </div>
+    )}
+      <ResponsiveFilters
+      activeCount={monthlyFilterActiveCount}
+      clearableCount={monthlyFilterClearableCount}
+      onClear={handleBackToOverview}
+      label="Monthly filters"
+    >
+      <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+          Reporting month
+          <select
+            aria-label="Reporting month"
+            value={selectedPeriodKey}
+            onChange={(event) => handlePeriodChange(event.target.value)}
+            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
           >
-            <EgyptFlag className="size-3.5" />
-            <span>Egypt (EGY)</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeRegion === 'UAE'}
-            data-testid="region-uae"
-            onClick={() => handleRegionChange('UAE')}
-            disabled={!availableRegions.includes('UAE')}
-            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-              activeRegion === 'UAE'
-                ? 'bg-white font-bold text-blue-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+          Function
+          <select
+            aria-label="Function"
+            value={functionSlug}
+            onChange={(event) => {
+              const slug = event.target.value;
+              if (!slug) {
+                handleBackToOverview();
+                return;
+              }
+              const match = overviewData.functions.find((fn) => fn.slug === slug);
+              if (match) handleFunctionClick(match);
+            }}
+            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
           >
-            <UaeFlag className="size-3.5" />
-            <span>UAE</span>
-          </button>
-        </div>
-      )}
-
-
+            <option value="">All functions</option>
+            {overviewData.functions.map((fn) => <option key={fn.slug} value={fn.slug}>{fn.functionName}</option>)}
+          </select>
+        </label>
+      </div>
+    </ResponsiveFilters>
     </>
   );
 
@@ -1099,13 +1162,6 @@ function MonthlyPresentationScreen({
   const nextDisabled = !insideDetail && (
     functionSlugs.length === 0 || functionSlug === functionSlugs[functionSlugs.length - 1]
   );
-
-  const handlePeriodChange = useCallback((key: string) => {
-    const next = new URLSearchParams(searchParams);
-    if (!searchParams.has('period') && searchParams.has('month')) next.set('month', key);
-    else next.set('period', key);
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
 
   const handleStep = useCallback((direction: 'next' | 'previous') => {
     if (direction === 'previous' && previousDisabled) return;
@@ -1467,10 +1523,11 @@ function MonthlyPresentationScreen({
     !hasNoAssignments && !invalidScopeRequest && !selectionHasData;
   const scopeTeamsForNoData = activeTeamSlug
     ? teamsInCurrentFunction.filter((team) =>
-        slugifyIdentifier(team.team) === activeTeamSlug
-        || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE')),
+        team.team !== CALL_CENTER_TEAM &&
+        (slugifyIdentifier(team.team) === activeTeamSlug
+        || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE'))),
       )
-    : teamsInCurrentFunction;
+    : teamsInCurrentFunction.filter((team) => team.team !== CALL_CENTER_TEAM);
   const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
 
   if (pageIsLoading) {
