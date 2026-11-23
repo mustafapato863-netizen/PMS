@@ -63,6 +63,7 @@ import type { PageContextV1 } from '../features/ai/types';
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
 const BalancedScorecardWorkspace = lazy(() => import('../components/team/BalancedScorecardWorkspace'));
 
+const NO_SHARED_TEAM_SOURCES: readonly string[] = [];
 const PAGE_SIZE = 15;
 
 const MONTH_NUMBER: Record<string, number> = {
@@ -280,10 +281,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     legacyRedirect?.region ?? searchParams.get('region'),
     assigned.regionLocked ? assigned.region : null,
   );
-  const sourceTeams = useMemo(
-    () => sharedCountry && canonicalTeamId ? [...sourceNamesFor(canonicalTeamId, sharedCountry)] : [],
-    [canonicalTeamId, sharedCountry],
-  );
+  const sourceTeams = sharedCountry ? sourceNamesFor(canonicalTeamId, sharedCountry) : NO_SHARED_TEAM_SOURCES;
   const scopedTeamName = sourceTeams[0] || teamName;
   const canSwitchCountry = Boolean(sharedCountry && !assigned.branchLocked && !assigned.regionLocked && (
     !currentUser || hasAllTeamsScope(role, currentUser) || functionScope.restricted
