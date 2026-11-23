@@ -1,5 +1,5 @@
 import { teamPath, withTeamQuery, type User } from '../types';
-import { businessTeamName } from '../features/team/countryTeamIdentity';
+import { businessTeamName, sidebarTeamLabel } from '../features/team/countryTeamIdentity';
 import {
   canAccessCorrectiveActions,
   canAccessFunctionSummary,
@@ -226,7 +226,7 @@ const baseActions = ({
       label: 'View Management Overview',
       subtitle: 'Management team dashboard',
       icon: 'briefcase',
-      path: `${firstTeamPath}?performance_level=Corporate`,
+      path: withTeamQuery(firstTeamPath, 'performance_level=Corporate'),
     });
     items.push({
       id: 'action-balanced-scorecard',
@@ -234,7 +234,7 @@ const baseActions = ({
       label: 'Open Balanced Scorecard',
       subtitle: 'Managerial scorecard workspace',
       icon: 'chart',
-      path: `${firstTeamPath}?performance_level=Managerial`,
+      path: withTeamQuery(firstTeamPath, 'performance_level=Managerial'),
     });
   }
 
@@ -270,6 +270,7 @@ export function buildLocalSearchResults({
 }
 
 export function buildRemoteSearchResults(data: GlobalSearchResponse): SearchResultItem[] {
+  const teamNames = data.teams.map((team) => team.name);
   return [
     ...data.employees.map((employee) => ({
       id: `employee-${employee.employee_id}`,
@@ -282,7 +283,7 @@ export function buildRemoteSearchResults(data: GlobalSearchResponse): SearchResu
     ...data.teams.map((team) => ({
       id: `team-${team.name}`,
       group: 'teams' as const,
-      label: businessTeamName(team.name),
+      label: sidebarTeamLabel(team.name, teamNames),
       subtitle: team.subtitle,
       icon: 'team' as const,
       path: withTeamQuery(teamPath(team.name)),

@@ -333,6 +333,14 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
     };
   });
 
+  it('marks only the Coding link for the selected country as current', async () => {
+    catalogState.scopes.push({ team: 'Coding EGY', region: 'EGY', performance_level: 'Employee', position: 'Agent' });
+    renderSidebar('/team/coding?region=EGY');
+    const teams = within(await screen.findByRole('group', { name: 'RCM teams' }));
+    expect(teams.getByRole('link', { name: 'Coding · Egypt' })).toHaveAttribute('aria-current', 'page');
+    expect(teams.getByRole('link', { name: 'Coding · UAE' })).not.toHaveAttribute('aria-current');
+  });
+
   it('shows Function Summary, only the assigned functions with their teams, and Reports', async () => {
     renderSidebar('/function-summary/rcm');
     expect(screen.getByText('FUNCTION VIEWER')).toBeInTheDocument();

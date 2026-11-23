@@ -22,6 +22,7 @@ interface TeamHeaderProps {
   multiBranchFilter?: boolean;
   onBack: () => void;
   showRegionFilter?: boolean;
+  allowAllRegions?: boolean;
   showPreApprovalsWorkflowFilter?: boolean;
   preApprovalsWorkflow?: PreApprovalsWorkflowFilter;
   setPreApprovalsWorkflow?: (workflow: PreApprovalsWorkflowFilter) => void;
@@ -60,6 +61,7 @@ const TeamHeader = ({
   multiBranchFilter = false,
   onBack,
   showRegionFilter = true,
+  allowAllRegions = true,
   showPreApprovalsWorkflowFilter = false,
   preApprovalsWorkflow = 'all',
   setPreApprovalsWorkflow,
@@ -207,7 +209,7 @@ const TeamHeader = ({
             disabled={Boolean(lockedRegion)}
             value={lockedRegion || region}
             options={lockedRegion ? [{ value: lockedRegion, label: lockedRegion }] : [
-              { value: 'All', label: 'All Regions' },
+              ...(allowAllRegions ? [{ value: 'All', label: 'All Regions' }] : []),
               { value: 'EGY', label: 'Egypt (EGY)' },
               { value: 'UAE', label: 'UAE' },
             ]}

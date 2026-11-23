@@ -37,6 +37,8 @@ from utils.team_identity import (
     EGYPT_RESUBMISSION_TEAM_ALIASES,
     dedupe_egypt_resubmission_records,
     logical_team_name,
+    normalize_team_country,
+    team_name_for_country,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,11 +68,11 @@ class SummaryFilters:
 
     @property
     def team_key(self) -> str | None:
-        return self.team.strip().casefold() if self.team and self.team.strip() else None
+        return team_name_for_country(self.team, self.region).strip().casefold() if self.team and self.team.strip() else None
 
     @property
     def region_key(self) -> str | None:
-        return self.region.strip().casefold() if self.region and self.region.strip() else None
+        return (normalize_team_country(self.region) or self.region).strip().casefold() if self.region and self.region.strip() else None
 
 
 @dataclass
@@ -93,7 +95,7 @@ def _team_filter_keys(team_key: str) -> set[str]:
 
 
 def matches(record: Any, filters: SummaryFilters) -> bool:
-    """The legacy per-record predicate, unchanged."""
+    """Apply the same filters to indexed rows and resolved records."""
     if filters.employee_id and str(_field(record, "employee_id")) != filters.employee_id:
         return False
     if filters.year is not None and _field(record, "year") not in (filters.year, str(filters.year)):
@@ -102,7 +104,10 @@ def matches(record: Any, filters: SummaryFilters) -> bool:
         return False
     if filters.team_key and str(_field(record, "team") or "").strip().casefold() not in _team_filter_keys(filters.team_key):
         return False
-    return not (filters.region_key and str(_field(record, "region") or "").strip().casefold() != filters.region_key)
+    if not filters.region_key:
+        return True
+    record_region = str(_field(record, "region") or "").strip()
+    return (normalize_team_country(record_region) or record_region).casefold() == filters.region_key
 
 
 def to_payload(record: Any) -> dict | None:

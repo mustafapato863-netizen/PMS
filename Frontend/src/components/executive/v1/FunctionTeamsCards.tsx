@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned, isLowerBetter, scoreTone } from '../../../features/executive/format';
 import { teamPath, withTeamQuery } from '../../../types';
-import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
+import { presentationTeamName, sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
 import { MONTHS } from '../../../features/executive/compose';
 import { ExecCard, ExecCardHeader, Footnote, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill, ToneText } from './ExecPrimitives';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';
@@ -32,8 +32,8 @@ function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
       && level !== 'Managerial' && level !== 'Corporate';
     next.set(employeeMarketingSheet ? 'position_view' : 'position', team.position);
   }
-  const query = next.toString();
-  return withTeamQuery(teamPath(sourceTeam), query);
+  if (sharedTeamRoute(sourceTeam)) next.delete('region');
+  return withTeamQuery(teamPath(sourceTeam), next);
 }
 
 /** Function Summary (Figma 48:3): teams ranked by score. */

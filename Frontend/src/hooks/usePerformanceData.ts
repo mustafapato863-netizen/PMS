@@ -1175,7 +1175,7 @@ export function useTeamData(
   rcmGroup: RcmGroupFilter = 'all',
   egyptTeam = '',
   legacyEnabled = true,
-  matchTeams: string[] = NO_MATCH_TEAMS,
+  matchTeams: readonly string[] = NO_MATCH_TEAMS,
 ) {
   const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
   const acceptedTeams = useMemo(

@@ -1272,7 +1272,7 @@ function withInboundBookingRate(agent: AgentRecord, kpi: KPIConfig): KPIConfig {
 }
 
 export function usesStoredPeriodScore(agent: AgentRecord): boolean {
-  const team = agent.identity.team?.trim().toLowerCase();
+  const team = agent.identity?.team?.trim().toLowerCase();
   return team === 'er dr' || team === 'radiologist' || team === 'qlty&case-mngt'
     || (team === 'csr' && agent.raw_data?.ScoringMethod === 'csr_sharjah_october_2026');
 }
