@@ -678,10 +678,6 @@ def detect_contextual_capability(
             return "navigation", "local_rules", 0.0
 
 
-    from services.ai.config import get_ai_runtime_config
-    if get_ai_runtime_config().model_led_pilot_enabled:
-        return "performance_query", "model_led_pilot", 0.0
-
     if is_off_topic_prompt(prompt):
         return "off_topic", "local_rules", 0.0
 
@@ -708,6 +704,11 @@ def detect_contextual_capability(
         if _has_active_analytical_query(req):
             return "performance_query", "local_rules", 0.0
         return "clarification", "local_rules", 0.0
+
+    from services.ai.config import get_ai_runtime_config
+
+    if get_ai_runtime_config().can_use_model_led_planner((scope or {}).get("role"), req.provider_override):
+        return "performance_query", "model_led_pilot", 0.0
 
     # Contextual help/navigation/proposal cues without explicit analytical data query keywords
     has_contextual_cue = any(
@@ -798,18 +799,6 @@ def detect_contextual_capability(
 
     if _has_grounded_followup_context(req):
         return "performance_query", "local_rules", 0.0
-
-    # Admin model-led pilot: non-off-topic natural English questions bypass the
-    # rigid lexical keyword gate so the model-led planner can interpret unfamiliar
-    # phrasing, invoke discover_pms_catalog, or ask one focused clarification.
-    from services.ai.config import get_ai_runtime_config
-    _ai_cfg = get_ai_runtime_config()
-    if (
-        _ai_cfg.model_led_pilot_enabled
-        and (req.provider_override or "auto") != "deterministic"
-        and str((scope or {}).get("role") or "").strip() == "Admin"
-    ):
-        return "performance_query", "model_led_pilot", 0.0
 
     # Unrecognized prompt with zero PMS signals and zero grounded follow-up cues:
     # ask the configured intent classifier (with bounded context) once; never default to current_value.

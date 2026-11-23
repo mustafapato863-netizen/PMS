@@ -1172,6 +1172,8 @@ class PmsAiOrchestrator:
         if not isinstance(tool_args, dict):
             tool_args = {}
 
+        from services.ai.roster_comparison import ROSTER_TOOL_NAME
+
         # Bounded discovery/planning loop: when the planner asks for catalog discovery,
         # execute authorized discovery reads (max 3 rounds, max 6 total reads) and
         # early-stop if the planner repeats an identical call without gaining evidence.
@@ -1218,6 +1220,7 @@ class PmsAiOrchestrator:
                             "compare_branches, get_score_trend, rank_employees, get_kpi_diagnosis) with exact canonical names and periods, "
                             "or ask ONE concise clarification if a choice materially changes the answer. "
                             "Do NOT repeat an identical discover_pms_catalog call. "
+                            "For roster changes, call compare_evaluation_rosters with entity, baseline_period and target_period. "
                             'Return JSON: {"response_type": "tool_call"|"clarification", "tool_name": "...", "tool_arguments": {...}, "clarification_prompt": "...", "clarification_choices": [...]}.'
                         ),
                     ),
@@ -1387,6 +1390,70 @@ class PmsAiOrchestrator:
                     router_metrics=routed.provider_metrics,
                     fallback_outcome_override=str(locals().get("disc_fallback_outcome", "none")),
                 ),
+            )
+
+        if tool_name == ROSTER_TOOL_NAME:
+            from services.ai.guided_reads import finalize_deterministic_turn
+            from services.ai.roster_comparison import (
+                build_roster_comparison_response,
+                resolve_planned_roster_comparison,
+            )
+
+            roster_query = resolve_planned_roster_comparison(
+                req.prompt, req.session_state, _prompt_region_hint(req.prompt), tool_args
+            )
+            if roster_query is not None:
+                self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
+                roster_response, roster_plan = build_roster_comparison_response(
+                    roster_query, req.session_state, live_auth_service, self.scope,
+                )
+                release_read_transaction(self.db)
+            else:
+                question = "Which group and two evaluation months should I compare?"
+                roster_plan = ValidatedQueryPlanV2(
+                    turn_kind="clarification",
+                    clarification_code="MISSING_COMPARISON_PERIOD",
+                )
+                roster_response = AiChatResponsePayload(
+                    trace_id="",
+                    outcome="clarification",
+                    headline=question,
+                    clarification=AiClarificationPrompt(
+                        code="MISSING_COMPARISON_PERIOD", question=question, choices=[],
+                    ),
+                    resolved_session_state=req.session_state,
+                    validated_plan_v2=roster_plan,
+                    capability_mode="performance_query",
+                    provider_used="deterministic",
+                    answer_source="deterministic",
+                )
+
+            roster_response.tool_calls = discovery_tool_records + roster_response.tool_calls
+            roster_response.conversation_id = active_conversation_id
+            roster_response.turn_id = str(claimed_turn.id) if claimed_turn else None
+            roster_response.context_version = active_context_version
+            roster_response.latency_ms = int((time.perf_counter() - t0) * 1000)
+            roster_response.timings = AiTurnTimingBreakdown(
+                total_ms=roster_response.latency_ms,
+                provider_ms=routed.provider_metrics.provider_ms,
+            )
+            roster_response.provider_usage = _build_aggregated_usage(
+                router_mode=cfg.router_mode,
+                route_used="model_led_pilot",
+                router_metrics=routed.provider_metrics,
+            )
+            return finalize_deterministic_turn(
+                orchestrator=self,
+                req=req,
+                resp=roster_response,
+                plan_v2=roster_plan,
+                confirmed_ctx=roster_response.resolved_session_state.last_confirmed_query,
+                conv_service=conv_service,
+                active_conversation_id=active_conversation_id,
+                claimed_turn=claimed_turn,
+                claimed_context_version=claimed_context_version,
+                claimed_token=claimed_token,
+                t0=t0,
             )
 
         prior = req.session_state.last_confirmed_query

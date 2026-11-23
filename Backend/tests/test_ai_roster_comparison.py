@@ -2,6 +2,8 @@
 
 import pytest
 
+from ai_provider_fakes import failed_response, install_scripted_provider, tool_response
+
 from models.ai_schemas import AiChatMessage, AiChatRequest, SessionFilterContext
 from models.models import AiTurn, Employee, PerformanceRecord, Team
 from services.ai.conversation_service import AiConversationService
@@ -16,10 +18,6 @@ def roster_db(monkeypatch):
     monkeypatch.setenv("PMS_AI_GUIDED_READS_ENABLED", "false")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
 
-    def unexpected_classifier(*args, **kwargs):
-        pytest.fail("A recognized roster comparison should bypass the generic capability classifier")
-
-    monkeypatch.setattr("services.ai.orchestrator.detect_contextual_capability", unexpected_classifier)
     with _build_in_memory_db() as db:
         pharmacy = Team(name="Pharmacy", db_name="Pharmacy", display_name="Pharmacy", region="UAE")
         finance = Team(name="Finance", db_name="Finance", display_name="Finance", region="UAE")
@@ -46,7 +44,11 @@ def roster_db(monkeypatch):
         yield db
 
 
-def test_screenshot_prompt_uses_uae_records_and_employee_ids(roster_db):
+def test_screenshot_prompt_uses_uae_records_and_employee_ids(roster_db, monkeypatch):
+    def unexpected_classifier(*args, **kwargs):
+        pytest.fail("A recognized roster comparison should bypass the generic capability classifier")
+
+    monkeypatch.setattr("services.ai.orchestrator.detect_contextual_capability", unexpected_classifier)
     response = PmsAiOrchestrator(roster_db, {"role": "Admin"}).run_chat_turn(AiChatRequest(
         prompt=SCREENSHOT_PROMPT,
         history=[
@@ -142,3 +144,113 @@ def test_roster_conversation_saves_evidence_and_rechecks_scope(roster_db, monkey
     service = AiConversationService(roster_db, scope)
     assert service._is_turn_evidence_authorized(turn, scope)
     assert not service._is_turn_evidence_authorized(turn, {**scope, "accessible_regions": ["EGY"]})
+
+
+UNSEEN_ROSTER_PROMPT = "UAE roll-call churn Sep vs Oct"
+
+
+def test_model_selects_existing_roster_tool_for_unseen_phrasing(roster_db, monkeypatch):
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    calls = install_scripted_provider(monkeypatch, tool_response(
+        "compare_evaluation_rosters",
+        entity="employee",
+        baseline_period="2026-09",
+        target_period="2026-10",
+        region="EGY",
+    ))
+    response = PmsAiOrchestrator(roster_db, {"role": "Admin"}).run_chat_turn(
+        AiChatRequest(prompt=UNSEEN_ROSTER_PROMPT)
+    )
+    assert response.outcome == "answer", response.headline
+    assert [item.title for item in response.visual_cards[0].items] == ["UAE Missing"]
+    assert response.validated_plan_v2.scope.periods == ["2026-09", "2026-10"]
+    assert response.tool_calls[0].arguments["region"] == "UAE"
+    assert response.provider_usage.route_used == "model_led_pilot"
+    assert response.provider_usage.provider_calls == 1
+    assert [call["purpose"] for call in calls] == ["model_led_router"]
+    assert calls[0]["task_role"] == "investigation"
+
+
+
+def test_model_reuses_verified_roster_periods_for_a_follow_up(roster_db, monkeypatch):
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    calls = install_scripted_provider(monkeypatch, tool_response(
+        "compare_evaluation_rosters", entity="team", baseline_period="2026-09", target_period="2026-10",
+    ))
+    orchestrator = PmsAiOrchestrator(roster_db, {"role": "Admin"})
+    first = orchestrator.run_chat_turn(AiChatRequest(prompt=SCREENSHOT_PROMPT))
+    follow_up = orchestrator.run_chat_turn(AiChatRequest(
+        prompt="Same comparison at team level?",
+        session_state=first.resolved_session_state,
+    ))
+    assert follow_up.outcome == "answer", follow_up.headline
+    assert follow_up.validated_plan_v2.scope.periods == ["2026-09", "2026-10"]
+    assert [item.title for item in follow_up.visual_cards[0].items] == ["Finance"]
+    assert "Prior roster comparison: baseline 2026-09, target 2026-10" in calls[0]["messages"][-1]["content"]
+
+
+def test_model_proposed_roster_dates_cannot_replace_requested_periods(roster_db, monkeypatch):
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    install_scripted_provider(monkeypatch, tool_response(
+        "compare_evaluation_rosters", entity="employee", baseline_period="2026-08", target_period="2026-10",
+    ))
+    response = PmsAiOrchestrator(roster_db, {"role": "Admin"}).run_chat_turn(
+        AiChatRequest(prompt=UNSEEN_ROSTER_PROMPT)
+    )
+    assert response.outcome == "answer"
+    assert response.validated_plan_v2.scope.periods == ["2026-09", "2026-10"]
+    assert [item.title for item in response.visual_cards[0].items] == ["UAE Missing"]
+
+
+@pytest.mark.parametrize("planner_reply", [
+    failed_response("timeout"),
+    {"response_type": "conversational", "direct_response": "The answer was 99%."},
+])
+def test_unfamiliar_question_has_no_unverified_fallback(roster_db, monkeypatch, planner_reply):
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    install_scripted_provider(monkeypatch, planner_reply)
+    response = PmsAiOrchestrator(roster_db, {"role": "Admin"}).run_chat_turn(
+        AiChatRequest(prompt=UNSEEN_ROSTER_PROMPT)
+    )
+    assert response.outcome == "unavailable_data", response.headline
+    assert "99%" not in response.headline
+    assert not response.tool_calls
+
+
+
+@pytest.mark.parametrize(("prompt", "planner_reply", "outcome"), [
+    (
+        "UAE door badge swipes Sep vs Oct",
+        {"response_type": "unsupported"},
+        "unsupported_request",
+    ),
+    (
+        UNSEEN_ROSTER_PROMPT,
+        {"response_type": "clarification", "clarification_prompt": "Should I compare employees or teams?"},
+        "clarification",
+    ),
+])
+def test_model_distinguishes_an_unsupported_query_from_a_missing_choice(
+    roster_db, monkeypatch, prompt, planner_reply, outcome,
+):
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    install_scripted_provider(monkeypatch, planner_reply)
+    response = PmsAiOrchestrator(roster_db, {"role": "Admin"}).run_chat_turn(
+        AiChatRequest(prompt=prompt)
+    )
+    assert response.outcome == outcome
+    assert not response.tool_calls
+    if outcome == "clarification":
+        assert response.clarification.question == "Should I compare employees or teams?"
+
+
+def test_model_led_gate_respects_pilot_role_and_provider_override(monkeypatch):
+    from services.ai.contextual_assistant import detect_contextual_capability
+
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    question = AiChatRequest(prompt=UNSEEN_ROSTER_PROMPT)
+    admin_scope = {"role": "Admin"}
+    assert detect_contextual_capability(question, scope=admin_scope)[1] == "model_led_pilot"
+    assert detect_contextual_capability(question, scope={"role": "Manager"})[1] != "model_led_pilot"
+    deterministic = question.model_copy(update={"provider_override": "deterministic"})
+    assert detect_contextual_capability(deterministic, scope=admin_scope)[1] != "model_led_pilot"

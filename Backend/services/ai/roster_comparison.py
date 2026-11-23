@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -40,6 +40,21 @@ _PERIOD = re.compile(
     rf"(?<!\w)(?:(?P<iso_year>{_YEAR_PATTERN})-(?P<number>0[1-9]|1[0-2])"
     rf"|(?P<month>{_MONTH_PATTERN})(?:\s+(?P<year>{_YEAR_PATTERN}))?)(?!\w)"
 )
+ROSTER_TOOL_NAME = "compare_evaluation_rosters"
+_ROSTER_PERIOD_KEY = re.compile(rf"({_YEAR_PATTERN})-(0[1-9]|1[0-2])")
+ROSTER_TOOL_SCHEMA = {
+    "description": (
+        "Compare presence in PMS evaluation records. Return employees or teams present in the baseline "
+        "period and absent in the target period. Use for roster changes, missing evaluations and people "
+        "or teams that stopped appearing. Requires two periods from the question or verified context."
+    ),
+    "properties": {
+        "entity": {"type": "string", "enum": ["employee", "team"]},
+        "baseline_period": {"type": "string", "description": "YYYY-MM period in which the entities appeared"},
+        "target_period": {"type": "string", "description": "YYYY-MM period from which the entities are missing"},
+    },
+    "required": ["entity", "baseline_period", "target_period"],
+}
 _ENTITY = re.compile(r"\b(?:who|employees?|agents?|staff|people|teams?)\b")
 _ABSENCE = (
     r"\b(?:missing|absent|dropped\s+off|no\s+longer(?:\s+(?:appear(?:ed)?|show(?:ed)?|evaluated))?|"
@@ -68,10 +83,25 @@ def detect_roster_comparison(
     prompt: str, state: SessionFilterContext, explicit_region: str | None
 ) -> RosterComparison | None:
     text = prompt.casefold()
-    matches = list(_PERIOD.finditer(text))
     entity_match = _ENTITY.search(text)
-    if not matches or not entity_match or not re.search(_ABSENCE, text) or _METRIC_OR_WRITE.search(text):
+    if not entity_match or not re.search(_ABSENCE, text) or _METRIC_OR_WRITE.search(text):
         return None
+
+    entity = "team" if entity_match.group().startswith("team") else "employee"
+    query = _parse_roster_scope(text, state, explicit_region, entity)
+    return query if query and query.periods else None
+
+
+def _parse_roster_scope(
+    text: str,
+    state: SessionFilterContext,
+    explicit_region: str | None,
+    entity: Literal["employee", "team"],
+) -> RosterComparison | None:
+    matches = [
+        match for match in _PERIOD.finditer(text)
+        if not (match["month"] == "may" and re.match(r"\s+(?:be|have|need)\b", text[match.end():]))
+    ]
 
     # An explicit country-wide request supersedes incidental team and branch filters.
     teams = _detect_teams_in_prompt(text)
@@ -108,7 +138,6 @@ def detect_roster_comparison(
         r"\bfrom\s*$", text[:matches[0].start()]
     ) and re.fullmatch(r"\s+to\s+", text[matches[0].end():matches[1].start()]):
         target_index = 1
-    entity = "team" if entity_match.group().startswith("team") else "employee"
     return RosterComparison(
         entity=entity,
         periods=tuple(periods),
@@ -118,6 +147,58 @@ def detect_roster_comparison(
         function=function if function not in ("All", "all") else None,
         branch=branch if branch not in ("All", "all") else None,
     )
+
+
+def resolve_planned_roster_comparison(
+    prompt: str,
+    state: SessionFilterContext,
+    explicit_region: str | None,
+    arguments: dict,
+) -> RosterComparison | None:
+    """Use model-selected intent and direction with server-resolved dates and filters."""
+    entity = arguments.get("entity")
+    if entity not in ("employee", "team"):
+        return None
+    query = _parse_roster_scope(prompt.casefold(), state, explicit_region, entity)
+    if query is None:
+        return None
+
+    ordered_periods = []
+    for key in ("baseline_period", "target_period"):
+        match = _ROSTER_PERIOD_KEY.fullmatch(str(arguments.get(key) or ""))
+        if match is None:
+            break
+        ordered_periods.append((int(match[1]), _MONTH_BY_NUMBER[int(match[2])]))
+    valid_order = len(ordered_periods) == 2 and ordered_periods[0] != ordered_periods[1]
+
+    # Resolve the dates from the question. The planner can choose their order
+    # when the question leaves it implicit and both proposed dates match.
+    if len(query.periods) == 2:
+        if query.target_index is not None or not valid_order:
+            return query
+        indexes = [
+            [index for index, (year, month) in enumerate(query.periods)
+             if month == planned_month and year in (None, planned_year)]
+            for planned_year, planned_month in ordered_periods
+        ]
+        if all(len(matches) == 1 for matches in indexes) and indexes[0] != indexes[1]:
+            return replace(query, target_index=indexes[1][0])
+        return query
+
+    prior = state.last_confirmed_query
+    if valid_order and not query.periods and prior and prior.last_operation_kind == "roster_comparison":
+        planned_keys = {arguments["baseline_period"], arguments["target_period"]}
+        if planned_keys == set(prior.periods):
+            return replace(
+                query,
+                periods=tuple(ordered_periods),
+                target_index=1,
+                region=explicit_region or query.region or prior.region,
+                team=query.team or (None if explicit_region else prior.team),
+                function=query.function or (None if explicit_region else prior.function),
+                branch=query.branch or (None if explicit_region else prior.branch),
+            )
+    return replace(query, periods=())
 
 
 def build_roster_comparison_response(
@@ -255,7 +336,7 @@ def build_roster_comparison_response(
         [row for row in records if (row.year, row.month) == period] for period in periods
     )
     response.tool_calls = [AiToolCallRecord(
-        tool_name="compare_evaluation_rosters",
+        tool_name=ROSTER_TOOL_NAME,
         arguments={
             "region": query.region,
             "team": query.team,

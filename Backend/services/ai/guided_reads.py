@@ -1077,13 +1077,13 @@ def finalize_deterministic_turn(
             scope=orchestrator.scope,
             outcome=resp.outcome,
             turn_kind=plan_v2.turn_kind,
-            route_used="local_rules",
+            route_used=resp.provider_usage.route_used,
             validated_plan=plan_v2.model_dump(),
             evidence_envelope=[item.model_dump() for item in resp.evidence_envelope_v2],
             response_payload=payload_for_store,
             session_state=resp.resolved_session_state,
             confirmed_context=confirmed_ctx,
-            provider_calls=0,
+            provider_calls=resp.provider_usage.provider_calls,
             total_ms=round((time.perf_counter() - t0) * 1000.0, 2),
         )
         resp.context_version = new_ver
