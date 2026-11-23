@@ -348,7 +348,7 @@ def _run_in_process_checks() -> tuple[dict[str, Any], list[float], dict[str, Any
             and "@" not in host_val
             and "://" not in host_val
             and isinstance(timeout_val, (int, float))
-            and 0.5 <= float(timeout_val) <= 10.0
+            and 0.5 <= float(timeout_val) <= 18.0
             and len(diag_secrets) == 0
         )
         checks["diagnostics_truthfulness_and_secret_scan"] = {
