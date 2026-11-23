@@ -743,7 +743,7 @@ export function PresentationControlBar({
   onSelectFunctionSlug,
   onSelectSubItem,
 }: {
-  region: 'EGY' | 'UAE';
+  region: 'EGY' | 'UAE' | 'ALL';
   periodKey: string;
   monthOptions: Array<{ key: string; label: string }>;
   onPeriodChange: (key: string) => void;
@@ -846,7 +846,7 @@ export function PresentationControlBar({
           title="Agenda"
           subtitle={
             <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-              {region === 'EGY' ? 'Egypt' : 'UAE'} · {selectedMonthLabel}
+              {region === 'EGY' ? 'Egypt' : region === 'UAE' ? 'UAE' : 'All regions'} · {selectedMonthLabel}
             </span>
           }
           icon={
@@ -1039,7 +1039,7 @@ export function PresentationControlBar({
           title="Data Compliance"
           subtitle={
             <span className="rounded-md bg-[var(--bg-sunken)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]">
-              {region === 'EGY' ? 'Egypt' : 'UAE'} · {selectedMonthLabel}
+              {region === 'EGY' ? 'Egypt' : region === 'UAE' ? 'UAE' : 'All regions'} · {selectedMonthLabel}
             </span>
           }
           icon={<ClipboardCheck size={15} className="shrink-0 text-[var(--sgh-cyan-primary)]" aria-hidden="true" />}

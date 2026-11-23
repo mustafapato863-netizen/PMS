@@ -1,5 +1,5 @@
 import type { ExecutiveSummary } from '../executive/types';
-import { functionSlug, isExecutiveFunction } from '../executive/functions';
+import { functionSlug } from '../executive/functions';
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -613,7 +613,7 @@ export function adaptSummaryToMonthlyOverview(
             const hasMajorIssue = fnGrade === 'D' || fnGrade === 'E' || fnScore < 80;
             return {
               functionName: fn.function,
-              slug: isExecutiveFunction(fn.function) ? functionSlug(fn.function) : fn.function.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              slug: functionSlug(fn.function),
               score: fnScore,
               grade: fnGrade,
               gap: fn.gap ?? Number((fnScore - 100).toFixed(1)),
