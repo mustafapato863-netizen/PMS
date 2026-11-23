@@ -79,6 +79,7 @@ const SHARED_DEPARTMENTS: Array<{ dbName: string; label: string }> = [
   { dbName: 'Human Resources', label: 'Human Resources' },
   { dbName: 'IT', label: 'IT' },
   { dbName: 'Offshore Admin & Management', label: 'Administration' },
+  { dbName: 'Quality Management', label: 'Quality Management' },
 ];
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, onToggleCollapsed = () => {}, isDesktop = true }: SidebarProps) => {

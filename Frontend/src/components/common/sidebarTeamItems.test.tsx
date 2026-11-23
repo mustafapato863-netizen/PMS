@@ -16,6 +16,7 @@ it.each([
   ['IT', 'lucide-monitor'],
   ['Administration', 'lucide-building-2'],
   ['Offshore Admin & Management', 'lucide-building-2'],
+  ['Quality Management', 'lucide-shield-check'],
 ])('uses the %s department icon', (team, iconClass) => {
   const { container } = render(getTeamIcon(team));
   expect(container.querySelector('svg')).toHaveClass(iconClass);

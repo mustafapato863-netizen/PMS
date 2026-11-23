@@ -77,6 +77,7 @@ export function normalizeFunctionSlug(rawSlugOrName: string): string {
   if (s === 'csr' || s === 'customer-service-representative') return 'csr';
   if (s === 'sales') return 'sales';
   if (s === 'pharmacy') return 'pharmacy';
+  if (s === 'quality-management') return 'quality-management';
   return s || 'call-center';
 }
 
@@ -103,6 +104,8 @@ export function canonicalFunctionNameFromSlug(functionSlug: string): string {
       return 'Sales';
     case 'pharmacy':
       return 'Pharmacy';
+    case 'quality-management':
+      return 'Quality Management';
     default:
       return functionSlug
         .split('-')

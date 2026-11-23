@@ -649,6 +649,12 @@ TEAM_ENGLISH_ALIASES: dict[str, tuple[str, ...]] = {
         "offshore admin",
         "administration",
     ),
+    "Quality Management": (
+        "quality management",
+        "quality team",
+        "quality department",
+        "qm",
+    ),
     "CRM": ("crm", "crm management", "crm bsc", "group crm"),
     "Nursing": ("nursing", "nursing management", "nursing bsc", "group nursing"),
     "PMO": ("pmo", "pmo management", "pmo bsc", "project management office"),
@@ -690,6 +696,8 @@ POSITION_ENGLISH_ALIASES: dict[str, tuple[str, str]] = {
     "it technical support": ("IT", "IT Technical Support"),
     "admin supervisor": ("Offshore Admin & Management", "Admin Supervisor"),
     "offshore pmo": ("Offshore Admin & Management", "Offshore PMO"),
+    "infection control consultant": ("Quality Management", "Infection Control Consultant"),
+    "senior quality specialist": ("Quality Management", "Senior Quality Specialist"),
     "ajm pharmacy manager": ("Pharmacy", "AJM Pharmacy Manager"),
     "dubai pharmacy manager": ("Pharmacy", "Dubai Pharmacy Manager"),
     "shj pharmacy manager": ("Pharmacy", "SHJ Pharmacy Manager"),
@@ -1629,6 +1637,7 @@ class PmsAiCatalog:
             "Human Resources",
             "IT",
             "Offshore Admin & Management",
+            "Quality Management",
         ]
         return [self._scope_row(t_name) for t_name in ordered_teams]
 
@@ -1664,6 +1673,7 @@ class PmsAiCatalog:
             "Human Resources",
             "IT",
             "Offshore Admin & Management",
+            "Quality Management",
             "CRM",
             "Nursing",
             "PMO",
@@ -1709,6 +1719,7 @@ class PmsAiCatalog:
             "Human Resources",
             "IT",
             "Offshore Admin & Management",
+            "Quality Management",
             "CRM",
             "Nursing",
             "PMO",

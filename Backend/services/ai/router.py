@@ -212,7 +212,7 @@ ORDERED_TEAM_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Human Resources", ("human resources", "hr team", "hr department", "in hr", "for hr")),
     ("IT", ("it team", "information technology", "it department", "in it", "for it")),
     ("Offshore Admin & Management", ("offshore admin & management", "offshore admin", "admin & management")),
-    ("Quality Management", ("quality management",)),
+    ("Quality Management", ("quality management", "quality department", "quality team")),
     ("Administration", ("administration", "admin department")),
     ("CRM", ("crm", "customer relationship management", "crm corporate", "crm bsc", "crm management")),
     ("Nursing", ("nursing", "nursing corporate", "nursing bsc", "nursing management")),
@@ -233,6 +233,8 @@ ORDERED_TEAM_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 POSITION_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("Support Positions", "Call Center trainer", ("call center trainer", "trainer")),
+    ("Quality Management", "Infection Control Consultant", ("infection control consultant", "infection control")),
+    ("Quality Management", "Senior Quality Specialist", ("senior quality specialist",)),
     (
         "Support Positions",
         "Quality Assurance",

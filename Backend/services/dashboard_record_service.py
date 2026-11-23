@@ -354,6 +354,7 @@ _POSITION_DEPARTMENTS = frozenset({
     "human resources",
     "it",
     "offshore admin & management",
+    "quality management",
     "call center",
     "rcm",
     "pharmacy",

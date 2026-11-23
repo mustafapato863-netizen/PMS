@@ -464,6 +464,7 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'Human Resources': 'human-resources',
   'IT': 'it',
   'Offshore Admin & Management': 'administration',
+  'Quality Management': 'quality-management',
 };
 
 export const TEAM_NAME_MAP: Record<string, string> = {
@@ -496,6 +497,7 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'human-resources': 'Human Resources',
   'it': 'IT',
   'administration': 'Administration',
+  'quality-management': 'Quality Management',
 };
 
 export const TEAM_DB_NAME_MAP: Record<string, string> = {
@@ -528,6 +530,7 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   'human-resources': 'Human Resources',
   'it': 'IT',
   'administration': 'Offshore Admin & Management',
+  'quality-management': 'Quality Management',
 };
 
 /** Letters and digits only: "Pre-Approvals IP Offshore", "pre-approvals-ip-offshore" and "PRE Approvals IP Offshore" share one key. */

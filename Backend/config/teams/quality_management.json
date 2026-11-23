@@ -1,0 +1,171 @@
+{
+  "team": "Quality Management",
+  "db_name": "Quality Management",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Infection Control Consultant": {
+          "kpis": [
+            {
+              "key": "infection_contro_policy_compliance_rate",
+              "label": "Infection Control Policy Compliance Rate",
+              "perspective": "Internal Process",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "infection_contro_staff_training_completion_rate",
+              "label": "Staff Infection Control Training Completion Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "infection_contro_audit_findings_resolution_rate",
+              "label": "Audit Findings Resolution Rate",
+              "perspective": "Internal Process",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            }
+          ]
+        },
+        "Senior Quality Specialist": {
+          "kpis": [
+            {
+              "key": "senior_quality_s_dms_project_initiation",
+              "label": "Initiated the new Documentation Management System (DMS) project",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "senior_quality_s_iso_telehealth_certification",
+              "label": "Pursued ISO certification for Telehealth services",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "senior_quality_s_jci_ajman_branch_preparation",
+              "label": "JCI AJMAN branch preparation",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "senior_quality_s_targeted_department_policies",
+              "label": "Completed all targeted department policies — 10+ department policies reviewed and edited",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "senior_quality_s_iso_documentation_requiremen",
+              "label": "Completed all ISO documentation requirements — 50+ policies and SOPs, risk assessment, and objectives created and reviewed",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "senior_quality_s_job_description_completion",
+              "label": "Job description completion — most of the Administration and Medical departments finalized",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -20,6 +20,7 @@ const POSITION_LISTS: Record<string, string[]> = {
   'human_resources.json': ['HR Specialist', 'Assessment Center Lead', 'HR Operation Supervisor'],
   'it.json': ['IT Technical Support'],
   'offshore_admin_management.json': ['Offshore PMO', 'Admin Supervisor'],
+  'quality_management.json': ['Infection Control Consultant', 'Senior Quality Specialist'],
   'call_center.json': [
     'Call Center trainer',
     'Quality Assurance',
@@ -121,6 +122,7 @@ describe('position department routes', () => {
     expect(TEAM_ID_MAP['Human Resources']).toBe('human-resources');
     expect(TEAM_ID_MAP.IT).toBe('it');
     expect(TEAM_ID_MAP['Offshore Admin & Management']).toBe('administration');
+    expect(TEAM_ID_MAP['Quality Management']).toBe('quality-management');
     expect(TEAM_NAME_MAP.administration).toBe('Administration');
     expect(TEAM_DB_NAME_MAP.administration).toBe('Offshore Admin & Management');
     expect(teamPath('Finance')).toBe('/team/finance');
@@ -128,6 +130,7 @@ describe('position department routes', () => {
     expect(teamPath('IT')).toBe('/team/it');
     expect(teamPath('Offshore Admin & Management')).toBe('/team/administration');
     expect(teamPath('Administration')).toBe('/team/administration');
+    expect(teamPath('Quality Management')).toBe('/team/quality-management');
   });
 
   it('treats Offshore Admin & Management as the Administration function', () => {
@@ -139,6 +142,7 @@ describe('position department routes', () => {
     expect(teamBelongsToFunction('Finance', 'Finance')).toBe(true);
     expect(teamBelongsToFunction('IT', 'IT')).toBe(true);
     expect(teamBelongsToFunction('Human Resources', 'Human Resources')).toBe(true);
+    expect(teamBelongsToFunction('Quality Management', 'Quality Management')).toBe(true);
   });
 
   it('opens the balanced scorecard only for Corporate', () => {

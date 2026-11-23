@@ -141,7 +141,7 @@ describe('Function Summary routing and scope', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/marketing');
     expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
       'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
-      'Finance', 'Human Resources', 'IT', 'Administration',
+      'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
     ]);
     expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
   });

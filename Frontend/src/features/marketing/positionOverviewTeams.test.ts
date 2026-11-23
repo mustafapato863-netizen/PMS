@@ -16,5 +16,11 @@ describe('positionOverviewIdentity', () => {
     expect(positionOverviewIdentity('finance').overviewTitle).toBe('Finance Overview');
     expect(positionOverviewIdentity('human-resources').overviewTitle).toBe('Human Resources Overview');
     expect(positionOverviewIdentity('it')).toMatchObject({ label: 'IT', dbName: 'IT', overviewTitle: 'IT Overview' });
+    expect(positionOverviewIdentity('quality-management')).toMatchObject({
+      label: 'Quality Management',
+      dbName: 'Quality Management',
+      overviewTitle: 'Quality Management Overview',
+      overviewPath: '/team/quality-management',
+    });
   });
 });
