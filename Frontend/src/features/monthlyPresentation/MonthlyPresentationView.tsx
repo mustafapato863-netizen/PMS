@@ -1071,54 +1071,55 @@ function MonthlyPresentationScreen({
   const monthlyFilterActiveCount = (activeRegion ? 1 : 0) + (functionSlug ? 1 : 0);
   const monthlyFilterClearableCount = functionSlug ? 1 : 0;
   const headerToolbar = (
-    <ResponsiveFilters
+    <>
+    {availableRegions.length > 1 && (
+      <div
+        role="tablist"
+        aria-label="Region filter"
+        className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeRegion === 'EGY'}
+          data-testid="region-egy"
+          onClick={() => handleRegionChange('EGY')}
+          disabled={!availableRegions.includes('EGY')}
+          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+            activeRegion === 'EGY'
+              ? 'bg-white font-bold text-blue-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <EgyptFlag className="size-3.5" />
+          <span>Egypt (EGY)</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeRegion === 'UAE'}
+          data-testid="region-uae"
+          onClick={() => handleRegionChange('UAE')}
+          disabled={!availableRegions.includes('UAE')}
+          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+            activeRegion === 'UAE'
+              ? 'bg-white font-bold text-blue-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <UaeFlag className="size-3.5" />
+          <span>UAE</span>
+        </button>
+      </div>
+    )}
+      <ResponsiveFilters
       activeCount={monthlyFilterActiveCount}
       clearableCount={monthlyFilterClearableCount}
       onClear={handleBackToOverview}
       label="Monthly filters"
     >
       <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
-        {availableRegions.length > 1 && (
-          <div
-            role="tablist"
-            aria-label="Region filter"
-            className="col-span-full inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeRegion === 'EGY'}
-              data-testid="region-egy"
-              onClick={() => handleRegionChange('EGY')}
-              disabled={!availableRegions.includes('EGY')}
-              className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-                activeRegion === 'EGY'
-                  ? 'bg-white font-bold text-blue-600 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <EgyptFlag className="size-3.5" />
-              <span>Egypt (EGY)</span>
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeRegion === 'UAE'}
-              data-testid="region-uae"
-              onClick={() => handleRegionChange('UAE')}
-              disabled={!availableRegions.includes('UAE')}
-              className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-                activeRegion === 'UAE'
-                  ? 'bg-white font-bold text-blue-600 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UaeFlag className="size-3.5" />
-              <span>UAE</span>
-            </button>
-          </div>
-        )}
         <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
           Reporting month
           <select
@@ -1152,6 +1153,7 @@ function MonthlyPresentationScreen({
         </label>
       </div>
     </ResponsiveFilters>
+    </>
   );
 
   const insideDetail = Boolean(activeTeamSlug || activeRoleSlug);
