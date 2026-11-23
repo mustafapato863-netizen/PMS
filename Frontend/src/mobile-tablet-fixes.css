@@ -1,0 +1,117 @@
+/**
+ * Mobile / tablet responsive fixes (Phase 1).
+ *
+ * Imported from main.tsx right after index.css. These rules are unlayered,
+ * exactly like the custom rules in index.css, so they beat Tailwind's layered
+ * utilities wherever both apply — and because this sheet loads after index.css
+ * (and after ui/dock.css), its rules also win ties against the unlayered dock
+ * rules. That is why the overrides below use plain selectors instead of
+ * !important (except the iOS input rule, where unlayered component rules such
+ * as .login-field input would otherwise win).
+ */
+
+/* ── P0-2: BackToTop gets its own slot above the "Ask PMS AI" FAB ────────── */
+/* The FAB sits at 78px (above-navigation-dock) on viewports up to 1279px.
+   BackToTop previously shared that slot and was covered by the FAB (z-56
+   over z-20). It now rides 140px up on those viewports; desktop is untouched. */
+@media (max-width: 1279px) {
+  body .above-assistant-fab {
+    bottom: calc(140px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── P0-4: navigation dock auto-hides on scroll down ─────────────────────── */
+/* The dock slides below the viewport while scrolling down and returns on
+   scroll up. End-of-page clearance (.has-navigation-dock .app-route-padding)
+   is unchanged. visibility flips only after the slide finishes, so the
+   hidden dock is never keyboard-focusable. Anchor jumps also clear the dock
+   via scroll-padding-bottom. */
+@media (max-width: 1279px) {
+  html {
+    scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 1279px) and (prefers-reduced-motion: no-preference) {
+  body nav.navigation-dock {
+    transition:
+      transform 280ms ease,
+      visibility 0s linear;
+  }
+
+  body nav.navigation-dock.dock-auto-hidden {
+    transform: translateX(-50%) translateY(calc(100% + 24px));
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      transform 280ms ease,
+      visibility 0s linear 280ms;
+  }
+}
+
+/* ── P0-3: hide the floating "Ask PMS AI" launcher below 768px ───────────── */
+/* The header "Ask AI" button already opens the assistant on every page, so
+   the floating launcher is redundant on phones — and it covered the
+   BackToTop button. Only the launcher is hidden; the open panel (rendered
+   by the same portal when isOpen) is untouched. Implemented here instead of
+   in ContextualAssistantPanel.tsx so a 1,594-line file is not rewritten for
+   a one-line change. */
+@media (max-width: 767px) {
+  [data-testid='contextual-assistant-launcher'] {
+    display: none;
+  }
+}
+
+/* ── P1-5: visible labels under dock icons on phones ─────────────────────── */
+/* DockLabel is a hover-only tooltip; touch users never see it. On phones each
+   dock item shows its label stacked under the icon. The label reuses the
+   .navigation-dock-label sizing the codebase already defines (max-width +
+   ellipsis) and is hidden again at 768px and up. */
+body nav.navigation-dock .navigation-dock-label {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  body nav.navigation-dock .navigation-dock-item {
+    flex-direction: column;
+    gap: 1px;
+    min-width: 52px;
+    padding: 3px 2px 2px;
+  }
+
+  body nav.navigation-dock .navigation-dock-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px;
+    line-height: 1.2;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* Hover tooltips are redundant once the label is always visible. */
+  body nav.navigation-dock [role='tooltip'] {
+    display: none;
+  }
+}
+
+/* ── P1-6: stop iOS Safari auto-zoom on focus ─────────────────────────────── */
+/* Safari zooms any field whose font is below 16px. The !important is
+   deliberate: unlayered component rules such as .login-field input
+   (font-size: 14px) would otherwise beat this global rule. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ── P1-7: lift toasts above the navigation dock zone ────────────────────── */
+@media (max-width: 1279px) {
+  body .toast-above-dock {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+}

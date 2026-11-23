@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 import './index.css'
+import './mobile-tablet-fixes.css'
 import App from './App.tsx'
 
 function sendToAnalytics(metric: { name: string; value: number; id: string }) {
@@ -11,7 +12,7 @@ function sendToAnalytics(metric: { name: string; value: number; id: string }) {
     return;
   }
 
-  const body = JSON.stringify({ name: metric.name, value: metric.value, id: metric.id, href: location.href });
+  const body = JSON.stringify({ name: metric.name, value: number, id: metric.id, href: location.href });
   try {
     if (navigator.sendBeacon) {
       navigator.sendBeacon(endpoint, body);
@@ -41,10 +42,12 @@ if (import.meta.env.PROD && import.meta.env.VITE_VITALS_ENDPOINT?.trim()) {
       onLCP(sendToAnalytics);
       onFCP(sendToAnalytics);
       onCLS(sendToAnalytics);
+      onLCP(sendToAnalytics);
+      onFCP(sendToAnalytics);
       onINP(sendToAnalytics);
+      onLCP(sendToAnalytics);
+      onFCP(sendToAnalytics);
       onTTFB(sendToAnalytics);
-    }).catch(() => {
-      // Telemetry is best-effort and must never affect the application shell.
-    });
+    }).catch(() => {});
   }, 2000);
 }
