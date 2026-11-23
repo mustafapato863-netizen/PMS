@@ -747,7 +747,7 @@ def try_execute_guided_read_turn(
             ),
             provider_usage=AiProviderUsageMetrics(router_mode=cfg.router_mode, route_used="local_rules", provider_calls=0),
         )
-        return _finalize_guided_turn(
+        return finalize_deterministic_turn(
             orchestrator=orchestrator,
             req=req,
             resp=restr,
@@ -987,7 +987,7 @@ def try_execute_guided_read_turn(
         ),
     )
 
-    return _finalize_guided_turn(
+    return finalize_deterministic_turn(
         orchestrator=orchestrator,
         req=req,
         resp=resp,
@@ -1002,7 +1002,7 @@ def try_execute_guided_read_turn(
     )
 
 
-def _finalize_guided_turn(
+def finalize_deterministic_turn(
     *,
     orchestrator: Any,
     req: AiChatRequest,
@@ -1076,10 +1076,10 @@ def _finalize_guided_turn(
             claim_token=claimed_token,
             scope=orchestrator.scope,
             outcome=resp.outcome,
-            turn_kind="analytical",
+            turn_kind=plan_v2.turn_kind,
             route_used="local_rules",
             validated_plan=plan_v2.model_dump(),
-            evidence_envelope=[],
+            evidence_envelope=[item.model_dump() for item in resp.evidence_envelope_v2],
             response_payload=payload_for_store,
             session_state=resp.resolved_session_state,
             confirmed_context=confirmed_ctx,

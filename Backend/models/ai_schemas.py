@@ -72,6 +72,7 @@ OperationKindV2 = Literal[
     "corrective_actions",
     "guide_lookup",
     "target_assessment",
+    "roster_comparison",
 ]
 
 MetricValueKindType = Literal[
