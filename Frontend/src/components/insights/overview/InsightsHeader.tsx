@@ -135,7 +135,7 @@ export default function InsightsHeader({
   regionOptions: FilterOption[];
   onRegionChange: (value: string) => void;
   branch?: string;
-  branchOptions?: FilterOption[];
+  branchOptions?: Branch[];
   onBranchChange?: (value: string) => void;
   functionValue: string;
   functionOptions: FilterOption[];
@@ -187,7 +187,7 @@ export default function InsightsHeader({
     <header className={`flex flex-col gap-[16px] pb-[4px] ${rowFrom === '2xl' ? '2xl:flex-row 2xl:items-end' : 'xl:flex-row xl:items-end'}`}>
       <div className="flex min-w-0 flex-1 flex-col gap-[4px] leading-normal">
         <div className="flex flex-wrap items-center gap-[10px]">
-          <h1 className="text-[32px] font-bold leading-normal tracking-[-0.48px] text-[var(--insights-heading)]">{title}</h1>
+          <h1 className="text-[26px] font-bold leading-normal tracking-[-0.48px] text-[var(--insights-heading)] sm:text-[32px]">{title}</h1>
           {titleBadge}
         </div>
         <p className="text-[14px] font-normal text-[var(--text-secondary)]">{subtitle}</p>
@@ -214,7 +214,7 @@ export default function InsightsHeader({
             label="Functions"
             ariaLabel="Function"
             value={functionValue}
-            options={functionOptions}
+            options={options}
             allLabel="All functions"
             onChange={onFunctionChange}
             widthClass="w-[168px]"
