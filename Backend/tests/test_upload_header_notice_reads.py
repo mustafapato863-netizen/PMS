@@ -152,6 +152,7 @@ def _source(module_name: str) -> str:
 
 # Importers that take some declared names from a shared scoring module.
 _EXTRA_SOURCES = {
+    "Data_Cleaning_Teams.csr": ("services.csr_sharjah_scoring",),
     "Data_Cleaning_Teams.preapprovals_offshore": ("services.preapprovals_offshore_scoring",),
 }
 

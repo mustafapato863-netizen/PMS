@@ -398,7 +398,7 @@
       },
       {
         "path": "Backend/services/insights_service.py",
-        "commit": "10eb735e5fcd748a6d068a96cf5141f4d4930e59"
+        "commit": "f1eb3fade2bd00eb042dd0d189707f9209e2ee9b"
       }
     ],
     "august_pooled_score_0_to_100": 79.82419863297693,
