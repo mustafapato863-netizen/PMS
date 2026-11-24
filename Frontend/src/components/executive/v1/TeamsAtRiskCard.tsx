@@ -3,9 +3,9 @@ import { AlertTriangle, TrendingDown, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath, withTeamQuery } from '../../../types';
-import { presentationTeamName, sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
+import { sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
 import { MONTHS } from '../../../features/executive/compose';
-import { FLAG_LABEL, FLAG_ORDER, formatShare } from './execModel';
+import { executiveTeamDisplayName, FLAG_LABEL, FLAG_ORDER, formatShare } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill } from './ExecPrimitives';
 import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
@@ -83,9 +83,9 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
             <div role="row" key={team.team} className={`flex items-center gap-[12px] border-b border-[var(--insights-row-border)] px-[14px] py-[12px] transition-colors last:border-b-0 hover:bg-white/60 dark:hover:bg-slate-800/35 ${lead ? 'border-l-[3px] border-l-rose-500' : ''}`} style={lead ? { background: 'var(--pms-grad-panel-neg)' } : undefined} data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 {onSelectTeam ? (
-                  <button type="button" title={`Review ${presentationTeamName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team, searchParams.get('region'))}</button>
+                  <button type="button" title={`Review ${executiveTeamDisplayName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400" onClick={() => onSelectTeam(team.team)}>{executiveTeamDisplayName(team.team, searchParams.get('region'))}</button>
                 ) : (
-                  <Link to={teamHref(team)} title={`View ${presentationTeamName(team.team, searchParams.get('region'))} team details`} className="text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">{presentationTeamName(team.team, searchParams.get('region'))}</Link>
+                  <Link to={teamHref(team)} title={`View ${executiveTeamDisplayName(team.team, searchParams.get('region'))} team details`} className="text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">{executiveTeamDisplayName(team.team, searchParams.get('region'))}</Link>
                 )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.function, team.regions.join(' + '), team.score_basis === 'leader_scorecard' ? 'Leader scorecard' : null].filter(Boolean).join(' · ')}</span>
                 {team.gap_share_percent != null && team.gap_share_percent > 0 && (
