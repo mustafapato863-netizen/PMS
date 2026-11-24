@@ -207,8 +207,8 @@ const CallCenterChannelSummary = ({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-600 dark:text-blue-300">Decision overview</p>
-              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of 3 teams' : 'No pooled KPI score'}</span>
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-600 dark:text-blue-300">Decision overview</p>
+              <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2.5 py-0.5 text-xs font-semibold leading-5 text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of 3 teams' : 'No pooled KPI score'}</span>
             </div>
             <h3 id="call-center-overview" className="mt-1 heading-3">Call Center Overview</h3>
             <p className="mt-1 max-w-3xl text-xs font-medium leading-5 text-[var(--text-secondary)]">
@@ -225,9 +225,12 @@ const CallCenterChannelSummary = ({
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.045] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">Department performance</p>
-            <span className={`rounded-full border px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${overallSignal.tone}`}>{overallSignal.label}</span>
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.06em] text-blue-700 dark:text-blue-300">Department performance</p>
+            <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${overallSignal.tone}`}>
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+              {overallSignal.label}
+            </span>
           </div>
           <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${displayedScorePoint(overallScore).toFixed(1)}%`}</p>
           <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">
@@ -291,7 +294,10 @@ const CallCenterChannelSummary = ({
                         <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
                       </div>
                     </div>
-                    <span className={`rounded-full border px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${signal.tone}`}>{signal.label}</span>
+                    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${signal.tone}`}>
+                      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                      {signal.label}
+                    </span>
                   </div>
                   <div className="mt-4 flex items-end justify-between gap-3">
                     <div>

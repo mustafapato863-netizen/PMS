@@ -207,7 +207,7 @@ const FunctionCard = memo(function FunctionCard({
       </div>
 
       {markStart && card.score !== null && (
-        <span className="inline-flex w-fit rounded-full bg-[var(--exec-neg-bg)] px-[8px] py-[2px] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--insights-negative)]">
+        <span className="inline-flex w-fit shrink-0 items-center whitespace-nowrap rounded-full bg-[var(--exec-neg-bg)] px-2.5 py-0.5 text-xs font-semibold leading-5 text-[var(--insights-negative)]">
           Start here
         </span>
       )}

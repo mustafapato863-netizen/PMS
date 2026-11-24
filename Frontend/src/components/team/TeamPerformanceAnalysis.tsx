@@ -90,7 +90,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
                     )}
                   </span>
                 </span>
-                <span className="hidden shrink-0 rounded-md bg-current/10 px-2 py-1 text-xs font-extrabold uppercase sm:inline-flex">
+                <span className="hidden shrink-0 items-center whitespace-nowrap rounded-full bg-current/10 px-2.5 py-0.5 text-xs font-semibold leading-5 sm:inline-flex">
                   {severityLabel[item.severity]}
                 </span>
                 {isExpanded ? <ChevronUp size={14} className="mt-1 shrink-0" /> : <ChevronDown size={14} className="mt-1 shrink-0" />}

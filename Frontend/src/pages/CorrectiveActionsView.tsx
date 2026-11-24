@@ -122,7 +122,7 @@ function ActionCard({
           <h2 className="truncate text-sm font-black text-[var(--text-primary)]">{action.employee_name || 'Unknown employee'}</h2>
           <p className="mt-1 truncate text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned team'} · {action.employee_id}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${style.className}`}>
+        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${style.className}`}>
           {style.label}
         </span>
       </div>
@@ -130,7 +130,7 @@ function ActionCard({
       {action.due_date && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusPill status={action.status || 'Open'} />
-          <span className={`rounded-full px-2 py-0.5 text-xs font-black ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
+          <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
             {dueBadgeLabel(action.due_date, action.days_to_due)}
           </span>
         </div>
