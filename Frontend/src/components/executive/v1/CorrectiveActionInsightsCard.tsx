@@ -9,7 +9,7 @@ import { actionAnalyticsStats } from '../../../features/executive/actionAnalytic
 import type { ExecutiveCorrectiveActions, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { summarizeRootCauses } from '../../../utils/rootCauseInsights';
-import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
+import { ExecCard, ExecCardHeader, Footnote, SoftEmpty, SoftLink } from './ExecPrimitives';
 
 type Accent = 'blue' | 'violet' | 'amber' | 'green' | 'rose' | 'teal';
 
@@ -87,8 +87,8 @@ function RankedActions({ title, rows, total, empty, testId }: {
                   <span className="font-medium text-[var(--text-primary)]">{row.label}</span>
                   <span className="shrink-0 rounded-full bg-[var(--bg-sunken)] px-[7px] py-[2px] text-xs font-semibold tabular-nums text-[var(--text-secondary)]">{row.count} {row.count === 1 ? 'action' : 'actions'}</span>
                 </div>
-                <div aria-hidden="true" className="h-[5px] overflow-hidden rounded-full bg-[var(--bg-sunken)]">
-                  <div className="h-full rounded-full bg-[var(--insights-accent)] transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${total ? row.count / total * 100 : 0}%` }} />
+                <div aria-hidden="true" className="h-[6px] overflow-hidden rounded-full bg-[var(--insights-track)]">
+                  <div className="h-full rounded-full transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${total ? row.count / total * 100 : 0}%`, background: 'var(--pms-grad-accent)' }} />
                 </div>
               </div>
             </li>
@@ -99,9 +99,9 @@ function RankedActions({ title, rows, total, empty, testId }: {
   );
 }
 
-/** Read-only decision patterns for summary pages. Operational follow-up stays in its own workspace. */
-export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel, range = null }: {
-  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string; range?: ExecutiveRangeBlock | null;
+/** Read-only decision patterns for summary pages, with an optional link into the Corrective Actions workspace. */
+export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel, range = null, workspaceHref = null }: {
+  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string; range?: ExecutiveRangeBlock | null; workspaceHref?: string | null;
 }) {
   const titleId = useId();
   const selectId = useId();
@@ -110,6 +110,15 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
   const pendingSync = data?.analytics?.pending_sync ?? [];
   const teams = [...new Set([...actions, ...pendingSync].map((action) => action.team).filter((team): team is string => Boolean(team)))].sort();
   const effectiveTeam = teams.includes(selectedTeam) ? selectedTeam : '';
+  const resolvedWorkspaceHref = (() => {
+    if (!workspaceHref) return null;
+    const [path, rawQuery = ''] = workspaceHref.split('?');
+    const params = new URLSearchParams(rawQuery);
+    if (effectiveTeam) params.set('team', effectiveTeam);
+    if (effective?.month && !range && !params.has('month')) params.set('month', effective.month);
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  })();
   const visible = effectiveTeam ? actions.filter((action) => action.team === effectiveTeam) : actions;
   const visiblePending = effectiveTeam ? pendingSync.filter((action) => action.team === effectiveTeam) : pendingSync;
   const stats = actionAnalyticsStats(visible);
@@ -128,18 +137,25 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
   if (visiblePending.length > 0) metricCards.push({ label: 'Pending Sync', count: visiblePending.length, icon: Clock3, accent: 'amber' });
   return (
     <ExecCard aria-labelledby={titleId} data-testid="corrective-action-insights">
-      <ExecCardHeader titleId={titleId} icon={ShieldCheck} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)"
-        title="Corrective actions" subtitle={`${scopeLabel} · ${period} · Decision patterns`} />
+      <ExecCardHeader
+        titleId={titleId}
+        icon={ShieldCheck}
+        iconBg="var(--exec-info-bg)"
+        iconColor="var(--exec-info-text)"
+        title="Corrective actions"
+        subtitle={`${scopeLabel} · ${period} · Decision patterns`}
+        action={resolvedWorkspaceHref ? <SoftLink to={resolvedWorkspaceHref} ariaLabel="Open Corrective Actions">Open Corrective Actions</SoftLink> : undefined}
+      />
       {!data?.analytics ? <SoftEmpty>Action analysis isn't available for this view yet.</SoftEmpty> : <>
-        <div className={`grid gap-[10px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+        <div className={`grid gap-[12px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {metricCards.map(({ label, count, icon: Icon, accent }) => (
-            <div key={label} className="flex min-w-0 items-center gap-[10px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] px-[12px] py-[10px]">
-              <span aria-hidden="true" className={`flex size-[34px] shrink-0 items-center justify-center rounded-[9px] ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
+            <div key={label} className="pms-glass-stage flex min-w-0 items-center gap-[12px] rounded-[12px] px-[14px] py-[12px]">
+              <span aria-hidden="true" className={`flex size-[36px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 dark:border-white/10 ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
                 <Icon className="size-[17px]" strokeWidth={1.8} />
               </span>
               <div className="min-w-0">
-                <p className="text-xs leading-[1.3] text-[var(--text-muted)]">{label}</p>
-                <p className="mt-[3px] text-[23px] font-bold leading-none tabular-nums text-[var(--insights-heading)]">{count}</p>
+                <p className="text-xs font-medium leading-[1.3] text-[var(--text-muted)]">{label}</p>
+                <p className="mt-[3px] text-[24px] font-bold leading-none tabular-nums text-[var(--insights-heading)]">{count}</p>
               </div>
             </div>
           ))}

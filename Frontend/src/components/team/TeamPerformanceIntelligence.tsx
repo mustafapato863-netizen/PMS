@@ -170,11 +170,11 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {isImprovingOffTarget ? (
-                        <span className="hidden items-center gap-1 rounded-full bg-slate-500/10 px-2.5 py-1 text-xs font-extrabold uppercase sm:inline-flex">
+                        <span className="hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-500/10 px-2.5 py-0.5 text-xs font-semibold leading-5 sm:inline-flex">
                           <span className="text-emerald-600 dark:text-emerald-300">Improving</span><span className="text-[var(--text-muted)]">·</span><span className="text-rose-600 dark:text-rose-300">Still {kpi.lowerBetter ? 'above' : 'below'} target</span>
                         </span>
                       ) : (
-                        <span className="hidden rounded-full bg-current/10 px-2.5 py-1 text-xs font-extrabold uppercase sm:inline-flex">{statusLabel[kpi.severity]}</span>
+                        <span className="hidden shrink-0 items-center whitespace-nowrap rounded-full bg-current/10 px-2.5 py-0.5 text-xs font-semibold leading-5 sm:inline-flex">{statusLabel[kpi.severity]}</span>
                       )}
                       {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     </span>

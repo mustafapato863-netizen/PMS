@@ -47,10 +47,14 @@ function badgeClass(action: PMSAction): string {
   return 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]';
 }
 
-function SummaryChip({ label, value, tone }: { label: string; value: string | number; tone: string }) {
+function SummaryChip({ label, value, tone, bg, border, accent }: { label: string; value: string | number; tone: string; bg?: string; border?: string; accent?: string }) {
   return (
-    <article className={`rounded-2xl border px-3 py-2 ${tone}`}>
-      <p className="text-xs font-black uppercase tracking-wide">{label}</p>
+    <article
+      className={`pms-glass-surface relative overflow-hidden rounded-[14px] px-3.5 py-2.5 ${tone}`}
+      style={bg ? { background: bg, borderColor: border } : undefined}
+    >
+      {accent && <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[2.5px]" style={{ background: accent }} />}
+      <p className="text-xs font-bold uppercase tracking-wide">{label}</p>
       <p className="mt-1 text-xl font-black text-[var(--text-primary)]">{value}</p>
     </article>
   );
@@ -208,16 +212,16 @@ export function ActionFollowUpBoard({
 
   return (
     <section className="space-y-4" aria-label="Action follow-up">
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-        <SummaryChip label="Overdue" value={summary.overdue} tone="border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-300" />
-        <SummaryChip label="Due this week" value={summary.due_soon} tone="border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300" />
-        <SummaryChip label="Open" value={summary.open} tone="border-blue-500/20 bg-blue-500/5 text-blue-700 dark:text-blue-300" />
-        <SummaryChip label="In Progress" value={summary.in_progress} tone="border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]" />
-        <SummaryChip label="Completed this month" value={summary.completed_this_month} tone="border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300" />
-        <SummaryChip label="Completion rate" value={`${summary.completion_rate}%`} tone="border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300" />
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
+        <SummaryChip label="Overdue" value={summary.overdue} tone="text-rose-700 dark:text-rose-300" bg="var(--pms-grad-panel-neg)" border="var(--pms-grad-panel-neg-border)" accent="var(--pms-grad-grade-e)" />
+        <SummaryChip label="Due this week" value={summary.due_soon} tone="text-amber-700 dark:text-amber-300" bg="var(--pms-grad-panel-warn)" border="var(--pms-grad-panel-warn-border)" accent="var(--pms-grad-grade-c)" />
+        <SummaryChip label="Open" value={summary.open} tone="text-sky-700 dark:text-sky-300" bg="var(--pms-grad-panel-info)" border="var(--pms-grad-panel-info-border)" accent="var(--pms-grad-accent)" />
+        <SummaryChip label="In Progress" value={summary.in_progress} tone="text-violet-700 dark:text-violet-300" bg="var(--pms-grad-panel-violet)" border="var(--pms-grad-panel-violet-border)" accent="var(--pms-grad-violet)" />
+        <SummaryChip label="Completed this month" value={summary.completed_this_month} tone="text-emerald-700 dark:text-emerald-300" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-a)" />
+        <SummaryChip label="Completion rate" value={`${summary.completion_rate}%`} tone="text-emerald-700 dark:text-emerald-300" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-b)" />
       </div>
 
-      <div className="glass-card grid gap-3 rounded-2xl p-3 lg:grid-cols-[minmax(180px,1fr)_repeat(4,minmax(130px,0.7fr))]">
+      <div className="pms-glass-surface grid gap-3 rounded-[16px] p-3 lg:grid-cols-[minmax(180px,1fr)_repeat(4,minmax(130px,0.7fr))]">
         <label className="relative block">
           <span className="sr-only">Search follow-up</span>
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />

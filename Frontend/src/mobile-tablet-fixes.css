@@ -11,12 +11,19 @@
  */
 
 /* ── P0-2: BackToTop gets its own slot above the "Ask PMS AI" FAB ────────── */
-/* The FAB sits at 78px (above-navigation-dock) on viewports up to 1279px.
-   BackToTop previously shared that slot and was covered by the FAB (z-56
-   over z-20). It now rides 140px up on those viewports; desktop is untouched. */
+/* The FAB sits at 78px (above-navigation-dock) on viewports up to 1279px,
+   and at bottom: 20px right: 20px on desktop (>= 1280px). BackToTop always
+   rides cleanly above the FAB so they never overlap at any viewport size. */
 @media (max-width: 1279px) {
   body .above-assistant-fab {
     bottom: calc(140px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 1280px) {
+  body .above-assistant-fab {
+    bottom: 82px;
+    right: 20px;
   }
 }
 

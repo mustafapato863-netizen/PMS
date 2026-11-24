@@ -81,6 +81,9 @@ const PositionKpiCard = ({ kpi }: { kpi: MarketingKpiAggregate }) => {
       contribution={kpi.averageContribution}
       weight={kpi.weight}
       weightLabel={kpi.weightVaries ? 'Avg. weight' : undefined}
+      trendSeries={kpi.trendSeries ?? []}
+      trendSeriesUnit={kpi.unit}
+      trendLowerBetter={kpi.direction === 'lower_better'}
     />
   );
 };
@@ -646,7 +649,7 @@ const KpiAnalysisRow = ({
             </div>
           )}
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${tone.badge}`}>
+        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${tone.badge}`}>
           {analysis.statusLabel}
         </span>
         <ChevronDown size={13} className="shrink-0 text-[var(--text-muted)] transition-transform group-open:rotate-180" />

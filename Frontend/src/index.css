@@ -551,40 +551,40 @@ select option {
 /* ────────────────────────────────────────────────────────────── */
 :root {
   --exec-page-bg: #F3F7FA;
-  --exec-card-border: rgba(15, 23, 42, 0.10);
-  --exec-card-shadow: 0 2px 8px rgba(11, 19, 43, 0.05);
-  --exec-table-head-bg: #EEF3F7;
-  --exec-chip-bg: #EEF3F7;
+  --exec-card-border: rgba(203, 218, 232, 0.72);
+  --exec-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 8px 24px -4px rgba(15, 23, 42, 0.055), 0 2px 6px rgba(15, 23, 42, 0.03);
+  --exec-table-head-bg: rgba(238, 244, 250, 0.72);
+  --exec-chip-bg: rgba(238, 244, 250, 0.85);
   --exec-chip-text: #475569;
-  --exec-tile-bg: #F8FAFC;
-  --exec-dir-higher-bg: #E8F6FD;   /* ↑ better */
+  --exec-tile-bg: rgba(248, 251, 255, 0.72);
+  --exec-dir-higher-bg: linear-gradient(135deg, #EFF8FF 0%, #DCEFFE 100%);   /* ↑ better */
   --exec-dir-higher-text: #075985;
-  --exec-dir-lower-bg: #F3EEFF;    /* ↓ better */
+  --exec-dir-lower-bg: linear-gradient(135deg, #F7F5FF 0%, #EAE4FF 100%);    /* ↓ better */
   --exec-dir-lower-text: #5B21B6;
   --exec-warning: #B45309;
-  --exec-warning-bg: #FEF3C7;
+  --exec-warning-bg: linear-gradient(135deg, #FFF9EC 0%, #FEF0D2 100%);
   --exec-warning-text: #92400E;
-  --exec-info-bg: #E0F4FC;
+  --exec-info-bg: linear-gradient(135deg, #EFF8FF 0%, #DCEFFE 100%);
   --exec-info-text: #0069B4;
-  --exec-neg-bg: #FEECEC;
+  --exec-neg-bg: linear-gradient(135deg, #FFF4F5 0%, #FFE5E7 100%);
   --exec-neg-text: #B42318;
-  --exec-pos-bg: #E3F6EC;
+  --exec-pos-bg: linear-gradient(135deg, #F0FDF7 0%, #DCF8EA 100%);
   --exec-pos-text: #0A6B3C;
-  --exec-function-call-center: rgba(0, 163, 224, 0.10);
-  --exec-function-rcm: rgba(0, 168, 89, 0.10);
-  --exec-function-pre-approvals: rgba(0, 168, 89, 0.10);
-  --exec-function-marketing: rgba(124, 58, 237, 0.10);
+  --exec-function-call-center: rgba(56, 152, 236, 0.11);
+  --exec-function-rcm: rgba(47, 184, 131, 0.11);
+  --exec-function-pre-approvals: rgba(47, 184, 131, 0.11);
+  --exec-function-marketing: rgba(139, 92, 246, 0.11);
   --exec-comparison-line: #7C3AED;
 }
 
 .dark {
   --exec-page-bg: #0B132B;
-  --exec-card-border: rgba(255, 255, 255, 0.08);
-  --exec-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.30);
+  --exec-card-border: rgba(255, 255, 255, 0.10);
+  --exec-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 28px -6px rgba(0, 0, 0, 0.42);
   --exec-table-head-bg: rgba(255, 255, 255, 0.05);
-  --exec-chip-bg: rgba(255, 255, 255, 0.06);
+  --exec-chip-bg: rgba(255, 255, 255, 0.07);
   --exec-chip-text: #CBD5E1;
-  --exec-tile-bg: rgba(255, 255, 255, 0.03);
+  --exec-tile-bg: rgba(255, 255, 255, 0.04);
   --exec-dir-higher-bg: rgba(56, 189, 248, 0.16);
   --exec-dir-higher-text: #7DD3FC;
   --exec-dir-lower-bg: rgba(167, 139, 250, 0.18);
@@ -603,6 +603,197 @@ select option {
   --exec-function-pre-approvals: rgba(52, 211, 153, 0.16);
   --exec-function-marketing: rgba(167, 139, 250, 0.18);
   --exec-comparison-line: #A78BFA;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  ENHANCED FROSTED-GLASS & SMOOTH PASTEL GRADIENT LAYER          */
+/*  Used across Executive Summary, Function Summary, Insights,     */
+/*  and Corrective Actions. Base --pms-grade-* tokens above stay   */
+/*  untouched for WCAG AA lock-step with grades.test.ts.           */
+/* ────────────────────────────────────────────────────────────── */
+:root {
+  --pms-glass-page-bg: linear-gradient(135deg, #EFF6FC 0%, #F5F7FC 52%, #F1F5FB 100%);
+  --pms-glass-card-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(246, 250, 255, 0.74) 100%);
+  --pms-glass-card-border: rgba(203, 218, 232, 0.72);
+  --pms-glass-card-border-hover: rgba(148, 184, 218, 0.85);
+  --pms-glass-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.90), 0 8px 24px -4px rgba(15, 23, 42, 0.055), 0 2px 6px rgba(15, 23, 42, 0.03);
+  --pms-glass-card-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 14px 32px -6px rgba(15, 23, 42, 0.085), 0 4px 10px rgba(15, 23, 42, 0.04);
+  --pms-glass-stage-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.70) 0%, rgba(244, 248, 253, 0.52) 100%);
+  --pms-glass-stage-border: rgba(210, 224, 238, 0.65);
+  --pms-glass-well-bg: linear-gradient(135deg, rgba(235, 243, 251, 0.78) 0%, rgba(243, 242, 252, 0.68) 100%);
+  --pms-glass-well-border: rgba(255, 255, 255, 0.86);
+
+  /* Smooth Pastel Linear Gradients (Progress Bars, Top Accent Strips, Charts) */
+  --pms-grad-grade-a: linear-gradient(90deg, #6EE7B7 0%, #2FB883 100%);
+  --pms-grad-grade-b: linear-gradient(90deg, #86EFAC 0%, #34C38F 100%);
+  --pms-grad-grade-c: linear-gradient(90deg, #FCD34D 0%, #E69F38 100%);
+  --pms-grad-grade-d: linear-gradient(90deg, #FDBA74 0%, #F0835A 100%);
+  --pms-grad-grade-e: linear-gradient(90deg, #FDA4AF 0%, #EB686D 100%);
+  --pms-grad-grade-na: linear-gradient(90deg, #CBD5E1 0%, #94A3B8 100%);
+  --pms-grad-accent: linear-gradient(90deg, #7DD3FC 0%, #3898EC 100%);
+  --pms-grad-violet: linear-gradient(90deg, #C4B5FD 0%, #8B5CF6 100%);
+
+  /* Softened Semantic Pastel Surface Gradients */
+  --pms-grad-panel-neg: linear-gradient(145deg, rgba(255, 247, 247, 0.86) 0%, rgba(254, 238, 239, 0.68) 100%);
+  --pms-grad-panel-neg-border: rgba(245, 194, 192, 0.68);
+  --pms-grad-panel-pos: linear-gradient(145deg, rgba(244, 253, 249, 0.86) 0%, rgba(228, 248, 238, 0.68) 100%);
+  --pms-grad-panel-pos-border: rgba(182, 232, 206, 0.72);
+  --pms-grad-panel-info: linear-gradient(145deg, rgba(242, 249, 255, 0.88) 0%, rgba(226, 242, 254, 0.70) 100%);
+  --pms-grad-panel-info-border: rgba(186, 224, 252, 0.75);
+  --pms-grad-panel-warn: linear-gradient(145deg, rgba(255, 251, 240, 0.88) 0%, rgba(254, 242, 214, 0.70) 100%);
+  --pms-grad-panel-warn-border: rgba(238, 210, 148, 0.72);
+  --pms-grad-panel-violet: linear-gradient(145deg, rgba(248, 245, 255, 0.88) 0%, rgba(237, 231, 254, 0.70) 100%);
+  --pms-grad-panel-violet-border: rgba(212, 198, 252, 0.72);
+
+  /* Softened Insights summary & panels */
+  --insights-summary-bg: var(--pms-glass-card-bg);
+  --insights-summary-border: var(--pms-glass-card-border);
+  --insights-summary-shadow: var(--pms-glass-card-shadow);
+  --insights-negative-panel-bg: var(--pms-grad-panel-neg);
+  --insights-negative-panel-border: var(--pms-grad-panel-neg-border);
+  --insights-positive-panel-bg: var(--pms-grad-panel-pos);
+  --insights-positive-panel-border: var(--pms-grad-panel-pos-border);
+}
+
+.dark {
+  --pms-glass-page-bg: radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.08), transparent 45%), #0B132B;
+  --pms-glass-card-bg: linear-gradient(145deg, rgba(18, 30, 52, 0.84) 0%, rgba(14, 24, 43, 0.74) 100%);
+  --pms-glass-card-border: rgba(255, 255, 255, 0.10);
+  --pms-glass-card-border-hover: rgba(125, 211, 252, 0.28);
+  --pms-glass-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 28px -6px rgba(0, 0, 0, 0.42);
+  --pms-glass-card-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 16px 34px -6px rgba(0, 0, 0, 0.52);
+  --pms-glass-stage-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.025) 100%);
+  --pms-glass-stage-border: rgba(255, 255, 255, 0.08);
+  --pms-glass-well-bg: linear-gradient(135deg, rgba(15, 28, 52, 0.72) 0%, rgba(22, 32, 58, 0.64) 100%);
+  --pms-glass-well-border: rgba(255, 255, 255, 0.09);
+
+  --pms-grad-grade-a: linear-gradient(90deg, #34D399 0%, #10B981 100%);
+  --pms-grad-grade-b: linear-gradient(90deg, #A3D977 0%, #4ADE80 100%);
+  --pms-grad-grade-c: linear-gradient(90deg, #FCD34D 0%, #F59E0B 100%);
+  --pms-grad-grade-d: linear-gradient(90deg, #FDBA74 0%, #FB923C 100%);
+  --pms-grad-grade-e: linear-gradient(90deg, #FCA5A5 0%, #F87171 100%);
+  --pms-grad-grade-na: linear-gradient(90deg, #94A3B8 0%, #64748B 100%);
+  --pms-grad-accent: linear-gradient(90deg, #7DD3FC 0%, #38BDF8 100%);
+  --pms-grad-violet: linear-gradient(90deg, #C4B5FD 0%, #A78BFA 100%);
+
+  --pms-grad-panel-neg: linear-gradient(145deg, rgba(239, 68, 68, 0.11) 0%, rgba(239, 68, 68, 0.05) 100%);
+  --pms-grad-panel-neg-border: rgba(248, 113, 113, 0.24);
+  --pms-grad-panel-pos: linear-gradient(145deg, rgba(16, 185, 129, 0.11) 0%, rgba(16, 185, 129, 0.05) 100%);
+  --pms-grad-panel-pos-border: rgba(52, 211, 153, 0.24);
+  --pms-grad-panel-info: linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.05) 100%);
+  --pms-grad-panel-info-border: rgba(56, 189, 248, 0.26);
+  --pms-grad-panel-warn: linear-gradient(145deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.05) 100%);
+  --pms-grad-panel-warn-border: rgba(251, 191, 36, 0.26);
+  --pms-grad-panel-violet: linear-gradient(145deg, rgba(139, 92, 246, 0.14) 0%, rgba(139, 92, 246, 0.05) 100%);
+  --pms-grad-panel-violet-border: rgba(167, 139, 250, 0.26);
+
+  --insights-summary-bg: var(--pms-glass-card-bg);
+  --insights-summary-border: var(--pms-glass-card-border);
+  --insights-summary-shadow: var(--pms-glass-card-shadow);
+  --insights-negative-panel-bg: var(--pms-grad-panel-neg);
+  --insights-negative-panel-border: var(--pms-grad-panel-neg-border);
+  --insights-positive-panel-bg: var(--pms-grad-panel-pos);
+  --insights-positive-panel-border: var(--pms-grad-panel-pos-border);
+}
+
+/* Global Frosted-Glass & Smooth Pastel Gradient Surface Utilities */
+.rf-page--executive,
+.rf-page--corrective-actions,
+.rf-page--insights {
+  background: var(--pms-glass-page-bg);
+  border-radius: 20px;
+  padding-bottom: 88px;
+}
+
+.pms-glass-surface {
+  background: var(--pms-glass-card-bg);
+  border: 1px solid var(--pms-glass-card-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  contain: layout style;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.pms-glass-surface--interactive:hover {
+  border-color: var(--pms-glass-card-border-hover);
+  box-shadow: var(--pms-glass-card-shadow-hover);
+}
+
+.pms-glass-stage {
+  background: var(--pms-glass-stage-bg);
+  border: 1px solid var(--pms-glass-stage-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.dark .pms-glass-stage {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.pms-glass-well {
+  background: var(--pms-glass-well-bg);
+  border: 1px solid var(--pms-glass-well-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  contain: layout style;
+}
+
+/* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
+/* Independent per-face GPU transforms (no preserve-3d wrapper) so rounded-2xl
+   + overflow-hidden never triggers Blink/DirectComposition mid-flip culling.
+   Selector uses `.pms-flip-scene > .pms-flip-face` specificity so PageEnhancements.css's
+   `.pms-glass-surface` transition cannot override the 3D transform transition. */
+.pms-flip-scene {
+  position: relative;
+  display: grid;
+  isolation: isolate;
+}
+
+.pms-flip-scene > .pms-flip-face {
+  grid-area: 1 / 1;
+  transform-origin: center center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  /* Avoid backdrop-filter / contain:layout on rotating 3D faces for 60/120fps compositing. */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  contain: none !important;
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.pms-flip-scene.is-warming > .pms-flip-face,
+.pms-flip-scene.is-animating > .pms-flip-face {
+  will-change: transform;
+}
+
+.pms-flip-scene > .pms-flip-face--front {
+  transform: perspective(850px) rotateY(0deg);
+  z-index: 2;
+}
+
+.pms-flip-scene > .pms-flip-face--back {
+  transform: perspective(850px) rotateY(-180deg);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pms-flip-scene.is-flipped > .pms-flip-face--front {
+  transform: perspective(850px) rotateY(180deg);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pms-flip-scene.is-flipped > .pms-flip-face--back {
+  transform: perspective(850px) rotateY(0deg);
+  z-index: 2;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pms-flip-scene > .pms-flip-face {
+    transition-duration: 120ms;
+  }
 }
 
 /* ────────────────────────────────────────────────────────────── */
@@ -1958,9 +2149,10 @@ body {
 /*  STATUS BADGES                                                  */
 /* ────────────────────────────────────────────────────────────── */
 .status-badge {
-  display: inline-flex; align-items: center;
-  padding: 0.25rem 0.5625rem; border-radius: 9999px;
-  font-size: 0.75rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.1875rem 0.625rem; border-radius: 9999px;
+  font-size: 0.75rem; font-weight: 600; line-height: 1.25;
+  white-space: nowrap;
 }
 .status-sip     { background: var(--grade-e-bg); color: var(--grade-e-text); border: 1px solid var(--grade-e-border); }
 .status-pi      { background: var(--grade-d-bg); color: var(--grade-d-text); border: 1px solid var(--grade-d-border); }
@@ -2010,28 +2202,28 @@ body {
   box-shadow: 0 3px 8px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.55);
 }
 .grade-status-badge {
-  display: inline-flex; align-items: center; gap: 0.36rem;
-  padding: 0.3rem 0.675rem;
-  border: 1.5px solid;
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.1875rem 0.625rem;
+  border: 1px solid;
   border-radius: 9999px;
-  font-size: 0.75rem; font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.45);
+  font-size: 0.75rem; font-weight: 600; line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
 }
 .grade-status-dot {
-  width: 0.45rem; height: 0.45rem; border-radius: 9999px; background: currentColor;
-  box-shadow: 0 0 0 2px rgba(currentColor, 0.2);
+  width: 0.375rem; height: 0.375rem; border-radius: 9999px; background: currentColor;
   flex-shrink: 0;
 }
 
 /* ────────────────────────────────────────────────────────────── */
 /*  PMS STATUS BADGES (Meet / Average / Below)                     */
 /* ────────────────────────────────────────────────────────────── */
-.pms-meet    { background: var(--grade-b-bg); color: var(--grade-b-text); border: 1px solid var(--grade-b-border); border-radius: 9999px; padding: 0.2rem 0.54rem; font-size: 0.75rem; font-weight: 700; display: inline-block; }
-.pms-average { background: var(--grade-c-bg); color: var(--grade-c-text); border: 1px solid var(--grade-c-border); border-radius: 9999px; padding: 0.2rem 0.54rem; font-size: 0.75rem; font-weight: 700; display: inline-block; }
-.pms-below   { background: var(--grade-d-bg); color: var(--grade-d-text); border: 1px solid var(--grade-d-border); border-radius: 9999px; padding: 0.2rem 0.54rem; font-size: 0.75rem; font-weight: 700; display: inline-block; }
-.pms-critical { background: var(--grade-e-bg); color: var(--grade-e-text); border: 1px solid var(--grade-e-border); border-radius: 9999px; padding: 0.2rem 0.54rem; font-size: 0.75rem; font-weight: 700; display: inline-block; }
+.pms-meet     { background: var(--grade-b-bg); color: var(--grade-b-text); border: 1px solid var(--grade-b-border); border-radius: 9999px; padding: 0.1875rem 0.625rem; font-size: 0.75rem; font-weight: 600; line-height: 1.25; white-space: nowrap; display: inline-flex; align-items: center; }
+.pms-average  { background: var(--grade-c-bg); color: var(--grade-c-text); border: 1px solid var(--grade-c-border); border-radius: 9999px; padding: 0.1875rem 0.625rem; font-size: 0.75rem; font-weight: 600; line-height: 1.25; white-space: nowrap; display: inline-flex; align-items: center; }
+.pms-below    { background: var(--grade-d-bg); color: var(--grade-d-text); border: 1px solid var(--grade-d-border); border-radius: 9999px; padding: 0.1875rem 0.625rem; font-size: 0.75rem; font-weight: 600; line-height: 1.25; white-space: nowrap; display: inline-flex; align-items: center; }
+.pms-critical { background: var(--grade-e-bg); color: var(--grade-e-text); border: 1px solid var(--grade-e-border); border-radius: 9999px; padding: 0.1875rem 0.625rem; font-size: 0.75rem; font-weight: 600; line-height: 1.25; white-space: nowrap; display: inline-flex; align-items: center; }
 
 .dark .pms-meet    { background: var(--grade-b-bg); color: var(--grade-b-text); border-color: var(--grade-b-border); }
 .dark .pms-average { background: var(--grade-c-bg); color: var(--grade-c-text); border-color: var(--grade-c-border); }

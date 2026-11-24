@@ -61,7 +61,7 @@ describe('ScoreTrendChart', () => {
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('May 2026');
   });
 
-  it('shows one settings note under the chart and keeps it out of the tooltip', () => {
+  it('omits evaluation-settings boilerplate under the chart and keeps it out of the tooltip', () => {
     const noted = points.map((item, index) => index === points.length - 1 ? {
       ...item,
       basis_context: {
@@ -75,7 +75,7 @@ describe('ScoreTrendChart', () => {
     } : item);
     render(<ScoreTrendChart points={noted} title="Performance" />);
 
-    expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
+    expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
     fireEvent.focus(screen.getByTestId('executive-trend-point-2026-06'));
     const tooltip = screen.getByTestId('executive-trend-tooltip');
     expect(tooltip).toHaveTextContent('87.0%');

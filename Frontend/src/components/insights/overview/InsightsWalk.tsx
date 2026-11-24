@@ -35,13 +35,13 @@ function StepCard({ step, first, onOpen }: { step: InsightsWalkStep; first: bool
     <button
       type="button"
       onClick={onOpen}
-      className="relative flex min-h-[118px] w-full flex-col gap-3 overflow-hidden rounded-2xl border bg-[var(--bg-raised)] p-4 pl-5 text-left shadow-[var(--insights-summary-shadow)] transition hover:-translate-y-px hover:border-[var(--insights-accent-border)]"
-      style={{ borderColor: first && palette ? palette.border : 'var(--insights-card-border)' }}
+      className="pms-glass-surface pms-glass-surface--interactive relative flex min-h-[118px] w-full flex-col gap-3 overflow-hidden rounded-[16px] p-4 pl-5 text-left transition hover:-translate-y-px"
+      style={{ borderColor: first && palette ? palette.border : undefined }}
     >
       <span
         aria-hidden="true"
-        className="absolute inset-y-0 left-0 w-1"
-        style={{ background: palette?.solid ?? 'var(--insights-card-border)' }}
+        className="absolute inset-y-0 left-0 w-[3.5px]"
+        style={{ background: grade ? `var(--pms-grad-grade-${grade.toLowerCase()})` : 'var(--insights-card-border)' }}
       />
       <span className="flex items-start justify-between gap-3">
         <span className="min-w-0">
@@ -69,8 +69,8 @@ function StepCard({ step, first, onOpen }: { step: InsightsWalkStep; first: bool
         </span>
       </span>
       <span className="mt-auto flex flex-col gap-2">
-        <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-[var(--insights-track)]">
-          <span className="block h-full rounded-full" style={{ width: `${width}%`, background: palette?.solid ?? 'var(--text-muted)' }} />
+        <span aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-[var(--insights-track)]">
+          <span className="block h-full rounded-full" style={{ width: `${width}%`, background: grade ? `var(--pms-grad-grade-${grade.toLowerCase()})` : 'var(--text-muted)' }} />
         </span>
         <span className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className={`font-semibold tabular-nums ${movement ? (movementDown ? 'text-[var(--insights-negative)]' : 'text-[var(--insights-positive)]') : 'text-[var(--text-muted)]'}`}>
@@ -142,7 +142,7 @@ export default function InsightsWalk({
   return (
     <nav
       aria-label="Insights walk"
-      className="flex flex-col gap-4 rounded-2xl border border-[var(--insights-summary-border)] bg-[var(--insights-summary-bg)] p-4 sm:p-5"
+      className="pms-glass-well flex flex-col gap-4 rounded-[20px] p-4 sm:p-5"
     >
       <div className="flex flex-wrap items-center gap-2">
         <ol className="flex flex-wrap items-center gap-1.5">

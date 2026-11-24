@@ -3,10 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned, isLowerBetter, scoreTone } from '../../../features/executive/format';
 import { teamPath, withTeamQuery } from '../../../types';
-import { presentationTeamName, sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
+import { sharedTeamRoute } from '../../../features/team/countryTeamIdentity';
 import { MONTHS } from '../../../features/executive/compose';
 import { ExecCard, ExecCardHeader, Footnote, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill, ToneText } from './ExecPrimitives';
-import { FLAG_LABEL, FLAG_ORDER } from './execModel';
+import { executiveTeamDisplayName, FLAG_LABEL, FLAG_ORDER } from './execModel';
 
 function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
   // Summary and sheet routes use different date/level keys. Carry only context,
@@ -68,9 +68,9 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous, onSelectTe
               <span role="cell" className="flex w-[24px]"><span className="flex size-[22px] items-center justify-center rounded-full bg-[var(--exec-chip-bg)] text-xs font-bold text-[var(--exec-chip-text)]">{index + 1}</span></span>
               <span role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 {onSelectTeam ? (
-                  <button type="button" className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team)}</button>
+                  <button type="button" className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{executiveTeamDisplayName(team.team)}</button>
                 ) : (
-                  <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team)}</Link>
+                  <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{executiveTeamDisplayName(team.team)}</Link>
                 )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.regions.join(' + '), `${team.employees} people`].filter(Boolean).join(' · ')}</span>
               </span>
@@ -101,10 +101,10 @@ export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[
           {rows.map((team) => {
             const detail = team.flag_detail;
             return (
-              <li key={team.team} className="flex flex-col gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] p-[12px]" data-testid="attention-team">
+              <li key={team.team} className="pms-glass-stage flex flex-col gap-[6px] rounded-[12px] p-[12px]" data-testid="attention-team">
                 <div className="flex items-start gap-[8px]">
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team)}</Link>
+                    <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{executiveTeamDisplayName(team.team)}</Link>
                     <span className="text-xs text-[var(--text-muted)]">{team.regions.join(' + ')}</span>
                   </span>
                   <ScoreText score={team.score} className="text-[14px]">{fmtScore(team.score)}</ScoreText>

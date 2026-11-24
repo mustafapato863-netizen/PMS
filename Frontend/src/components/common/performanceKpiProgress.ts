@@ -57,3 +57,58 @@ export const normalizePercentageKpiForDisplay = (
   target: number,
   unit: string | undefined,
 ) => unit === '%' && target > 0 && target <= 1 ? value * 100 : value;
+
+/**
+ * Computes a proportional Y-axis domain so small Actual-vs-Target gaps
+ * (e.g. 68.1% vs 75.0%) are not visually exaggerated into full-height cliffs.
+ */
+export function computeTrendYDomain(
+  allValues: number[],
+  unit?: string,
+): { domainMin: number; domainMax: number; domainSpan: number } {
+  if (allValues.length === 0) {
+    return { domainMin: 0, domainMax: 100, domainSpan: 100 };
+  }
+
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const rawSpan = rawMax - rawMin;
+
+  if (unit === '%') {
+    // Low-rate percentage KPIs (e.g. Error Rate 1.5% vs 3.0%): anchor cleanly at 0%.
+    if (rawMax <= 20) {
+      const domainMax = Math.ceil(Math.max(rawMax * 1.5, rawMax + 2, 5));
+      return { domainMin: 0, domainMax, domainSpan: Math.max(domainMax, 1) };
+    }
+
+    // Standard 0–100% attainment KPIs: enforce at least a 40-point span on round 10% ticks.
+    if (rawMax <= 100) {
+      let domainMax = Math.min(100, Math.ceil((rawMax + 12) / 10) * 10);
+      let domainMin = Math.max(0, Math.floor((rawMin - 15) / 10) * 10);
+      if (domainMax - domainMin < 40) {
+        const deficit = 40 - (domainMax - domainMin);
+        domainMin = Math.max(0, Math.floor((domainMin - deficit) / 10) * 10);
+        if (domainMax - domainMin < 40) {
+          domainMax = Math.min(100, Math.ceil((domainMin + 40) / 10) * 10);
+        }
+      }
+      if (domainMin <= 10) domainMin = 0;
+      return {
+        domainMin,
+        domainMax,
+        domainSpan: Math.max(domainMax - domainMin, 1),
+      };
+    }
+  }
+
+  // Non-percentage or >100% KPIs: maintain at least a 35% relative span around the max value.
+  const minSpan = Math.max(Math.abs(rawMax) * 0.35, 10);
+  const extraPad = Math.max(rawSpan * 0.25, (minSpan - rawSpan) / 2, 1);
+  const domainMin = Math.max(0, rawMin - extraPad);
+  const domainMax = rawMax + extraPad;
+  return {
+    domainMin,
+    domainMax,
+    domainSpan: Math.max(domainMax - domainMin, 1),
+  };
+}

@@ -119,7 +119,7 @@ export default function InsightsSummaryStrip({
   return (
     <section
       aria-label="Summary"
-      className="relative flex flex-col gap-4 rounded-2xl border border-[var(--insights-card-border)] bg-[var(--bg-surface)] p-5 shadow-sm transition-all sm:p-6"
+      className="pms-glass-surface relative flex flex-col gap-4 rounded-[20px] p-5 transition-all sm:p-6"
     >
       {/* ── Section Header with Quick Help ── */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--insights-card-border)] pb-3">
@@ -239,9 +239,10 @@ export default function InsightsSummaryStrip({
       </div>
 
       {/* ── High-Level Performance KPI Cards Grid ── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
         {/* Card 1: Team Score */}
-        <div className="flex flex-col justify-between rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4 shadow-sm">
+        <div className="pms-glass-stage relative flex flex-col justify-between overflow-hidden rounded-[14px] p-4">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: grade ? `var(--pms-grad-grade-${grade.toLowerCase()})` : 'var(--pms-grad-accent)' }} />
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
               <Activity size={14} className="text-blue-500" aria-hidden="true" />
@@ -292,7 +293,8 @@ export default function InsightsSummaryStrip({
         </div>
 
         {/* Card 2: Target & Gap */}
-        <div className="flex flex-col justify-between rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4 shadow-sm">
+        <div className="pms-glass-stage relative flex flex-col justify-between overflow-hidden rounded-[14px] p-4">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: gap !== null && gap < 0 ? 'var(--pms-grad-grade-e)' : 'var(--pms-grad-grade-a)' }} />
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
               <Target size={14} className="text-indigo-500" aria-hidden="true" />
@@ -327,7 +329,8 @@ export default function InsightsSummaryStrip({
         </div>
 
         {/* Card 3: Analyzed KPIs & Scope Health */}
-        <div className="flex flex-col justify-between rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4 shadow-sm sm:col-span-2 lg:col-span-1">
+        <div className="pms-glass-stage relative flex flex-col justify-between overflow-hidden rounded-[14px] p-4 sm:col-span-2 lg:col-span-1">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} />
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
               <Layers size={14} className="text-teal-500" aria-hidden="true" />
@@ -364,7 +367,7 @@ export default function InsightsSummaryStrip({
       </div>
 
       {/* ── Breakdown Summary: KPI Health Distribution Bar & Decision Focus ── */}
-      <div className="flex flex-col gap-2.5 rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4">
+      <div className="pms-glass-stage flex flex-col gap-2.5 rounded-[14px] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
             KPI Health Distribution
@@ -398,23 +401,23 @@ export default function InsightsSummaryStrip({
             <>
               {onTrackPct > 0 && (
                 <div
-                  style={{ width: `${onTrackPct}%` }}
+                  style={{ width: `${onTrackPct}%`, background: 'var(--pms-grad-grade-a)' }}
                   title={`On Track: ${onTrackCount} (${onTrackPct.toFixed(1)}%)`}
-                  className="bg-emerald-500 transition-all duration-300"
+                  className="transition-all duration-300"
                 />
               )}
               {atRiskPct > 0 && (
                 <div
-                  style={{ width: `${atRiskPct}%` }}
+                  style={{ width: `${atRiskPct}%`, background: 'var(--pms-grad-grade-c)' }}
                   title={`At Risk: ${atRiskCount} (${atRiskPct.toFixed(1)}%)`}
-                  className="bg-amber-500 transition-all duration-300"
+                  className="transition-all duration-300"
                 />
               )}
               {criticalPct > 0 && (
                 <div
-                  style={{ width: `${criticalPct}%` }}
+                  style={{ width: `${criticalPct}%`, background: 'var(--pms-grad-grade-e)' }}
                   title={`Critical: ${criticalCount} (${criticalPct.toFixed(1)}%)`}
-                  className="bg-rose-500 transition-all duration-300"
+                  className="transition-all duration-300"
                 />
               )}
             </>

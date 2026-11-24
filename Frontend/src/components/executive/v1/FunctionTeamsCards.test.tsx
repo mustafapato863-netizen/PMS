@@ -58,6 +58,21 @@ describe('TeamLeaderboardCard', () => {
     expect(screen.getByRole('link', { name: 'Social Media' })).toHaveAttribute('href', '/team/marketing?region=UAE&performance_level=Managerial&position=Social+Media');
     expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument();
   });
+
+  it('labels parent-team support cohorts clearly as Support Teams while keeping their canonical routes', () => {
+    render(
+      <MemoryRouter initialEntries={['/function-summary/call-center?period=2026-10']}>
+        <TeamLeaderboardCard
+          teams={[{ ...team('Call Center', 92.9), function: 'Call Center', regions: ['EGY'], employees: 3 }]}
+          fn="Call Center"
+          effective={effective}
+          previous={null}
+        />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: 'Call Center Support Team' });
+    expect(link).toHaveAttribute('href', '/team/call-center?year=2026&month=October');
+  });
 });
 
 function Location() {

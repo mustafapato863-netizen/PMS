@@ -82,7 +82,7 @@ describe('TeamsAtRiskCard', () => {
     expect(screen.getAllByTestId('risk-row')).toHaveLength(1);
   });
 
-  it('shows one evaluation-settings note for every team that shares it', () => {
+  it('omits evaluation-settings boilerplate while keeping at-risk rows visible', () => {
     const basis: BasisComparisonContext = {
       state: 'changed',
       like_for_like: false,
@@ -96,9 +96,7 @@ describe('TeamsAtRiskCard', () => {
       { ...team('Grade D team', 70, ['grade_d']), basis_context: basis },
     ]} /></MemoryRouter>);
 
-    expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
-    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Scores can be affected by evaluation settings.');
-    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Comparable raw performance is unchanged.');
+    expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(2);
   });
 
@@ -133,5 +131,57 @@ describe('TeamsAtRiskCard', () => {
       'href',
       '/team/stable-a-team?branch=sharjah&performance_level=Managerial&region=UAE&year=2026&month=June',
     );
+  });
+
+  it('renders the 6 Figma columns with bottleneck KPI, status labels, and Review Team action', () => {
+    render(
+      <MemoryRouter>
+        <TeamsAtRiskCard
+          teams={[
+            {
+              ...team('CSR UAE', 68.4, ['grade_e']),
+              function: 'CSR',
+              employees: 28,
+              gap_share_percent: 21.4,
+              flag_detail: {
+                kpi_key: 'fcr',
+                kpi_label: 'First Call Resolution',
+                kpi_direction: 'higher_better',
+                current_value: 71.0,
+                target_value: 85.0,
+                unit: '%',
+                text: 'First Call Resolution',
+              },
+            },
+            {
+              ...team('Pre-Approvals IP Final', 74.2, ['grade_d', 'falling_2_months']),
+              employees: 22,
+              gap_share_percent: 16.8,
+            },
+            {
+              ...team('ER Dr · Sharjah', 84.6, ['grade_c']),
+              function: 'ER Dr',
+              employees: 14,
+              gap_share_percent: 8.9,
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Team & Scope',
+      'Score & Grade',
+      'Gap Share',
+      'Primary Bottleneck KPI',
+      'Status',
+      'Action',
+    ]);
+    expect(screen.getByText('21.4% of gap')).toBeInTheDocument();
+    expect(screen.getByText('First Call Resolution (71% vs 85%)')).toBeInTheDocument();
+    expect(screen.getByText('Critical <70%')).toBeInTheDocument();
+    expect(screen.getByText('Falling 2 mo')).toBeInTheDocument();
+    expect(screen.getByText('Below 90%')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Review Team/i })).toHaveLength(3);
   });
 });

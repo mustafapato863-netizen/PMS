@@ -108,6 +108,53 @@ describe('CorrectiveActionsCard expand', () => {
     await user.keyboard('{Enter}');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('structures multi-section coaching plans into focus-area cards and shows full trigger context', async () => {
+    const user = userEvent.setup();
+    const multiSectionRow = item({
+      id: 'm1',
+      employee_name: 'Radwa Ahmed Mohamed',
+      employee_id: 'emp-1',
+      action_type: 'PIP',
+      root_cause: 'Booking %: 55% / 65% => 84% Attendance & AHT above target',
+      action_text: [
+        'Booking & Closing',
+        '',
+        'Coaching on booking SOP and closing techniques.',
+        'Side-by-side monitoring for 2 weeks.',
+        '',
+        'Booking Confirmation',
+        '',
+        'Coaching on confirmation and commitment techniques.',
+        'QA review of 10 calls.',
+        'Flag uncertain bookings for follow-up.',
+        '',
+        'AHT / Call Efficiency',
+        '',
+        'Coaching on call wrap-up efficiency.',
+        'Monitor AHT for 2 weeks and escalate if needed.',
+      ].join('\n'),
+    });
+
+    renderCard({ rows: [multiSectionRow] });
+    const row = rowsOf()[0];
+    expect(within(row).getByText('+2 areas')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: /Show full action for Radwa Ahmed Mohamed/ }));
+    const drawer = screen.getByTestId('action-detail-drawer');
+    expect(drawer).toHaveTextContent('Trigger & KPI Context');
+    expect(drawer).toHaveTextContent('Booking %: 55% / 65% => 84% Attendance & AHT above target');
+    expect(drawer).toHaveTextContent('3 focus areas');
+
+    const sectionCards = within(drawer).getAllByTestId('action-plan-section');
+    expect(sectionCards).toHaveLength(3);
+    expect(sectionCards[0]).toHaveTextContent('Booking & Closing');
+    expect(sectionCards[0]).toHaveTextContent('2 steps');
+    expect(sectionCards[1]).toHaveTextContent('Booking Confirmation');
+    expect(sectionCards[1]).toHaveTextContent('3 steps');
+    expect(sectionCards[2]).toHaveTextContent('AHT / Call Efficiency');
+    expect(sectionCards[2]).toHaveTextContent('2 steps');
+  });
 });
 
 describe('CorrectiveActionsCard tiles as filters', () => {

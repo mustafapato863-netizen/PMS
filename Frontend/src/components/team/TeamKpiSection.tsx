@@ -6,12 +6,14 @@ import {
 } from 'lucide-react';
 import { getWeightForLabel } from '../../utils/kpiScore';
 import KpiCard from '../common/KpiCard';
-import PerformanceKpiCard from '../common/PerformanceKpiCard';
+import PerformanceKpiCard, { type KpiTrendSeriesPoint } from '../common/PerformanceKpiCard';
 import { GRADE_THRESHOLDS } from '../../constants/grades';
 import { calculateKpiTargetProgress } from '../common/performanceKpiProgress';
 import { formatPercentPoints, formatPercentRatio, percentPointsFromRatio } from '../../utils/percentForm';
 import { formatMonthChange, missingMonthChangeText } from '../../features/team/monthChange';
 import { displayedScoreDelta, displayedScorePoint } from '../../features/team/teamKpiAggregator';
+
+const EMPTY_TREND_SERIES: KpiTrendSeriesPoint[] = [];
 
 const getKpiIcon = (label: string): LucideIcon => {
   const normalized = label.toLowerCase();
@@ -161,6 +163,8 @@ interface TeamKpiSectionProps {
   teamName?: string;
   /** Short name of the previous month that has data, e.g. "Aug". Null when there is none. */
   prevMonthLabel?: string | null;
+  /** Optional 6-month Actual vs Target trend series keyed by KPI label for card 180° flip. */
+  kpiTrends?: Record<string, KpiTrendSeriesPoint[]>;
 }
 
 const TeamKpiSection = ({
@@ -183,6 +187,7 @@ const TeamKpiSection = ({
   month,
   teamName,
   prevMonthLabel,
+  kpiTrends,
 }: TeamKpiSectionProps) => {
   // Changes against the previous month. Percent KPIs are points; other units keep their own unit.
   const monthLabel = prevMonthLabel ?? '';
@@ -439,6 +444,9 @@ const TeamKpiSection = ({
       progressPercent: calculateKpiTargetProgress(actual, numericTarget, lower),
       contribution: calcContribution(label, actual, numericTarget, lower),
       weight: getWeight(label),
+      trendSeries: kpiTrends ? (kpiTrends[label] ?? EMPTY_TREND_SERIES) : undefined,
+      trendSeriesUnit: unit,
+      trendLowerBetter: lower,
     };
   };
 
@@ -680,6 +688,9 @@ const TeamKpiSection = ({
                   kpi.isLowerBetter,
                 )}
                 weight={kpi.weight ?? getWeight(kpi.label)}
+                trendSeries={kpiTrends ? (kpiTrends[kpi.label] ?? EMPTY_TREND_SERIES) : undefined}
+                trendSeriesUnit={kpi.unit ?? ''}
+                trendLowerBetter={Boolean(kpi.isLowerBetter)}
               />
             );
           })}
@@ -703,6 +714,9 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.rejectionRate || 0, 3.0, true)}
             contribution={teamMetrics.rejectionContribution ?? calcContribution('IP Rejection Rate', teamMetrics.rejectionRate || 0, 3.0, true)}
             weight={teamMetrics.rejectionWeight ?? getWeight('IP Rejection Rate')}
+            trendSeries={kpiTrends ? (kpiTrends['IP Rejection Rate'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
+            trendLowerBetter
           />
           <PerformanceKpiCard
             icon={AlertTriangle}
@@ -719,6 +733,9 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.errorRate || 0, 3.0, true)}
             contribution={teamMetrics.errorContribution ?? calcContribution('Initial Error Rate', teamMetrics.errorRate || 0, 3.0, true)}
             weight={teamMetrics.errorWeight ?? getWeight('Initial Error Rate')}
+            trendSeries={kpiTrends ? (kpiTrends['Initial Error Rate'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
+            trendLowerBetter
           />
           <PerformanceKpiCard
             icon={UserCheck}
@@ -735,6 +752,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.submissionRate || 0, 90.0)}
             contribution={teamMetrics.submissionContribution ?? calcContribution('Submission Rate', teamMetrics.submissionRate || 0, 90.0)}
             weight={teamMetrics.submissionWeight ?? getWeight('Submission Rate')}
+            trendSeries={kpiTrends ? (kpiTrends['Submission Rate'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
         </div>
       )}
@@ -756,6 +775,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.opCensusRate || 0, 100)}
             contribution={calcContribution('OP Census Ach', teamMetrics.opCensusRate || 0, 100)}
             weight={getWeight('OP Census Ach')}
+            trendSeries={kpiTrends ? (kpiTrends['OP Census Ach'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
           <PerformanceKpiCard
             icon={TrendingUp}
@@ -772,6 +793,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.opRevenueRate || 0, 100)}
             contribution={calcContribution('OP Revenue Ach', teamMetrics.opRevenueRate || 0, 100)}
             weight={getWeight('OP Revenue Ach')}
+            trendSeries={kpiTrends ? (kpiTrends['OP Revenue Ach'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
           <PerformanceKpiCard
             icon={Users}
@@ -788,6 +811,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.ipCensusRate || 0, 100)}
             contribution={calcContribution('IP Census Ach', teamMetrics.ipCensusRate || 0, 100)}
             weight={getWeight('IP Census Ach')}
+            trendSeries={kpiTrends ? (kpiTrends['IP Census Ach'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
           <PerformanceKpiCard
             icon={Award}
@@ -804,6 +829,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.ipRevenueRate || 0, 100)}
             contribution={calcContribution('IP Revenue Ach', teamMetrics.ipRevenueRate || 0, 100)}
             weight={getWeight('IP Revenue Ach')}
+            trendSeries={kpiTrends ? (kpiTrends['IP Revenue Ach'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
           <PerformanceKpiCard
             icon={Activity}
@@ -820,6 +847,8 @@ const TeamKpiSection = ({
             progressPercent={calculateKpiTargetProgress(teamMetrics.activityRate || 0, 100)}
             contribution={calcContribution('Activity Score', teamMetrics.activityRate || 0, 100)}
             weight={getWeight('Activity Score')}
+            trendSeries={kpiTrends ? (kpiTrends['Activity Score'] ?? EMPTY_TREND_SERIES) : undefined}
+            trendSeriesUnit="%"
           />
         </div>
       )}
@@ -891,6 +920,9 @@ const TeamKpiSection = ({
                 contribution={contribution}
                 weight={weightVal}
                 viewOnly={viewOnly}
+                trendSeries={kpiTrends ? (kpiTrends[kpi.label] ?? EMPTY_TREND_SERIES) : undefined}
+                trendSeriesUnit={isPrescription ? '%' : (kpi.unit ?? '')}
+                trendLowerBetter={Boolean(kpi.isLowerBetter)}
               />
             );
           })}

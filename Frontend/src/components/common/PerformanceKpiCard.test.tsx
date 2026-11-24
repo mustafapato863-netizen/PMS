@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Activity } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import PerformanceKpiCard from './PerformanceKpiCard';
 import {
   calculateKpiTargetProgress,
+  computeTrendYDomain,
   formatPercentOfTargetLabel,
   normalizePercentageKpiForDisplay,
   resolveKpiTargetStatus,
@@ -224,5 +225,220 @@ describe('PerformanceKpiCard', () => {
     expect(card).toHaveTextContent('Contribution—');
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('flips 180deg on click and keyboard to show the last 6 months actual vs target trend', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Revenue Ach"
+        value="38.5%"
+        targetValue="100%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={38.5}
+        contribution={3.9}
+        weight={0.1}
+        trendSeries={[
+          { month: 'May', actual: 28.4, target: 100 },
+          { month: 'Jun', actual: 31.0, target: 100 },
+          { month: 'Jul', actual: 33.2, target: 100 },
+          { month: 'Aug', actual: 35.1, target: 100 },
+          { month: 'Sep', actual: 33.8, target: 100 },
+          { month: 'Oct', actual: 38.5, target: 100 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /OP Revenue Ach/i });
+    expect(card).toHaveAttribute('data-flippable', 'true');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(card).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(card).toHaveAttribute('aria-pressed', 'true');
+
+    const backFace = screen.getByTestId('kpi-card-trend-back');
+    expect(backFace).toHaveTextContent('Last 6 mo · Actual vs Target');
+    expect(backFace).toHaveTextContent('Act 38.5%');
+    expect(backFace).toHaveTextContent('Tgt 100.0%');
+    expect(backFace).toHaveTextContent('0/6 on target');
+    expect(screen.getByRole('img', { name: /OP Revenue Ach actual vs target trend chart/i })).toBeInTheDocument();
+
+    // Keyboard flip back
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(card).toHaveAttribute('data-flipped', 'false');
+  });
+
+  it('renders an empty trend fallback on the back face when trendSeries is empty', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Census Ach"
+        value="92.0%"
+        contribution={9.2}
+        weight={0.1}
+        trendSeries={[]}
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /OP Census Ach/i });
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.getByText('No 6-month trend history available yet.')).toBeInTheDocument();
+  });
+
+  it('applies Executive 95/90/80/70 grade-gradient rules to card accent and progress bars', () => {
+    const { rerender } = render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Quality Score"
+        value="94.0%"
+        targetValue="95%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={99.0}
+        contribution={4.9}
+        weight={0.05}
+      />,
+    );
+
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-a)',
+    });
+
+    rerender(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Conversion Rate"
+        value="84.0%"
+        targetValue="100%"
+        badgeText="Needs Attention"
+        badgeType="warning"
+        progressPercent={84.0}
+        contribution={20}
+        weight={0.25}
+      />,
+    );
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-c)',
+    });
+
+    rerender(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Revenue Ach"
+        value="38.5%"
+        targetValue="100%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={38.5}
+        contribution={3.9}
+        weight={0.1}
+      />,
+    );
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-e)',
+    });
+  });
+
+  it('shows interactive Score and Target tooltip when hovering a month on the flipped trend', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Quality Score"
+        value="94.0%"
+        targetValue="95%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={99.0}
+        contribution={4.9}
+        weight={0.05}
+        trendSeries={[
+          { month: 'May', actual: 91.2, target: 95 },
+          { month: 'Jun', actual: 92.5, target: 95 },
+          { month: 'Jul', actual: 95.4, target: 95 },
+          { month: 'Aug', actual: 93.1, target: 95 },
+          { month: 'Sep', actual: 94.0, target: 95 },
+          { month: 'Oct', actual: 96.2, target: 95 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /Quality Score/i });
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.queryByTestId('kpi-trend-hover-tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByTestId('kpi-trend-hit-Jul'));
+    const tooltip = screen.getByTestId('kpi-trend-hover-tooltip');
+    expect(tooltip).toHaveTextContent('Jul');
+    expect(tooltip).toHaveTextContent('Score 95.4%');
+    expect(tooltip).toHaveTextContent('Tgt 95.0%');
+    expect(tooltip).toHaveTextContent('On target');
+
+    fireEvent.mouseEnter(screen.getByTestId('kpi-trend-hit-Aug'));
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Score 93.1%');
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Tgt 95.0%');
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Below');
+  });
+
+  it('uses a proportional Y-axis scale so small Actual-vs-Target gaps are not exaggerated', () => {
+    const closeGap = computeTrendYDomain([67.1, 67.3, 67.9, 68.1, 75.0], '%');
+    expect(closeGap.domainMin).toBe(50);
+    expect(closeGap.domainMax).toBe(90);
+    expect(closeGap.domainSpan).toBeGreaterThanOrEqual(40);
+
+    const lowRate = computeTrendYDomain([1.8, 2.1, 3.0], '%');
+    expect(lowRate.domainMin).toBe(0);
+    expect(lowRate.domainMax).toBeGreaterThanOrEqual(5);
+  });
+
+  it('pre-warms and caches the back-face trend chart on pointer hover before the 1st flip and keeps it cached after flipping back', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Reachability"
+        value="68.1%"
+        targetValue="75%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={90.8}
+        contribution={9.1}
+        weight={0.1}
+        trendSeries={[
+          { month: 'Apr', actual: 67.1, target: 75 },
+          { month: 'May', actual: 67.3, target: 75 },
+          { month: 'Jun', actual: 67.9, target: 75 },
+          { month: 'Jul', actual: 68.1, target: 75 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /Reachability/i });
+    expect(card).toHaveAttribute('data-warmed', 'false');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(screen.queryByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).not.toBeInTheDocument();
+
+    // Pointer hover pre-warms and caches the back-face SVG before click (still aria-hidden while unflipped)
+    fireEvent.pointerEnter(card);
+    expect(card).toHaveAttribute('data-warmed', 'true');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).toBeInTheDocument();
+
+    // 1st flip toggles smoothly with cached back face already mounted and now accessible
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i })).toBeInTheDocument();
+
+    // Flipping back keeps the back face cached in DOM (aria-hidden) for instant 2nd+ flips
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(card).toHaveAttribute('data-warmed', 'true');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@
  * Body of the Executive Summary per view (Figma 47:2 corporate, 47:3051
  * managerial). The Function Summary (PR B) reuses the same sections.
  */
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
@@ -19,7 +19,6 @@ import LevelBreakdownCard from './LevelBreakdownCard';
 import { TeamLeaderboardCard, TeamsNeedingAttentionCard } from './FunctionTeamsCards';
 import { FallbackNotice, ScopeBanner } from './ExecutiveStates';
 import EmployeesBelowTargetCard from './EmployeesBelowTargetCard';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 export interface ExecutiveDashboardPermissions {
   /** Function cards link to /function-summary/:slug. */
@@ -31,7 +30,7 @@ export interface ExecutiveDashboardPermissions {
   canCreateActions: boolean;
 }
 
-export default function ExecutiveDashboard({
+const ExecutiveDashboard = memo(function ExecutiveDashboard({
   summary,
   permissions,
   functionBreakdownSlot = null,
@@ -50,13 +49,8 @@ export default function ExecutiveDashboard({
   const range = period.range ?? null;
   const rangeLabel = range ? coveredPeriodLabel(period.effective, range) : null;
   const levelSubtitle = rangeLabel ? `Score, grade and headcount by performance level · ${rangeLabel}` : undefined;
-  // Fallback month and evaluation-basis notes sit above the hero in every layout.
-  const notices = (
-    <>
-      {period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null}
-      <BasisComparisonNote messages={[summary.basis_context?.message]} />
-    </>
-  );
+  // Fallback month notice sits above the hero in every layout.
+  const notices = period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null;
 
   if (scope.view === 'managerial') {
     const fn = scope.function;
@@ -78,7 +72,7 @@ export default function ExecutiveDashboard({
           <TopPerformersCard people={summary.people} previous={previous} range={range} />
         </div>
         <LevelBreakdownCard levels={summary.levels} subtitle={levelSubtitle} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} range={range} />}
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} range={range} workspaceHref={team ? `/corrective-actions?team=${encodeURIComponent(team)}` : '/corrective-actions'} />}
       </div>
     );
   }
@@ -114,7 +108,7 @@ export default function ExecutiveDashboard({
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
         )}
         <LevelBreakdownCard levels={summary.levels} title="Level split" subtitle={`${fn} score by performance level`} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} />}
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} workspaceHref={`/corrective-actions?function=${encodeURIComponent(fn)}`} />}
       </div>
     );
   }
@@ -126,21 +120,40 @@ export default function ExecutiveDashboard({
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} classic />
       )}
-      {showRegionSplit ? (
-        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-          <DriversCard summary={summary} viewAllHref={null} />
-          <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
-        </div>
-      ) : (
+      {/* Figma Row 4: Left = What Moved the Score | Right = Region Comparison + Grade Mix */}
+      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <DriversCard summary={summary} viewAllHref={null} />
-      )}
-      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
-        <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} />
+        <div className="flex min-w-0 flex-col gap-[16px]">
+          {showRegionSplit && (
+            <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
+          )}
+          <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} compact={showRegionSplit} />
+        </div>
       </div>
+      {/* Figma Row 5: Full-Width Priority Teams Needing Attention */}
+      <div id="exec-risk-section" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 380px' }}>
+        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
+      </div>
+      {/* Figma Row 6: Full-Width Corrective Actions & Coaching Pulse */}
       {permissions.canSeeActions && (
-        <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
+        <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
+          <CorrectiveActionInsightsCard
+            data={summary.corrective_actions}
+            effective={period.effective}
+            scopeLabel={scope.team ?? scope.function ?? 'Company-wide'}
+            range={range}
+            workspaceHref={
+              scope.team
+                ? `/corrective-actions?team=${encodeURIComponent(scope.team)}`
+                : scope.function
+                  ? `/corrective-actions?function=${encodeURIComponent(scope.function)}`
+                  : '/corrective-actions'
+            }
+          />
+        </div>
       )}
     </div>
   );
-}
+});
+
+export default ExecutiveDashboard;

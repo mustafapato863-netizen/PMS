@@ -2,7 +2,6 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent 
 import { Calendar, LineChart } from 'lucide-react';
 import type { ExecutiveTrendPoint } from '../../../features/executive/types';
 import { fmtScore, shortMonth } from '../../../features/executive/format';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 import { useElementWidth } from './execModel';
 import { smoothPath, splitSeries, type SegmentPoint } from './trendGeometry';
 
@@ -23,10 +22,11 @@ function formatMovement(delta: number): string {
 }
 
 /** Score trend with the hover, keyboard, and empty-state behaviour used in Insights. */
-export default function ScoreTrendChart({ points, comparisonLabel, title }: {
+export default function ScoreTrendChart({ points, comparisonLabel, title, subtitle }: {
   points: ExecutiveTrendPoint[];
   comparisonLabel?: string | null;
   title: string;
+  subtitle?: string;
 }) {
   const gradientId = useId();
   const [boxRef, width] = useElementWidth<HTMLDivElement>(510);
@@ -137,10 +137,13 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
     : Math.min(Math.max(activeY - tooltipHeight / 2, 0), Math.max(0, CHART_HEIGHT - tooltipHeight));
 
   return (
-    <section className="flex min-w-0 flex-col justify-between gap-[20px] rounded-[18px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] sm:p-[20px]">
-      <div className="flex flex-wrap items-center justify-between gap-[10px]">
-        <h3 className="text-[16px] font-bold text-[var(--insights-heading)]">{title}</h3>
-        {range && <span className="inline-flex items-center gap-[6px] rounded-[9px] border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-[10px] py-[7px] text-xs font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[14px]" />{range}</span>}
+    <section className="pms-glass-surface flex min-w-0 flex-col justify-between gap-[16px] rounded-[20px] p-[20px] sm:p-[22px]">
+      <div className="flex flex-wrap items-start justify-between gap-[10px]">
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-bold tracking-[-0.015em] text-[var(--insights-heading)]">{title}</h3>
+          {subtitle && <p className="mt-[2px] text-[12px] text-[var(--text-muted)]">{subtitle}</p>}
+        </div>
+        {range && <span className="inline-flex shrink-0 items-center gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--pms-glass-stage-bg)] px-[10px] py-[6px] text-xs font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[13px]" />{range}</span>}
       </div>
 
       <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
@@ -157,7 +160,18 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
               className="block overflow-visible"
               data-testid="executive-trend-chart"
             >
-              <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.2} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
+              <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.22} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
+              {target >= 90 && (
+                <rect
+                  x={plot.left}
+                  y={y(target)}
+                  width={Math.max(0, plot.right - plot.left)}
+                  height={Math.max(0, y(90) - y(target))}
+                  fill="var(--pms-grade-a-solid)"
+                  fillOpacity={0.055}
+                  pointerEvents="none"
+                />
+              )}
               {ticks.map((tick) => <line key={'grid-' + tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeOpacity={0.7} />)}
               {ticks.map((tick) => (
                 <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="executive-trend-tick">
@@ -302,14 +316,24 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
       )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
-        <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
-        {hasComparison && comparisonLabel && (
+      {measuredIndexes.length > 0 && (
+        <div className="pms-glass-stage flex flex-wrap items-center justify-between gap-x-[10px] gap-y-[4px] rounded-[12px] px-[12px] py-[8px] text-[11.5px] font-semibold tabular-nums text-[var(--text-secondary)]">
+          {points.map((point) => (
+            <span key={`summary-${point.period.key}`} className="inline-flex items-center gap-[4px]">
+              <span className="text-[var(--text-muted)]">{shortMonth(point.period)} ·</span>
+              <span className="font-bold text-[var(--insights-heading)]">{point.score !== null && Number.isFinite(point.score) ? fmtScore(point.score) : '—'}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {hasComparison && comparisonLabel && (
+        <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
+          <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
           <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t-2 border-dotted border-[var(--exec-comparison-line)]" />{comparisonLabel}</span>
-        )}
-        <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t border-dashed border-[var(--text-muted)]" />Target {target}%</span>
-      </div>
-      <BasisComparisonNote messages={[points[points.length - 1]?.basis_context?.message]} />
+          <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t border-dashed border-[var(--text-muted)]" />Target {target}%</span>
+        </div>
+      )}
     </section>
   );
 }

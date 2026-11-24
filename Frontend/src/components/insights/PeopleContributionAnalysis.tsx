@@ -74,7 +74,7 @@ export default function PeopleContributionAnalysis({
 
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm"
+      className="pms-glass-surface overflow-hidden rounded-[18px]"
       aria-labelledby="people-contribution-title"
     >
       <header className="flex flex-col gap-3 border-b border-[var(--border-light)] px-5 py-4 xl:flex-row xl:items-center xl:justify-between">

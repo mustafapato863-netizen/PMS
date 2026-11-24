@@ -204,7 +204,7 @@ const MarketingOverview = ({
                   <h4 className="truncate text-sm font-extrabold text-[var(--text-primary)]" title={summary.position}>
                     {summary.position}
                   </h4>
-                  <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide ${status.tone}`}>
+                  <span className={`mt-2 inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${status.tone}`}>
                     {status.label}
                   </span>
                 </div>
