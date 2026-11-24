@@ -328,13 +328,13 @@ export default function ScoreTrendChart({ points, comparisonLabel, title, subtit
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
-        <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
-        {hasComparison && comparisonLabel && (
+      {hasComparison && comparisonLabel && (
+        <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
+          <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
           <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t-2 border-dotted border-[var(--exec-comparison-line)]" />{comparisonLabel}</span>
-        )}
-        <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t border-dashed border-[var(--text-muted)]" />Target {target}%</span>
-      </div>
+          <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t border-dashed border-[var(--text-muted)]" />Target {target}%</span>
+        </div>
+      )}
       <BasisComparisonNote messages={[points[points.length - 1]?.basis_context?.message]} />
     </section>
   );

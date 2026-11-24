@@ -267,36 +267,36 @@ function FunctionCard({
 
       {showCohorts && card.cohorts && <FunctionCohorts cohorts={card.cohorts} />}
 
-      {/* Zone 3: Fixed-Height Momentum & Trajectory Header (keeps all charts aligned) */}
-      <div className="flex h-[20px] items-center justify-between gap-1.5 overflow-hidden">
-        <div className="flex shrink-0 items-center">
-          {card.is_most_improved ? (
-            <StatusPill tone="success" icon={TrendingUp}>
-              Most improved
-            </StatusPill>
-          ) : card.falling_months !== null && card.falling_months >= 2 ? (
-            <StatusPill tone="danger" icon={TrendingDown}>
-              Falling {card.falling_months} mo
-            </StatusPill>
-          ) : (
-            <span className="text-[10.5px] font-semibold text-[var(--text-muted)]">6-mo trend</span>
-          )}
-        </div>
+      {/* Zone 3: Momentum & Trajectory Header (only shown when card has a callout badge or gap share) */}
+      {(card.is_most_improved || (card.falling_months !== null && card.falling_months >= 2) || (!classic && card.gap_share_percent != null && card.gap_share_percent > 0) || (classic && card.lowest_team && card.lowest_team.score < 85)) && (
+        <div className="flex h-[20px] items-center justify-between gap-1.5 overflow-hidden">
+          <div className="flex shrink-0 items-center">
+            {card.is_most_improved ? (
+              <StatusPill tone="success" icon={TrendingUp}>
+                Most improved
+              </StatusPill>
+            ) : card.falling_months !== null && card.falling_months >= 2 ? (
+              <StatusPill tone="danger" icon={TrendingDown}>
+                Falling {card.falling_months} mo
+              </StatusPill>
+            ) : null}
+          </div>
 
-        {!classic && card.gap_share_percent != null && card.gap_share_percent > 0 ? (
-          <span className="shrink-0 text-xs font-semibold text-[var(--insights-heading)]">
-            {formatShare(card.gap_share_percent)}% of the gap
-          </span>
-        ) : classic && card.lowest_team && card.lowest_team.score < 85 ? (
-          <span
-            aria-hidden="true"
-            className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
-            title={`Lowest team: ${card.lowest_team.team} (${card.lowest_team.score.toFixed(1)}%)`}
-          >
-            Low: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)
-          </span>
-        ) : null}
-      </div>
+          {!classic && card.gap_share_percent != null && card.gap_share_percent > 0 ? (
+            <span className="shrink-0 text-xs font-semibold text-[var(--insights-heading)]">
+              {formatShare(card.gap_share_percent)}% of the gap
+            </span>
+          ) : classic && card.lowest_team && card.lowest_team.score < 85 ? (
+            <span
+              aria-hidden="true"
+              className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
+              title={`Lowest team: ${card.lowest_team.team} (${card.lowest_team.score.toFixed(1)}%)`}
+            >
+              Low: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)
+            </span>
+          ) : null}
+        </div>
+      )}
 
       {/* Zone 4: Fixed-Height 6-Month Sparkline Chart */}
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
@@ -417,9 +417,11 @@ export default function FunctionCards({
             <h2 id="exec-functions-title" className="text-[17px] font-bold tracking-[-0.015em] text-[var(--insights-heading)]">
               Functions Overview
             </h2>
-            <span className="rounded-full bg-[var(--exec-chip-bg)] px-[9px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
-              {count ?? cards.length} functions
-            </span>
+            {cards.length <= 2 && (
+              <span className="rounded-full bg-[var(--exec-chip-bg)] px-[9px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
+                {count ?? cards.length} functions
+              </span>
+            )}
             {range && <span className="text-[12px] text-[var(--text-muted)]">{coveredPeriodLabel(null, range)}</span>}
           </div>
           <p className="text-[12px] text-[var(--text-muted)]">
