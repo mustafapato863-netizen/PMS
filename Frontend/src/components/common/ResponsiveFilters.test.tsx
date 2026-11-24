@@ -99,6 +99,37 @@ describe('ResponsiveFilters', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('anchors docked panel upward above a bottom control bar when dockPlacement is above', async () => {
+    const user = userEvent.setup();
+    render(
+      <div data-testid="bottom-bar">
+        <ResponsiveFilters variant="docked" dockPlacement="above" label="Monthly filters" activeCount={1}>
+          <p>Filter controls</p>
+        </ResponsiveFilters>
+      </div>,
+    );
+
+    const trigger = screen.getByRole('button', { name: /Monthly filters/ });
+    expect(trigger).toHaveClass('has-active-filters');
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 700,
+      bottom: 742,
+      left: 420,
+      right: 462,
+      width: 42,
+      height: 42,
+      x: 420,
+      y: 700,
+      toJSON: () => ({}),
+    });
+
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    expect(dialog.style.top).toBe('auto');
+    expect(Number.parseFloat(dialog.style.bottom)).toBeGreaterThan(0);
+    expect(dialog.style.transformOrigin).toBe('center bottom');
+  });
+
   it('lets the launcher move, keeps it in the viewport, and remembers its new position', async () => {
     const firstRender = render(<ResponsiveFilters label="Team filters"><p>Team filter controls</p></ResponsiveFilters>);
     const launcher = screen.getByRole('button', { name: /Team filters/ });

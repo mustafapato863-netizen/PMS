@@ -256,6 +256,7 @@ describe('Corporate sections', () => {
     expect(callCenter).toHaveTextContent('Outbound');
     expect(within(callCenter).getByText('Gap')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
+    expect(screen.getByTestId('region-grade-unified-card')).toBeInTheDocument();
     expect(screen.getAllByTestId('region-box')).toHaveLength(2);
     expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'View all drivers' })).not.toBeInTheDocument();
@@ -306,6 +307,7 @@ describe('Corporate sections', () => {
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
     expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
+    expect(screen.getByTestId('region-grade-unified-card')).toBeInTheDocument();
     expect(screen.getAllByTestId('region-box')).toHaveLength(2);
     expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();

@@ -317,8 +317,8 @@ def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
             catalog = client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]
             assert {item["team"] for item in catalog["scopes"]} == {"Inbound", "Outbound"}
             assert catalog["authorized_functions"] == ["Call Center"]
-            assert {item["team"] for item in catalog["teams"]} == {"Inbound", "Outbound", "Inbound UAE"}
-            assert next(item for item in catalog["teams"] if item["team"] == "Inbound UAE")["region"] == "UAE"
+            # Deprecated Inbound UAE is excluded from active catalog teams even if still flagged active in DB.
+            assert {item["team"] for item in catalog["teams"]} == {"Inbound", "Outbound"}
             summary_url = "/api/performance/summary?period=2026-06"
             assert client.get(summary_url, headers=viewer_headers).json()["data"]["current"]["total_agents"] == 3
             assert cache

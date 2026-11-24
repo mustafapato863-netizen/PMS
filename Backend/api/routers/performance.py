@@ -17,8 +17,10 @@ from api.dependencies import (
 )
 from utils.report_scope import (
     _exact_team_keys,
+    _team_row_is_deprecated,
     filter_records_by_team_levels,
     functions_for_team,
+    is_deprecated_team,
     user_can_access_region,
 )
 from config.database import get_db, release_read_transaction
@@ -570,14 +572,18 @@ def _authorized_catalog_teams(db: Session, scope: dict, scoped_rows: list[dict])
     observed: dict[tuple[str, str], set[str]] = defaultdict(set)
     for row in scoped_rows:
         name = str(row.get("team") or "").strip()
-        if not name:
+        if not name or is_deprecated_team(name):
             continue
         region = str(row.get("region") or "").strip().upper()
         level = normalize_performance_level(row.get("performance_level")) or "Employee"
         for alias_key in _exact_team_keys(name):
             observed[(alias_key, region)].add(level)
 
-    team_rows = db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+    team_rows = [
+        row
+        for row in db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+        if not _team_row_is_deprecated(row)
+    ]
     active_team_keys = {
         (logical_team_name(row).casefold(), str(row.region or "").strip().upper())
         for row in team_rows

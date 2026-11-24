@@ -1,6 +1,6 @@
 {
   "schema_version": "pms-ai-phase7-comparative-v1",
-  "generated_at": "2026-11-15T08:57:58.831520+00:00",
+  "generated_at": "2026-11-24T14:18:35.699078+00:00",
   "datasets": [
     "evaluation/pms-ai/phase0/frozen_v1.json",
     "evaluation/pms-ai/phase0/heldout_v1.json",
@@ -14,28 +14,78 @@
       "status": "passed",
       "counts": {
         "total": 165,
-        "passed": 63,
+        "passed": 70,
         "failed": 0,
-        "ungraded": 80,
+        "ungraded": 73,
         "blocked": 22,
         "skipped": 0,
         "errored": 0
       },
+      "denominator_audit": {
+        "total_cases": 165,
+        "graded_cases": 70,
+        "ungraded_cases": 73,
+        "blocked_cases": 22,
+        "ungraded_reasons": {
+          "behaviour_outcome_ungraded:answer:unsupported_request": 1,
+          "behaviour_outcome_ungraded:clarify:unsupported_request": 2,
+          "missing_navigation_parts_oracle": 2,
+          "pending_score_oracle_empty_db": 59,
+          "unobservable_binding_in_empty_db": 9
+        },
+        "by_surface": {
+          "contextual_panel": {
+            "total": 2,
+            "passed": 0,
+            "failed": 0,
+            "ungraded": 2,
+            "blocked": 0
+          },
+          "dedicated_chat": {
+            "total": 125,
+            "passed": 55,
+            "failed": 0,
+            "ungraded": 70,
+            "blocked": 0
+          },
+          "direct_api": {
+            "total": 6,
+            "passed": 6,
+            "failed": 0,
+            "ungraded": 0,
+            "blocked": 0
+          },
+          "ui_surface": {
+            "total": 1,
+            "passed": 0,
+            "failed": 0,
+            "ungraded": 1,
+            "blocked": 0
+          },
+          "uploaded_label": {
+            "total": 2,
+            "passed": 2,
+            "failed": 0,
+            "ungraded": 0,
+            "blocked": 0
+          }
+        }
+      },
       "by_dataset": {
         "frozen_v1": {
           "total": 55,
-          "passed": 32,
+          "passed": 37,
           "failed": 0,
-          "ungraded": 23,
+          "ungraded": 18,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
         },
         "heldout_v1": {
           "total": 81,
-          "passed": 24,
+          "passed": 26,
           "failed": 0,
-          "ungraded": 57,
+          "ungraded": 55,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -198,9 +248,9 @@
           "level": "Employee",
           "operation_family": "data_state",
           "total": 6,
-          "passed": 0,
+          "passed": 4,
           "failed": 0,
-          "ungraded": 6,
+          "ungraded": 2,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -380,9 +430,9 @@
           "level": "Employee",
           "operation_family": "ambiguous_identity",
           "total": 1,
-          "passed": 0,
+          "passed": 1,
           "failed": 0,
-          "ungraded": 1,
+          "ungraded": 0,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -450,9 +500,9 @@
           "level": "unspecified",
           "operation_family": "corrective_action",
           "total": 1,
-          "passed": 0,
+          "passed": 1,
           "failed": 0,
-          "ungraded": 1,
+          "ungraded": 0,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -478,9 +528,9 @@
           "level": "unspecified",
           "operation_family": "navigation",
           "total": 1,
-          "passed": 1,
+          "passed": 0,
           "failed": 0,
-          "ungraded": 0,
+          "ungraded": 1,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -716,9 +766,9 @@
           "level": "Employee",
           "operation_family": "data_state",
           "total": 6,
-          "passed": 0,
+          "passed": 4,
           "failed": 0,
-          "ungraded": 6,
+          "ungraded": 2,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -786,9 +836,9 @@
           "level": "unspecified",
           "operation_family": "ambiguous_identity",
           "total": 2,
-          "passed": 2,
+          "passed": 0,
           "failed": 0,
-          "ungraded": 0,
+          "ungraded": 2,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -935,9 +985,9 @@
         }
       ],
       "provider_counts": {
-        "deterministic": 104,
+        "deterministic": 108,
         "http_403": 10,
-        "local": 33,
+        "local": 29,
         "none": 29
       },
       "fallback_counts": {
@@ -946,9 +996,9 @@
         "none": 147
       },
       "latency_ms": {
-        "p50": 40.17,
-        "p95": 68.33,
-        "max": 289.7
+        "p50": 69.94,
+        "p95": 139.27,
+        "max": 304.61
       },
       "safety_gates": {
         "accepted_fabricated_facts": 0,
@@ -964,28 +1014,77 @@
       "status": "passed",
       "counts": {
         "total": 165,
-        "passed": 85,
+        "passed": 94,
         "failed": 0,
-        "ungraded": 80,
+        "ungraded": 71,
         "blocked": 0,
         "skipped": 0,
         "errored": 0
       },
+      "denominator_audit": {
+        "total_cases": 165,
+        "graded_cases": 94,
+        "ungraded_cases": 71,
+        "blocked_cases": 0,
+        "ungraded_reasons": {
+          "behaviour_outcome_ungraded:refuse:answer": 1,
+          "missing_navigation_parts_oracle": 2,
+          "pending_score_oracle_empty_db": 59,
+          "unobservable_binding_in_empty_db": 9
+        },
+        "by_surface": {
+          "contextual_panel": {
+            "total": 2,
+            "passed": 0,
+            "failed": 0,
+            "ungraded": 2,
+            "blocked": 0
+          },
+          "dedicated_chat": {
+            "total": 125,
+            "passed": 56,
+            "failed": 0,
+            "ungraded": 69,
+            "blocked": 0
+          },
+          "direct_api": {
+            "total": 6,
+            "passed": 6,
+            "failed": 0,
+            "ungraded": 0,
+            "blocked": 0
+          },
+          "ui_surface": {
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "ungraded": 0,
+            "blocked": 0
+          },
+          "uploaded_label": {
+            "total": 2,
+            "passed": 2,
+            "failed": 0,
+            "ungraded": 0,
+            "blocked": 0
+          }
+        }
+      },
       "by_dataset": {
         "frozen_v1": {
           "total": 55,
-          "passed": 32,
+          "passed": 37,
           "failed": 0,
-          "ungraded": 23,
+          "ungraded": 18,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
         },
         "heldout_v1": {
           "total": 81,
-          "passed": 24,
+          "passed": 28,
           "failed": 0,
-          "ungraded": 57,
+          "ungraded": 53,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -1148,9 +1247,9 @@
           "level": "Employee",
           "operation_family": "data_state",
           "total": 6,
-          "passed": 0,
+          "passed": 4,
           "failed": 0,
-          "ungraded": 6,
+          "ungraded": 2,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -1330,9 +1429,9 @@
           "level": "Employee",
           "operation_family": "ambiguous_identity",
           "total": 1,
-          "passed": 0,
+          "passed": 1,
           "failed": 0,
-          "ungraded": 1,
+          "ungraded": 0,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -1666,9 +1765,9 @@
           "level": "Employee",
           "operation_family": "data_state",
           "total": 6,
-          "passed": 0,
+          "passed": 4,
           "failed": 0,
-          "ungraded": 6,
+          "ungraded": 2,
           "blocked": 0,
           "skipped": 0,
           "errored": 0
@@ -1885,12 +1984,12 @@
         }
       ],
       "provider_counts": {
-        "cloudflare": 15,
-        "deterministic": 104,
-        "gemini": 2,
+        "cloudflare": 17,
+        "deterministic": 99,
         "http_403": 10,
-        "local": 33,
-        "none": 12
+        "local": 36,
+        "none": 12,
+        "nvidia": 2
       },
       "fallback_counts": {
         "draft_rejected": 3,
@@ -1899,9 +1998,9 @@
         "none": 164
       },
       "latency_ms": {
-        "p50": 48.58,
-        "p95": 1118.74,
-        "max": 1772.85
+        "p50": 105.78,
+        "p95": 1298.28,
+        "max": 2200.97
       },
       "safety_gates": {
         "accepted_fabricated_facts": 0,

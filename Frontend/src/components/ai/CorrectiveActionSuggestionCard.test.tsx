@@ -949,4 +949,51 @@ describe('EmployeeActionModal Phase 3 Integration Tests', () => {
     expect(screen.getByText(/Authentication required \(401\)/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument();
   });
+
+  it('renders separate Draft Usability Survey on suggested draft and submits feedback to corrective endpoint', async () => {
+    const user = userEvent.setup();
+    aiResponseHandler = async (url) => {
+      if (String(url).includes('/corrective-action-suggestions/feedback')) {
+        return { success: true, message: 'Survey saved', data: { trace_id: 'ca-trace-123', rating: 'down' } };
+      }
+      return {
+        success: true,
+        message: 'Draft generated',
+        data: createMockSuggestedPayload({ trace_id: 'ca-trace-123' }),
+      };
+    };
+
+    render(
+      <CorrectiveActionSuggestionCard
+        employeeId="EMP-101"
+        employeeName="Sarah Connor"
+        team="Inbound"
+        month="September"
+        year={2026}
+        onApplyDraft={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    await waitFor(() => expect(screen.getByTestId('corrective-draft-survey')).toBeInTheDocument());
+
+    await user.click(screen.getByTestId('draft-survey-down-btn'));
+    expect(screen.getByTestId('draft-survey-flag-panel')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Wrong focus KPI' }));
+    await user.type(screen.getByLabelText('Draft usability note'), 'Picked Attendance instead of Booking');
+    await user.click(screen.getByRole('button', { name: 'Send survey' }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/api/ai/corrective-action-suggestions/feedback',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: expect.stringContaining('"reason_tag":"incorrect_kpi_interpretation"'),
+        }),
+      );
+    });
+    expect(screen.getByText('Draft issue flagged for review')).toBeInTheDocument();
+  });
 });

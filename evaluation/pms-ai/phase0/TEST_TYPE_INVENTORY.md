@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 68. Test functions or `it` blocks: 886.
+Test files: 71. Test functions or `it` blocks: 900.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 18 | not applicable |
-| `mocked` | 47 | partial |
+| `synthetic` | 19 | not applicable |
+| `mocked` | 49 | partial |
 | `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -30,16 +30,19 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_chat_scenarios_and_variation.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_claim_validator.py` | test | `synthetic` | 19 | not applicable |
+| `Backend/tests/test_ai_compound_parts.py` | test | `synthetic` | 6 | not applicable |
 | `Backend/tests/test_ai_conversation_claim_ledger_paired.py` | test | `live-model`, `mocked` | 13 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 59 | partial |
 | `Backend/tests/test_ai_corrective_action_drafter_unified.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 19 | not applicable |
+| `Backend/tests/test_ai_corrective_action_repair.py` | test | `mocked` | 5 | partial |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
 | `Backend/tests/test_ai_data_access.py` | test | `synthetic` | 27 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 20 | partial |
 | `Backend/tests/test_ai_executive_pulse_formatting.py` | test | `mocked` | 4 | partial |
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 3 | partial |
 | `Backend/tests/test_ai_feedback_learning.py` | test | `mocked` | 8 | partial |
+| `Backend/tests/test_ai_feedback_regression_loop.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_flexible_scenarios.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_guided_reads.py` | test | `mocked` | 6 | partial |
@@ -85,7 +88,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `mocked` | 12 | partial |
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 9 | partial |
-| `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 22 | partial |
+| `Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx` | test | `mocked` | 23 | partial |
 | `Frontend/src/components/ai/agent360/Agent360Scorecard.test.tsx` | test | `mocked` | 4 | partial |
 | `Frontend/src/components/ai/memory/UserMemoryDrawer.test.tsx` | test | `mocked` | 3 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 8 | partial |

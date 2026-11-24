@@ -165,8 +165,14 @@ def read_score_comparison(
         combined.basis_warning = combined.basis_warning or result.basis_warning
 
     if missing or len(combined.typed_evidence) != 2:
+        combined.digest["missing_periods"] = list(missing)
+        partial_note = ""
+        if len(combined.typed_evidence) == 1:
+            only_ev = combined.typed_evidence[0]
+            subj_lbl = only_ev.employee_name or only_ev.team or "the selected scope"
+            partial_note = f" Published score for {subj_lbl} in {only_ev.period}: {only_ev.actual:.1f}%."
         combined.digest["comparison_headline"] = (
-            f"No published overall score for {', '.join(missing)}. The comparison is unavailable."
+            f"No published overall score for {', '.join(missing)}. The comparison is unavailable.{partial_note}"
         )
         return combined
 

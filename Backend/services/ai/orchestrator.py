@@ -122,6 +122,13 @@ from services.ai.trace_logger import (
     sanitize_prompt_for_router_training,
 )
 from services.ai.verified_answers import answer_kpi_question, ranked_positions_answer, read_score_comparison
+from services.ai.compound_parts_planner import (
+    compound_parts_enabled,
+    compute_target_gap_fact,
+    plan_compound_parts,
+    render_compound_parts_answer,
+    verify_compound_answer_completeness,
+)
 from services.corrective_action_service import CorrectiveActionService
 from services.database_record_source import DatabaseRecordSource
 from utils.branch_scope import BRANCH_KEYS
@@ -1575,14 +1582,17 @@ class PmsAiOrchestrator:
         if str(tool_args.get("metric_id") or "").strip().casefold() in ("performance", "score", "overall score", "pms score", "overall"):
             tool_args["metric_id"] = "overall_score"
 
-        requested_metric = validated_plan_v2.operations[0].metric_id if validated_plan_v2.operations else None
-        metric_arg_raw = tool_args.get("metric_id") or requested_metric or routed.plan.metric or (prior.metric_id if prior else None)
-        requires_metric = tool_name in ("read_employee_metric", "get_employee_history", "read_employee_history")
         prompt_employee_matches = [
             candidate
             for candidate in employee_candidates
             if candidate.employee_name and candidate.employee_name.casefold() in prompt_lower
         ]
+        requested_metric = validated_plan_v2.operations[0].metric_id if validated_plan_v2.operations else None
+        requires_metric = tool_name in ("read_employee_metric", "get_employee_history", "read_employee_history")
+        if requires_metric and not tool_args.get("metric_id") and not routed.plan.employee_id and not routed.plan.team and not prompt_employee_matches:
+            metric_arg_raw = None
+        else:
+            metric_arg_raw = tool_args.get("metric_id") or requested_metric or routed.plan.metric or (prior.metric_id if prior else None)
         if requires_metric and not metric_arg_raw and prompt_employee_matches:
             prompt_kpi = extract_prompt_signals(req.prompt, registry.ctx.session_state).detected_kpi
             if prompt_kpi and prompt_kpi != "Other":
@@ -3236,6 +3246,97 @@ class PmsAiOrchestrator:
                     "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
                     'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
                 )
+                compound_plan_ml = plan_compound_parts(
+                    req.prompt,
+                    team=team,
+                    explicit_periods=routed.plan.periods,
+                    prior_metric_id=routed.plan.metric,
+                )
+                if (
+                    compound_parts_enabled()
+                    and (
+                        compound_plan_ml.is_compound
+                        or compound_plan_ml.asks_target_gap
+                        or compound_plan_ml.asks_unsupported_action
+                        or compound_plan_ml.asks_causal_hypothesis
+                        or compound_plan_ml.asks_corrective_plan
+                    )
+                    and tool_name in (
+                    "agent_spotlight_trend",
+                    "read_employee_metric",
+                    "get_employee_history",
+                    "get_kpi_diagnosis",
+                    )
+                ):
+                    non_overall_evs = [
+                        e for e in (tool_result.typed_evidence or ev_items)
+                        if (e.kpi_key or "").casefold() != "overall_score" and e.actual is not None
+                    ]
+                    primary_ev = non_overall_evs[-1] if non_overall_evs else latest_ev
+                    overall_evs = [
+                        e for e in (tool_result.typed_evidence or ev_items)
+                        if (e.kpi_key or "").casefold() == "overall_score" and e.actual is not None
+                    ]
+                    overall_score_val = float(overall_evs[-1].actual) if overall_evs else None
+                    covered_periods = {
+                        str(e.period or "").strip().casefold()
+                        for e in (tool_result.typed_evidence or ev_items)
+                        if e.actual is not None and e.period
+                    }
+                    missing_periods_lbl = [
+                        format_period_label(p)
+                        for p in (routed.plan.periods or [])
+                        if format_period_label(p).casefold() not in covered_periods
+                    ] if compound_plan_ml.asks_period_comparison else []
+                    prev_ev_dict = None
+                    if len(non_overall_evs) >= 2:
+                        prev_ev_obj = non_overall_evs[-2]
+                        prev_ev_dict = {"period": prev_ev_obj.period, "actual": prev_ev_obj.actual}
+                    kpi_ev_dict = {
+                        "display_name": primary_ev.display_name or kpi_display,
+                        "actual": primary_ev.actual,
+                        "target": primary_ev.target,
+                        "unit": primary_ev.unit or unit,
+                        "direction": primary_ev.direction or eff_dir,
+                    }
+                    c_head, c_bullets, c_contract = render_compound_parts_answer(
+                        plan=compound_plan_ml,
+                        subject_name=display_subject,
+                        team_name=team,
+                        period_label=curr_period_label,
+                        kpi_evidence=kpi_ev_dict,
+                        overall_score_val=overall_score_val,
+                        previous_kpi_evidence=prev_ev_dict,
+                        missing_periods=missing_periods_lbl or None,
+                    )
+                    if c_head:
+                        fallback_headline = c_head
+                        fallback_bullets = c_bullets or fallback_bullets
+                        compound_required_groups = list(c_contract.get("required_groups") or [])
+                        facts_payload["overall_score"] = overall_score_val
+                        facts_payload["target_gap"] = (
+                            compute_target_gap_fact(
+                                actual=float(primary_ev.actual),
+                                target=float(primary_ev.target) if primary_ev.target is not None else None,
+                                unit=primary_ev.unit or unit,
+                                direction=primary_ev.direction or eff_dir,
+                                metric_label=primary_ev.display_name or kpi_display,
+                            )
+                            if compound_plan_ml.asks_target_gap
+                            else None
+                        )
+                        if missing_periods_lbl:
+                            facts_payload["unavailable_periods"] = missing_periods_lbl
+                        if compound_plan_ml.asks_unsupported_action:
+                            facts_payload["unsupported_capability"] = compound_plan_ml.unsupported_action_label
+                        instruction = (
+                            "You are the PMS AI Assistant. Answer EVERY requested part of the question in the same response "
+                            "using ONLY `verified_facts`: report each KPI actual with its source unit, Overall PMS score if present, "
+                            "target and computed gap if asked, any unavailable periods without substituting 0, hypothesis labels if asked why, "
+                            "and explicit notice if an external action (like emailing) is unsupported and was not sent. "
+                            "Do NOT omit any requested part and do NOT invent numbers. "
+                            'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                        )
 
         if tool_name == "query_rankings":
             qr_ledger_data = (tool_result.digest or {}).get("query_rankings") or {}
@@ -3272,8 +3373,31 @@ class PmsAiOrchestrator:
                 if row.get("score") is not None
             ]
             claim_ledger = build_claim_ledger(fact_ledger=fact_ledger_items)
+        elif tool_name == "compare_branches" and branch_ev:
+            fact_ledger_items = [
+                {
+                    "fact_id": f"B{idx}",
+                    "part": "compare_branches",
+                    "subject": ev.branch.capitalize(),
+                    "team": ev.team,
+                    "branch": ev.branch,
+                    "period": ev.period,
+                    "metric_key": ev.kpi_key,
+                    "metric_name": ev.display_name,
+                    "value": ev.actual,
+                    "display": ev.actual_display,
+                    "unit": ev.unit or "%",
+                    "direction": ev.direction or "higher_better",
+                }
+                for idx, ev in enumerate(branch_ev, start=1)
+            ]
+            claim_ledger = build_claim_ledger(fact_ledger=fact_ledger_items)
         else:
-            claim_ev = ev_items if (is_history or tool_name in ("rank_employees", "compare_branches")) else [latest_ev]
+            claim_ev = (
+                (tool_result.typed_evidence or ev_items)
+                if (is_history or compound_required_groups or tool_name == "rank_employees")
+                else [latest_ev]
+            )
             claim_ledger = build_claim_ledger(typed_evidence=claim_ev)
 
         # Call configured model for Pass 2 synthesis
@@ -4677,7 +4801,33 @@ class PmsAiOrchestrator:
             history=req.history,
             turn_deadline=turn_deadline,
         )
-        effective_region = prompt_region or routed.confirmed_context.region or req.session_state.region
+        previous_employee_id = req.session_state.employee_id or (
+            prior_scope_context.last_subject_employee_id if prior_scope_context else None
+        )
+        changed_employee = bool(
+            routed.plan.employee_id and previous_employee_id
+            and routed.plan.employee_id.casefold() != previous_employee_id.casefold()
+        )
+        same_employee_scope = bool(
+            routed.plan.employee_id
+            and previous_employee_id
+            and routed.plan.employee_id.casefold() == previous_employee_id.casefold()
+        )
+        prior_team = prior_scope_context.team if prior_scope_context else req.session_state.team
+        team_switched = bool(
+            routed.plan.team
+            and prior_team
+            and routed.plan.team.casefold() != prior_team.casefold()
+        )
+        effective_region = (
+            prompt_region
+            or routed.confirmed_context.region
+            or (
+                req.session_state.region
+                if (not routed.plan.employee_id or same_employee_scope) and not team_switched
+                else None
+            )
+        )
         current_scope_values = {
             "function": routed.plan.function or routed.confirmed_context.function,
             "team": routed.plan.team,
@@ -4686,13 +4836,6 @@ class PmsAiOrchestrator:
             "region": effective_region,
             "performance_level": routed.plan.performance_level,
         }
-        previous_employee_id = req.session_state.employee_id or (
-            prior_scope_context.last_subject_employee_id if prior_scope_context else None
-        )
-        changed_employee = bool(
-            routed.plan.employee_id and previous_employee_id
-            and routed.plan.employee_id.casefold() != previous_employee_id.casefold()
-        )
         resolved_scope_changed = changed_employee or bool(
             prior_scope_context
             and any(
@@ -4730,11 +4873,30 @@ class PmsAiOrchestrator:
                 signals.asks_booking_count = True
         if routed.plan.employee_id:
             signals.detected_employee_query = routed.plan.employee_id
+            if "agent_spotlight_trend" not in signals.primary_intents:
+                signals.primary_intents = ["agent_spotlight_trend", *signals.primary_intents[:1]]
         elif routed.plan.intent == "ranking" or routed.plan.position:
             # Never let a legacy regex guess mistake a resolved role/position name
             # (e.g. "HR Operation Supervisor") for an employee name.
             signals.detected_employee_query = None
             if routed.plan.position and routed.plan.intent != "ranking":
+                signals.primary_intents = [
+                    t for t in signals.primary_intents if t not in ("agent_spotlight_trend", "employee_history")
+                ] or ["executive_insights"]
+        elif not routed.plan.employee_id and not routed.plan.single_person and routed.plan.intent != "ranking" and (routed.plan.team or routed.plan.function) and not re.search(r"\b(?:sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", lower_prompt):
+            signals.detected_employee_query = None
+            signals.primary_intents = [
+                t for t in signals.primary_intents if t not in ("agent_spotlight_trend", "employee_history")
+            ] or ["kpi_diagnosis" if routed.plan.metric else "executive_insights"]
+        elif signals.detected_employee_query and (routed.plan.team or routed.plan.function):
+            eq_cf = signals.detected_employee_query.strip().casefold()
+            if eq_cf in {
+                str(routed.plan.team or "").strip().casefold(),
+                str(routed.plan.function or "").strip().casefold(),
+                "reporting review",
+                "human resources",
+            }:
+                signals.detected_employee_query = None
                 signals.primary_intents = [
                     t for t in signals.primary_intents if t not in ("agent_spotlight_trend", "employee_history")
                 ] or ["executive_insights"]
@@ -4759,7 +4921,12 @@ class PmsAiOrchestrator:
         if is_open_ended_extremum_q:
             signals.asks_specific_month_in_prompt = False
         if routed.plan.periods:
-            p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
+            sel_period = routed.plan.periods[-1]
+            if len(routed.plan.periods) >= 2 and published_periods:
+                pub_matches = [p for p in routed.plan.periods if p in published_periods]
+                if pub_matches:
+                    sel_period = pub_matches[-1]
+            p_month, p_year = _period_key_to_month_year(sel_period)
             if p_month:
                 signals.detected_month = p_month
             if p_year:
@@ -5549,6 +5716,37 @@ class PmsAiOrchestrator:
                             score_measure=routed.plan.score_measure or "official",
                         )
                     )
+                    if (
+                        compound_parts_enabled()
+                        and not signals.asks_branch_comparison
+                        and len(routed.plan.periods or []) >= 2
+                        and not routed.plan.employee_id
+                    ):
+                        prior_pub_p = next(
+                            (
+                                p for p in routed.plan.periods[:-1]
+                                if (not published_periods or p in published_periods)
+                                and p != f"{signals.detected_year or 2026:04d}-{MONTHS.get(signals.detected_month or '', 0):02d}"
+                            ),
+                            None,
+                        )
+                        if prior_pub_p:
+                            pm_prior, py_prior = _period_key_to_month_year(prior_pub_p)
+                            if pm_prior and py_prior:
+                                tool_results.insert(
+                                    0,
+                                    registry.execute_kpi_diagnosis_and_trends(
+                                        team=signals.detected_team,
+                                        position=routed.plan.position,
+                                        function=routed.plan.function,
+                                        branch=signals.detected_branch,
+                                        performance_level=signals.detected_level,
+                                        kpi=routed.plan.metric or signals.detected_kpi,
+                                        month=pm_prior,
+                                        year=py_prior,
+                                        score_measure=routed.plan.score_measure or "official",
+                                    ),
+                                )
                 else:
                     tool_results.append(
                         registry.execute_executive_and_priority_insights(
@@ -6025,6 +6223,218 @@ class PmsAiOrchestrator:
                     routed.confirmed_context.metric_id = metric.metric_id
                     routed.confirmed_context.metric_display_name = metric.display_name
                     routed.confirmed_context.candidate_metrics = []
+        if compound_parts_enabled() and routed.outcome in ("answer", "unavailable_data"):
+            compound_plan_det = plan_compound_parts(
+                req.prompt,
+                team=routed.plan.team or signals.detected_team,
+                explicit_periods=routed.plan.periods,
+                prior_metric_id=routed.plan.metric or signals.detected_kpi,
+            )
+            if compound_plan_det.is_compound or compound_plan_det.asks_unsupported_action:
+                has_spotlight_digest = any(
+                    isinstance(td, dict) and (td.get("spotlight") or td.get("agent_spotlight"))
+                    for td in tool_digests
+                )
+                if (comparison_result or routed.plan.verified_cohort_score or position_answer or bookings_trend or any(isinstance(td, dict) and td.get("query_rankings") for td in tool_digests)) and compound_plan_det.asks_unsupported_action and not (
+                    compound_plan_det.asks_target_gap or compound_plan_det.asks_causal_hypothesis or compound_plan_det.asks_corrective_plan
+                ):
+                    cap_lbl = compound_plan_det.unsupported_action_label or "sending external emails or notifications"
+                    if "cannot" not in synthesis.headline.casefold() and "not sent" not in synthesis.headline.casefold():
+                        synthesis.headline = (
+                            f"{synthesis.headline.rstrip('.')} "
+                            f"PMS AI cannot perform {cap_lbl} directly (no message was sent), so please review and send the summary manually."
+                        )
+                elif (
+                    not routed.plan.employee_id
+                    and not position_answer
+                    and not (comparison_result and not (compound_plan_det.asks_target_gap or compound_plan_det.asks_causal_hypothesis or compound_plan_det.asks_corrective_plan or compound_plan_det.asks_unsupported_action))
+                    and not kpi_question_kind
+                    and not has_spotlight_digest
+                    and not bookings_trend
+                    and not signals.asks_branch_comparison
+                    and (
+                        "people_contribution" not in signals.primary_intents
+                        or (
+                            compound_plan_det.is_compound
+                            and (
+                                compound_plan_det.asks_target_gap
+                                or compound_plan_det.asks_corrective_plan
+                                or compound_plan_det.asks_unsupported_action
+                                or compound_plan_det.asks_causal_hypothesis
+                            )
+                        )
+                    )
+                    and routed.plan.intent != "ranking"
+                    and not any(
+                        isinstance(td, dict)
+                        and (td.get("query_rankings") or td.get("contributors"))
+                        for td in tool_digests
+                    )
+                    and (
+                        typed_evidence
+                        or any(
+                            isinstance(td, dict) and (td.get("current_score") is not None or td.get("average_score") is not None)
+                            for td in tool_digests
+                        )
+                        or compound_plan_det.asks_unsupported_action
+                    )
+                ):
+                    specific_mids = [m for m in (compound_plan_det.requested_metrics or []) if m != "overall_score"]
+                    primary_mid = str(routed.plan.metric or signals.detected_kpi or "").casefold()
+                    ordered_mids: list[str] = [m.casefold() for m in specific_mids]
+                    if not ordered_mids and primary_mid:
+                        ordered_mids = [primary_mid]
+
+                    def _ev_matches_mid(ev: TypedMetricEvidence, mid_cf: str) -> bool:
+                        leaf = mid_cf.rsplit(":", 1)[-1]
+                        ev_mid = (ev.metric_id or "").casefold()
+                        ev_key = (ev.kpi_key or "").casefold()
+                        ev_lbl = (ev.display_name or "").casefold()
+                        norm_leaf = re.sub(r"[^a-z0-9]", "", leaf)
+                        return bool(
+                            ev_mid == mid_cf
+                            or ev_key == leaf
+                            or norm_leaf == re.sub(r"[^a-z0-9]", "", ev_key)
+                            or norm_leaf in re.sub(r"[^a-z0-9]", "", ev_lbl)
+                        )
+
+                    non_ov_evs = [
+                        e for e in typed_evidence
+                        if (e.kpi_key or "").casefold() != "overall_score"
+                        and e.actual is not None
+                        and (routed.plan.employee_id or not getattr(e, "employee_id", None))
+                    ] or [
+                        e for e in typed_evidence
+                        if (e.kpi_key or "").casefold() != "overall_score" and e.actual is not None
+                    ]
+                    matched_kpi_dicts: list[dict[str, Any]] = []
+                    prev_ev_dict: dict[str, Any] | None = None
+                    if ordered_mids:
+                        for idx_m, mid_cf in enumerate(ordered_mids):
+                            cand_evs = [e for e in non_ov_evs if _ev_matches_mid(e, mid_cf)]
+                            if cand_evs:
+                                latest_e = cand_evs[-1]
+                                matched_kpi_dicts.append({
+                                    "display_name": latest_e.display_name,
+                                    "actual": latest_e.actual,
+                                    "target": latest_e.target,
+                                    "unit": latest_e.unit,
+                                    "direction": latest_e.direction,
+                                    "period": latest_e.period,
+                                })
+                                if idx_m == 0:
+                                    prior_diff_p = [
+                                        e for e in cand_evs[:-1]
+                                        if str(e.period or "").strip().casefold() != str(latest_e.period or "").strip().casefold()
+                                    ]
+                                    if prior_diff_p:
+                                        prev_e = prior_diff_p[-1]
+                                        prev_ev_dict = {"period": prev_e.period, "actual": prev_e.actual}
+                    elif non_ov_evs:
+                        latest_e = non_ov_evs[-1]
+                        matched_kpi_dicts.append({
+                            "display_name": latest_e.display_name,
+                            "actual": latest_e.actual,
+                            "target": latest_e.target,
+                            "unit": latest_e.unit,
+                            "direction": latest_e.direction,
+                            "period": latest_e.period,
+                        })
+                        same_lbl = [e for e in non_ov_evs if e.display_name == latest_e.display_name]
+                        if len(same_lbl) >= 2:
+                            prev_ev_dict = {"period": same_lbl[-2].period, "actual": same_lbl[-2].actual}
+
+                    kpi_ev_dict = matched_kpi_dicts[0] if matched_kpi_dicts else None
+                    extra_kpi_det = matched_kpi_dicts[1:] if len(matched_kpi_dicts) > 1 else None
+                    ov_evs = [
+                        e for e in typed_evidence
+                        if (e.kpi_key or "").casefold() == "overall_score" and e.actual is not None
+                    ]
+                    ov_val = float(ov_evs[-1].actual) if ov_evs else None
+                    prev_ov_dict: dict[str, Any] | None = (
+                        {"period": ov_evs[-2].period, "actual": ov_evs[-2].actual}
+                        if len(ov_evs) >= 2
+                        else None
+                    )
+                    if ov_val is None:
+                        for td in tool_digests:
+                            if isinstance(td, dict):
+                                sc_cand = td.get("current_score") if td.get("current_score") is not None else td.get("average_score")
+                                if sc_cand is not None:
+                                    ov_val = float(sc_cand)
+                                    break
+                    if prev_ov_dict is None:
+                        for td in tool_digests:
+                            pc = td.get("period_comparison") if isinstance(td, dict) else None
+                            if isinstance(pc, dict) and pc.get("from_score") is not None:
+                                prev_ov_dict = {"period": pc.get("from_period"), "actual": pc.get("from_score")}
+                                break
+
+                    if kpi_ev_dict is not None or ov_val is not None:
+                        covered_p = {
+                            str(e.period or "").strip().casefold()
+                            for e in typed_evidence
+                            if e.actual is not None and e.period
+                        }
+                        if not covered_p:
+                            for td in tool_digests:
+                                if isinstance(td, dict) and td.get("period") and td.get("current_score") is not None:
+                                    covered_p.add(str(td["period"]).strip().casefold())
+                        missing_det_periods = [
+                            format_period_label(p)
+                            for p in (routed.plan.periods or [])
+                            if format_period_label(p).casefold() not in covered_p
+                        ] if compound_plan_det.asks_period_comparison or len(routed.plan.periods or []) >= 2 else []
+                        missing_det_kpis: list[str] = []
+                        kpi_lbl_map = {
+                            "waitingtime": "Waiting Time",
+                            "bookings_count": "Bookings Count",
+                            "attended_count": "Attended Count",
+                            "handled_calls_count": "Handled Calls",
+                            "abandoned_calls_count": "Abandoned Calls",
+                            "booking_rate": "Booking Rate",
+                            "attendance_rate": "Attendance Rate",
+                            "attendance_compliance": "Attendance Compliance",
+                            "team_sla": "Team SLA",
+                            "abandon_rate": "Abandon Rate",
+                            "reachability": "Reachability",
+                            "aht": "AHT",
+                            "quality_errors": "Quality Errors",
+                            "quality_score": "Quality Score",
+                            "ajm_pharmacy_man_iv_cost_saving": "IV Cost Saving",
+                            "leakage": "Leakage",
+                            "tendercompliance": "Tender Compliance",
+                            "atv": "Average Transaction Value (ATV)",
+                            "mb_cpl": "CPL",
+                            "mb_leads": "Leads",
+                            "gd_rework": "Rework",
+                            "sms_response_time": "Response Time",
+                            "rejection": "Controllable Rejection Rate",
+                            "policyrejection": "Policy Rejection Rate",
+                        }
+                        if ordered_mids and non_ov_evs:
+                            for mid_cf in ordered_mids:
+                                if not any(_ev_matches_mid(e, mid_cf) for e in non_ov_evs):
+                                    leaf_k = mid_cf.rsplit(":", 1)[-1].casefold()
+                                    lbl_k = kpi_lbl_map.get(leaf_k, leaf_k.replace("_", " ").title())
+                                    if lbl_k not in missing_det_kpis:
+                                        missing_det_kpis.append(lbl_k)
+                        c_head, c_bullets, _ = render_compound_parts_answer(
+                            plan=compound_plan_det,
+                            subject_name=routed.plan.team or routed.plan.function or "Selected Scope",
+                            team_name=routed.plan.team or signals.detected_team,
+                            period_label=format_period_label(routed.plan.periods[0]) if (len(routed.plan.periods or []) >= 2 and missing_det_periods) else (format_period_label(routed.plan.periods[-1]) if routed.plan.periods else f"{res_month} {res_year}"),
+                            kpi_evidence=kpi_ev_dict,
+                            overall_score_val=ov_val,
+                            previous_kpi_evidence=prev_ev_dict,
+                            missing_periods=missing_det_periods or None,
+                            extra_kpi_evidences=extra_kpi_det,
+                            previous_overall_score=prev_ov_dict,
+                            missing_kpis=missing_det_kpis or None,
+                        )
+                        if c_head:
+                            synthesis.headline = c_head
+                            synthesis.narrative_bullets = c_bullets or synthesis.narrative_bullets
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(

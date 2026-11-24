@@ -26,6 +26,7 @@ import {
   Underline,
   X,
 } from 'lucide-react';
+import ResponsiveFilters from '../../../components/common/ResponsiveFilters';
 import { Dock, DockIcon, DockItem, DockLabel } from '../../../components/ui/dock';
 import { periodFromKey } from '../model';
 import type { FunctionOverviewItem, ScoreDriverItem } from '../monthlyOverviewData';
@@ -36,7 +37,7 @@ const MENU_SPRING = { mass: 0.1, stiffness: 150, damping: 12 };
 const MENU_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const MENU_COLLAPSE_MS = 380;
 const MENU_STAGGER_MS = 45;
-const MENU_ITEM_COUNT = 5;
+const MENU_ITEM_COUNT = 6;
 
 function CollapseSlot({
   index,
@@ -724,6 +725,11 @@ function NotesEditor({
 
 export function PresentationControlBar({
   region,
+  availableRegions,
+  onRegionChange,
+  filterActiveCount,
+  filterClearableCount,
+  onClearFilters,
   periodKey,
   monthOptions,
   onPeriodChange,
@@ -744,6 +750,11 @@ export function PresentationControlBar({
   onSelectSubItem,
 }: {
   region: 'EGY' | 'UAE' | 'ALL';
+  availableRegions?: Array<'ALL' | 'EGY' | 'UAE'>;
+  onRegionChange?: (region: 'ALL' | 'EGY' | 'UAE') => void;
+  filterActiveCount?: number;
+  filterClearableCount?: number;
+  onClearFilters?: () => void;
   periodKey: string;
   monthOptions: Array<{ key: string; label: string }>;
   onPeriodChange: (key: string) => void;
@@ -782,6 +793,21 @@ export function PresentationControlBar({
   const [notesOpen, setNotesOpen] = useState(false);
   const [complianceOpen, setComplianceOpen] = useState(false);
   const [menuCollapsed, setMenuCollapsed] = useState(false);
+  const [compactDock, setCompactDock] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 480,
+  );
+
+  useEffect(() => {
+    const onResize = () => setCompactDock(window.innerWidth <= 480);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const resolvedRegions = availableRegions && availableRegions.length > 0
+    ? availableRegions
+    : [region];
+  const resolvedFilterActiveCount = filterActiveCount ?? ((region !== 'ALL' ? 1 : 0) + (activeFunctionSlug ? 1 : 0));
+  const resolvedFilterClearableCount = filterClearableCount ?? (activeFunctionSlug ? 1 : 0);
 
   const padKey = `${region}:${periodKey}`;
 
@@ -1105,17 +1131,17 @@ export function PresentationControlBar({
       >
         <Dock
           ariaLabel="Presentation actions"
-          magnification={64}
-          baseWidth={42}
+          magnification={compactDock ? 52 : 64}
+          baseWidth={compactDock ? 36 : 42}
           distance={140}
-          panelHeight={menuCollapsed ? 48 : 52}
+          panelHeight={menuCollapsed ? (compactDock ? 40 : 48) : (compactDock ? 44 : 52)}
           bare
           className={`mx-0 bg-transparent shadow-none transition-[gap,padding] duration-[380ms] ease-[cubic-bezier(0.4,0,0.2,1)] ${
-            menuCollapsed ? 'gap-0 p-0' : 'gap-1.5 px-0.5 pt-1 pb-1.5'
+            menuCollapsed ? 'gap-0 p-0' : 'gap-1 px-0.5 pt-1 pb-1.5 sm:gap-1.5'
           }`}
         >
           <CollapseSlot index={0} collapsed={menuCollapsed}>
-            <DockItem restWidth={84}>
+            <DockItem restWidth={compactDock ? 68 : 84}>
               <MonthMenu
                 options={monthOptions}
                 value={selectedKey}
@@ -1125,7 +1151,70 @@ export function PresentationControlBar({
             </DockItem>
           </CollapseSlot>
           <CollapseSlot index={1} collapsed={menuCollapsed}>
-            <DockItem restWidth={80}>
+            <DockItem isActive={resolvedFilterActiveCount > 0}>
+              <DockLabel>Filters</DockLabel>
+              <ResponsiveFilters
+                variant="docked"
+                dockPlacement="above"
+                disabled={menuCollapsed}
+                className="responsive-filter-docked--in-bar"
+                activeCount={resolvedFilterActiveCount}
+                clearableCount={resolvedFilterClearableCount}
+                onClear={onClearFilters ?? onSelectOverview}
+                label="Monthly filters"
+              >
+                <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
+                  {onRegionChange && (
+                    <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+                      Region
+                      <select
+                        aria-label="Region"
+                        value={region}
+                        onChange={(event) => onRegionChange(event.target.value as 'ALL' | 'EGY' | 'UAE')}
+                        className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                      >
+                        <option value="ALL" disabled={!resolvedRegions.includes('ALL')}>All regions</option>
+                        <option value="EGY" disabled={!resolvedRegions.includes('EGY')}>Egypt (EGY)</option>
+                        <option value="UAE" disabled={!resolvedRegions.includes('UAE')}>UAE</option>
+                      </select>
+                    </label>
+                  )}
+                  <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+                    Reporting month
+                    <select
+                      aria-label="Reporting month"
+                      value={selectedKey}
+                      onChange={(event) => onPeriodChange(event.target.value)}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                    >
+                      {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+                    Function
+                    <select
+                      aria-label="Function"
+                      value={activeFunctionSlug}
+                      onChange={(event) => {
+                        const slug = event.target.value;
+                        if (!slug) {
+                          onSelectOverview?.();
+                          return;
+                        }
+                        onSelectFunctionSlug?.(slug);
+                      }}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                    >
+                      <option value="">All functions</option>
+                      {functions.map((fn) => <option key={fn.slug} value={fn.slug}>{fn.functionName}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </ResponsiveFilters>
+            </DockItem>
+          </CollapseSlot>
+          <CollapseSlot index={2} collapsed={menuCollapsed}>
+            <DockItem restWidth={compactDock ? 64 : 80}>
               <PresentationModeSwitch enabled={presentationMode} onChange={onPresentationModeChange} />
             </DockItem>
           </CollapseSlot>
@@ -1135,7 +1224,7 @@ export function PresentationControlBar({
             aria-label={menuCollapsed ? 'Expand menu' : 'Collapse menu'}
             aria-expanded={!menuCollapsed}
             onClick={() => setMenuCollapsed((collapsed) => !collapsed)}
-            className="compact-control pointer-events-auto relative z-10 inline-flex size-12 shrink-0 items-center justify-center rounded-full border-0 bg-[var(--sgh-navy-dark)] text-white shadow-[0_8px_22px_rgba(11,19,43,0.35)] focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] focus-visible:outline-none"
+            className="compact-control pointer-events-auto relative z-10 inline-flex size-10 shrink-0 items-center justify-center rounded-full border-0 bg-[var(--sgh-navy-dark)] text-white shadow-[0_8px_22px_rgba(11,19,43,0.35)] focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] focus-visible:outline-none sm:size-12"
           >
             <Plus
               size={22}
@@ -1144,7 +1233,7 @@ export function PresentationControlBar({
               className={`transition-transform duration-[380ms] ease-[cubic-bezier(0.4,0,0.2,1)] ${menuCollapsed ? 'rotate-45' : 'rotate-0'}`}
             />
           </button>
-          <CollapseSlot index={2} collapsed={menuCollapsed}>
+          <CollapseSlot index={3} collapsed={menuCollapsed}>
             <DockItem isActive={agendaOpen}>
               <DockLabel>Agenda</DockLabel>
               <button
@@ -1161,7 +1250,7 @@ export function PresentationControlBar({
               </button>
             </DockItem>
           </CollapseSlot>
-          <CollapseSlot index={3} collapsed={menuCollapsed}>
+          <CollapseSlot index={4} collapsed={menuCollapsed}>
             <DockItem isActive={notesOpen}>
               <DockLabel>Notes</DockLabel>
               <button
@@ -1178,7 +1267,7 @@ export function PresentationControlBar({
               </button>
             </DockItem>
           </CollapseSlot>
-          <CollapseSlot index={4} collapsed={menuCollapsed}>
+          <CollapseSlot index={5} collapsed={menuCollapsed}>
             <DockItem isActive={complianceOpen}>
               <DockLabel>Data Compliance</DockLabel>
               <button

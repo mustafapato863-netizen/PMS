@@ -168,6 +168,8 @@ export default function ResponseFooterBar({
             {(
               [
                 { key: 'wrong_data', label: 'Wrong data' },
+                { key: 'incomplete_response', label: 'Missing part' },
+                { key: 'incorrect_scope', label: 'Wrong context' },
                 { key: 'misunderstood_question', label: 'Misunderstood question' },
                 { key: 'lost_context', label: 'Lost context' },
                 { key: 'too_long', label: 'Too long' },

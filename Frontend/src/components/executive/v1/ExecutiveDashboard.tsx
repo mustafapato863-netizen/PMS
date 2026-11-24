@@ -6,6 +6,7 @@ import { memo, type ReactNode } from 'react';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
+import { ExecCard } from './ExecPrimitives';
 import ExecutiveHero from './ExecutiveHero';
 import FunctionCards from './FunctionCards';
 import DriversCard from './DriversCard';
@@ -67,7 +68,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         <ExecutiveHero summary={summary} />
         <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? teamPath(team) : null} />
         <EmployeesBelowTargetCard summary={summary} />
-        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)] xl:items-start">
           <PeopleToReviewCard people={summary.people} team={team} previous={previous} range={range} rosterHref={team ? teamPath(team) : null} />
           <TopPerformersCard people={summary.people} previous={previous} range={range} />
         </div>
@@ -84,7 +85,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
       <div className="flex flex-col gap-[16px]" data-testid="executive-function">
         {notices}
         <ExecutiveHero summary={summary} />
-        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)] xl:items-start">
           <TeamLeaderboardCard teams={summary.teams} fn={fn} effective={period.effective} previous={previous} />
           <TeamsNeedingAttentionCard teams={summary.teams} fn={fn} />
         </div>
@@ -100,7 +101,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         <EmployeesBelowTargetCard summary={summary} />
         {functionBreakdownSlot}
         {showRegionSplit ? (
-          <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+          <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)] xl:items-start">
             <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
             <RegionSplitCard regions={summary.regions} previous={previous} />
           </div>
@@ -120,15 +121,17 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} classic />
       )}
-      {/* Figma Row 4: Left = What Moved the Score | Right = Region Comparison + Grade Mix */}
-      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+      {/* Figma Row 4: Left = What Moved the Score | Right = Unified Region Comparison + Grade Mix */}
+      <div className={`grid gap-[16px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] ${showRegionSplit ? '' : 'xl:items-start'}`}>
         <DriversCard summary={summary} viewAllHref={null} />
-        <div className="flex min-w-0 flex-col gap-[16px]">
-          {showRegionSplit && (
-            <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
-          )}
-          <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} compact={showRegionSplit} />
-        </div>
+        {showRegionSplit ? (
+          <ExecCard as="div" className="h-full justify-between" data-testid="region-grade-unified-card">
+            <RegionSplitCard regions={summary.regions} previous={previous} range={range} embedded />
+            <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} compact embedded />
+          </ExecCard>
+        ) : (
+          <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} />
+        )}
       </div>
       {/* Figma Row 5: Full-Width Priority Teams Needing Attention */}
       <div id="exec-risk-section" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 380px' }}>

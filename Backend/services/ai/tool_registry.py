@@ -3782,12 +3782,20 @@ class DeterministicToolRegistry:
                 except (TypeError, ValueError):
                     score_value = None
             if score_value is not None:
+                ov_tgt = 100.0
+                for _kv in (getattr(rec, "kpi_values", None) or []):
+                    _kk = str((_kv.get("kpi_key") if isinstance(_kv, dict) else getattr(_kv, "kpi_key", "")) or "").casefold()
+                    if _kk == "overall_score":
+                        _tv = _kv.get("target_value") if isinstance(_kv, dict) else getattr(_kv, "target_value", None)
+                        if _tv is not None:
+                            ov_tgt = float(_tv)
+                        break
                 return {
                     "kpi_key": "overall_score",
                     "kpi_label": cat_def.display_name if cat_def else "Overall PMS Score",
                     "unit": "%",
                     "numeric_value": float(score_value),
-                    "target_numeric": 100.0,
+                    "target_numeric": ov_tgt,
                     "actual_display": f"{float(score_value):.1f}%",
                     "achievement_percent": float(score_value),
                     "direction": "higher_better",
@@ -3854,22 +3862,34 @@ class DeterministicToolRegistry:
                 }
 
         raw_kpis = getattr(rec, "kpi_values", None) or []
+        q_clean = q_norm.replace("_", "").replace(" ", "").casefold()
+        picked_kv = None
+        # Pass 1: exact match on target_key, kpi_key, or raw label (prevents 'booking' hitting 'Attendance Rate (... / Bookings)')
         for kv in raw_kpis:
             k_key = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
             k_lbl_raw = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or k_key)
-            k_lbl = disambiguate_call_center_kpi_label(r_team, k_key, k_lbl_raw)
-            q_clean = q_norm.replace("_", "").replace(" ", "").casefold()
             k_clean = k_key.replace("_", "").replace(" ", "").casefold()
             lbl_clean = k_lbl_raw.replace("_", "").replace(" ", "").casefold()
-            matched = False
-            if target_key and k_key.casefold() == target_key:
-                matched = True
-            elif q_norm in k_key.casefold() or q_norm in k_lbl_raw.casefold() or q_norm in k_lbl.casefold():
-                matched = True
-            elif q_clean and (q_clean in k_clean or q_clean in lbl_clean or k_clean in q_clean):
-                matched = True
-            if not matched:
-                continue
+            if (target_key and k_key.casefold() == target_key) or (q_clean and (q_clean == k_clean or q_clean == lbl_clean)):
+                picked_kv = kv
+                break
+        # Pass 2: controlled substring fallback against k_key and raw label only
+        if picked_kv is None:
+            for kv in raw_kpis:
+                k_key = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
+                k_lbl_raw = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or k_key)
+                k_clean = k_key.replace("_", "").replace(" ", "").casefold()
+                lbl_clean = k_lbl_raw.replace("_", "").replace(" ", "").casefold()
+                if (q_norm in k_key.casefold() or q_norm in k_lbl_raw.casefold()) or (
+                    q_clean and (q_clean in k_clean or q_clean in lbl_clean or (len(k_clean) >= 4 and k_clean in q_clean))
+                ):
+                    picked_kv = kv
+                    break
+
+        for kv in ([picked_kv] if picked_kv is not None else []):
+            k_key = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
+            k_lbl_raw = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or k_key)
+            k_lbl = disambiguate_call_center_kpi_label(r_team, k_key, k_lbl_raw)
 
             unit = str((kv.get("unit") if isinstance(kv, dict) else getattr(kv, "unit", "%")) or "%")
             actual = _record_field(kv, "actual_value", None)
@@ -3878,7 +3898,10 @@ class DeterministicToolRegistry:
             act_v = float(actual)
             tgt_v = float((kv.get("target_value") if isinstance(kv, dict) else getattr(kv, "target_value", 0.0)) or 0.0)
             achievement = _record_field(kv, "achievement_ratio", None)
-            direction = str((kv.get("direction") if isinstance(kv, dict) else getattr(kv, "direction", "higher_better")) or "higher_better")
+            direction = str(
+                (kv.get("direction") if isinstance(kv, dict) else getattr(kv, "direction", None))
+                or ("lower_better" if "abandon" in (k_key + " " + k_lbl_raw).casefold() or "waiting" in (k_key + " " + k_lbl_raw).casefold() or "rejection" in (k_key + " " + k_lbl_raw).casefold() or "cpl" in (k_key + " " + k_lbl_raw).casefold() or "error" in (k_key + " " + k_lbl_raw).casefold() else "higher_better")
+            )
 
             if unit == "%":
                 numeric_val = round(act_v * 100.0 if act_v <= 1.5 else act_v, 1)
@@ -4337,7 +4360,10 @@ class DeterministicToolRegistry:
             tgt_v = float((kv.get("target_value") if isinstance(kv, dict) else getattr(kv, "target_value", 0.0)) or 0.0)
             ach_r = float((kv.get("achievement_ratio") if isinstance(kv, dict) else getattr(kv, "achievement_ratio", 0.0)) or 0.0)
             w_app = float((kv.get("weight_applied") if isinstance(kv, dict) else getattr(kv, "weight_applied", 0.0)) or 0.0)
-            direction = str((kv.get("direction") if isinstance(kv, dict) else getattr(kv, "direction", "higher_better")) or "higher_better")
+            direction = str(
+                (kv.get("direction") if isinstance(kv, dict) else getattr(kv, "direction", None))
+                or ("lower_better" if "abandon" in (k_key + " " + k_lbl_raw).casefold() or "waiting" in (k_key + " " + k_lbl_raw).casefold() or "rejection" in (k_key + " " + k_lbl_raw).casefold() or "cpl" in (k_key + " " + k_lbl_raw).casefold() or "error" in (k_key + " " + k_lbl_raw).casefold() else "higher_better")
+            )
 
             if unit == "%":
                 act_disp = f"{act_v * 100:.1f}%" if act_v <= 1.5 else f"{act_v:.1f}%"
@@ -4513,6 +4539,26 @@ class DeterministicToolRegistry:
             ),
         ]
 
+        # Build normalized per-KPI snapshots for multi-KPI compound queries
+        all_kpi_snapshots: list[dict[str, Any]] = []
+        seen_snap_labels: set[str] = set()
+        for kv in raw_kpis:
+            k_lbl_c = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or "").strip()
+            k_key_c = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "").strip()
+            q_try = k_lbl_c or k_key_c
+            if not q_try:
+                continue
+            snap_c = self._extract_record_kpi_snapshot(selected_rec, q_try, emp_team, emp_pos)
+            if snap_c and str(snap_c.get("kpi_label") or "").casefold() not in seen_snap_labels:
+                seen_snap_labels.add(str(snap_c.get("kpi_label") or "").casefold())
+                all_kpi_snapshots.append(snap_c)
+        if emp_team in ("Inbound", "Outbound"):
+            for cnt_q in ("bookings_count", "attended_count"):
+                snap_cnt = self._extract_record_kpi_snapshot(selected_rec, cnt_q, emp_team, emp_pos)
+                if snap_cnt and str(snap_cnt.get("kpi_label") or "").casefold() not in seen_snap_labels:
+                    seen_snap_labels.add(str(snap_cnt.get("kpi_label") or "").casefold())
+                    all_kpi_snapshots.append(snap_cnt)
+
         agent_spotlight_dict = {
             "entity_name": emp_display_name,
             "entity_id": emp_id_resolved,
@@ -4535,6 +4581,7 @@ class DeterministicToolRegistry:
                 else None
             ),
             "ranking_metric_target": selected_kpi_snap.get("target_numeric") if selected_kpi_snap else None,
+            "ranking_metric_unit": selected_kpi_snap.get("unit") if selected_kpi_snap else None,
             "ranking_metric_target_display": (
                 f"{selected_kpi_snap['target_numeric']:g} {selected_kpi_snap.get('unit') or ''}".strip()
                 if selected_kpi_snap and selected_kpi_snap.get("target_numeric") is not None
@@ -4572,6 +4619,7 @@ class DeterministicToolRegistry:
             "kpi_missing_months": kpi_missing_months,
             "kpi_change_vs_prev": kpi_change_vs_prev,
             "kpi_window_delta": kpi_window_delta,
+            "all_kpi_snapshots": all_kpi_snapshots,
         }
 
         digest = {

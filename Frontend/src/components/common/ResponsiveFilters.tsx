@@ -5,6 +5,7 @@ import { Eraser, Filter, X } from 'lucide-react';
 import './ResponsiveFilters.css';
 
 export type ResponsiveFiltersVariant = 'floating' | 'docked';
+export type ResponsiveFiltersDockPlacement = 'auto' | 'above' | 'below';
 
 interface ResponsiveFiltersProps {
   children: ReactNode;
@@ -19,12 +20,20 @@ interface ResponsiveFiltersProps {
    * no stored position and no safe-area clamping; only the panel stays portaled.
    */
   variant?: ResponsiveFiltersVariant;
+  /** Preferred panel anchor direction when variant="docked". Defaults to 'auto'. */
+  dockPlacement?: ResponsiveFiltersDockPlacement;
+  /** Disables opening the filter panel (e.g., when docked inside a collapsed bar). */
+  disabled?: boolean;
 }
 
 interface FloatingPosition {
   x: number;
   y: number;
 }
+
+type DockedAnchor =
+  | { placement: 'below'; top: number; right: number; maxHeight: number }
+  | { placement: 'above'; bottom: number; left: number; maxHeight: number };
 
 interface SafeArea {
   minX: number;
@@ -100,9 +109,12 @@ const ResponsiveFilters = ({
   label = 'Filters',
   className = '',
   variant = 'floating',
+  dockPlacement = 'auto',
+  disabled = false,
 }: ResponsiveFiltersProps) => {
   const isDocked = variant === 'docked';
   const [isOpen, setIsOpen] = useState(false);
+  const panelOpen = isOpen && !disabled;
   const [initial] = useState(() => {
     // A docked trigger never moves, so it has no stored position to read.
     if (variant === 'docked') return { stored: null, position: { x: 0, y: 0 } };
@@ -120,9 +132,8 @@ const ResponsiveFilters = ({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; origin: FloatingPosition; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
-  // Docked panel anchor: viewport offset below the trigger, right-aligned.
-  // Measured in a layout effect so the first painted frame is already placed.
-  const [dockedAnchor, setDockedAnchor] = useState<{ top: number; right: number } | null>(null);
+  // Docked panel anchor: above or below its trigger depending on available viewport space.
+  const [dockedAnchor, setDockedAnchor] = useState<DockedAnchor | null>(null);
   const reduceMotion = useReducedMotion();
   const safeActiveCount = Math.max(0, activeCount);
   const safeClearableCount = Math.max(0, clearableCount ?? safeActiveCount);
@@ -151,18 +162,53 @@ const ResponsiveFilters = ({
     setPosition((current) => (followDefault.current ? defaultFilterPosition() : clampPosition(current)));
   }, [isDocked]);
 
-  // Keep the docked panel anchored below its trigger while it is open.
+  // Keep the docked panel anchored relative to its trigger while open.
   useLayoutEffect(() => {
-    if (!isDocked || !isOpen) return undefined;
+    if (!isDocked || !panelOpen) return undefined;
     const updateAnchor = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setDockedAnchor({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const panelW = Math.max(220, Math.min(470, vw - 24));
+      const spaceBelow = vh - rect.bottom;
+      const opensAbove = dockPlacement === 'above'
+        ? true
+        : dockPlacement === 'below'
+          ? false
+          : rect.height > 0 && spaceBelow < 320 && rect.top > spaceBelow;
+
+      if (opensAbove) {
+        const noLayoutRect = rect.height === 0 && rect.top === 0;
+        const left = noLayoutRect
+          ? Math.max(12, Math.round((vw - panelW) / 2))
+          : Math.round(Math.min(Math.max(12, rect.left + rect.width / 2 - panelW / 2), Math.max(12, vw - panelW - 12)));
+        const bottom = noLayoutRect ? 84 : Math.max(12, Math.round(vh - rect.top + 12));
+        const availableH = noLayoutRect ? vh - 108 : rect.top - 24;
+        setDockedAnchor({
+          placement: 'above',
+          bottom,
+          left,
+          maxHeight: Math.max(220, Math.min(availableH, 760)),
+        });
+        return;
+      }
+
+      setDockedAnchor({
+        placement: 'below',
+        top: rect.bottom + 8,
+        right: Math.max(12, vw - rect.right),
+        maxHeight: Math.max(220, Math.min(spaceBelow - 20, 760)),
+      });
     };
     updateAnchor();
     window.addEventListener('resize', updateAnchor);
-    return () => window.removeEventListener('resize', updateAnchor);
-  }, [isDocked, isOpen]);
+    window.addEventListener('scroll', updateAnchor, true);
+    return () => {
+      window.removeEventListener('resize', updateAnchor);
+      window.removeEventListener('scroll', updateAnchor, true);
+    };
+  }, [dockPlacement, isDocked, panelOpen]);
 
   useEffect(() => {
     if (isDocked) return undefined;
@@ -245,7 +291,7 @@ const ResponsiveFilters = ({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!panelOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -279,7 +325,7 @@ const ResponsiveFilters = ({
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [close, isOpen]);
+  }, [close, panelOpen]);
 
   if (typeof document === 'undefined') return null;
 
@@ -290,23 +336,34 @@ const ResponsiveFilters = ({
   const panelTop = typeof window === 'undefined'
     ? 0
     : Math.max(panelHalfHeight + 12, Math.min(position.y + buttonSize / 2, window.innerHeight - panelHalfHeight - 12));
-  // Docked: below the trigger, right edge aligned with the trigger's right
-  // edge, same width logic as floating. Compact screens keep the existing
-  // full-width bottom-sheet CSS (panelStyle stays undefined there).
+  // Docked: above or below its trigger depending on viewport space. Compact
+  // screens keep the existing full-width bottom-sheet CSS (panelStyle stays undefined there).
   const dockedPanelWidth = typeof window === 'undefined'
     ? 470
     : Math.max(220, Math.min(470, window.innerWidth - 24));
+  const dockedOpensAbove = isDocked && dockedAnchor?.placement === 'above';
   const panelStyle = isCompact
     ? undefined
     : isDocked
       ? dockedAnchor
-        ? {
-            top: `${dockedAnchor.top}px`,
-            left: 'auto',
-            right: `${dockedAnchor.right}px`,
-            width: `${dockedPanelWidth}px`,
-            transformOrigin: 'right top',
-          }
+        ? dockedAnchor.placement === 'above'
+          ? {
+              top: 'auto',
+              bottom: `${dockedAnchor.bottom}px`,
+              left: `${dockedAnchor.left}px`,
+              right: 'auto',
+              width: `${dockedPanelWidth}px`,
+              maxHeight: `${dockedAnchor.maxHeight}px`,
+              transformOrigin: 'center bottom',
+            }
+          : {
+              top: `${dockedAnchor.top}px`,
+              left: 'auto',
+              right: `${dockedAnchor.right}px`,
+              width: `${dockedPanelWidth}px`,
+              maxHeight: `${dockedAnchor.maxHeight}px`,
+              transformOrigin: 'right top',
+            }
         : undefined
       : {
           top: `${panelTop}px`,
@@ -315,8 +372,9 @@ const ResponsiveFilters = ({
           width: `${panelWidth}px`,
           transformOrigin: panelOpensRight ? 'left center' : 'right center',
         };
-  // A docked panel grows down from its trigger, so it enters from the right.
-  const panelEnterX = isDocked ? 24 : panelOpensRight ? -24 : 24;
+  // A below-docked panel enters from the right; an above-docked panel rises from the bar.
+  const panelEnterX = isDocked ? (dockedOpensAbove ? 0 : 24) : panelOpensRight ? -24 : 24;
+  const panelEnterY = dockedOpensAbove ? 12 : 0;
 
   const trigger = (
     <div
@@ -328,13 +386,14 @@ const ResponsiveFilters = ({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         className={isDocked
-          ? 'responsive-filter-trigger responsive-filter-trigger--docked'
+          ? `responsive-filter-trigger responsive-filter-trigger--docked${safeActiveCount > 0 ? ' has-active-filters' : ''}`
           : `responsive-filter-trigger${isDragging ? ' is-dragging' : ''}`}
         aria-label={isDocked
           ? accessibleLabel
           : `${accessibleLabel}. Drag to move; use Alt plus arrow keys, or Alt plus Home to reset`}
-        aria-expanded={isOpen}
+        aria-expanded={panelOpen}
         aria-controls={panelId}
         aria-haspopup="dialog"
         {...(isDocked
@@ -349,6 +408,7 @@ const ResponsiveFilters = ({
               onKeyDown: handleLauncherKeyDown,
             })}
         onClick={(event) => {
+          if (disabled) return;
           if (!isDocked && suppressClickRef.current) {
             suppressClickRef.current = false;
             event.preventDefault();
@@ -368,7 +428,7 @@ const ResponsiveFilters = ({
 
   const overlay = (
     <AnimatePresence initial={false}>
-      {isOpen && (
+      {panelOpen && (
         <>
           <motion.button
             key="filter-scrim"
@@ -390,9 +450,9 @@ const ResponsiveFilters = ({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX, scale: 0.98 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX * 0.75, scale: 0.98 }}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX, y: panelEnterY, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX * 0.75, y: panelEnterY * 0.75, scale: 0.98 }}
             transition={transition}
           >
             <div className="responsive-filter-panel__header">

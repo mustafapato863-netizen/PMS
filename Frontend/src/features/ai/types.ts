@@ -46,13 +46,18 @@ export type ContextualCapabilityMode =
 
 export type FeedbackCategoryType =
   | 'wrong_data'
+  | 'incomplete_response'
   | 'misunderstood_question'
   | 'lost_context'
   | 'too_long'
   | 'incorrect_answer'
   | 'incorrect_scope'
-  | 'incomplete_response'
   | 'poor_suggestion'
+  | 'incorrect_kpi_interpretation'
+  | 'unsupported_recommendation'
+  | 'irrelevant_action'
+  | 'missing_context'
+  | 'good_quality_recommendation'
   | 'other'
   | 'helpful';
 
@@ -617,6 +622,7 @@ export interface AiCorrectiveActionSuggestionDraft {
 }
 
 export interface AiCorrectiveActionSuggestionPayload {
+  trace_id?: string | null;
   outcome: CorrectiveActionSuggestionOutcome;
   provider_used: CorrectiveActionSuggestionProvider;
   model_called?: boolean;
@@ -624,6 +630,8 @@ export interface AiCorrectiveActionSuggestionPayload {
   fallback_reason?: string | null;
   validation_errors?: string[];
   repair_attempted?: boolean;
+  repair_outcome?: 'not_needed' | 'repaired' | 'rejected' | 'time_exhausted' | 'non_repairable' | null;
+  repair_latency_ms?: number | null;
   context: AiCorrectiveActionSuggestionContext;
   focus_kpi_key?: string | null;
   cohort_in_scope_count?: number | null;

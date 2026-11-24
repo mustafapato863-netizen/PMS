@@ -39,7 +39,7 @@ from services.corrective_action_service import (
 from services.user_identity_service import UserIdentityService
 from services.user_presence_service import UserPresenceService
 from utils.performance_levels import PERFORMANCE_LEVELS
-from utils.report_scope import FUNCTION_VIEWER_FUNCTIONS
+from utils.report_scope import FUNCTION_VIEWER_FUNCTIONS, _team_row_is_deprecated
 from utils.team_identity import (
     create_management_team_identity,
     logical_team_name,
@@ -125,7 +125,11 @@ def _admin_count(db: Session) -> int:
 
 
 def _active_teams(db: Session) -> list[Team]:
-    return db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+    return [
+        team
+        for team in db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+        if not _team_row_is_deprecated(team)
+    ]
 
 
 def _normalize_function_names(function_names: list[str] | None) -> list[str]:

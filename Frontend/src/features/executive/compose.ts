@@ -855,7 +855,13 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
 }
 
 function regions(current: ExecRecord[], previous: ExecRecord[]): ExecutiveRegion[] {
-  const names = [...new Set(current.map((record) => record.region).filter((value): value is string => Boolean(value)))];
+  const names = [
+    ...new Set(
+      current
+        .map((record) => record.region)
+        .filter((value): value is string => Boolean(value && value.trim().toLowerCase() !== 'all')),
+    ),
+  ];
   const totalEmployees = employeesOf(current);
   const raw = names.map((region) => {
     const records = current.filter((record) => record.region === region);

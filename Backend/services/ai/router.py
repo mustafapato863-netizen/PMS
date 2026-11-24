@@ -68,6 +68,19 @@ from services.ai.providers import (
     is_prompt_safe_for_external_projection,
     metrics_from_provider_response,
 )
+from services.ai.compound_parts_planner import (
+    CompoundQueryPlan,
+    compound_parts_enabled,
+    contains_arabic,
+    detect_arabic_country,
+    detect_arabic_periods,
+    detect_arabic_team_hint,
+    detect_arabic_teams,
+    detect_bilingual_kpi_ids,
+    match_arabic_person_candidate,
+    normalize_bilingual_text,
+    plan_compound_parts,
+)
 from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import function_for_team, user_can_access_team_level
 from utils.regions import ksa_region_hint_from_prompt
@@ -348,12 +361,22 @@ def _extract_periods(
     # Match longest aliases first to avoid 'sep' matching inside 'september' twice
     sorted_aliases = sorted(MONTH_ALIASES.items(), key=lambda kv: len(kv[0]), reverse=True)
     used_spans: list[tuple[int, int]] = []
+    norm_ar_text = normalize_bilingual_text(text_lower)
     for alias, canonical_month in sorted_aliases:
-        for m in re.finditer(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text_lower):
+        is_ascii_alias = alias.isascii()
+        haystack = text_lower if is_ascii_alias else norm_ar_text
+        target_alias = alias if is_ascii_alias else normalize_bilingual_text(alias)
+        pattern = (
+            rf"(?<![a-z0-9]){re.escape(target_alias)}(?![a-z0-9])"
+            if is_ascii_alias
+            else rf"(?<!\w){re.escape(target_alias)}(?!\w)"
+        )
+        for m in re.finditer(pattern, haystack):
             span = m.span()
-            if any(not (span[1] <= s[0] or span[0] >= s[1]) for s in used_spans):
+            if is_ascii_alias and any(not (span[1] <= s[0] or span[0] >= s[1]) for s in used_spans):
                 continue
-            used_spans.append(span)
+            if is_ascii_alias:
+                used_spans.append(span)
             found_months.append((span[0], canonical_month))
 
     found_months.sort(key=lambda item: item[0])
@@ -442,7 +465,7 @@ def _detect_branches_in_prompt(text_lower: str, detected_team: str | None) -> li
 
 
 _OVERALL_SCORE_REQUEST_RE = re.compile(
-    r"\b(?:overall\s+(?:pms\s+)?scores?|overall\s+performance|overall\s+trend|score\s+pattern|scores?\s+pattern|"
+    r"\b(?:overall\s+pms(?:\s+scores?)?|overall\s+(?:pms\s+)?scores?|overall\s+performance|overall\s+trend|score\s+pattern|scores?\s+pattern|"
     r"score\s+trend|score\s+history|scores?\s+across|scores?)\b"
 )
 _SPECIFIC_KPI_CUE_RE = re.compile(
@@ -467,38 +490,7 @@ def _detect_discussed_metrics(
     performance_level: str,
 ) -> list[str]:
     """Identify distinct KPI IDs explicitly mentioned together in a multi-metric prompt."""
-    t_norm = (team or "").strip().casefold()
-    prefix = "outbound" if t_norm == "outbound" else "inbound"
-    found: list[str] = []
-    if _SPECIFIC_KPI_CUE_RE.search(text_lower or ""):
-        if (
-            re.search(r"\b(?:bookings\s+count|booking\s+count|total\s+bookings|number\s+of\s+bookings|booking\s+volume|more\s+bookings|most\s+bookings|bookings)\b", text_lower)
-            and not re.search(r"\bbookings?[\s-]+(?:rate|conversion)\b|\battended\s+vs\.?\s+bookings\b", text_lower)
-        ):
-            found.append(f"{prefix}:bookings_count")
-        if re.search(r"\b(?:booking[\s-]+rate|booking\s+conversion)\b", text_lower):
-            found.append(f"{prefix}:booking_rate")
-        if re.search(r"\b(?:attendance|attended)\b", text_lower) and "attendance compliance" not in text_lower:
-            found.append(f"{prefix}:attendance_rate")
-        if re.search(r"\b(?:abandon|abondan|abandoned)\b", text_lower):
-            found.append("inbound:abandon_rate")
-        if "reachability" in text_lower:
-            found.append("outbound:reachability")
-        if re.search(r"\b(?:aht|handle\s+time)\b", text_lower):
-            found.append(f"{prefix}:aht")
-        if re.search(r"\b(?:quality\s+score|qa\s+quality)\b", text_lower):
-            found.append(f"{prefix}:quality_score")
-        if "rejection" in text_lower:
-            found.append("pre_approvals_ip_offshore:rejection")
-    if (
-        re.search(
-            r"\b(?:overall\s+(?:pms\s+)?scores?|overall\s+performance|overall\s+trend|score\s+pattern|scores?\s+pattern|score\s+trend|score\s+history|pms\s+scores?)\b",
-            text_lower or "",
-        )
-        and "overall_score" not in found
-    ):
-        if len(found) >= 1 and not re.search(r"\bnot\s+(?:the\s+)?overall\b|\brather\s+than\s+(?:the\s+)?overall\b", text_lower or ""):
-            found.append("overall_score")
+    found = detect_bilingual_kpi_ids(text_lower or "", team=team)
     return list(dict.fromkeys(found))
 
 
@@ -557,10 +549,14 @@ def _detect_metric_id(
             return "marketing:sms_response_time"
 
     # Pharmacy metrics
-    if t_norm == "pharmacy":
+    if t_norm == "pharmacy" or re.search(r"\bwait(?:ing)?\s+time\b", text_lower) or "انتظار" in normalize_bilingual_text(text_lower):
         if "iv cost saving" in text_lower:
             return "pharmacy:ajm_pharmacy_man_iv_cost_saving"
-        if "waiting time" in text_lower:
+        if re.search(r"\bwait(?:ing)?\s+time\b", text_lower) or any(
+            k in normalize_bilingual_text(text_lower) for k in ("وقت الانتظار", "مده الانتظار", "فتره الانتظار", "الانتظار")
+        ):
+            if t_norm in {"inbound", "outbound"}:
+                return f"{t_norm}:waitingtime"
             return "pharmacy:waitingtime"
         if "leakage" in text_lower:
             return "pharmacy:leakage"
@@ -756,6 +752,13 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         "let", "lets", "she", "he", "there", "here", "where", "how", "when", "why",
         "workforce", "analyst", "trainer", "quality", "assurance", "company", "everything", "things", "we", "they",
         "waiting", "wait", "cpl", "leads", "rework", "average", "avg", "mean", "cohort", "entire", "whole",
+        "reporting", "review", "management", "monthly", "quarterly", "weekly", "daily", "summary", "overview", "analysis",
+        "human", "resources", "administration", "offshore",
+        "compare", "comparing", "comparison", "versus", "vs", "between", "calculate", "explain", "describe", "summarize",
+        "share", "send", "email", "mail", "notify", "draft", "propose", "suggest", "recommend", "create", "make",
+        "analyze", "analyse", "examine", "inspect", "evaluate", "assess", "identify", "determine", "compute", "count",
+        "detail", "details", "breakdown", "also", "then", "both", "either", "actual", "variance", "distance",
+        "difference", "change", "delta", "movement",
     }
     person_search_text = re.sub(
         r"^\s*not\s+[a-zA-Z]+(?:\s+[a-zA-Z]+)?\s*(?:,|—|-)+\s*",
@@ -1215,11 +1218,18 @@ class HybridQueryRouter:
             re.search(pat, lower)
             for pat in (
                 r"\bdelete\b.*\bevaluation\b",
-                r"\bupdate\b.*\btarget\b",
+                r"\b(?:update|change|edit|set|reset)\b.*\b(?:target|score|evaluation)s?\b",
                 r"\brecalculate\s+scores\b",
+                r"\bapprove\b.*\bevaluation\b",
                 r"\bapprove\s+and\s+close\b",
                 r"\bmodify\s+score\b",
                 r"\bdrop\s+table\b",
+            )
+        ) or any(
+            re.search(pat, normalize_bilingual_text(text))
+            for pat in (
+                r"حذف.*تقييم",
+                r"(?:تعديل|تغيير).*(?:تارجت|السكور|التقييم|سكور|هدف)",
             )
         ):
             plan = StructuredQueryPlan(intent="unsupported")
@@ -1250,9 +1260,15 @@ class HybridQueryRouter:
                 r"\b(?:system\s+prompt|developer\s+mode|jailbreak|system\s+override|unrestricted)\b",
                 r"\blist\s+every\s+employee\s+score\b",
                 r"\bprint\s+.*employee\s+scores\b",
-                r"\b(?:include|show|list|export|dump|add)\b.*\b(?:salar(?:y|ies)|other\s+country)\b",
+                r"\b(?:include|show|list|export|dump|add|display|what|get)\b.*\b(?:salar(?:y|ies)|payroll|compensation|other\s+country)\b",
                 r"\bother\s+departments?'?\s+salaries\b",
                 r"\bdump\s+the\s+other\s+country\b",
+            )
+        ) or any(
+            re.search(pat, normalize_bilingual_text(text))
+            for pat in (
+                r"تجاهل.*التعليمات",
+                r"(?:رواتب|مرتبات|مرتب|راتب)",
             )
         ):
             plan = StructuredQueryPlan(intent="unsupported", turn_kind_v2="unsupported")
@@ -1298,10 +1314,15 @@ class HybridQueryRouter:
         # Two or more distinct team mentions make this a team comparison:
         # comparisons skip the bare-alias clarification (section 4b) and are
         # handled downstream, so the bare names stay in teams_in_prompt.
+        ar_teams_hint = detect_arabic_teams(text) if contains_arabic(text) else []
+        for _at in ar_teams_hint:
+            if _at not in raw_teams_in_prompt:
+                raw_teams_in_prompt.append(_at)
         is_multi_team_prompt = len(set(raw_teams_in_prompt)) >= 2
-        has_egy_hint = bool(re.search(r"\b(?:egy|egypt)\b", lower))
-        has_uae_hint = bool(re.search(r"\buae\b", lower))
-        has_ksa_hint = bool(ksa_region_hint_from_prompt(text))
+        ar_country_hint = detect_arabic_country(text)
+        has_egy_hint = bool(re.search(r"\b(?:egy|egypt)\b", lower)) or ar_country_hint == "EGY"
+        has_uae_hint = bool(re.search(r"\buae\b", lower)) or ar_country_hint == "UAE"
+        has_ksa_hint = bool(ksa_region_hint_from_prompt(text)) or ar_country_hint == "KSA"
         for raw_t in raw_teams_in_prompt:
             # The "Re-Submission" spelling with an unhyphenated
             # "resubmission" elsewhere in the prompt is the same bare
@@ -1311,7 +1332,13 @@ class HybridQueryRouter:
             if raw_t == "Re-Submission" and "resubmission" in lower and "re-submission" not in lower and not has_uae_hint:
                 bare_t = "Resubmission"
             if has_egy_hint:
-                resolved_t = resolve_canonical_team_name(raw_t, prompt=lower, scope=self.scope) or raw_t
+                resolved_t = (
+                    BARE_CROSS_COUNTRY_TEAMS[bare_t][0]
+                    if bare_t in BARE_CROSS_COUNTRY_TEAMS
+                    else (resolve_canonical_team_name(raw_t, prompt=lower, scope=self.scope) or raw_t)
+                )
+            elif has_uae_hint and bare_t in BARE_CROSS_COUNTRY_TEAMS:
+                resolved_t = BARE_CROSS_COUNTRY_TEAMS[bare_t][1]
             elif has_ksa_hint:
                 resolved_t = raw_t
             elif bare_t in BARE_CROSS_COUNTRY_TEAMS:
@@ -1422,8 +1449,13 @@ class HybridQueryRouter:
         elif any(k in lower for k in ("managerial", "team sla", "attendance compliance")) or detected_pos == "Pre-Authorization Supervisor":
             explicit_level = "Managerial"
 
+        norm_ar_month = normalize_bilingual_text(text)
         has_explicit_month = any(
-            re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower)
+            (
+                re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower)
+                if alias.isascii()
+                else bool(re.search(rf"(?<!\w){re.escape(normalize_bilingual_text(alias))}(?!\w)", norm_ar_month))
+            )
             for alias in MONTH_ALIASES
         )
         explicit_periods = _extract_periods(
@@ -1432,6 +1464,11 @@ class HybridQueryRouter:
             session_state.year,
             fallback_period=self.latest_published_period,
         )
+        if contains_arabic(text):
+            ar_periods = detect_arabic_periods(text, default_year=int(session_state.year or 2026))
+            if ar_periods:
+                explicit_periods = list(dict.fromkeys([*ar_periods] if not has_explicit_month else [*explicit_periods, *ar_periods]))
+                has_explicit_month = True
 
         # 3. Context Inheritance, Corrections, and Topic Switches
         inherited_filters: list[str] = []
@@ -1459,9 +1496,40 @@ class HybridQueryRouter:
                 else ("Call Center" if re.search(r"\bcall\s*center\b", lower) else None)
             )
         )
+        early_candidate_name_match: str | None = None
+        if self.employee_candidates and not (matched_choice and matched_choice.employee_id):
+            seen_early_names: set[str] = set()
+            unique_early_names: list[str] = []
+            for cand in self.employee_candidates:
+                cname = str(getattr(cand, "employee_name", "") or "").strip()
+                if len(cname.split()) >= 2 and cname.casefold() not in seen_early_names:
+                    seen_early_names.add(cname.casefold())
+                    unique_early_names.append(cname)
+            unique_early_names.sort(key=len, reverse=True)
+            for cname in unique_early_names:
+                c_cf = cname.casefold()
+                if c_cf in lower and re.search(rf"(?<![a-z0-9]){re.escape(c_cf)}(?![a-z0-9])", lower):
+                    early_candidate_name_match = cname
+                    break
+            if early_candidate_name_match is None and contains_arabic(text):
+                early_candidate_name_match = match_arabic_person_candidate(text, self.employee_candidates)
+
+        compound_plan_early = (
+            plan_compound_parts(
+                text,
+                team=explicit_team,
+                explicit_periods=explicit_periods if has_explicit_month else [],
+                prior_metric_id=prior.metric_id if prior else None,
+                prior_candidate_metrics=list(prior.candidate_metrics or []) if prior else None,
+            )
+            if compound_parts_enabled()
+            else CompoundQueryPlan()
+        )
+
         has_named_person_reference = bool(
             (matched_choice and matched_choice.employee_id)
             or _extract_person_query_from_prompt(text)
+            or early_candidate_name_match
         )
         is_cohort_followup_turn = bool(
             prior
@@ -1567,7 +1635,22 @@ class HybridQueryRouter:
                 or "compare it with" in lower
                 or refers_prior_period_pair
                 or ranked_action_request
-                or bool(re.search(r"\b(?:he|she|his|her|hers|they|them|their|theirs|that\s+agent|that\s+employee|this\s+person|that\s+person)\b", lower) and len(text.split()) <= 12)
+                or (compound_plan_early.is_arabic_followup and not _extract_person_query_from_prompt(text) and not early_candidate_name_match)
+                or (
+                    contains_arabic(text)
+                    and not has_named_person_reference
+                    and not explicit_team
+                    and not explicit_fn_from_prompt
+                    and (
+                        compound_plan_early.asks_target_gap
+                        or compound_plan_early.asks_causal_hypothesis
+                        or compound_plan_early.asks_corrective_plan
+                        or compound_plan_early.asks_unsupported_action
+                        or compound_plan_early.asks_period_comparison
+                    )
+                )
+                or (compound_plan_early.asks_target_gap and not has_named_person_reference and not explicit_team)
+                or bool(re.search(r"\b(?:he|she|his|her|hers|they|them|their|theirs|that\s+agent|that\s+employee|this\s+person|that\s+person|that\s+team|it)\b", lower) and not has_named_person_reference and not explicit_team and len(text.split()) <= 45)
                 or bool(explicit_score_measure and not explicit_team and not explicit_fn_from_prompt)
                 or len(text.split()) <= 5
             )
@@ -1765,6 +1848,16 @@ class HybridQueryRouter:
             position=eff_pos,
             performance_level=eff_level,
         )
+        if compound_parts_enabled() and (
+            contains_arabic(text)
+            or (
+                eff_team is not None
+                and len([m for m in compound_plan_early.requested_metrics if m != "overall_score"]) >= 2
+            )
+        ):
+            for _cm in compound_plan_early.requested_metrics:
+                if _cm not in discussed_metrics:
+                    discussed_metrics.append(_cm)
         explicit_metric = (
             matched_choice.metric_id
             if (matched_choice and matched_choice.metric_id)
@@ -1776,11 +1869,26 @@ class HybridQueryRouter:
                 prior_metric_id=prior_metric_hint,
             )
         )
+        specific_discussed = [m for m in discussed_metrics if m != "overall_score"]
+        if not explicit_metric and len(specific_discussed) == 1 and not is_explicit_correction and contains_arabic(text):
+            explicit_metric = specific_discussed[0]
         if explicit_metric and (is_explicit_correction or len(discussed_metrics) <= 1):
             discussed_metrics = [explicit_metric]
+        elif (
+            len(specific_discussed) == 1
+            and "overall_score" in discussed_metrics
+            and not is_explicit_correction
+        ):
+            # Compound KPI + Overall PMS (e.g. "Waiting Time and overall PMS"): keep specific KPI for lookup
+            # while retaining both items in discussed_metrics for the compound renderer.
+            if not explicit_metric:
+                explicit_metric = specific_discussed[0]
         elif len(discussed_metrics) >= 2 and not is_explicit_correction and not (matched_choice and matched_choice.metric_id):
             explicit_metric = None
         eff_metric = explicit_metric
+        prior_specific_candidates = [
+            m for m in (prior_eff.candidate_metrics or []) if m != "overall_score"
+        ] if prior_eff else []
         if (
             not eff_metric
             and not explicit_overall_score_request
@@ -1789,7 +1897,13 @@ class HybridQueryRouter:
             and is_short_followup
             and prior_eff
             and prior_eff.metric_id
-            and len(prior_eff.candidate_metrics or []) < 2
+            and (
+                len(prior_eff.candidate_metrics or []) < 2
+                or (
+                    len(prior_specific_candidates) <= 1
+                    and (compound_plan_early.asks_target_gap or compound_plan_early.asks_target or compound_plan_early.asks_corrective_plan)
+                )
+            )
         ):
             # Inherit metric if cross-team, same team, or cleanly mappable to the newly corrected team (e.g. bookings_count)
             prior_metric_team = prior_eff.metric_id.split(":")[0]
@@ -1870,7 +1984,18 @@ class HybridQueryRouter:
 
         eff_periods = list(explicit_periods)
         if is_short_followup and prior_eff and prior_eff.periods:
-            if "compare it with" in lower and has_explicit_month:
+            is_cmp_followup = bool(
+                has_explicit_month
+                and not asks_team_comparison
+                and not (prior_eff.comparison_teams and not explicit_team)
+                and (
+                    "compare it with" in lower
+                    or "قارنها" in normalize_bilingual_text(text)
+                    or "قارنه" in normalize_bilingual_text(text)
+                    or "مقارنه ب" in normalize_bilingual_text(text)
+                )
+            )
+            if is_cmp_followup:
                 combined = sorted(set(prior_eff.periods + explicit_periods))
                 eff_periods = combined
                 inherited_filters.append("periods")
@@ -2650,7 +2775,7 @@ class HybridQueryRouter:
         explicit_person_query = (
             matched_choice.employee_id
             if (matched_choice and matched_choice.employee_id)
-            else _extract_person_query_from_prompt(text)
+            else (early_candidate_name_match or _extract_person_query_from_prompt(text))
         )
         if not explicit_person_query and self.employee_candidates:
             seen_names: set[str] = set()
@@ -2662,7 +2787,8 @@ class HybridQueryRouter:
                     unique_names.append(cname)
             unique_names.sort(key=len, reverse=True)
             for cname in unique_names:
-                if re.search(rf"(?<![a-z0-9]){re.escape(cname.casefold())}(?![a-z0-9])", lower):
+                c_cf = cname.casefold()
+                if c_cf in lower and re.search(rf"(?<![a-z0-9]){re.escape(c_cf)}(?![a-z0-9])", lower):
                     explicit_person_query = cname
                     break
         candidate_level_filter = explicit_level or (
@@ -2767,26 +2893,28 @@ class HybridQueryRouter:
             if emp_res.status == "unique" and emp_res.selected is not None:
                 selected_candidate = emp_res.selected
                 mismatch_labels: list[str] = []
-                if eff_team and selected_candidate.team.casefold() != eff_team.casefold():
+                prompt_pinned_team = explicit_team or (matched_choice.team if matched_choice and matched_choice.team else None)
+                prompt_pinned_fn = explicit_fn_from_prompt
+                if prompt_pinned_team and selected_candidate.team.casefold() != prompt_pinned_team.casefold():
                     mismatch_labels.append(
                         f"the person belongs to {selected_candidate.team}"
                     )
-                if eff_fn and selected_candidate.function.casefold() != eff_fn.casefold():
+                if prompt_pinned_fn and selected_candidate.function.casefold() != prompt_pinned_fn.casefold():
                     mismatch_labels.append(
                         f"the person belongs to {selected_candidate.function}"
                     )
-                if eff_pos and selected_candidate.position and selected_candidate.position.casefold() != eff_pos.casefold():
+                if detected_pos and selected_candidate.position and selected_candidate.position.casefold() != detected_pos.casefold():
                     mismatch_labels.append(
                         f"the person works as {selected_candidate.position}"
                     )
-                if candidate_level_filter and (
+                if explicit_level and (
                     selected_candidate.performance_level or "Employee"
-                ).casefold() != candidate_level_filter.casefold():
+                ).casefold() != explicit_level.casefold():
                     mismatch_labels.append(
                         f"the person is tracked at {selected_candidate.performance_level} level"
                     )
                 if explicit_person_query and mismatch_labels:
-                    requested_scope = eff_team or eff_fn or "the current scope"
+                    requested_scope = prompt_pinned_team or prompt_pinned_fn or "the current scope"
                     detail = "; ".join(dict.fromkeys(mismatch_labels))
                     question = (
                         f"{selected_candidate.employee_name} does not match {requested_scope}: {detail}. "
@@ -3493,6 +3621,74 @@ class HybridQueryRouter:
                     route_used="local_rules",
                 )
 
+        has_ambiguous_gap_metric = bool(
+            (compound_plan_early.asks_target_gap or compound_plan_early.asks_target)
+            and not eff_metric
+            and not explicit_overall_score_request
+            and not matched_choice
+            and prior_eff is not None
+            and len(prior_specific_candidates) >= 2
+        )
+        if has_ambiguous_gap_metric and prior_eff is not None:
+            gap_choices: list[ClarificationChoice] = []
+            for m_id in prior_specific_candidates[:3]:
+                m_short = m_id.split(":")[-1]
+                m_lbl = m_short.replace("_", " ").title()
+                gap_choices.append(
+                    ClarificationChoice(
+                        id=f"choice-gap-{m_short}",
+                        label=m_lbl,
+                        prompt_to_send=f"How far off target was {m_lbl}?",
+                        team=eff_team,
+                        metric_id=m_id,
+                        performance_level=eff_level,
+                        employee_id=resolved_employee_id,
+                        employee_name=resolved_employee_name,
+                    )
+                )
+            if len(gap_choices) >= 2:
+                clar_gap = AiClarificationPrompt(
+                    code="AMBIGUOUS_KPI_SCOPE",
+                    question="Multiple KPIs were discussed in the previous turn. Which KPI should I compare against its target?",
+                    choices=gap_choices,
+                )
+                return RouterValidationResult(
+                    outcome="clarification",
+                    plan=StructuredQueryPlan(
+                        intent="clarify",
+                        team=eff_team,
+                        function=eff_fn,
+                        position=eff_pos,
+                        branch=eff_branch,
+                        branches=eff_branches,
+                        performance_level=eff_level,
+                        periods=eff_periods,
+                        employee_id=resolved_employee_id,
+                        employee_name=resolved_employee_name,
+                        turn_kind_v2="clarification",
+                        clarification_code="AMBIGUOUS_KPI_SCOPE",
+                    ),
+                    confirmed_context=prior.model_copy(
+                        update={
+                            "pending_clarification_code": "AMBIGUOUS_KPI_SCOPE",
+                            "pending_clarification_choices": gap_choices,
+                        }
+                    )
+                    if prior is not None
+                    else ConfirmedQueryContext(
+                        intent="clarify",
+                        team=eff_team,
+                        pending_clarification_code="AMBIGUOUS_KPI_SCOPE",
+                        pending_clarification_choices=gap_choices,
+                    ),
+                    clarification=clar_gap,
+                    headline=clar_gap.question,
+                    narrative_bullets=[
+                        "Select which KPI you want compared against its target."
+                    ],
+                    route_used="local_rules",
+                )
+
         is_multi_part_trend_and_ranking = bool(
             asks_trend
             and asks_ranking_person
@@ -3820,6 +4016,15 @@ class HybridQueryRouter:
             if is_multi_part_trend_and_ranking
             else (["current_value", "ranking"] if is_multi_part_score_and_ranking else [intent])
         )
+        if (
+            requested_parts == [intent]
+            and compound_plan_early.is_compound
+            and compound_plan_early.part_kinds
+        ):
+            for part_k in compound_plan_early.part_kinds:
+                tag = f"part:{part_k}"
+                if tag not in requested_parts:
+                    requested_parts.append(tag)
 
         if matched_pattern and matched_pattern.requested_parts:
             parts = list(matched_pattern.requested_parts)
@@ -3973,18 +4178,37 @@ class HybridQueryRouter:
             and not (plan.employee_id or plan.metric or plan.asks_decisions or plan.position)
             and parse_score_threshold_query(text) is None
             and plan.requested_parts == ["current_value"]
+            and not (
+                compound_parts_enabled()
+                and (
+                    compound_plan_early.is_compound
+                    or compound_plan_early.asks_target_gap
+                    or compound_plan_early.asks_causal_hypothesis
+                    or compound_plan_early.asks_corrective_plan
+                    or compound_plan_early.asks_unsupported_action
+                )
+            )
         )
         # Keep explicit, fully scoped score comparisons on the exact PMS read path.
         # Named KPI questions and compound requests continue through the planner.
         overall_metric = str(explicit_metric or "").rsplit(":", 1)[-1] in ("", "overall_score")
-        if overall_metric and not (asks_ranking_person or asks_branch_comparison):
+        has_compound_comparison_extras = bool(
+            compound_parts_enabled()
+            and (
+                compound_plan_early.asks_target_gap
+                or compound_plan_early.asks_causal_hypothesis
+                or compound_plan_early.asks_corrective_plan
+            )
+        )
+        if overall_metric and not ((asks_ranking_person and not (comparison_teams and not re.search(r"\b(?:agent|employee|person|who)\b", lower))) or asks_branch_comparison) and not has_compound_comparison_extras:
             if (
                 not plan.employee_id
+                and (not asks_ranking_person or not re.search(r"\b(?:agent|employee|person|who)\b", lower))
                 and comparison_teams
                 and len(eff_periods) == 1
-                and re.search(r"\b(?:compare|comparison|vs\.?|versus|difference)\b", lower)
-                and re.search(r"\b(?:scores?|scored|performance|points?)\b|two teams", lower)
-                and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target|trend)\b", lower)
+                and re.search(r"\b(?:compare|comparison|vs\.?|versus|difference|higher|better|stronger|lower|worst|highest|best|or)\b", lower)
+                and re.search(r"\b(?:scores?|scored|performance|points?|higher|better|lower|highest|best|worst)\b|two teams|اعلى|افضل|اقل", lower + " " + normalize_bilingual_text(text))
+                and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target)\b", lower)
             ):
                 plan.comparison_teams = comparison_teams
                 plan.verified_comparison = "team_scores"
@@ -5029,7 +5253,12 @@ class HybridQueryRouter:
             return period_key in UNAVAILABLE_FUTURE_PERIODS
 
         unavail_p = next((p for p in eff_periods if _is_period_unavailable(p)), None)
-        if unavail_p is not None:
+        has_any_available_period = any(not _is_period_unavailable(p) for p in eff_periods)
+        if unavail_p is not None and not (
+            compound_parts_enabled()
+            and len(eff_periods) >= 2
+            and has_any_available_period
+        ):
             unavail_human = _format_period_label(unavail_p)
             latest_human = _format_period_label(self.latest_published_period)
             return RouterValidationResult(

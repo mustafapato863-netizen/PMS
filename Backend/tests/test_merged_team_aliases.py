@@ -62,8 +62,14 @@ def test_call_center_parent_repository_alias_reads_egypt_channels_and_the_parent
 
 
 def test_call_center_parent_scope_does_not_include_inbound_uae():
+    from utils.report_scope import function_team_keys, is_deprecated_team, selection_team_keys
+
     assert {"call center", "inbound", "outbound"} <= _team_keys("Call Center")
     assert "inbound uae" not in _team_keys("Call Center")
+    assert "inbound uae" not in function_team_keys("Call Center")
+    assert "inbound uae" not in selection_team_keys("Inbound")
+    assert is_deprecated_team("Inbound UAE") is True
+    assert is_deprecated_team("Inbound") is False
 
 
 def test_rcm_parent_scope_includes_all_revenue_cycle_domains():

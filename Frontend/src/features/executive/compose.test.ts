@@ -474,6 +474,16 @@ describe('scope', () => {
     expect(egy.regions.map((region) => region.region)).toEqual(['EGY']);
     expect(egy.teams.every((team) => team.regions.includes('EGY'))).toBe(true);
   });
+
+  it('excludes placeholder All region records from region split cards', () => {
+    const summary = compose({
+      records: [
+        ...records,
+        record(96.5, { region: 'All', team: 'Finance', employeeId: 'shared-all-1' }),
+      ],
+    });
+    expect(summary.regions.map((item) => item.region).sort()).toEqual(['EGY', 'UAE']);
+  });
 });
 
 describe('canonical team score roll-up vs employee average', () => {

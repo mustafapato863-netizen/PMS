@@ -106,6 +106,7 @@ class AiRuntimeConfig:
     conversation_state_enabled: bool = True
     model_led_pilot_enabled: bool = False
     guided_reads_enabled: bool = False
+    compound_parts_enabled: bool = True
 
     def can_use_model_led_planner(self, role: str | None, provider_override: str | None) -> bool:
         return (
@@ -173,6 +174,9 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     guided_reads_enabled = _parse_bool(
         os.environ.get("PMS_AI_GUIDED_READS_ENABLED"), default=False
     )
+    compound_parts_enabled = _parse_bool(
+        os.environ.get("PMS_AI_COMPOUND_PARTS_ENABLED"), default=True
+    )
 
     return AiRuntimeConfig(
         router_mode=router_mode,
@@ -185,6 +189,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         conversation_state_enabled=conversation_state_enabled,
         model_led_pilot_enabled=model_led_pilot_enabled,
         guided_reads_enabled=guided_reads_enabled,
+        compound_parts_enabled=compound_parts_enabled,
     )
 
 

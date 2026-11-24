@@ -524,18 +524,18 @@ def test_country_switch_egy_80_and_uae_95_does_not_collide_in_evidence_cache(mon
     try:
         t_egy = Team(
             id=uuid.uuid4(),
-            name="inbound_egy",
-            db_name="Inbound",
-            display_name="Inbound",
+            name="coding_egy",
+            db_name="Coding EGY",
+            display_name="Coding EGY",
             region="EGY",
             team_level="employee",
             is_active=True,
         )
         t_uae = Team(
             id=uuid.uuid4(),
-            name="inbound_uae",
-            db_name="Inbound UAE",
-            display_name="Inbound UAE",
+            name="coding",
+            db_name="Coding",
+            display_name="Coding",
             region="UAE",
             team_level="employee",
             is_active=True,
@@ -545,8 +545,8 @@ def test_country_switch_egy_80_and_uae_95_does_not_collide_in_evidence_cache(mon
 
         e_egy = Employee(
             id=uuid.uuid4(),
-            employee_id="EGY-INB-1",
-            name="Egypt Inbound Agent",
+            employee_id="EGY-COD-1",
+            name="Egypt Coder",
             team_id=t_egy.id,
             region="EGY",
             performance_level="Employee",
@@ -554,8 +554,8 @@ def test_country_switch_egy_80_and_uae_95_does_not_collide_in_evidence_cache(mon
         )
         e_uae = Employee(
             id=uuid.uuid4(),
-            employee_id="UAE-INB-1",
-            name="UAE Inbound Agent",
+            employee_id="UAE-COD-1",
+            name="UAE Coder",
             team_id=t_uae.id,
             region="UAE",
             performance_level="Employee",
@@ -604,7 +604,7 @@ def test_country_switch_egy_80_and_uae_95_does_not_collide_in_evidence_cache(mon
         orch_egy = PmsAiOrchestrator(db=db, scope=scope)
         resp_egy = orch_egy.run_chat_turn(
             AiChatRequest(
-                prompt="What is the Inbound score in September 2026?",
+                prompt="What is the Coding score in September 2026?",
                 session_state=SessionFilterContext(region="EGY", month="September", year=2026),
             )
         )
@@ -614,7 +614,7 @@ def test_country_switch_egy_80_and_uae_95_does_not_collide_in_evidence_cache(mon
         orch_uae = PmsAiOrchestrator(db=db, scope=scope)
         resp_uae = orch_uae.run_chat_turn(
             AiChatRequest(
-                prompt="What is the Inbound score in September 2026?",
+                prompt="What is the Coding score in September 2026?",
                 session_state=SessionFilterContext(region="UAE", month="September", year=2026),
             )
         )
@@ -638,10 +638,10 @@ def test_explicit_branch_on_dubai_page_denies_dubai_only_branch_director(monkeyp
             surface="team_dashboard",
             page_key="team_dashboard",
             page_label="Team Dashboard",
-            route="/team/inbound-uae",
+            route="/team/coding",
             region="UAE",
-            team_id="Inbound UAE",
-            team_label="Inbound UAE",
+            team_id="Coding",
+            team_label="Coding",
             branch="dubai",
             performance_level="Employee",
             month="September",

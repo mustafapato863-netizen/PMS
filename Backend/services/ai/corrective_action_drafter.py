@@ -43,9 +43,11 @@ import copy
 import json
 import logging
 import math
+import os
 import re
+import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from sqlalchemy.orm import Session
 
@@ -85,10 +87,49 @@ __all__ = [
     "STEP_VOCABULARY",
     "CorrectiveActionDrafter",
     "DraftFacts",
+    "classify_draft_validation_errors",
     "generate_corrective_action_suggestion",
     "resolve_workflow_role",
     "validate_model_draft",
 ]
+
+
+REPAIRABLE_STRUCTURE_OR_FOCUS_ERRORS: frozenset[str] = frozenset(
+    {
+        "malformed_model_response",
+        "not_a_json_object",
+        "unexpected_or_missing_fields",
+        "focus_kpi_mismatch",
+        "action_type_not_allowed",
+        "action_choice_not_allowed",
+        "follow_up_interval_not_allowed",
+        "does_not_address_focus_kpi",
+        "invalid_steps",
+        "duplicate_steps",
+    }
+)
+
+
+def corrective_draft_repair_enabled() -> bool:
+    """Reversible environment flag controlling bounded 1-retry corrective draft regeneration."""
+    raw = str(os.environ.get("PMS_AI_CORRECTIVE_DRAFT_REPAIR_ENABLED", "true")).strip().casefold()
+    return raw not in {"0", "false", "no", "off", "disabled"}
+
+
+def classify_draft_validation_errors(
+    *,
+    parsed_ok: bool,
+    raw: Any,
+    errors: list[str],
+) -> Literal["repairable_structure_or_focus", "non_repairable_safety_or_fact"]:
+    """Classify validation errors: allow 1 bounded retry only on structure or isolated focus-KPI mismatch."""
+    if not parsed_ok or not isinstance(raw, dict):
+        return "repairable_structure_or_focus"
+    if not errors:
+        return "non_repairable_safety_or_fact"
+    if all(err in REPAIRABLE_STRUCTURE_OR_FOCUS_ERRORS for err in errors):
+        return "repairable_structure_or_focus"
+    return "non_repairable_safety_or_fact"
 
 
 def resolve_workflow_role(
@@ -1063,6 +1104,8 @@ class CorrectiveActionDrafter:
             schema_props["focus_kpi_key"] = {"type": "string", "enum": [focus.kpi_key]}
             schema_props["action_choice"] = {"type": "string", "enum": list(facts.eligible_action_choices)}
             schema_props["follow_up_interval"] = {"type": "string", "enum": list(facts.eligible_follow_up_intervals)}
+        total_timeout_budget_s = float(synthesis_timeout_seconds())
+        request_deadline = time.perf_counter() + total_timeout_budget_s
         req = ProviderRequest(
             messages=[
                 ProviderMessage(role="system", content=system_content),
@@ -1073,7 +1116,7 @@ class CorrectiveActionDrafter:
             json_schema=request_schema,
             temperature=0.0,
             max_tokens=_MAX_OUTPUT_TOKENS,
-            timeout_seconds=synthesis_timeout_seconds(),
+            timeout_seconds=total_timeout_budget_s,
             purpose="corrective_action_draft",
             task_role="investigation",
         )
@@ -1109,59 +1152,99 @@ class CorrectiveActionDrafter:
             clean, errors = validate_model_draft(raw, facts)
 
         repair_attempted = False
-        if clean is None and (not parsed_ok or not isinstance(raw, dict)):
-            repair_attempted = True
-            repair_system = (
-                "Your previous output was malformed JSON. Return one compact JSON object selecting a valid PMS corrective-action choice. "
-                "Output JSON only."
+        repair_outcome: Literal[
+            "not_needed", "repaired", "rejected", "time_exhausted", "non_repairable"
+        ] = "not_needed"
+        repair_latency_ms: float | None = None
+        if clean is None:
+            failure_class = classify_draft_validation_errors(
+                parsed_ok=parsed_ok,
+                raw=raw,
+                errors=errors,
             )
-            repair_user = json.dumps(
-                {
-                    "previous_errors": errors[:4],
-                    "focus_kpi": prompt_evidence.get("focus_kpi"),
-                    "required_focus_kpi_key": focus.kpi_key,
-                    "allowed_action_choices": list(facts.eligible_action_choices),
-                    "allowed_action_types": list(ALLOWED_DRAFT_ACTION_TYPES),
-                    "allowed_follow_up_intervals": list(facts.eligible_follow_up_intervals),
-                },
-                ensure_ascii=True,
-                separators=(",", ":"),
+            elapsed_wall_s = total_timeout_budget_s - (request_deadline - time.perf_counter())
+            reported_latency_s = float(latency or 0.0) / 1000.0
+            remaining_budget_s = max(
+                0.0,
+                total_timeout_budget_s - max(elapsed_wall_s, reported_latency_s),
             )
-            repair_req = ProviderRequest(
-                messages=[
-                    ProviderMessage(role="system", content=repair_system),
-                    ProviderMessage(role="user", content=repair_user),
-                ],
-                system_instruction=repair_system,
-                response_format="json",
-                json_schema=request_schema,
-                temperature=0.0,
-                max_tokens=_MAX_OUTPUT_TOKENS,
-                timeout_seconds=synthesis_timeout_seconds(),
-                purpose="corrective_action_draft_repair",
-                task_role="repair",
-            )
-            repair_resp = engine.generate(repair_req)
-            if repair_resp.latency_ms is not None:
-                latency = (latency or 0.0) + repair_resp.latency_ms
-            if repair_resp.is_success:
-                provider_used = (
-                    repair_resp.provider
-                    if repair_resp.provider in ("cloudflare", "nvidia")
-                    else provider_used
+            min_repair_window_s = min(1.5, total_timeout_budget_s * 0.25)
+            if failure_class != "repairable_structure_or_focus" or not corrective_draft_repair_enabled():
+                repair_outcome = "non_repairable"
+            elif remaining_budget_s < min_repair_window_s:
+                repair_outcome = "time_exhausted"
+            else:
+                repair_attempted = True
+                repair_system = (
+                    "Your previous output failed structural/focus-KPI validation. Regenerate ONE fresh compact JSON object "
+                    "grounded ONLY in the verified focus KPI evidence. Output JSON only."
                 )
-                model_version = repair_resp.model or model_version
-                repair_raw, repair_parsed = _parse_json_response(repair_resp.content)
-                if repair_parsed:
-                    clean, errors = validate_model_draft(repair_raw, facts)
+                repair_user = json.dumps(
+                    {
+                        **prompt_evidence,
+                        "previous_errors": errors[:4],
+                        "repair_instruction": (
+                            f"You must match required_focus_kpi_key={focus.kpi_key!r} and pick only from allowed_action_choices "
+                            "and allowed_follow_up_intervals without adding extra fields."
+                        ),
+                        "required_focus_kpi_key": focus.kpi_key,
+                        "allowed_action_choices": list(facts.eligible_action_choices),
+                        "allowed_action_types": list(ALLOWED_DRAFT_ACTION_TYPES),
+                        "allowed_follow_up_intervals": list(facts.eligible_follow_up_intervals),
+                    },
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                )
+                repair_req = ProviderRequest(
+                    messages=[
+                        ProviderMessage(role="system", content=repair_system),
+                        ProviderMessage(role="user", content=repair_user),
+                    ],
+                    system_instruction=repair_system,
+                    response_format="json",
+                    json_schema=request_schema,
+                    temperature=0.0,
+                    max_tokens=_MAX_OUTPUT_TOKENS,
+                    timeout_seconds=remaining_budget_s,
+                    purpose="corrective_action_draft_repair",
+                    task_role="repair",
+                )
+                t_rep = time.perf_counter()
+                repair_resp = engine.generate(repair_req)
+                measured_rep_ms = round((time.perf_counter() - t_rep) * 1000.0, 2)
+                repair_latency_ms = float(
+                    repair_resp.latency_ms if repair_resp.latency_ms is not None else measured_rep_ms
+                )
+                latency = (latency or 0.0) + repair_latency_ms
+                if repair_resp.is_success:
+                    provider_used = (
+                        repair_resp.provider
+                        if repair_resp.provider in ("cloudflare", "nvidia")
+                        else provider_used
+                    )
+                    model_version = repair_resp.model or model_version
+                    repair_raw, repair_parsed = _parse_json_response(repair_resp.content)
+                    if repair_parsed:
+                        clean, errors = validate_model_draft(repair_raw, facts)
+                    else:
+                        errors = ["malformed_model_response"]
+                    repair_outcome = "repaired" if clean is not None else "rejected"
                 else:
-                    errors = ["malformed_model_response"]
+                    repair_outcome = (
+                        "time_exhausted"
+                        if getattr(repair_resp, "outcome", None) in {"timeout", "timed_out"}
+                        else "rejected"
+                    )
 
         if clean is None:
             fb_reason = (
-                "malformed_model_response"
-                if errors == ["malformed_model_response"]
-                else "validation_failed"
+                "repair_deadline_exhausted"
+                if repair_outcome == "time_exhausted"
+                else (
+                    "malformed_model_response"
+                    if errors == ["malformed_model_response"]
+                    else "validation_failed"
+                )
             )
             return self._log(AiCorrectiveActionSuggestionPayload(
                 outcome="draft_rejected",
@@ -1170,6 +1253,8 @@ class CorrectiveActionDrafter:
                 fallback_reason=fb_reason,
                 validation_errors=errors,
                 repair_attempted=repair_attempted,
+                repair_outcome=repair_outcome,
+                repair_latency_ms=repair_latency_ms,
                 model_latency_ms=latency,
                 **fallback_fields,
                 **common,
@@ -1214,6 +1299,8 @@ class CorrectiveActionDrafter:
             model_called=True,
             model_version=model_version,
             repair_attempted=repair_attempted,
+            repair_outcome=repair_outcome,
+            repair_latency_ms=repair_latency_ms,
             draft=draft,
             model_latency_ms=latency,
             **common,
@@ -1231,6 +1318,8 @@ class CorrectiveActionDrafter:
                     "provider": payload.provider_used,
                     "model_called": payload.model_called,
                     "repair_attempted": payload.repair_attempted,
+                    "repair_outcome": payload.repair_outcome,
+                    "repair_latency_ms": payload.repair_latency_ms,
                     "action_choice": payload.draft.action_choice if payload.draft else None,
                     "fallback_reason": payload.fallback_reason,
                     "validation_errors": payload.validation_errors,
