@@ -70,7 +70,7 @@ function Panel({ side, drivers, metric, caption, focus }: { side: 'negative' | '
           {negative ? 'Top negative drivers' : 'Top positive drivers'}
         </h3>
         <span
-          className="rounded-full px-[8px] py-[2px] text-[10.5px] font-bold"
+          className="rounded-full px-[8px] py-[2px] text-[12px] font-bold"
           style={{
             background: negative ? 'var(--exec-neg-bg)' : 'var(--exec-pos-bg)',
             color: negative ? 'var(--insights-negative)' : 'var(--insights-positive)',
@@ -79,7 +79,7 @@ function Panel({ side, drivers, metric, caption, focus }: { side: 'negative' | '
           {negative ? 'Pulling down' : 'Lifting up'}
         </span>
       </div>
-      <p className="-mt-[6px] text-[11px] leading-[1.4] text-[var(--text-muted)]">{caption}</p>
+      <p className="-mt-[6px] text-[12px] leading-[1.4] text-[var(--text-muted)]">{caption}</p>
       {ordered.length ? (
         <ul className="flex flex-col gap-[14px]">
           {ordered.map((driver, index) => (
@@ -116,7 +116,7 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
     ? `Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement · ${coveredPeriodLabel(period.effective, range)}`
     : "Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement";
   return (
-    <ExecCard aria-labelledby="exec-drivers-title">
+    <ExecCard aria-labelledby="exec-drivers-title" className="h-full">
       <ExecCardHeader
         titleId="exec-drivers-title"
         icon={Activity}
@@ -129,17 +129,19 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
       {unavailable ? (
         <SoftEmpty>{range ? 'KPI drivers are not defined for a range. The function order above still shows who carries the gap. Switch to a single month for the KPI list.' : 'Driver analysis isn\'t available for this view yet.'}</SoftEmpty>
       ) : (
-        <div className="grid gap-[12px] md:grid-cols-2">
+        <div className="grid flex-1 gap-[12px] md:grid-cols-2">
           <Panel side="negative" drivers={drivers.negative} metric={metric} focus={focus} caption={metric === 'weighted_gap' ? 'KPI weight × gap to target' : 'Change in weighted contribution'} />
           <Panel side="positive" drivers={drivers.positive} metric={metric} focus={null} caption={`Change in weighted contribution vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous}`} />
         </div>
       )}
       {!unavailable && (
-        <Footnote>
-          {metric === 'weighted_gap'
-            ? `Red is KPI weight × gap to target (%). Green is the change in weighted contribution vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%).`
-            : `Impact = change in the KPI's weighted contribution to the score vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%). Ranking switches to weight × gap once the backend sends it.`}
-        </Footnote>
+        <div className="mt-auto">
+          <Footnote>
+            {metric === 'weighted_gap'
+              ? `Red is KPI weight × gap to target (%). Green is the change in weighted contribution vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%).`
+              : `Impact = change in the KPI's weighted contribution to the score vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%). Ranking switches to weight × gap once the backend sends it.`}
+          </Footnote>
+        </div>
       )}
     </ExecCard>
   );

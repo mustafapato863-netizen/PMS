@@ -6,23 +6,47 @@ import { comparisonName, coveredPeriodLabel } from '../../../features/executive/
 import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
 
-export default function GradeDistributionCard({ distribution, previous, range = null, compact = false }: { distribution: ExecutiveGradeDistribution | null; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null; compact?: boolean }) {
+export default function GradeDistributionCard({
+  distribution,
+  previous,
+  range = null,
+  compact = false,
+  embedded = false,
+}: {
+  distribution: ExecutiveGradeDistribution | null;
+  previous: ExecutivePeriod | null;
+  range?: ExecutiveRangeBlock | null;
+  compact?: boolean;
+  /** Render as an inline lower section inside a unified parent ExecCard (Figma Row 4). */
+  embedded?: boolean;
+}) {
   // Month mode keeps the three-letter comparison month; range mode names the range and the comparison range.
   const vs = range ? (comparisonName(previous, range) ?? 'no earlier range') : (previous ? previous.month : 'last month').slice(0, 3);
-  return (
-    <ExecCard aria-labelledby="exec-grades-title">
-      <ExecCardHeader
-        titleId="exec-grades-title"
-        icon={BarChart3}
-        iconBg="var(--pms-grade-a-badge-bg)"
-        iconColor="var(--pms-grade-a-text)"
-        title="Grade distribution"
-        subtitle={distribution
-          ? (range
-            ? `${distribution.people ?? distribution.total} employees · ${coveredPeriodLabel(null, range)} · movement vs ${vs}`
-            : `${distribution.people ?? distribution.total} employees · movement vs ${vs}`)
-          : 'Grade mix'}
-      />
+  const subtitle = distribution
+    ? (range
+      ? `${distribution.people ?? distribution.total} employees · ${coveredPeriodLabel(null, range)} · movement vs ${vs}`
+      : `${distribution.people ?? distribution.total} employees · movement vs ${vs}`)
+    : 'Grade mix';
+
+  const content = (
+    <>
+      {embedded ? (
+        <div className="flex flex-wrap items-baseline justify-between gap-[8px]">
+          <h2 id="exec-grades-title" className="text-[14px] font-bold text-[var(--insights-heading)]">
+            Grade distribution
+          </h2>
+          <span className="text-[12px] text-[var(--text-muted)]">{subtitle}</span>
+        </div>
+      ) : (
+        <ExecCardHeader
+          titleId="exec-grades-title"
+          icon={BarChart3}
+          iconBg="var(--pms-grade-a-badge-bg)"
+          iconColor="var(--pms-grade-a-text)"
+          title="Grade distribution"
+          subtitle={subtitle}
+        />
+      )}
       {distribution && distribution.total > 0 ? (
         <>
           <div aria-hidden="true" className="flex h-[10px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
@@ -39,21 +63,21 @@ export default function GradeDistributionCard({ distribution, previous, range = 
                   <li
                     key={grade}
                     data-testid={`grade-row-${grade}`}
-                    className="flex flex-col items-center gap-[3px] rounded-[10px] border px-[6px] py-[8px] text-center"
+                    className="flex flex-col items-center gap-[2px] rounded-[10px] border px-[6px] py-[7px] text-center"
                     style={{
                       background: gradeTokenVar(grade, 'badge-bg'),
                       borderColor: `color-mix(in srgb, ${gradeTokenVar(grade, 'gauge')} 26%, transparent)`,
                     }}
                   >
-                    <span className="text-[11px] font-bold" style={{ color: gradeTokenVar(grade, 'badge-text') }}>
+                    <span className="text-[12px] font-bold" style={{ color: gradeTokenVar(grade, 'badge-text') }}>
                       {grade} · {distribution.counts[grade]}
                     </span>
-                    <span className="text-[10.5px] font-semibold opacity-80" style={{ color: gradeTokenVar(grade, 'badge-text') }}>
+                    <span className="text-[12px] font-semibold opacity-80" style={{ color: gradeTokenVar(grade, 'badge-text') }}>
                       {distribution.percents[grade].toFixed(0)}%
                     </span>
                     <span
                       data-tone={tone}
-                      className="text-[10px] font-bold"
+                      className="text-[12px] font-bold"
                       style={{ color: tone === 'good' ? 'var(--insights-positive)' : tone === 'bad' ? 'var(--insights-negative)' : 'var(--text-muted)' }}
                     >
                       {movement === null ? '—' : movement === 0 ? '0' : `${movement > 0 ? '▲' : '▼'}${movement > 0 ? '+' : '\u2212'}${Math.abs(movement)}`}
@@ -94,7 +118,19 @@ export default function GradeDistributionCard({ distribution, previous, range = 
           )}
           <Footnote>▲/▼ = headcount change vs {vs}. Green = healthier mix. Grades use the 95 / 90 / 80 / 70 cut-offs.</Footnote>
         </>
-      ) : <SoftEmpty>No graded employees for this scope.</SoftEmpty>}
-    </ExecCard>
+      ) : (
+        <SoftEmpty>No graded employees for this scope.</SoftEmpty>
+      )}
+    </>
   );
+
+  if (embedded) {
+    return (
+      <section aria-labelledby="exec-grades-title" className="mt-auto flex min-w-0 flex-col gap-[10px] border-t border-[var(--border-light)] pt-[14px]">
+        {content}
+      </section>
+    );
+  }
+
+  return <ExecCard aria-labelledby="exec-grades-title">{content}</ExecCard>;
 }
