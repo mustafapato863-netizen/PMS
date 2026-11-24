@@ -8,7 +8,6 @@ import { MONTHS } from '../../../features/executive/compose';
 import { executiveTeamDisplayName, FLAG_LABEL, FLAG_ORDER, formatShare } from './execModel';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradePill, ScoreText, SoftEmpty, StatusPill } from './ExecPrimitives';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 const TEAM_BRANCHES = new Set(['dubai', 'sharjah', 'ajman', 'clinics']);
 const TEAM_LEVELS = new Set(['All', 'Employee', 'Managerial', 'Corporate']);
@@ -110,8 +109,6 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
             </p>
           )}
           <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col gap-[8px]">
-            <BasisComparisonNote messages={rows.map((team) => team.basis_context?.message)} />
-
             {/* Figma 6-Column Header */}
             <div role="row" className={`hidden items-center gap-[12px] px-[16px] py-[6px] md:grid ${GRID_COLUMNS}`}>
               <span role="columnheader" className={HEAD_CELL}>Team &amp; Scope</span>

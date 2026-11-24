@@ -2,7 +2,6 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent 
 import { Calendar, LineChart } from 'lucide-react';
 import type { ExecutiveTrendPoint } from '../../../features/executive/types';
 import { fmtScore, shortMonth } from '../../../features/executive/format';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 import { useElementWidth } from './execModel';
 import { smoothPath, splitSeries, type SegmentPoint } from './trendGeometry';
 
@@ -335,7 +334,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title, subtit
           <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t border-dashed border-[var(--text-muted)]" />Target {target}%</span>
         </div>
       )}
-      <BasisComparisonNote messages={[points[points.length - 1]?.basis_context?.message]} />
     </section>
   );
 }
