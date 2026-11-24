@@ -222,6 +222,12 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   });
 
   it('shows a truthful no-data state and authorized team names instead of the Egypt sample', () => {
+    monthlyTestState.catalog!.data.teams.push({
+      team: 'Inbound UAE',
+      region: 'UAE',
+      functions: ['Call Center'],
+      performance_levels: ['Employee'],
+    });
     render(
       <MemoryRouter initialEntries={['/monthly-presentation?period=2026-10']}>
         <MonthlyPresentationView />
@@ -232,6 +238,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByRole('heading', { name: 'No performance data for October 2026' })).toBeInTheDocument();
     const coveredTeams = screen.getByTestId('monthly-teams-without-data');
     expect(within(coveredTeams).getByText(/Inbound/)).toBeInTheDocument();
+    expect(within(coveredTeams).queryByText('Inbound UAE')).not.toBeInTheDocument();
     expect(screen.queryByText('86.6%')).not.toBeInTheDocument();
   });
 
@@ -1177,8 +1184,12 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
     expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
 
-    // The filter trigger is docked in the toolbar, not floating.
-    expect(document.querySelector('.responsive-filter-docked')).not.toBeNull();
+    // The filter trigger is docked inside the bottom control bar, not in the top header or floating.
+    const header = screen.getByRole('banner', { name: 'Monthly Presentation Header' });
+    const bar = screen.getByTestId('presentation-control-bar');
+    expect(within(header).queryByRole('button', { name: /Monthly filters/ })).not.toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: /Monthly filters/ })).toBeInTheDocument();
+    expect(document.querySelector('.responsive-filter-docked--in-bar')).not.toBeNull();
     expect(document.querySelector('.responsive-filter-launcher')).toBeNull();
 
     // Switch to the combined view from the tab.
@@ -1188,13 +1199,14 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
     expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
 
-    // The docked panel opens from the toolbar and offers the Region select first.
-    fireEvent.click(screen.getByRole('button', { name: /Monthly filters/ }));
+    // The docked panel opens from the bottom bar and offers Region, Reporting month, and Function.
+    fireEvent.click(within(bar).getByRole('button', { name: /Monthly filters/ }));
     const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
     expect(dialog).toBeInTheDocument();
     const regionSelect = within(dialog).getByLabelText('Region') as HTMLSelectElement;
     expect(regionSelect.value).toBe('ALL');
     expect(within(dialog).getByLabelText('Reporting month')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Function')).toBeInTheDocument();
 
     // Focusing a branch from the filter narrows the view back to that region.
     fireEvent.change(regionSelect, { target: { value: 'UAE' } });
@@ -1232,14 +1244,16 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(bar).getByRole('switch', { name: 'Presentation Mode' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+    const filterBtn = within(bar).getByRole('button', { name: /Monthly filters/ });
     const barOrder = [
-      'presentation-month',
-      'presentation-mode-switch',
-      'presentation-menu-toggle',
-      'presentation-agenda',
-      'presentation-notes',
-      'presentation-compliance',
-    ].map((id) => within(bar).getByTestId(id));
+      within(bar).getByTestId('presentation-month'),
+      filterBtn,
+      within(bar).getByTestId('presentation-mode-switch'),
+      within(bar).getByTestId('presentation-menu-toggle'),
+      within(bar).getByTestId('presentation-agenda'),
+      within(bar).getByTestId('presentation-notes'),
+      within(bar).getByTestId('presentation-compliance'),
+    ];
     for (let i = 1; i < barOrder.length; i += 1) {
       expect(barOrder[i - 1].compareDocumentPosition(barOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }

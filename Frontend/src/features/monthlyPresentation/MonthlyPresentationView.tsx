@@ -70,7 +70,7 @@ import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
 import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
-import ResponsiveFilters from '../../components/common/ResponsiveFilters';
+import { isHiddenTeam } from '../../components/common/sidebarTeamItems';
 import { CALL_CENTER_TEAM } from '../../types';
 import type { PageContextV1 } from '../ai/types';
 
@@ -275,12 +275,15 @@ function MonthlyPresentationScreen({
   const summaryRecordsQuery = useSummaryRecords(true);
   const catalogQuery = usePerformanceCatalog(true);
   const execRecords = useMemo(
-    () => toExecRecords(summaryRecordsQuery.data ?? []),
+    () => toExecRecords(summaryRecordsQuery.data ?? []).filter((record) => !isHiddenTeam(record.team)),
     [summaryRecordsQuery.data],
   );
   const explicitPreview = Boolean(data || callCenterDeepDiveData || teamDeepDiveData);
   const functionScopeRestricted = isFunctionViewerRole(role);
-  const serverTeams = catalogQuery.data?.teams ?? [];
+  const serverTeams = useMemo(
+    () => (catalogQuery.data?.teams ?? []).filter((team) => !isHiddenTeam(team.team)),
+    [catalogQuery.data?.teams],
+  );
   const authorizedFunctionNames = useMemo(
     () => functionScopeRestricted
       ? (explicitPreview
@@ -1114,121 +1117,63 @@ function MonthlyPresentationScreen({
   // All view is the unfiltered state, so it adds nothing to the badge.
   const monthlyFilterActiveCount = (activeRegion !== 'ALL' ? 1 : 0) + (functionSlug ? 1 : 0);
   const monthlyFilterClearableCount = functionSlug ? 1 : 0;
-  const headerToolbar = (
-    <>
-    {availableRegions.length > 1 && (
-      <div
-        role="tablist"
-        aria-label="Region filter"
-        className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeRegion === 'ALL'}
-          data-testid="region-all"
-          onClick={() => handleRegionChange('ALL')}
-          disabled={!availableRegions.includes('ALL')}
-          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-            activeRegion === 'ALL'
-              ? 'bg-white font-bold text-blue-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>All regions</span>
-        </button>
-
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeRegion === 'EGY'}
-          data-testid="region-egy"
-          onClick={() => handleRegionChange('EGY')}
-          disabled={!availableRegions.includes('EGY')}
-          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-            activeRegion === 'EGY'
-              ? 'bg-white font-bold text-blue-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <EgyptFlag className="size-3.5" />
-          <span>Egypt (EGY)</span>
-        </button>
-
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeRegion === 'UAE'}
-          data-testid="region-uae"
-          onClick={() => handleRegionChange('UAE')}
-          disabled={!availableRegions.includes('UAE')}
-          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-            activeRegion === 'UAE'
-              ? 'bg-white font-bold text-blue-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <UaeFlag className="size-3.5" />
-          <span>UAE</span>
-        </button>
-      </div>
-    )}
-      <ResponsiveFilters
-      variant="docked"
-      activeCount={monthlyFilterActiveCount}
-      clearableCount={monthlyFilterClearableCount}
-      onClear={handleBackToOverview}
-      label="Monthly filters"
+  const headerToolbar = availableRegions.length > 1 ? (
+    <div
+      role="tablist"
+      aria-label="Region filter"
+      className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
     >
-      <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
-        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
-          Region
-          <select
-            aria-label="Region"
-            value={activeRegion}
-            onChange={(event) => handleRegionChange(event.target.value as MonthlyRegionFilter)}
-            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="ALL" disabled={!availableRegions.includes('ALL')}>All regions</option>
-            <option value="EGY" disabled={!availableRegions.includes('EGY')}>Egypt (EGY)</option>
-            <option value="UAE" disabled={!availableRegions.includes('UAE')}>UAE</option>
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
-          Reporting month
-          <select
-            aria-label="Reporting month"
-            value={selectedPeriodKey}
-            onChange={(event) => handlePeriodChange(event.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-          >
-            {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-          </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
-          Function
-          <select
-            aria-label="Function"
-            value={functionSlug}
-            onChange={(event) => {
-              const slug = event.target.value;
-              if (!slug) {
-                handleBackToOverview();
-                return;
-              }
-              const match = overviewData.functions.find((fn) => fn.slug === slug);
-              if (match) handleFunctionClick(match);
-            }}
-            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="">All functions</option>
-            {overviewData.functions.map((fn) => <option key={fn.slug} value={fn.slug}>{fn.functionName}</option>)}
-          </select>
-        </label>
-      </div>
-    </ResponsiveFilters>
-    </>
-  );
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeRegion === 'ALL'}
+        data-testid="region-all"
+        onClick={() => handleRegionChange('ALL')}
+        disabled={!availableRegions.includes('ALL')}
+        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+          activeRegion === 'ALL'
+            ? 'bg-white font-bold text-blue-600 shadow-xs'
+            : 'text-slate-600 hover:text-slate-900'
+        }`}
+      >
+        <span>All regions</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeRegion === 'EGY'}
+        data-testid="region-egy"
+        onClick={() => handleRegionChange('EGY')}
+        disabled={!availableRegions.includes('EGY')}
+        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+          activeRegion === 'EGY'
+            ? 'bg-white font-bold text-blue-600 shadow-xs'
+            : 'text-slate-600 hover:text-slate-900'
+        }`}
+      >
+        <EgyptFlag className="size-3.5" />
+        <span>Egypt (EGY)</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeRegion === 'UAE'}
+        data-testid="region-uae"
+        onClick={() => handleRegionChange('UAE')}
+        disabled={!availableRegions.includes('UAE')}
+        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+          activeRegion === 'UAE'
+            ? 'bg-white font-bold text-blue-600 shadow-xs'
+            : 'text-slate-600 hover:text-slate-900'
+        }`}
+      >
+        <UaeFlag className="size-3.5" />
+        <span>UAE</span>
+      </button>
+    </div>
+  ) : null;
 
   const insideDetail = Boolean(activeTeamSlug || activeRoleSlug);
   const functionSlugs = overviewData.functions.map((fn) => fn.slug);
@@ -1641,17 +1586,28 @@ function MonthlyPresentationScreen({
           <h1 className="text-lg font-bold text-slate-900">{heading}</h1>
           <p className="mt-2 text-sm text-slate-600">{detail}</p>
           {!pageIsLoading && !pageHasError && !hasNoAssignments && !invalidScopeRequest && (
-            <label className="mt-4 flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
-              Reporting month
-              <select
-                aria-label="Reporting month"
-                value={selectedPeriodKey}
-                onChange={(event) => handlePeriodChange(event.target.value)}
-                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
-              >
-                {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-              </select>
-            </label>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
+                Reporting month
+                <select
+                  aria-label="Reporting month"
+                  value={selectedPeriodKey}
+                  onChange={(event) => handlePeriodChange(event.target.value)}
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                >
+                  {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </select>
+              </label>
+              {functionSlug && (
+                <button
+                  type="button"
+                  onClick={handleBackToOverview}
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Back to overview
+                </button>
+              )}
+            </div>
           )}
           {pageHasError && (
             <button
@@ -1680,6 +1636,11 @@ function MonthlyPresentationScreen({
       </PresentationSectionFrame>
       <PresentationControlBar
         region={activeRegion}
+        availableRegions={availableRegions}
+        onRegionChange={handleRegionChange}
+        filterActiveCount={monthlyFilterActiveCount}
+        filterClearableCount={monthlyFilterClearableCount}
+        onClearFilters={handleBackToOverview}
         periodKey={selectedPeriodKey}
         monthOptions={monthOptions}
         onPeriodChange={handlePeriodChange}
