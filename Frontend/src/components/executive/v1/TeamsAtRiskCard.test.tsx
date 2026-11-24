@@ -134,4 +134,56 @@ describe('TeamsAtRiskCard', () => {
       '/team/stable-a-team?branch=sharjah&performance_level=Managerial&region=UAE&year=2026&month=June',
     );
   });
+
+  it('renders the 6 Figma columns with bottleneck KPI, status labels, and Review Team action', () => {
+    render(
+      <MemoryRouter>
+        <TeamsAtRiskCard
+          teams={[
+            {
+              ...team('CSR UAE', 68.4, ['grade_e']),
+              function: 'CSR',
+              employees: 28,
+              gap_share_percent: 21.4,
+              flag_detail: {
+                kpi_key: 'fcr',
+                kpi_label: 'First Call Resolution',
+                kpi_direction: 'higher_better',
+                current_value: 71.0,
+                target_value: 85.0,
+                unit: '%',
+                text: 'First Call Resolution',
+              },
+            },
+            {
+              ...team('Pre-Approvals IP Final', 74.2, ['grade_d', 'falling_2_months']),
+              employees: 22,
+              gap_share_percent: 16.8,
+            },
+            {
+              ...team('ER Dr · Sharjah', 84.6, ['grade_c']),
+              function: 'ER Dr',
+              employees: 14,
+              gap_share_percent: 8.9,
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Team & Scope',
+      'Score & Grade',
+      'Gap Share',
+      'Primary Bottleneck KPI',
+      'Status',
+      'Action',
+    ]);
+    expect(screen.getByText('21.4% of gap')).toBeInTheDocument();
+    expect(screen.getByText('First Call Resolution (71% vs 85%)')).toBeInTheDocument();
+    expect(screen.getByText('Critical <70%')).toBeInTheDocument();
+    expect(screen.getByText('Falling 2 mo')).toBeInTheDocument();
+    expect(screen.getByText('Below 90%')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Review Team/i })).toHaveLength(3);
+  });
 });
