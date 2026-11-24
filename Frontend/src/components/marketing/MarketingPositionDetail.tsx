@@ -81,6 +81,9 @@ const PositionKpiCard = ({ kpi }: { kpi: MarketingKpiAggregate }) => {
       contribution={kpi.averageContribution}
       weight={kpi.weight}
       weightLabel={kpi.weightVaries ? 'Avg. weight' : undefined}
+      trendSeries={kpi.trendSeries ?? []}
+      trendSeriesUnit={kpi.unit}
+      trendLowerBetter={kpi.direction === 'lower_better'}
     />
   );
 };

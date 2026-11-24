@@ -451,8 +451,30 @@ export const aggregateMarketingKpis = (
       && (definition.direction === 'lower_better'
         ? averageActual < previousBaseline.actual
         : averageActual > previousBaseline.actual);
+    const historySource = context.historicalRecords ?? records;
+    const trendPeriods = getMarketingPeriods(historySource).slice(-6);
+    const trendSeries = trendPeriods.map((period) => {
+      const periodValues = historySource
+        .filter((record) => Number(record.year) === period.year && record.identity.month === period.month)
+        .map((record) => resolveKpiValue(record, definition))
+        .filter((value): value is MarketingKpiValue => Boolean(value));
+      const periodMetric = aggregateKpiMetric(periodValues, definition);
+      const scalePercent = (v: number | null) => {
+        if (v === null) return null;
+        if (definition.unit === '%' && Math.abs(v) <= 2 && (periodMetric.target === null || Math.abs(periodMetric.target) <= 2)) {
+          return v * 100;
+        }
+        return v;
+      };
+      return {
+        month: period.month.slice(0, 3),
+        actual: scalePercent(periodMetric.actual),
+        target: scalePercent(periodMetric.target),
+      };
+    });
     return {
       ...definition,
+      trendSeries,
       weight,
       weightVaries: sourceWeight?.weightVaries ?? false,
       currentPeriodLabel: currentPeriod?.label ?? null,

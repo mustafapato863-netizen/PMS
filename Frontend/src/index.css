@@ -738,6 +738,38 @@ select option {
   -webkit-backdrop-filter: blur(18px);
 }
 
+/* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
+.pms-flip-scene {
+  perspective: 1200px;
+}
+
+.pms-flip-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.pms-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.pms-flip-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.pms-flip-face--back {
+  transform: rotateY(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pms-flip-inner {
+    transition-duration: 120ms;
+  }
+}
+
 /* ────────────────────────────────────────────────────────────── */
 /*  SAUDI GERMAN HEALTH (SGH) BRAND UTILITIES                     */
 /* ────────────────────────────────────────────────────────────── */
