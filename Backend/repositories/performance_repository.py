@@ -256,10 +256,11 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         periods: list[tuple[int, str]] | None = None,
         employee_search: str | None = None,
     ):
-        query = query.filter(~_legacy_unscored_csr())
-        if team:
-            team_values = set(_team_filter_values(team, region))
+        team_values = set(_team_filter_values(team, region)) if team else set()
+        if team_values:
             query = query.filter(_team_name_clause(team_values))
+        if not team_values or "csr" in team_values:
+            query = query.filter(~_legacy_unscored_csr())
         if month and month.lower() != "all":
             query = query.filter(PerformanceRecord.month == month)
         if employee_id:
