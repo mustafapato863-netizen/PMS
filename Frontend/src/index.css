@@ -765,6 +765,11 @@ select option {
   transform: rotateY(180deg);
 }
 
+.pms-flip-inner.is-flipped > .pms-flip-face--front,
+.pms-flip-inner:not(.is-flipped) > .pms-flip-face--back {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pms-flip-inner {
     transition-duration: 120ms;
