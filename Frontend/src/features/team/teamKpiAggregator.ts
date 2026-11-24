@@ -458,7 +458,7 @@ const rawTotal = (agents: AgentRecord[], key: string): number => agents.reduce((
   return sum + (Number.isFinite(value) ? value : 0);
 }, 0);
 
-const achievementFor = (kpi: AggregatedTeamKpi): number => {
+export const achievementFor = (kpi: AggregatedTeamKpi): number => {
   if (!Number.isFinite(kpi.actual) || !Number.isFinite(kpi.target)) return 0;
 
   const isPrescription = kpi.label.toLowerCase().includes('prescription');
