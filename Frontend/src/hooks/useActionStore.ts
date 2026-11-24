@@ -55,10 +55,47 @@ export interface FollowUpPayload {
   actions: PMSAction[];
 }
 
+export type TeamActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Planned';
+
+export interface UnifiedTeamAction {
+  id: string;
+  card_id?: string | null;
+  kind: 'cohort_plan' | 'overall_action';
+  team: string;
+  region?: string | null;
+  month: string;
+  year: number;
+  title: string;
+  target_kpi: string;
+  scope_description: string;
+  owner: string;
+  status: TeamActionStatus;
+  due_date?: string | null;
+  expected_team_impact: string;
+  created_by?: string;
+  updated_at?: string | null;
+}
+
+export interface CreateTeamActionPlanInput {
+  card_id?: string;
+  team: string;
+  region?: string | null;
+  month: string;
+  year: number;
+  title: string;
+  target_kpi?: string;
+  scope_description?: string;
+  owner?: string;
+  status?: TeamActionStatus;
+  due_date?: string | null;
+  expected_team_impact?: string;
+}
+
 export const actionQueryKeys = {
   all: ['corrective-actions'] as const,
   followUp: (filters: FollowUpFilters) => ['corrective-actions', 'follow-up', filters] as const,
   owners: ['corrective-actions', 'owners'] as const,
+  teamActions: ['team-actions', 'all'] as const,
 };
 
 const ACTION_TYPE_VALUES = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'] as const;
@@ -334,6 +371,101 @@ export function useUpdateActionStatus() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
       await fetchActions();
+    },
+  });
+}
+
+export async function fetchAllTeamActions(): Promise<UnifiedTeamAction[]> {
+  const result = await apiFetch<{ success: boolean; data?: UnifiedTeamAction[]; message?: string }>(
+    '/api/team-actions/all',
+  );
+  if (!result?.success || !Array.isArray(result.data)) {
+    throw new Error(result?.message || 'Team actions could not be loaded.');
+  }
+  return result.data;
+}
+
+export function useAllTeamActions(enabled = true) {
+  return useQuery({
+    queryKey: actionQueryKeys.teamActions,
+    enabled,
+    queryFn: fetchAllTeamActions,
+  });
+}
+
+export function useCreateTeamActionPlanItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateTeamActionPlanInput) => {
+      const cardId = input.card_id || `team-act-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const result = await apiFetch<{ success: boolean; data?: UnifiedTeamAction; message?: string }>(
+        '/api/team-actions/plan-items',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            card_id: cardId,
+            team: input.team,
+            region: input.region || null,
+            month: input.month,
+            year: input.year,
+            title: input.title,
+            target_kpi: input.target_kpi || '',
+            scope_description: input.scope_description || '',
+            owner: input.owner || '',
+            status: input.status || 'Open',
+            due_date: input.due_date || null,
+            expected_team_impact: input.expected_team_impact || '',
+          }),
+        },
+      );
+      if (result && result.success === false) {
+        throw new Error(result.message || 'Failed to save team action.');
+      }
+      return result;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: actionQueryKeys.teamActions });
+    },
+  });
+}
+
+export function useUpdateTeamActionStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; status: TeamActionStatus }) => {
+      const result = await apiFetch<{ success: boolean; data?: UnifiedTeamAction; message?: string }>(
+        `/api/team-actions/${encodeURIComponent(input.id)}/status`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ status: input.status }),
+        },
+      );
+      if (result && result.success === false) {
+        throw new Error(result.message || 'Failed to update team action status.');
+      }
+      return result;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: actionQueryKeys.teamActions });
+    },
+  });
+}
+
+export function useDeleteTeamAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const result = await apiFetch<{ success: boolean; message?: string }>(
+        `/api/team-actions/${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      );
+      if (result && result.success === false) {
+        throw new Error(result.message || 'Failed to delete team action.');
+      }
+      return result;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: actionQueryKeys.teamActions });
     },
   });
 }

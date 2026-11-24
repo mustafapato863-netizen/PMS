@@ -202,6 +202,58 @@ class TeamActionService:
         }
 
     @staticmethod
+    def _serialize_unified_team_action(action: Action) -> dict:
+        team_obj = action.team
+        evidence_ref = str(action.evidence_reference or "")
+        is_cohort_plan = evidence_ref.startswith(_COHORT_PLAN_PREFIX)
+        card_id = evidence_ref[len(_COHORT_PLAN_PREFIX):] if is_cohort_plan else None
+        meta = TeamActionService._parse_plan_meta(action.root_cause_note) if is_cohort_plan else {}
+
+        raw_status = str(meta.get("ui_status") or action.status or "Open")
+        ui_status = raw_status if raw_status in _VALID_PLAN_ITEM_STATUSES else (
+            action.status if action.status in _VALID_PLAN_ITEM_STATUSES else "Open"
+        )
+        owner_name = str(meta.get("owner") or "").strip()
+        if not owner_name:
+            if action.owner and getattr(action.owner, "username", None):
+                owner_name = str(action.owner.username)
+            elif action.updated_by_user and getattr(action.updated_by_user, "username", None):
+                owner_name = str(action.updated_by_user.username)
+            elif action.created_by_user and getattr(action.created_by_user, "username", None):
+                owner_name = str(action.created_by_user.username)
+        created_by = (
+            str(action.updated_by_user.username)
+            if action.updated_by_user and getattr(action.updated_by_user, "username", None)
+            else str(action.created_by_user.username)
+            if action.created_by_user and getattr(action.created_by_user, "username", None)
+            else "Admin"
+        )
+        timestamp = action.updated_at or action.created_at
+        scope_description = (
+            str(meta.get("scope_description") or "")
+            if is_cohort_plan
+            else (str(action.root_cause_note or "").strip() if not str(action.root_cause_note or "").strip().startswith("{") else "")
+        )
+        return {
+            "id": str(action.id),
+            "card_id": card_id,
+            "kind": "cohort_plan" if is_cohort_plan else "overall_action",
+            "team": logical_team_name(team_obj) if team_obj else "",
+            "region": getattr(team_obj, "region", None) if team_obj else None,
+            "month": action.month,
+            "year": action.year,
+            "title": (action.action_text or "").strip(),
+            "target_kpi": str(meta.get("target_kpi") or ""),
+            "scope_description": scope_description,
+            "owner": owner_name,
+            "status": ui_status,
+            "due_date": action.due_date.isoformat() if action.due_date else None,
+            "expected_team_impact": str(meta.get("expected_team_impact") or ""),
+            "created_by": created_by,
+            "updated_at": timestamp.isoformat() if timestamp else None,
+        }
+
+    @staticmethod
     def _serialize(action: Action) -> dict:
         return {
             "team_id": logical_team_name(action.team),
@@ -537,6 +589,187 @@ class TeamActionService:
                 performed_by_user_id=str(actor_id) if actor_id else None,
             )
             return serialized
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def list_all_team_actions(
+        self,
+        *,
+        current_user: Any,
+        team: Optional[str] = None,
+        month: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> list[dict]:
+        """List all active whole-team actions (cohort plan items & overall team notes) visible to the user."""
+        scope = self._scope_from_current_user(current_user)
+        if not scope:
+            raise PermissionError("Authentication required")
+
+        role = str(scope.get("role", "")).strip().casefold().replace("_", " ")
+        if role == "branch director":
+            return []
+
+        team_filter = str(team or "").strip().casefold()
+        month_filter = str(month or "").strip().casefold()
+        status_filter = str(status or "").strip().casefold()
+
+        rows = self.actions.list_active_team_actions()
+        results: list[dict] = []
+        for action in rows:
+            if str(action.status or "").strip() == "Cancelled":
+                continue
+            evidence_ref = str(action.evidence_reference or "")
+            if evidence_ref.startswith(_COHORT_PLAN_PREFIX):
+                meta = self._parse_plan_meta(action.root_cause_note)
+                if meta.get("is_deleted"):
+                    continue
+            if not (action.action_text or "").strip():
+                continue
+
+            team_obj = action.team
+            team_name = logical_team_name(team_obj) if team_obj else ""
+            if not team_name:
+                continue
+            if not user_can_access_team(scope, team_name):
+                continue
+            try:
+                if team_obj is not None:
+                    self._ensure_region_scope(scope, team_obj)
+            except PermissionError:
+                continue
+
+            serialized = self._serialize_unified_team_action(action)
+            if team_filter and serialized["team"].casefold() != team_filter:
+                continue
+            if month_filter and str(serialized["month"] or "").strip().casefold() != month_filter:
+                continue
+            if status_filter and str(serialized["status"] or "").strip().casefold() != status_filter:
+                continue
+            results.append(serialized)
+
+        return results
+
+    def update_team_action_status(
+        self,
+        *,
+        action_id: str,
+        status: str,
+        current_user: Any,
+    ) -> dict:
+        scope = self._scope_from_current_user(current_user)
+        if not scope:
+            raise PermissionError("Authentication required")
+
+        ui_status = str(status or "").strip()
+        if ui_status not in _VALID_PLAN_ITEM_STATUSES:
+            raise ValueError(f"Invalid status: {ui_status}")
+
+        try:
+            action_uuid = uuid.UUID(str(action_id).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Team action not found") from exc
+
+        action = self.actions.get_active_team_action_by_id(action_uuid)
+        if not action:
+            raise ValueError("Team action not found")
+
+        team_obj = action.team
+        team_name = logical_team_name(team_obj) if team_obj else ""
+        self._ensure_team_action_scope(scope, team_name)
+        if team_obj is not None:
+            self._ensure_region_scope(scope, team_obj)
+
+        actor_id = self._actor_uuid(scope.get("user_id"))
+        db_status = "Open" if ui_status == "Planned" else ui_status
+        now = dt.datetime.now(dt.timezone.utc)
+
+        try:
+            old_status = action.status
+            action.status = db_status
+            evidence_ref = str(action.evidence_reference or "")
+            if evidence_ref.startswith(_COHORT_PLAN_PREFIX):
+                meta = self._parse_plan_meta(action.root_cause_note)
+                meta["ui_status"] = ui_status
+                meta["is_deleted"] = False
+                action.root_cause_note = json.dumps(meta)
+            action.updated_by_user_id = actor_id
+            action.updated_at = now
+            self.db.flush()
+            AuditService.log_operation(
+                self.db,
+                table_name="actions",
+                operation="UPDATE",
+                record_id=str(action.id),
+                old_values={"status": old_status},
+                new_values={"status": db_status, "ui_status": ui_status},
+                performed_by_user_id=str(actor_id) if actor_id else None,
+            )
+            self.db.commit()
+            self.db.refresh(action)
+            return self._serialize_unified_team_action(action)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def delete_team_action_by_id(
+        self,
+        *,
+        action_id: str,
+        current_user: Any,
+    ) -> dict:
+        scope = self._scope_from_current_user(current_user)
+        if not scope:
+            raise PermissionError("Authentication required")
+
+        try:
+            action_uuid = uuid.UUID(str(action_id).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Team action not found") from exc
+
+        action = self.actions.get_active_team_action_by_id(action_uuid)
+        if not action:
+            raise ValueError("Team action not found")
+
+        team_obj = action.team
+        team_name = logical_team_name(team_obj) if team_obj else ""
+        self._ensure_team_action_scope(scope, team_name)
+        if team_obj is not None:
+            self._ensure_region_scope(scope, team_obj)
+
+        actor_id = self._actor_uuid(scope.get("user_id"))
+        now = dt.datetime.now(dt.timezone.utc)
+        evidence_ref = str(action.evidence_reference or "")
+
+        try:
+            old_values = {"is_active": bool(action.is_active), "status": action.status}
+            if evidence_ref.startswith(_COHORT_PLAN_PREFIX):
+                card_id = evidence_ref[len(_COHORT_PLAN_PREFIX):]
+                if card_id.startswith("team-act-custom-"):
+                    action.is_active = False
+                    action.status = "Cancelled"
+                else:
+                    meta = self._parse_plan_meta(action.root_cause_note)
+                    meta["is_deleted"] = True
+                    action.status = "Cancelled"
+                    action.root_cause_note = json.dumps(meta)
+            else:
+                action.is_active = False
+                action.status = "Cancelled"
+            action.updated_by_user_id = actor_id
+            action.updated_at = now
+            self.db.flush()
+            AuditService.log_operation(
+                self.db,
+                table_name="actions",
+                operation="DELETE",
+                record_id=str(action.id),
+                old_values=old_values,
+                new_values={"is_active": bool(action.is_active), "status": action.status},
+                performed_by_user_id=str(actor_id) if actor_id else None,
+            )
+            self.db.commit()
+            return {"id": str(action.id), "deleted": True}
         except Exception:
             self.db.rollback()
             raise

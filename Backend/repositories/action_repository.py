@@ -123,6 +123,43 @@ class ActionRepository(BaseRepository[Action]):
             (Action.year == year)
         ).all()
 
+    def list_active_team_actions(self) -> list[Action]:
+        """List all active whole-team actions (cohort plan items and overall team actions)."""
+        return (
+            self.db.query(Action)
+            .options(
+                joinedload(Action.team),
+                joinedload(Action.created_by_user),
+                joinedload(Action.updated_by_user),
+                joinedload(Action.owner),
+            )
+            .filter(
+                Action.employee_id.is_(None),
+                Action.action_type == "Team Action",
+                Action.is_active.is_(True),
+            )
+            .order_by(Action.updated_at.desc(), Action.created_at.desc())
+            .all()
+        )
+
+    def get_active_team_action_by_id(self, action_id: UUID) -> Action | None:
+        return (
+            self.db.query(Action)
+            .options(
+                joinedload(Action.team),
+                joinedload(Action.created_by_user),
+                joinedload(Action.updated_by_user),
+                joinedload(Action.owner),
+            )
+            .filter(
+                Action.id == action_id,
+                Action.employee_id.is_(None),
+                Action.action_type == "Team Action",
+                Action.is_active.is_(True),
+            )
+            .first()
+        )
+
     def get_active_team_summary(self, team_id, month: str, year: int) -> Action | None:
         return self.db.query(Action).filter(
             Action.team_id == team_id,
