@@ -13,6 +13,7 @@ import {
 import { percentPointsFromRatio } from '../../utils/percentForm';
 import { aggregatePreApprovalsIpMetrics } from './preApprovalsIpMetrics';
 import {
+  achievementFor,
   aggregateConfiguredTeamKpis,
   calculateAggregatedTeamPerformance,
 } from './teamKpiAggregator';
@@ -41,7 +42,7 @@ export interface BuildTeamKpiSixMonthTrendsInput {
   agents: AgentRecord[];
   dashboardMonths: string[];
   activeMonth?: string;
-  teamConfig: TeamConfig | null;
+  teamConfig: TeamConfig | undefined;
   location: LocationKey;
   teamId?: string;
   isMergedTeam: boolean;
@@ -120,7 +121,7 @@ export function buildTeamKpiSixMonthTrends({
       const isPrescription = kpi.label.toLowerCase().includes('prescription');
       const targetRaw = isPrescription && (!kpi.target || kpi.target === 0) ? 1 : kpi.target;
       const actualVal = isPrescription
-        ? (kpi.achievement ?? (percentPointsFromRatio(kpi.actual) > 15 ? percentPointsFromRatio(kpi.actual) : 85.9))
+        ? achievementFor(kpi)
         : kpi.unit === '%'
           ? percentPointsFromRatio(kpi.actual)
           : kpi.actual;
