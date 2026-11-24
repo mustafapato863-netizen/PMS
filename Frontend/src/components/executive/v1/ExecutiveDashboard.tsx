@@ -126,18 +126,21 @@ export default function ExecutiveDashboard({
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} classic />
       )}
-      {showRegionSplit ? (
-        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-          <DriversCard summary={summary} viewAllHref={null} />
-          <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
-        </div>
-      ) : (
+      {/* Figma Row 4: Left = What Moved the Score | Right = Region Comparison + Grade Mix */}
+      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         <DriversCard summary={summary} viewAllHref={null} />
-      )}
-      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
-        <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} />
+        <div className="flex min-w-0 flex-col gap-[16px]">
+          {showRegionSplit && (
+            <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
+          )}
+          <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} compact={showRegionSplit} />
+        </div>
       </div>
+      {/* Figma Row 5: Full-Width Priority Teams Needing Attention */}
+      <div id="exec-risk-section">
+        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
+      </div>
+      {/* Figma Row 6: Full-Width Corrective Actions & Coaching Pulse */}
       {permissions.canSeeActions && (
         <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
       )}

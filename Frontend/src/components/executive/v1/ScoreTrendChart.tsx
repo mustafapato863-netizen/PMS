@@ -23,10 +23,11 @@ function formatMovement(delta: number): string {
 }
 
 /** Score trend with the hover, keyboard, and empty-state behaviour used in Insights. */
-export default function ScoreTrendChart({ points, comparisonLabel, title }: {
+export default function ScoreTrendChart({ points, comparisonLabel, title, subtitle }: {
   points: ExecutiveTrendPoint[];
   comparisonLabel?: string | null;
   title: string;
+  subtitle?: string;
 }) {
   const gradientId = useId();
   const [boxRef, width] = useElementWidth<HTMLDivElement>(510);
@@ -137,10 +138,13 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
     : Math.min(Math.max(activeY - tooltipHeight / 2, 0), Math.max(0, CHART_HEIGHT - tooltipHeight));
 
   return (
-    <section className="pms-glass-stage flex min-w-0 flex-col justify-between gap-[20px] rounded-[18px] p-[16px] sm:p-[20px]">
-      <div className="flex flex-wrap items-center justify-between gap-[10px]">
-        <h3 className="text-[16px] font-bold text-[var(--insights-heading)]">{title}</h3>
-        {range && <span className="inline-flex items-center gap-[6px] rounded-[9px] border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-[10px] py-[7px] text-xs font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[14px]" />{range}</span>}
+    <section className="pms-glass-surface flex min-w-0 flex-col justify-between gap-[16px] rounded-[20px] p-[20px] sm:p-[22px]">
+      <div className="flex flex-wrap items-start justify-between gap-[10px]">
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-bold tracking-[-0.015em] text-[var(--insights-heading)]">{title}</h3>
+          {subtitle && <p className="mt-[2px] text-[12px] text-[var(--text-muted)]">{subtitle}</p>}
+        </div>
+        {range && <span className="inline-flex shrink-0 items-center gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--pms-glass-stage-bg)] px-[10px] py-[6px] text-xs font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[13px]" />{range}</span>}
       </div>
 
       <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
@@ -312,6 +316,17 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
         </div>
       )}
       </div>
+
+      {measuredIndexes.length > 0 && (
+        <div className="pms-glass-stage flex flex-wrap items-center justify-between gap-x-[10px] gap-y-[4px] rounded-[12px] px-[12px] py-[8px] text-[11.5px] font-semibold tabular-nums text-[var(--text-secondary)]">
+          {points.map((point) => (
+            <span key={`summary-${point.period.key}`} className="inline-flex items-center gap-[4px]">
+              <span className="text-[var(--text-muted)]">{shortMonth(point.period)} ·</span>
+              <span className="font-bold text-[var(--insights-heading)]">{point.score !== null && Number.isFinite(point.score) ? fmtScore(point.score) : '—'}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
         <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
