@@ -48,7 +48,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
       <aside role="dialog" aria-modal="true" aria-labelledby="insight-drawer-title" className="pms-glass-surface absolute inset-y-0 right-0 flex w-full max-w-xl flex-col shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-light)] p-5 md:p-6">
           <div>
-            <span data-testid="insight-drawer-severity" className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
+            <span data-testid="insight-drawer-severity" className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
             <h2 id="insight-drawer-title" className="mt-3 text-xl font-extrabold text-[var(--text-primary)]">{insight.title}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">{insight.scope} · {insight.trend_label}</p>
           </div>

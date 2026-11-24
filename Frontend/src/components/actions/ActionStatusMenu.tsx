@@ -71,7 +71,7 @@ export function ActionStatusMenu({ status, canEdit, ariaLabel, compact = false, 
           {ACTION_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
       ) : (
-        <span className={`inline-flex items-center rounded-full px-2 py-1 font-black uppercase tracking-wide ${compact ? 'text-xs' : 'text-xs'} ${STATUS_CLASS[current]}`}>{current}</span>
+        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${STATUS_CLASS[current]}`}>{current}</span>
       )}
       {pending && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4" role="presentation">
@@ -104,5 +104,5 @@ export function ActionStatusMenu({ status, canEdit, ariaLabel, compact = false, 
 
 export function StatusPill({ status }: { status: string }) {
   const current = status || 'Open';
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black uppercase tracking-wide ${STATUS_CLASS[current] || STATUS_CLASS.Open}`}>{current}</span>;
+  return <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${STATUS_CLASS[current] || STATUS_CLASS.Open}`}>{current}</span>;
 }
