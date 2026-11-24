@@ -1208,7 +1208,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     fireEvent.click(screen.getByTestId('function-card-quality-case-management'));
     expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
     expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
-    expect(screen.getAllByText('Qlty&Case-Mngt').length).toBeGreaterThan(0);
+    // The deep-dive title renders "Qlty&Case-Mngt Deep Dive", so the bare
+    // name never appears as an element's exact text; match it as a substring.
+    expect(screen.getAllByText(/Qlty&Case-Mngt/).length).toBeGreaterThan(0);
   });
 
   it('steps from the control bar and saves agenda and notes for the region and month', () => {
