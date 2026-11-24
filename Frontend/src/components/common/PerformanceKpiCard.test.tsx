@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { Activity } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
-import PerformanceKpiCard from './PerformanceKpiCard';
+import PerformanceKpiCard, { computeTrendYDomain } from './PerformanceKpiCard';
 import {
   calculateKpiTargetProgress,
   formatPercentOfTargetLabel,
@@ -383,5 +383,16 @@ describe('PerformanceKpiCard', () => {
     expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Score 93.1%');
     expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Tgt 95.0%');
     expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Below');
+  });
+
+  it('uses a proportional Y-axis scale so small Actual-vs-Target gaps are not exaggerated', () => {
+    const closeGap = computeTrendYDomain([67.1, 67.3, 67.9, 68.1, 75.0], '%');
+    expect(closeGap.domainMin).toBe(50);
+    expect(closeGap.domainMax).toBe(90);
+    expect(closeGap.domainSpan).toBeGreaterThanOrEqual(40);
+
+    const lowRate = computeTrendYDomain([1.8, 2.1, 3.0], '%');
+    expect(lowRate.domainMin).toBe(0);
+    expect(lowRate.domainMax).toBeGreaterThanOrEqual(5);
   });
 });
