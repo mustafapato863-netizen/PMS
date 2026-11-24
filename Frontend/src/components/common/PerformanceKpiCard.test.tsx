@@ -395,4 +395,49 @@ describe('PerformanceKpiCard', () => {
     expect(lowRate.domainMin).toBe(0);
     expect(lowRate.domainMax).toBeGreaterThanOrEqual(5);
   });
+
+  it('pre-warms and caches the back-face trend chart on pointer hover before the 1st flip and keeps it cached after flipping back', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Reachability"
+        value="68.1%"
+        targetValue="75%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={90.8}
+        contribution={9.1}
+        weight={0.1}
+        trendSeries={[
+          { month: 'Apr', actual: 67.1, target: 75 },
+          { month: 'May', actual: 67.3, target: 75 },
+          { month: 'Jun', actual: 67.9, target: 75 },
+          { month: 'Jul', actual: 68.1, target: 75 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /Reachability/i });
+    expect(card).toHaveAttribute('data-warmed', 'false');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(screen.queryByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).not.toBeInTheDocument();
+
+    // Pointer hover pre-warms and caches the back-face SVG before click (still aria-hidden while unflipped)
+    fireEvent.pointerEnter(card);
+    expect(card).toHaveAttribute('data-warmed', 'true');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).toBeInTheDocument();
+
+    // 1st flip toggles smoothly with cached back face already mounted and now accessible
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i })).toBeInTheDocument();
+
+    // Flipping back keeps the back face cached in DOM (aria-hidden) for instant 2nd+ flips
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(card).toHaveAttribute('data-warmed', 'true');
+    expect(screen.getByRole('img', { name: /Reachability actual vs target trend chart/i, hidden: true })).toBeInTheDocument();
+  });
 });

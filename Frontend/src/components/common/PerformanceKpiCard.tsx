@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useState, type KeyboardEvent, type TransitionEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Minus, RotateCcw, RotateCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { getGradeTone } from '../../constants/grades';
@@ -604,6 +604,9 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
   trendLowerBetter = false,
 }: PerformanceKpiCardProps) {
   const [flipped, setFlipped] = useState(false);
+  const [backReady, setBackReady] = useState(false);
+  const [isWarming, setIsWarming] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
 
   useEffect(() => {
     if (viewOnly || weight === 0) return;
@@ -613,6 +616,22 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
   }, [label, viewOnly, weight]);
 
   const flippable = trendSeries !== undefined;
+
+  const warmBackFace = useCallback(() => {
+    if (!flippable) return;
+    setBackReady(true);
+    setIsWarming(true);
+  }, [flippable]);
+
+  const coolWarming = useCallback(() => {
+    setIsWarming(false);
+  }, []);
+
+  const handleFaceTransitionEnd = useCallback((event: TransitionEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget && event.propertyName === 'transform') {
+      setIsAnimating(false);
+    }
+  }, []);
 
   const hasTrend = trendDelta !== undefined && trendDelta !== null && Number.isFinite(trendDelta);
   const stableTrend = hasTrend && trendDelta === 0;
@@ -647,18 +666,22 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
     borderColor: `color-mix(in srgb, ${gradeTone.gauge} 20%, var(--pms-glass-card-border))`,
   };
 
-  const toggleFlip = () => {
+  const toggleFlip = useCallback(() => {
     if (!flippable) return;
+    setBackReady(true);
+    setIsAnimating(true);
     setFlipped((prev) => !prev);
-  };
+  }, [flippable]);
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
     if (!flippable) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
+      setBackReady(true);
+      setIsAnimating(true);
       setFlipped((prev) => !prev);
     }
-  };
+  }, [flippable]);
 
   const frontContent = (
     <>
@@ -791,6 +814,13 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
     );
   }
 
+  const sceneClasses = [
+    'pms-flip-scene group cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500',
+    flipped ? 'is-flipped' : '',
+    isWarming ? 'is-warming' : '',
+    isAnimating ? 'is-animating' : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <article
       tabIndex={0}
@@ -799,32 +829,39 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
       aria-label={`${label}: ${flipped ? 'showing 6-month actual vs target trend, click to flip back' : `${value}, click to view 6-month actual vs target trend`}`}
       data-flippable="true"
       data-flipped={flipped ? 'true' : 'false'}
+      data-warmed={backReady ? 'true' : 'false'}
+      onPointerEnter={warmBackFace}
+      onPointerLeave={coolWarming}
+      onFocus={warmBackFace}
+      onBlur={coolWarming}
       onClick={toggleFlip}
       onKeyDown={handleKeyDown}
-      className="pms-flip-scene group cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+      className={sceneClasses}
     >
-      <div className={`pms-flip-inner h-full ${flipped ? 'is-flipped' : ''}`}>
-        {/* Front Face */}
-        <div
-          aria-hidden={flipped}
-          className="pms-flip-face pms-flip-face--front pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
-          style={cardSurfaceStyle}
-        >
-          {frontContent}
-        </div>
+      {/* Front Face */}
+      <div
+        aria-hidden={flipped}
+        onTransitionEnd={handleFaceTransitionEnd}
+        className="pms-flip-face pms-flip-face--front pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+        style={cardSurfaceStyle}
+      >
+        {frontContent}
+      </div>
 
-        {/* Back Face — 6-Month Actual vs Target Trend */}
-        <div
-          aria-hidden={!flipped}
-          data-testid="kpi-card-trend-back"
-          className="pms-flip-face pms-flip-face--back pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
-          style={cardSurfaceStyle}
-        >
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-            style={{ background: accentGradient }}
-          />
+      {/* Back Face — Pre-warmed on hover/focus and kept cached in DOM after 1st flip */}
+      <div
+        aria-hidden={!flipped}
+        data-testid="kpi-card-trend-back"
+        onTransitionEnd={handleFaceTransitionEnd}
+        className="pms-flip-face pms-flip-face--back pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+        style={cardSurfaceStyle}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
+          style={{ background: accentGradient }}
+        />
+        {backReady ? (
           <MiniSixMonthTrend
             label={label}
             series={trendSeries}
@@ -833,7 +870,7 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
             badgeType={badgeType}
             flipped={flipped}
           />
-        </div>
+        ) : null}
       </div>
     </article>
   );

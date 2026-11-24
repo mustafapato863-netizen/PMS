@@ -740,51 +740,58 @@ select option {
 }
 
 /* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
+/* Independent per-face GPU transforms (no preserve-3d wrapper) so rounded-2xl
+   + overflow-hidden never triggers Blink/DirectComposition mid-flip culling.
+   Selector uses `.pms-flip-scene > .pms-flip-face` specificity so PageEnhancements.css's
+   `.pms-glass-surface` transition cannot override the 3D transform transition. */
 .pms-flip-scene {
-  perspective: 1200px;
+  position: relative;
+  display: grid;
   isolation: isolate;
 }
 
-.pms-flip-inner {
-  position: relative;
-  display: grid;
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
-  transform: rotateY(0deg);
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-
-.pms-flip-inner.is-flipped {
-  transform: rotateY(180deg);
-}
-
-.pms-flip-face {
+.pms-flip-scene > .pms-flip-face {
   grid-area: 1 / 1;
+  transform-origin: center center;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  /* Never apply backdrop-filter or contain:layout inside a preserve-3d child:
-     Blink flattens the 3D plane and makes the card disappear mid-rotation. */
+  /* Avoid backdrop-filter / contain:layout on rotating 3D faces for 60/120fps compositing. */
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   contain: none !important;
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.pms-flip-face--front {
-  transform: rotateY(0deg) translateZ(1px);
+.pms-flip-scene.is-warming > .pms-flip-face,
+.pms-flip-scene.is-animating > .pms-flip-face {
+  will-change: transform;
 }
 
-.pms-flip-face--back {
-  transform: rotateY(180deg) translateZ(1px);
+.pms-flip-scene > .pms-flip-face--front {
+  transform: perspective(850px) rotateY(0deg);
+  z-index: 2;
 }
 
-.pms-flip-inner.is-flipped > .pms-flip-face--front,
-.pms-flip-inner:not(.is-flipped) > .pms-flip-face--back {
+.pms-flip-scene > .pms-flip-face--back {
+  transform: perspective(850px) rotateY(-180deg);
+  z-index: 1;
   pointer-events: none;
 }
 
+.pms-flip-scene.is-flipped > .pms-flip-face--front {
+  transform: perspective(850px) rotateY(180deg);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pms-flip-scene.is-flipped > .pms-flip-face--back {
+  transform: perspective(850px) rotateY(0deg);
+  z-index: 2;
+  pointer-events: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pms-flip-inner {
+  .pms-flip-scene > .pms-flip-face {
     transition-duration: 120ms;
   }
 }

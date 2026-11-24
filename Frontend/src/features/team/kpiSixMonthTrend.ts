@@ -50,23 +50,94 @@ export interface BuildTeamKpiSixMonthTrendsInput {
   isOutbound: boolean;
 }
 
+const MAX_TREND_CACHE_ENTRIES = 24;
+const objectIdMap = new WeakMap<object, number>();
+let nextObjectId = 1;
+
+function objectId(value: object | undefined | null): number {
+  if (!value) return 0;
+  let id = objectIdMap.get(value);
+  if (id === undefined) {
+    id = nextObjectId;
+    nextObjectId += 1;
+    objectIdMap.set(value, id);
+  }
+  return id;
+}
+
+const arrayRefCache = new WeakMap<AgentRecord[], Map<string, Record<string, KpiTrendSeriesPoint[]>>>();
+const signatureLruCache = new Map<string, Record<string, KpiTrendSeriesPoint[]>>();
+
+function buildScopeKey(input: BuildTeamKpiSixMonthTrendsInput, windowMonths: string[]): string {
+  return [
+    windowMonths.join(','),
+    input.activeMonth ?? '',
+    input.location,
+    input.teamId ?? '',
+    input.isMergedTeam ? '1' : '0',
+    input.isEgyptInbound ? '1' : '0',
+    input.isOutbound ? '1' : '0',
+    objectId(input.teamConfig),
+  ].join('|');
+}
+
+function buildAgentsSignature(agents: AgentRecord[], scopeKey: string): string {
+  const ids = new Array<number>(agents.length);
+  for (let i = 0; i < agents.length; i += 1) {
+    ids[i] = objectId(agents[i]);
+  }
+  return `${scopeKey}::${agents.length}:${ids.join(',')}`;
+}
+
+export function clearTeamKpiSixMonthTrendsCache(): void {
+  signatureLruCache.clear();
+}
+
 /**
  * Computes a last-6-months Actual vs Target trend map keyed by KPI card label
  * for every KPI card rendered inside TeamKpiSection.
+ * Results are cached by agent object references & scope so repeated views and
+ * first flips stay instantaneous.
  */
-export function buildTeamKpiSixMonthTrends({
-  agents,
-  dashboardMonths,
-  activeMonth,
-  teamConfig,
-  location,
-  teamId,
-  isMergedTeam,
-  isEgyptInbound,
-  isOutbound,
-}: BuildTeamKpiSixMonthTrendsInput): Record<string, KpiTrendSeriesPoint[]> {
+export function buildTeamKpiSixMonthTrends(
+  input: BuildTeamKpiSixMonthTrendsInput,
+): Record<string, KpiTrendSeriesPoint[]> {
+  const {
+    agents,
+    dashboardMonths,
+    activeMonth,
+    teamConfig,
+    location,
+    teamId,
+    isMergedTeam,
+    isEgyptInbound,
+    isOutbound,
+  } = input;
   const windowMonths = selectSixMonthWindow(dashboardMonths, activeMonth);
   if (!windowMonths.length) return {};
+
+  const scopeKey = buildScopeKey(input, windowMonths);
+
+  // Fast path 1: identical agents array reference + scope
+  const byScope = arrayRefCache.get(agents);
+  const directHit = byScope?.get(scopeKey);
+  if (directHit) return directHit;
+
+  // Fast path 2: newly filtered array wrapping identical AgentRecord object refs
+  const signature = buildAgentsSignature(agents, scopeKey);
+  const signatureHit = signatureLruCache.get(signature);
+  if (signatureHit) {
+    // Refresh LRU recency & attach to this array ref
+    signatureLruCache.delete(signature);
+    signatureLruCache.set(signature, signatureHit);
+    let scopeMap = byScope;
+    if (!scopeMap) {
+      scopeMap = new Map();
+      arrayRefCache.set(agents, scopeMap);
+    }
+    scopeMap.set(scopeKey, signatureHit);
+    return signatureHit;
+  }
 
   const seriesMap: Record<string, KpiTrendSeriesPoint[]> = {};
   const ensureSeries = (label: string) => {
@@ -112,7 +183,9 @@ export function buildTeamKpiSixMonthTrends({
     const configuredTarget = (label: string) => configuredByNorm.get(normalizeKey(label))?.target;
     const configuredPercent = (label: string) => {
       const value = configuredActual(label);
-      return value === undefined ? undefined : percentPointsFromRatio(value);
+      return value === undefined || value === null || !Number.isFinite(value)
+        ? undefined
+        : percentPointsFromRatio(value);
     };
 
     // Dynamic KPIs (Coding, CSR, Pharmacy, RCM, Quality Score, additional call-center KPIs, etc.)
@@ -326,6 +399,19 @@ export function buildTeamKpiSixMonthTrends({
       setPoint('Activity Score', monthIndex, activityRate, 100);
     }
   });
+
+  let scopeMap = arrayRefCache.get(agents);
+  if (!scopeMap) {
+    scopeMap = new Map();
+    arrayRefCache.set(agents, scopeMap);
+  }
+  scopeMap.set(scopeKey, seriesMap);
+
+  signatureLruCache.set(signature, seriesMap);
+  if (signatureLruCache.size > MAX_TREND_CACHE_ENTRIES) {
+    const oldestKey = signatureLruCache.keys().next().value;
+    if (oldestKey !== undefined) signatureLruCache.delete(oldestKey);
+  }
 
   return seriesMap;
 }
