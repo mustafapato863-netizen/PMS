@@ -28,6 +28,7 @@ from models.models import (
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.team_identity import logical_team_name
 from utils.report_scope import (
+    _team_row_is_deprecated,
     filter_records_by_scope as filter_records_for_scope,
     user_can_access_team as scope_can_access_team,
     user_can_access_team_level as scope_can_access_team_level,
@@ -481,14 +482,22 @@ def get_current_user_scope(db, request: Request) -> dict:
 
 def build_user_scope_from_db_user(db, user: User) -> dict[str, Any]:
     """Authoritative scope builder from a live User row and its assignment tables."""
-    active_teams = db.query(Team).filter(Team.is_active.is_(True)).all()
+    active_teams = [
+        team
+        for team in db.query(Team).filter(Team.is_active.is_(True)).all()
+        if not _team_row_is_deprecated(team)
+    ]
     active_team_names = list(dict.fromkeys(logical_team_name(team) for team in active_teams))
-    assignments = (
-        db.query(UserTeamAssignment, Team)
-        .join(Team, Team.id == UserTeamAssignment.team_id)
-        .filter(UserTeamAssignment.user_id == user.id, Team.is_active.is_(True))
-        .all()
-    )
+    assignments = [
+        (assignment, team)
+        for assignment, team in (
+            db.query(UserTeamAssignment, Team)
+            .join(Team, Team.id == UserTeamAssignment.team_id)
+            .filter(UserTeamAssignment.user_id == user.id, Team.is_active.is_(True))
+            .all()
+        )
+        if not _team_row_is_deprecated(team)
+    ]
     assigned_teams = list(dict.fromkeys(logical_team_name(team) for _, team in assignments))
     accessible_team_levels = list(dict.fromkeys(
         (logical_team_name(team), level)

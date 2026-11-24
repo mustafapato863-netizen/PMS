@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from repositories.base_repository import BaseRepository
 from models.models import Team
+from utils.report_scope import _team_row_is_deprecated
 from datetime import datetime
 import logging
 
@@ -39,18 +40,19 @@ class TeamRepository(BaseRepository[Team]):
         query = self.db.query(Team).filter(Team.is_active == True)
         if team_level:
             query = query.filter(Team.team_level == team_level)
-        return query.all()
+        return [team for team in query.all() if not _team_row_is_deprecated(team)]
     
     def get_by_region(self, region: str, include_deleted: bool = False) -> list:
         """Get teams by region"""
         query = self.db.query(Team).filter(Team.region == region)
         if not include_deleted:
             query = query.filter(Team.is_active == True)
-        return query.all()
+        teams = query.all()
+        return teams if include_deleted else [t for t in teams if not _team_row_is_deprecated(t)]
     
     def count_active(self) -> int:
         """Count active teams"""
-        return self.db.query(Team).filter(Team.is_active == True).count()
+        return len(self.get_active_teams())
     
     def soft_delete(self, id: any) -> bool:
         """Soft delete (mark as inactive)"""

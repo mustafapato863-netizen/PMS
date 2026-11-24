@@ -264,7 +264,22 @@ def canonical_scope_identity(scope: dict | None) -> dict:
 # ``_team_keys`` fallback of an exact team match. Order is broadest first:
 # UAE Pre-Approvals teams belong to RCM *and* to the narrower Pre-Approvals
 # function, exactly as ``_RCM_KEYS`` and ``_PRE_APPROVALS_UAE_KEYS`` overlap.
-_FUNCTION_CALL_CENTER_KEYS = _CALL_CENTER_KEYS | {"inbound uae"}
+DEPRECATED_TEAM_KEYS: frozenset[str] = frozenset({"inbound uae", "inbound_uae", "inbound-uae"})
+
+
+def is_deprecated_team(team_name: str | None) -> bool:
+    """Return True for retired teams that must never appear in active catalogs or scopes."""
+    return str(team_name or "").strip().casefold() in DEPRECATED_TEAM_KEYS
+
+
+def _team_row_is_deprecated(team: object) -> bool:
+    return any(
+        is_deprecated_team(getattr(team, attr, None))
+        for attr in ("name", "db_name", "display_name")
+    )
+
+
+_FUNCTION_CALL_CENTER_KEYS = _CALL_CENTER_KEYS
 _FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
     "Call Center": _FUNCTION_CALL_CENTER_KEYS,
     "RCM": _RCM_KEYS,
@@ -303,9 +318,6 @@ def function_for_team(team_name: str) -> str | None:
 
 def function_team_keys(function_name: str) -> set[str]:
     """Casefolded source-team keys covered by a function selection."""
-    norm = str(function_name).strip().casefold()
-    if norm == "call center":
-        return _team_keys(str(function_name)) | {"inbound uae"}
     return _team_keys(str(function_name))
 
 
@@ -316,8 +328,6 @@ def selection_team_keys(team_name: str) -> set[str]:
     Pre-Approvals grants retain their UAE-only meaning in ``_team_keys``.
     """
     norm = str(team_name).strip().casefold()
-    if norm == "inbound":
-        return {"inbound", "inbound uae"}
     if norm == "pre-approvals":
         return _PRE_APPROVALS_UAE_KEYS | {"pre-approvals ip offshore"}
     if norm in {"pre-approvals op dubai", "op dubai"}:
