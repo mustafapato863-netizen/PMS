@@ -6,6 +6,20 @@ import type { ExecutiveActionItem, ExecutiveDriver, ExecutiveFunction, Executive
 import { isAtRisk } from '../../../features/executive/compose';
 import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { fmtSigned, kpiGapDelta, type Tone } from '../../../features/executive/format';
+import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
+
+/**
+ * Display label for a team row inside Executive & Function Summary tables.
+ * Supportive-position cohorts are stored under their parent function name
+ * ("Call Center", "RCM"); label them explicitly as support teams so they are
+ * never mistaken for the whole parent function.
+ */
+export function executiveTeamDisplayName(team: string, region?: string | null): string {
+  const normalized = String(team ?? '').trim().toLowerCase();
+  if (normalized === 'call center') return 'Call Center Support Team';
+  if (normalized === 'rcm') return 'RCM Support Team';
+  return presentationTeamName(team, region);
+}
 
 type Metric = ExecutiveSummary['meta']['driver_metric'];
 const HEALTHY: GradeClass[] = ['A', 'B'];
