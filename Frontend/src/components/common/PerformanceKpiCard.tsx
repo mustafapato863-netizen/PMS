@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { memo, useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Minus, RotateCcw, RotateCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { getGradeTone } from '../../constants/grades';
@@ -119,48 +119,28 @@ function isPointOnTarget(actual: number | null, target: number | null, lowerBett
   return lowerBetter ? actual <= target : actual >= target;
 }
 
-function MiniSixMonthTrend({
+const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
   label,
   series,
   unit,
   lowerBetter,
   badgeType,
+  flipped,
 }: {
   label: string;
   series: KpiTrendSeriesPoint[];
   unit?: string;
   lowerBetter: boolean;
   badgeType: PerformanceKpiBadgeType;
+  flipped: boolean;
 }) {
   const gradientId = useId().replace(/:/g, '');
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const points = series.slice(-6);
-  const measuredPoints = points.filter((point) => point.actual !== null && Number.isFinite(point.actual));
 
-  const latestMeasuredIndex = (() => {
-    for (let i = points.length - 1; i >= 0; i -= 1) {
-      if (points[i].actual !== null && Number.isFinite(points[i].actual)) return i;
-    }
-    return -1;
-  })();
+  useEffect(() => {
+    if (!flipped) setHoveredIdx(null);
+  }, [flipped]);
 
-  const activeIdx = hoveredIdx !== null && hoveredIdx < points.length ? hoveredIdx : latestMeasuredIndex;
-  const activePoint = activeIdx >= 0 ? points[activeIdx] : null;
-  const hoveredPoint = hoveredIdx !== null && hoveredIdx < points.length ? points[hoveredIdx] : null;
-
-  const onTargetStats = measuredPoints.reduce(
-    (acc, point) => {
-      const ok = isPointOnTarget(point.actual, point.target, lowerBetter);
-      if (ok !== null) {
-        acc.comparable += 1;
-        if (ok) acc.met += 1;
-      }
-      return acc;
-    },
-    { met: 0, comparable: 0 },
-  );
-
-  // SVG layout coordinates
   const width = 256;
   const height = 104;
   const padLeft = 34;
@@ -170,40 +150,99 @@ function MiniSixMonthTrend({
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
-  const allValues = points
-    .flatMap((point) => [point.actual, point.target])
-    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const chart = useMemo(() => {
+    const points = series.slice(-6);
+    const measuredPoints = points.filter((point) => point.actual !== null && Number.isFinite(point.actual));
 
-  const rawMin = allValues.length ? Math.min(...allValues) : 0;
-  const rawMax = allValues.length ? Math.max(...allValues) : 100;
-  const span = rawMax - rawMin;
-  const padding = span > 0 ? span * 0.18 : Math.max(Math.abs(rawMax) * 0.15, 5);
-  const domainMin = Math.max(0, rawMin - padding);
-  const domainMax = rawMax + padding;
-  const domainSpan = Math.max(domainMax - domainMin, 1);
+    let latestMeasuredIndex = -1;
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      if (points[i].actual !== null && Number.isFinite(points[i].actual)) {
+        latestMeasuredIndex = i;
+        break;
+      }
+    }
 
-  const xFor = (index: number) => {
-    if (points.length <= 1) return padLeft + plotWidth / 2;
-    return padLeft + (index / (points.length - 1)) * plotWidth;
-  };
-  const yFor = (val: number) => {
-    const ratio = (val - domainMin) / domainSpan;
-    return padTop + plotHeight - ratio * plotHeight;
-  };
+    const onTargetStats = measuredPoints.reduce(
+      (acc, point) => {
+        const ok = isPointOnTarget(point.actual, point.target, lowerBetter);
+        if (ok !== null) {
+          acc.comparable += 1;
+          if (ok) acc.met += 1;
+        }
+        return acc;
+      },
+      { met: 0, comparable: 0 },
+    );
 
-  const actualCoords = points
-    .map((point, index) => (point.actual !== null && Number.isFinite(point.actual) ? { index, x: xFor(index), y: yFor(point.actual), point } : null))
-    .filter((item): item is { index: number; x: number; y: number; point: KpiTrendSeriesPoint } => item !== null);
+    const allValues = points
+      .flatMap((point) => [point.actual, point.target])
+      .filter((value): value is number => value !== null && Number.isFinite(value));
 
-  const targetCoords = points
-    .map((point, index) => (point.target !== null && Number.isFinite(point.target) ? { index, x: xFor(index), y: yFor(point.target), point } : null))
-    .filter((item): item is { index: number; x: number; y: number; point: KpiTrendSeriesPoint } => item !== null);
+    const rawMin = allValues.length ? Math.min(...allValues) : 0;
+    const rawMax = allValues.length ? Math.max(...allValues) : 100;
+    const span = rawMax - rawMin;
+    const padding = span > 0 ? span * 0.18 : Math.max(Math.abs(rawMax) * 0.15, 5);
+    const domainMin = Math.max(0, rawMin - padding);
+    const domainMax = rawMax + padding;
+    const domainSpan = Math.max(domainMax - domainMin, 1);
 
-  const actualPath = actualCoords.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
-  const targetPath = targetCoords.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
-  const areaPath = actualCoords.length >= 2
-    ? `${actualPath} L ${actualCoords[actualCoords.length - 1].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} L ${actualCoords[0].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} Z`
-    : '';
+    const xFor = (index: number) => {
+      if (points.length <= 1) return padLeft + plotWidth / 2;
+      return padLeft + (index / (points.length - 1)) * plotWidth;
+    };
+    const yFor = (val: number) => {
+      const ratio = (val - domainMin) / domainSpan;
+      return padTop + plotHeight - ratio * plotHeight;
+    };
+
+    const actualCoords = points
+      .map((point, index) => (point.actual !== null && Number.isFinite(point.actual) ? { index, x: xFor(index), y: yFor(point.actual), point } : null))
+      .filter((item): item is { index: number; x: number; y: number; point: KpiTrendSeriesPoint } => item !== null);
+
+    const targetCoords = points
+      .map((point, index) => (point.target !== null && Number.isFinite(point.target) ? { index, x: xFor(index), y: yFor(point.target), point } : null))
+      .filter((item): item is { index: number; x: number; y: number; point: KpiTrendSeriesPoint } => item !== null);
+
+    const actualPath = actualCoords.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const targetPath = targetCoords.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    const areaPath = actualCoords.length >= 2
+      ? `${actualPath} L ${actualCoords[actualCoords.length - 1].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} L ${actualCoords[0].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} Z`
+      : '';
+
+    return {
+      points,
+      measuredPoints,
+      latestMeasuredIndex,
+      onTargetStats,
+      domainMax,
+      domainSpan,
+      xFor,
+      yFor,
+      actualCoords,
+      actualPath,
+      targetPath,
+      areaPath,
+    };
+  }, [series, lowerBetter, plotHeight, plotWidth]);
+
+  const {
+    points,
+    measuredPoints,
+    latestMeasuredIndex,
+    onTargetStats,
+    domainMax,
+    domainSpan,
+    xFor,
+    yFor,
+    actualCoords,
+    actualPath,
+    targetPath,
+    areaPath,
+  } = chart;
+
+  const activeIdx = hoveredIdx !== null && hoveredIdx < points.length ? hoveredIdx : latestMeasuredIndex;
+  const activePoint = activeIdx >= 0 ? points[activeIdx] : null;
+  const hoveredPoint = hoveredIdx !== null && hoveredIdx < points.length ? points[hoveredIdx] : null;
 
   const hoveredXPercent = hoveredIdx !== null && points.length > 0
     ? Math.min(Math.max((xFor(hoveredIdx) / width) * 100, 18), 82)
@@ -258,7 +297,7 @@ function MiniSixMonthTrend({
             <div
               role="tooltip"
               data-testid="kpi-trend-hover-tooltip"
-              className="pointer-events-none absolute top-0 z-20 -translate-x-1/2 rounded-lg border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)]/95 px-2.5 py-1.5 shadow-md backdrop-blur-sm"
+              className="pointer-events-none absolute top-0 z-20 -translate-x-1/2 rounded-lg border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)] px-2.5 py-1.5 shadow-md"
               style={{ left: `${hoveredXPercent}%` }}
             >
               <div className="flex items-center justify-between gap-2.5 text-[12px] leading-tight">
@@ -482,9 +521,9 @@ function MiniSixMonthTrend({
       </div>
     </div>
   );
-}
+});
 
-const PerformanceKpiCard = ({
+const PerformanceKpiCard = memo(function PerformanceKpiCard({
   icon: Icon,
   iconBgColor = 'bg-indigo-600',
   iconAccentColor,
@@ -507,7 +546,7 @@ const PerformanceKpiCard = ({
   trendSeries,
   trendSeriesUnit,
   trendLowerBetter = false,
-}: PerformanceKpiCardProps) => {
+}: PerformanceKpiCardProps) {
   const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
@@ -688,7 +727,7 @@ const PerformanceKpiCard = ({
   if (!flippable) {
     return (
       <article
-        className="pms-glass-surface pms-glass-surface--interactive glass-card group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+        className="pms-glass-surface pms-glass-surface--interactive group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
         style={cardSurfaceStyle}
       >
         {frontContent}
@@ -712,7 +751,7 @@ const PerformanceKpiCard = ({
         {/* Front Face */}
         <div
           aria-hidden={flipped}
-          className="pms-flip-face pms-flip-face--front pms-glass-surface pms-glass-surface--interactive glass-card relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+          className="pms-flip-face pms-flip-face--front pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
           style={cardSurfaceStyle}
         >
           {frontContent}
@@ -722,7 +761,7 @@ const PerformanceKpiCard = ({
         <div
           aria-hidden={!flipped}
           data-testid="kpi-card-trend-back"
-          className="pms-flip-face pms-flip-face--back pms-glass-surface relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+          className="pms-flip-face pms-flip-face--back pms-glass-surface pms-glass-surface--interactive relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
           style={cardSurfaceStyle}
         >
           <span
@@ -736,11 +775,12 @@ const PerformanceKpiCard = ({
             unit={trendSeriesUnit ?? trendUnit}
             lowerBetter={trendLowerBetter}
             badgeType={badgeType}
+            flipped={flipped}
           />
         </div>
       </div>
     </article>
   );
-};
+});
 
 export default PerformanceKpiCard;
