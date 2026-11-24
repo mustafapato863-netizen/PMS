@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { summarizeActions } from '../../../features/executive/compose';
 import type { ExecutivePeriod } from '../../../features/executive/types';
@@ -81,5 +82,22 @@ describe('CorrectiveActionInsightsCard', () => {
     expect(screen.getByText('No corrective actions recorded for June 2026 in this scope.')).toBeInTheDocument();
     rerender(<CorrectiveActionInsightsCard data={null} effective={period} scopeLabel="Company-wide" />);
     expect(screen.getByText("Action analysis isn't available for this view yet.")).toBeInTheDocument();
+  });
+
+  it('links to Corrective Actions and carries the selected month and local team filter when workspaceHref is provided', () => {
+    render(
+      <MemoryRouter>
+        <CorrectiveActionInsightsCard data={data} effective={period} scopeLabel="Company-wide" workspaceHref="/corrective-actions" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Open Corrective Actions' })).toHaveAttribute(
+      'href',
+      '/corrective-actions?month=June',
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter actions by team' }), { target: { value: 'Coding' } });
+    expect(screen.getByRole('link', { name: 'Open Corrective Actions' })).toHaveAttribute(
+      'href',
+      '/corrective-actions?team=Coding&month=June',
+    );
   });
 });

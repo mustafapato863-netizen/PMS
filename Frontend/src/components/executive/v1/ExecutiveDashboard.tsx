@@ -78,7 +78,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
           <TopPerformersCard people={summary.people} previous={previous} range={range} />
         </div>
         <LevelBreakdownCard levels={summary.levels} subtitle={levelSubtitle} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} range={range} />}
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} range={range} workspaceHref={team ? `/corrective-actions?team=${encodeURIComponent(team)}` : '/corrective-actions'} />}
       </div>
     );
   }
@@ -114,7 +114,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
         )}
         <LevelBreakdownCard levels={summary.levels} title="Level split" subtitle={`${fn} score by performance level`} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} />}
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} workspaceHref={`/corrective-actions?function=${encodeURIComponent(fn)}`} />}
       </div>
     );
   }
@@ -143,7 +143,19 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
       {/* Figma Row 6: Full-Width Corrective Actions & Coaching Pulse */}
       {permissions.canSeeActions && (
         <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
-          <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
+          <CorrectiveActionInsightsCard
+            data={summary.corrective_actions}
+            effective={period.effective}
+            scopeLabel={scope.team ?? scope.function ?? 'Company-wide'}
+            range={range}
+            workspaceHref={
+              scope.team
+                ? `/corrective-actions?team=${encodeURIComponent(scope.team)}`
+                : scope.function
+                  ? `/corrective-actions?function=${encodeURIComponent(scope.function)}`
+                  : '/corrective-actions'
+            }
+          />
         </div>
       )}
     </div>

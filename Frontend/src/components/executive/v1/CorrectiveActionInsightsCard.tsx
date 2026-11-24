@@ -9,7 +9,7 @@ import { actionAnalyticsStats } from '../../../features/executive/actionAnalytic
 import type { ExecutiveCorrectiveActions, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { summarizeRootCauses } from '../../../utils/rootCauseInsights';
-import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
+import { ExecCard, ExecCardHeader, Footnote, SoftEmpty, SoftLink } from './ExecPrimitives';
 
 type Accent = 'blue' | 'violet' | 'amber' | 'green' | 'rose' | 'teal';
 
@@ -99,9 +99,9 @@ function RankedActions({ title, rows, total, empty, testId }: {
   );
 }
 
-/** Read-only decision patterns for summary pages. Operational follow-up stays in its own workspace. */
-export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel, range = null }: {
-  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string; range?: ExecutiveRangeBlock | null;
+/** Read-only decision patterns for summary pages, with an optional link into the Corrective Actions workspace. */
+export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel, range = null, workspaceHref = null }: {
+  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string; range?: ExecutiveRangeBlock | null; workspaceHref?: string | null;
 }) {
   const titleId = useId();
   const selectId = useId();
@@ -110,6 +110,15 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
   const pendingSync = data?.analytics?.pending_sync ?? [];
   const teams = [...new Set([...actions, ...pendingSync].map((action) => action.team).filter((team): team is string => Boolean(team)))].sort();
   const effectiveTeam = teams.includes(selectedTeam) ? selectedTeam : '';
+  const resolvedWorkspaceHref = (() => {
+    if (!workspaceHref) return null;
+    const [path, rawQuery = ''] = workspaceHref.split('?');
+    const params = new URLSearchParams(rawQuery);
+    if (effectiveTeam) params.set('team', effectiveTeam);
+    if (effective?.month && !range && !params.has('month')) params.set('month', effective.month);
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  })();
   const visible = effectiveTeam ? actions.filter((action) => action.team === effectiveTeam) : actions;
   const visiblePending = effectiveTeam ? pendingSync.filter((action) => action.team === effectiveTeam) : pendingSync;
   const stats = actionAnalyticsStats(visible);
@@ -128,8 +137,15 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
   if (visiblePending.length > 0) metricCards.push({ label: 'Pending Sync', count: visiblePending.length, icon: Clock3, accent: 'amber' });
   return (
     <ExecCard aria-labelledby={titleId} data-testid="corrective-action-insights">
-      <ExecCardHeader titleId={titleId} icon={ShieldCheck} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)"
-        title="Corrective actions" subtitle={`${scopeLabel} · ${period} · Decision patterns`} />
+      <ExecCardHeader
+        titleId={titleId}
+        icon={ShieldCheck}
+        iconBg="var(--exec-info-bg)"
+        iconColor="var(--exec-info-text)"
+        title="Corrective actions"
+        subtitle={`${scopeLabel} · ${period} · Decision patterns`}
+        action={resolvedWorkspaceHref ? <SoftLink to={resolvedWorkspaceHref} ariaLabel="Open Corrective Actions">Open Corrective Actions</SoftLink> : undefined}
+      />
       {!data?.analytics ? <SoftEmpty>Action analysis isn't available for this view yet.</SoftEmpty> : <>
         <div className={`grid gap-[12px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {metricCards.map(({ label, count, icon: Icon, accent }) => (

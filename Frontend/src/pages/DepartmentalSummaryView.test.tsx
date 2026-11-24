@@ -6,7 +6,7 @@ import type { User } from '../types';
 import type { ExecutiveSummary } from '../features/executive/types';
 import { composeExecutiveSummary, monthsBetween, periodOf, previousRangeOf, toExecRecords, type ComposeInput } from '../features/executive/compose';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from '../features/executive/executive.fixture';
-import { presentationTeamName } from '../features/team/countryTeamIdentity';
+import { executiveTeamDisplayName } from '../components/executive/v1/execModel';
 import type { UseExecutiveSummaryArgs } from '../features/executive/useExecutiveSummary';
 import DepartmentalSummaryView from './DepartmentalSummaryView';
 import { periodOptionsFor } from '../features/executive/viewModel';
@@ -269,7 +269,7 @@ describe('Corporate sections', () => {
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
     expect(screen.getByTestId('corrective-action-insights')).toBeInTheDocument();
     expect(screen.queryByTestId('action-tile-due-this-week')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open Corrective Actions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Corrective Actions' })).toHaveAttribute('href', '/corrective-actions?month=June');
   });
 
   it('ranks Teams at risk from the worst score and names the lowest-scoring team', () => {
@@ -282,7 +282,7 @@ describe('Corporate sections', () => {
     expect(atRisk.length).toBeGreaterThan(0);
     expect(screen.getByText('Score under 90%, ranked from worst score')).toBeInTheDocument();
     const rows = screen.getAllByTestId('risk-row');
-    expect(rows.map((row) => row.querySelector('a, button')?.textContent)).toEqual(atRisk.map((team) => presentationTeamName(team.team, null)));
+    expect(rows.map((row) => row.querySelector('a, button')?.textContent)).toEqual(atRisk.map((team) => executiveTeamDisplayName(team.team, null)));
     expect(screen.getByText(`${atRisk[0].team} is the lowest-scoring team at ${(atRisk[0].score ?? 0).toFixed(1)}%.`)).toBeInTheDocument();
   });
 
