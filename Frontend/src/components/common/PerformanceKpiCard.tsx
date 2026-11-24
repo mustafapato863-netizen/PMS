@@ -114,6 +114,68 @@ function formatTrendPointValue(value: number | null, unit?: string): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+function formatAxisTick(value: number, unit?: string): string {
+  if (!Number.isFinite(value)) return '—';
+  if (unit === '%') {
+    return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
+  }
+  return formatTrendPointValue(value, unit);
+}
+
+/**
+ * Computes a proportional Y-axis domain so small Actual-vs-Target gaps
+ * (e.g. 68.1% vs 75.0%) are not visually exaggerated into full-height cliffs.
+ */
+export function computeTrendYDomain(
+  allValues: number[],
+  unit?: string,
+): { domainMin: number; domainMax: number; domainSpan: number } {
+  if (allValues.length === 0) {
+    return { domainMin: 0, domainMax: 100, domainSpan: 100 };
+  }
+
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const rawSpan = rawMax - rawMin;
+
+  if (unit === '%') {
+    // Low-rate percentage KPIs (e.g. Error Rate 1.5% vs 3.0%): anchor cleanly at 0%.
+    if (rawMax <= 20) {
+      const domainMax = Math.ceil(Math.max(rawMax * 1.5, rawMax + 2, 5));
+      return { domainMin: 0, domainMax, domainSpan: Math.max(domainMax, 1) };
+    }
+
+    // Standard 0–100% attainment KPIs: enforce at least a 40-point span on round 10% ticks.
+    if (rawMax <= 100) {
+      let domainMax = Math.min(100, Math.ceil((rawMax + 12) / 10) * 10);
+      let domainMin = Math.max(0, Math.floor((rawMin - 15) / 10) * 10);
+      if (domainMax - domainMin < 40) {
+        const deficit = 40 - (domainMax - domainMin);
+        domainMin = Math.max(0, Math.floor((domainMin - deficit) / 10) * 10);
+        if (domainMax - domainMin < 40) {
+          domainMax = Math.min(100, Math.ceil((domainMin + 40) / 10) * 10);
+        }
+      }
+      if (domainMin <= 10) domainMin = 0;
+      return {
+        domainMin,
+        domainMax,
+        domainSpan: Math.max(domainMax - domainMin, 1),
+      };
+    }
+  }
+
+  // Non-percentage or >100% KPIs: maintain at least a 35% relative span around the max value.
+  const minSpan = Math.max(Math.abs(rawMax) * 0.35, 10);
+  const extraPad = Math.max(rawSpan * 0.25, (minSpan - rawSpan) / 2, 1);
+  const domainMin = Math.max(0, rawMin - extraPad);
+  const domainMax = rawMax + extraPad;
+  return {
+    domainMin,
+    domainMax,
+    domainSpan: Math.max(domainMax - domainMin, 1),
+  };
+}
 function isPointOnTarget(actual: number | null, target: number | null, lowerBetter: boolean): boolean | null {
   if (actual === null || target === null || !Number.isFinite(actual) || !Number.isFinite(target)) return null;
   return lowerBetter ? actual <= target : actual >= target;
@@ -178,13 +240,7 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
       .flatMap((point) => [point.actual, point.target])
       .filter((value): value is number => value !== null && Number.isFinite(value));
 
-    const rawMin = allValues.length ? Math.min(...allValues) : 0;
-    const rawMax = allValues.length ? Math.max(...allValues) : 100;
-    const span = rawMax - rawMin;
-    const padding = span > 0 ? span * 0.18 : Math.max(Math.abs(rawMax) * 0.15, 5);
-    const domainMin = Math.max(0, rawMin - padding);
-    const domainMax = rawMax + padding;
-    const domainSpan = Math.max(domainMax - domainMin, 1);
+    const { domainMin, domainMax, domainSpan } = computeTrendYDomain(allValues, unit);
 
     const xFor = (index: number) => {
       if (points.length <= 1) return padLeft + plotWidth / 2;
@@ -223,7 +279,7 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
       targetPath,
       areaPath,
     };
-  }, [series, lowerBetter, plotHeight, plotWidth]);
+  }, [series, lowerBetter, unit, plotHeight, plotWidth]);
 
   const {
     points,
@@ -363,7 +419,7 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
                       fontSize="8.5"
                       fontWeight="600"
                     >
-                      {formatTrendPointValue(tickVal, unit)}
+                      {formatAxisTick(tickVal, unit)}
                     </text>
                   )}
                 </g>
