@@ -7,11 +7,7 @@ import { ArrowRight, Info, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getGradeClassOrNull, getGradeTone } from '../../../constants/grades';
 import { isLowerBetter, toneColor, type Tone } from '../../../features/executive/format';
-
-export function gradeGradientVar(score: number | null | undefined): string {
-  const grade = getGradeClassOrNull(score ?? null);
-  return `var(--pms-grad-grade-${grade ? grade.toLowerCase() : 'na'})`;
-}
+import { gradeGradientVar } from './gradeGradient';
 
 export function ExecCard({ children, className = '', as: Tag = 'section', ...rest }: { children: ReactNode; className?: string; as?: 'section' | 'div' | 'article'; 'aria-label'?: string; 'aria-labelledby'?: string; 'data-testid'?: string }) {
   return (
