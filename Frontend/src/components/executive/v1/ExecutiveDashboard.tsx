@@ -19,7 +19,6 @@ import LevelBreakdownCard from './LevelBreakdownCard';
 import { TeamLeaderboardCard, TeamsNeedingAttentionCard } from './FunctionTeamsCards';
 import { FallbackNotice, ScopeBanner } from './ExecutiveStates';
 import EmployeesBelowTargetCard from './EmployeesBelowTargetCard';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 export interface ExecutiveDashboardPermissions {
   /** Function cards link to /function-summary/:slug. */
@@ -50,13 +49,8 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
   const range = period.range ?? null;
   const rangeLabel = range ? coveredPeriodLabel(period.effective, range) : null;
   const levelSubtitle = rangeLabel ? `Score, grade and headcount by performance level · ${rangeLabel}` : undefined;
-  // Fallback month and evaluation-basis notes sit above the hero in every layout.
-  const notices = (
-    <>
-      {period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null}
-      <BasisComparisonNote messages={[summary.basis_context?.message]} />
-    </>
-  );
+  // Fallback month notice sits above the hero in every layout.
+  const notices = period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null;
 
   if (scope.view === 'managerial') {
     const fn = scope.function;

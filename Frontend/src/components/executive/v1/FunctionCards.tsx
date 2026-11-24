@@ -2,7 +2,6 @@ import { memo, useMemo, useState } from 'react';
 import {
   ArrowDownUp,
   ArrowRight,
-  Info,
   LayoutGrid,
   Rows3,
   TrendingDown,
@@ -24,7 +23,6 @@ import { getGradeTone } from '../../../constants/grades';
 import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
 import { gradeGradientVar } from './gradeGradient';
 import FunctionTrendChart from './FunctionTrendChart';
-import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 export function FunctionIcon({ fn, size = 28 }: { fn: ExecutiveFunction; size?: number }) {
   const style = FUNCTION_STYLE[fn];
@@ -378,10 +376,6 @@ export default function FunctionCards({
   const [filterMode, setFilterMode] = useState<FunctionFilterMode>('all');
   const [expandedGrid, setExpandedGrid] = useState(false);
 
-  const noted = cards.filter((card) => card.basis_context?.message);
-  const sharedBasis =
-    noted.length === cards.length && new Set(noted.map((card) => card.basis_context?.message)).size === 1;
-
   const attentionCount = useMemo(
     () => cards.filter((c) => c.score !== null && c.score < 90).length,
     [cards],
@@ -521,8 +515,6 @@ export default function FunctionCards({
         </div>
       </div>
 
-      {sharedBasis && <BasisComparisonNote messages={noted.map((card) => card.basis_context?.message)} />}
-
       <div
         className={
           expandedGrid
@@ -546,26 +538,6 @@ export default function FunctionCards({
           />
         ))}
       </div>
-
-      {!sharedBasis && noted.length > 0 && (
-        <details className="group/basis-footer rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 py-1.5">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-            <span className="inline-flex items-center gap-1.5">
-              <Info size={12} className="shrink-0 text-[var(--insights-accent)]" aria-hidden="true" />
-              <span>Scoring basis & comparison notes ({noted.length} functions)</span>
-            </span>
-            <span className="text-[11px] font-semibold text-[var(--insights-accent)] group-open/basis-footer:hidden">
-              Show details
-            </span>
-            <span className="hidden text-[11px] font-semibold text-[var(--insights-accent)] group-open/basis-footer:inline">
-              Hide details
-            </span>
-          </summary>
-          <div className="mt-1.5 border-t border-[var(--exec-card-border)] pt-1.5">
-            <BasisComparisonNote messages={noted.map((card) => card.basis_context?.message)} />
-          </div>
-        </details>
-      )}
     </section>
   );
 }

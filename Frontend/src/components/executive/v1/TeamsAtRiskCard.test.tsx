@@ -82,7 +82,7 @@ describe('TeamsAtRiskCard', () => {
     expect(screen.getAllByTestId('risk-row')).toHaveLength(1);
   });
 
-  it('shows one evaluation-settings note for every team that shares it', () => {
+  it('omits evaluation-settings boilerplate while keeping at-risk rows visible', () => {
     const basis: BasisComparisonContext = {
       state: 'changed',
       like_for_like: false,
@@ -96,9 +96,7 @@ describe('TeamsAtRiskCard', () => {
       { ...team('Grade D team', 70, ['grade_d']), basis_context: basis },
     ]} /></MemoryRouter>);
 
-    expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
-    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Scores can be affected by evaluation settings.');
-    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Comparable raw performance is unchanged.');
+    expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(2);
   });
 
