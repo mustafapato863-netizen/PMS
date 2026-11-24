@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
-import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, usesStoredPeriodScore, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameEgyptRcmTeam, sameCanonicalTeam } from '../types';
+import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, usesPublishedEmployeeScore, usesStoredPeriodScore, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameEgyptRcmTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { performanceSessionKey } from '../lib/performanceSessionKey';
@@ -542,6 +542,7 @@ export function reconcileTeamSummaryScore(
 export function hasRealActivity(r: AgentRecord): boolean {
   if (!r || !r.identity || !r.identity.name) return false;
   if (r.identity.name.toLowerCase() === 'total') return false;
+  if (usesPublishedEmployeeScore(r)) return true;
 
   // 1. If backend kpi_values exist:
   if (r.kpi_values && r.kpi_values.length > 0) {

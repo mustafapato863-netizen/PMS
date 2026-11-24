@@ -1,15 +1,22 @@
 import io
+from datetime import date
+from uuid import uuid4
 
 import pandas as pd
 import pytest
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from config.database import Base
 from models.models import PerformanceRecord, Team
+from scripts.prepare_csr_source_upload import SOURCE_TABS, prepare_upload
 from services.dashboard_record_service import DashboardRecordService
+from services.performance_dashboard_read_service import PerformanceDashboardReadService, _summary
+from services.scoring.monthly_official_scores import official_team_score
 from services.seeding_service import DatabaseSeeder
 from services.csr_sharjah_scoring import score_sharjah_csr, uses_sharjah_csr_score
+from services.uae_published_scores import has_published_score_columns
 
 
 def test_sharjah_cutover_depends_on_branch_and_reporting_month():
@@ -124,4 +131,94 @@ def test_all_three_clinical_trends_keep_source_scores_and_skip_unscored_rows():
         assert er_record.raw_data["No Re-visit within 24 hours"] == 1
         assert "A.No Re-visit within 72 hours" not in er_record.raw_data
         assert all(r.month == "October" and r.year == 2026 for r in records)
+    engine.dispose()
+
+
+def test_published_scores_only_apply_to_dated_uae_employee_sheets():
+    fields = {"Date": "2026-10-01", "Role": "Employee", "PerformanceScore": 1, "PerformanceGrade": "A"}
+    assert has_published_score_columns("Coding", "UAE", "Employee", fields)
+    assert not has_published_score_columns("Coding", "EGY", "Employee", fields)
+    assert not has_published_score_columns("Coding", "UAE", "Managerial", fields)
+    assert not has_published_score_columns("Coding", "UAE", "Employee", {**fields, "Date": "2026-09-01"})
+    assert not has_published_score_columns("Coding", "UAE", "Employee", {k: v for k, v in fields.items() if k != "Role"})
+
+
+def test_prepared_csr_scorecards_keep_source_totals_branches_and_zero(tmp_path, monkeypatch):
+    report = Workbook()
+    report.remove(report.active)
+    inputs = [
+        ("SGHD00001", 1, "Meet Expectations", "dubai"),
+        ("SGHD00002", 0.9, "Average", "dubai"),
+        ("SGHA00003", 0, "Unsatisfactory", "ajman"),
+        ("SGHS00004", 0.005, "Unsatisfactory", "sharjah"),
+    ]
+    for (tab, (_, columns)), (employee, score, grade, _) in zip(SOURCE_TABS.items(), inputs, strict=True):
+        worksheet = report.create_sheet(tab)
+        for column, label in columns.values():
+            worksheet[f"{column}2"] = label
+        for key, value in {
+            "HR ID": employee, "Agent Name": f"Test {tab}", "Status": "Active", "Performance Score": score,
+            "Performance Grade": grade, "A.CSR Queries": 0, "T.Queries Target": 0.002,
+        }.items():
+            worksheet[f"{columns[key][0]}3"] = value
+        worksheet[f"{columns['HR ID'][0]}4"] = "SGHD99999"
+        worksheet[f"{columns['Agent Name'][0]}4"] = "No published score"
+    source = tmp_path / "report.xlsx"
+    upload = tmp_path / "upload.xlsx"
+    report.save(source)
+    assert prepare_upload(source, date(2026, 10, 1), upload) == 4
+
+    # A dated trend upload can also contain an unscored row with real KPI counters.
+    sheet = load_workbook(upload)
+    sheet.active.append([date(2026, 10, 1), "UAE", "Employee", "Dubai", None,
+                         "SGHD99999", "No published score", "Active", 25])
+    sheet.save(upload)
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        legacy = io.BytesIO()
+        with pd.ExcelWriter(legacy, engine="openpyxl") as writer:
+            pd.DataFrame([{
+                "Date": pd.Timestamp("2026-10-01"), "Region": "UAE", "Role": "Emp", "Team": "Dubai",
+                "HR ID": "SGHD99998", "Agent Name": "Previously Calculated", "Status": "Inactive",
+                "A.CSR Rejection %": 0.001, "T.CSR Rejection %": 0.005,
+                "Performance Score": None, "Performance Grade": "Inactive Staff",
+            }]).to_excel(writer, sheet_name="CSR", index=False)
+        with monkeypatch.context() as baseline:
+            baseline.setattr("services.seeding_service.has_published_score_columns", lambda *_: False)
+            assert DatabaseSeeder().process_uploaded_file("legacy.xlsx", legacy.getvalue(), db_session=db)["records_imported"] == 1
+        assert float(db.query(PerformanceRecord).one().score) == 40
+
+        result = DatabaseSeeder().process_uploaded_file("csr.xlsx", upload.read_bytes(), db_session=db)
+        assert result["records_imported"] == 4
+        assert db.query(PerformanceRecord).count() == 5
+        records = DashboardRecordService(db).list_records()
+        by_id = {record.employee_id: record for record in records}
+        assert set(by_id) == {employee for employee, *_ in inputs}
+        for employee, score, _grade, branch in inputs:
+            assert by_id[employee].evaluation.score == score * 100
+            assert by_id[employee].branch_key == branch
+        assert by_id["SGHD00001"].evaluation.grade == "B"
+        assert by_id["SGHD00002"].evaluation.grade == "C"
+        assert by_id["SGHD00002"].raw_data["CSRSourceSheet"] == "CSR - ER - Dubai"
+        observation = next(kpi for kpi in by_id["SGHD00001"].kpi_values if kpi["kpi_key"] == "Queries")
+        assert observation["actual_value"] == 0
+        assert observation["direction"] == "lower_better"
+        assert observation["view_only"] is True
+
+        dashboard = _summary(records, "all")
+        assert (dashboard["total_agents"], dashboard["average_score"]) == (4, 47.62)
+        review = official_team_score(records, "CSR")
+        assert (review.sample_size, review.score, review.score_basis) == (4, 47.6, "average published employee scores")
+
+        service = PerformanceDashboardReadService(db, {
+            "user_id": str(uuid4()), "role": "Manager", "accessible_teams": ["CSR"],
+        })
+        page = service.records_page(period="2026-10", team="CSR", score_lt=1, sort="score_asc", page_size=1)
+        second = service.records_page(period="2026-10", team="CSR", score_lt=1, sort="score_asc", page_size=1,
+                                      cursor=page["next_cursor"])
+        assert page["items"][0]["score"] == 0
+        assert second["items"][0]["score"] == 0.5
+        assert "ScoringMethod" in second["items"][0]["raw_data"]
     engine.dispose()

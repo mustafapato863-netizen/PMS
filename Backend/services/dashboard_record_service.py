@@ -17,6 +17,7 @@ from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
 from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS
 from services.csr_sharjah_scoring import METHOD_ID as SHARJAH_CSR_METHOD_ID
+from services.uae_published_scores import uses_published_score
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values, normalized_text_memo
 from services.outbound_period_basis import normalized_name_memo
 from services.preapprovals_offshore_scoring import NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID
@@ -562,7 +563,7 @@ class DashboardRecordService:
             # Marketing's uploaded employee-month rows own their display definitions,
             # including KPIs not in the static catalog. Do not replace SQL numbers.
             raw_payload = payload.get("raw_data") if isinstance(payload, dict) else None
-            use_stored_score = team_name in CLINICAL_TREND_TEAMS or (
+            use_stored_score = uses_published_score(raw_payload) or team_name in CLINICAL_TREND_TEAMS or (
                 team_name == "CSR" and isinstance(raw_payload, dict)
                 and raw_payload.get("ScoringMethod") == SHARJAH_CSR_METHOD_ID
             )
