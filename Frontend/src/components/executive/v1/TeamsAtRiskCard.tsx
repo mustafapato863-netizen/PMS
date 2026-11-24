@@ -24,7 +24,6 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
         || (right.gap_share_percent ?? 0) - (left.gap_share_percent ?? 0)
         || left.team.localeCompare(right.team);
     });
-  const head = 'text-xs font-semibold text-[var(--text-muted)]';
   const teamHref = (team: ExecutiveTeam) => {
     const params = new URLSearchParams();
     const branch = searchParams.get('branch')?.trim().toLowerCase();
@@ -68,25 +67,25 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
             {rows[0].score !== null ? <span>{` ${rows[0].team} is the lowest-scoring team at ${fmtScore(rows[0].score)}.`}</span> : ''}
           </p>
         )}
-        <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col">
-          <div className="px-[12px] pb-[8px]"><BasisComparisonNote messages={rows.map((team) => team.basis_context?.message)} /></div>
-          <div role="row" className="flex items-center gap-[10px] rounded-[8px] bg-[var(--exec-table-head-bg)] px-[12px] py-[9px]">
-            <span role="columnheader" className={`${head} min-w-0 flex-1`}>Team</span>
-            <span role="columnheader" className={`${head} w-[56px] text-right`}>Score</span>
-            <span role="columnheader" className={`${head} w-[36px] text-center`}>Grade</span>
-            <span role="columnheader" className={`${head} w-[64px] text-right`}>vs 100</span>
-            <span role="columnheader" className={`${head} hidden w-[72px] lg:block`}>6-mo trend</span>
-            <span role="columnheader" className={`${head} hidden w-[150px] md:block`}>Why flagged</span>
+        <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="pms-glass-stage flex flex-col overflow-hidden rounded-[14px]">
+          <div className="px-[14px] pt-[8px]"><BasisComparisonNote messages={rows.map((team) => team.basis_context?.message)} /></div>
+          <div role="row" className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] bg-[var(--exec-table-head-bg)] px-[14px] py-[10px]">
+            <span role="columnheader" className="min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Team</span>
+            <span role="columnheader" className="w-[62px] text-right text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Score</span>
+            <span role="columnheader" className="w-[40px] text-center text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Grade</span>
+            <span role="columnheader" className="w-[70px] text-right text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">vs 100</span>
+            <span role="columnheader" className="hidden w-[84px] text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] lg:block">6-mo trend</span>
+            <span role="columnheader" className="hidden w-[168px] text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] md:block">Why flagged</span>
           </div>
           {rows.map((team, index) => {
             const lead = !showAllTeams && index === 0;
             return (
-            <div role="row" key={team.team} className={`flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[11px] last:border-b-0 ${lead ? 'rounded-[12px] border border-[var(--pms-grad-panel-neg-border)]' : ''}`} style={lead ? { background: 'var(--pms-grad-panel-neg)' } : undefined} data-testid="risk-row">
+            <div role="row" key={team.team} className={`flex items-center gap-[12px] border-b border-[var(--insights-row-border)] px-[14px] py-[12px] transition-colors last:border-b-0 hover:bg-white/60 dark:hover:bg-slate-800/35 ${lead ? 'border-l-[3px] border-l-rose-500' : ''}`} style={lead ? { background: 'var(--pms-grad-panel-neg)' } : undefined} data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 {onSelectTeam ? (
-                  <button type="button" title={`Review ${presentationTeamName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team, searchParams.get('region'))}</button>
+                  <button type="button" title={`Review ${presentationTeamName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team, searchParams.get('region'))}</button>
                 ) : (
-                  <Link to={teamHref(team)} title={`View ${presentationTeamName(team.team, searchParams.get('region'))} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team, searchParams.get('region'))}</Link>
+                  <Link to={teamHref(team)} title={`View ${presentationTeamName(team.team, searchParams.get('region'))} team details`} className="text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">{presentationTeamName(team.team, searchParams.get('region'))}</Link>
                 )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.function, team.regions.join(' + '), team.score_basis === 'leader_scorecard' ? 'Leader scorecard' : null].filter(Boolean).join(' · ')}</span>
                 {team.gap_share_percent != null && team.gap_share_percent > 0 && (
@@ -94,11 +93,11 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                 )}
                 {team.flag_detail?.text && <span className="text-xs leading-[1.4] text-[var(--text-secondary)]">{team.flag_detail.text}</span>}
               </div>
-              <span role="cell" className="w-[56px] text-right"><ScoreText score={team.score} className="text-[13px]">{fmtScore(team.score)}</ScoreText></span>
-              <span role="cell" className="flex w-[36px] justify-center"><GradeSquare score={team.score} /></span>
-              <span role="cell" className="w-[64px] text-right text-[12px] font-semibold text-[var(--insights-negative)]">{arrow(team.gap)} {fmtSigned(team.gap)}</span>
-              <span role="cell" className="hidden w-[72px] lg:block"><Sparkline values={team.trend.map((point) => point.score)} height={22} width={72} /></span>
-              <span role="cell" className="hidden w-[150px] flex-wrap gap-[4px] md:flex">
+              <span role="cell" className="w-[62px] text-right"><ScoreText score={team.score} className="text-[14px]">{fmtScore(team.score)}</ScoreText></span>
+              <span role="cell" className="flex w-[40px] justify-center"><GradeSquare score={team.score} /></span>
+              <span role="cell" className="w-[70px] text-right text-[12px] font-bold text-[var(--insights-negative)]">{arrow(team.gap)} {fmtSigned(team.gap)}</span>
+              <span role="cell" className="hidden w-[84px] lg:block"><Sparkline values={team.trend.map((point) => point.score)} height={24} width={84} /></span>
+              <span role="cell" className="hidden w-[168px] flex-wrap gap-[4px] md:flex">
                 {FLAG_ORDER.filter((flag) => team.flags.includes(flag)).slice(0, 2).map((flag) => (
                   <StatusPill key={flag} tone="danger" icon={flag.startsWith('grade') ? AlertTriangle : TrendingDown}>{FLAG_LABEL[flag]}</StatusPill>
                 ))}

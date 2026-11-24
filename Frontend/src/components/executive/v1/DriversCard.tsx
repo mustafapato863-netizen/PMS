@@ -58,16 +58,27 @@ function Panel({ side, drivers, metric, caption, focus }: { side: 'negative' | '
   const Icon = negative ? TrendingDown : TrendingUp;
   return (
     <div
-      className="flex min-w-0 flex-col gap-[12px] rounded-[10px] border p-[14px]"
+      className="flex min-w-0 flex-col gap-[12px] rounded-[14px] border p-[15px]"
       style={{
-        background: negative ? 'var(--insights-negative-panel-bg)' : 'var(--insights-positive-panel-bg)',
-        borderColor: negative ? 'var(--insights-negative-panel-border)' : 'var(--insights-positive-panel-border)',
+        background: negative ? 'var(--pms-grad-panel-neg)' : 'var(--pms-grad-panel-pos)',
+        borderColor: negative ? 'var(--pms-grad-panel-neg-border)' : 'var(--pms-grad-panel-pos-border)',
       }}
     >
-      <h3 className="flex items-center gap-[6px] text-[13px] font-bold" style={{ color: negative ? 'var(--insights-negative)' : 'var(--insights-positive)' }}>
-        <Icon aria-hidden="true" className="size-[14px]" strokeWidth={2} />
-        {negative ? 'Top negative drivers' : 'Top positive drivers'}
-      </h3>
+      <div className="flex items-center justify-between gap-[8px]">
+        <h3 className="flex items-center gap-[6px] text-[13px] font-bold" style={{ color: negative ? 'var(--insights-negative)' : 'var(--insights-positive)' }}>
+          <Icon aria-hidden="true" className="size-[14px]" strokeWidth={2} />
+          {negative ? 'Top negative drivers' : 'Top positive drivers'}
+        </h3>
+        <span
+          className="rounded-full px-[8px] py-[2px] text-[10.5px] font-bold"
+          style={{
+            background: negative ? 'var(--exec-neg-bg)' : 'var(--exec-pos-bg)',
+            color: negative ? 'var(--insights-negative)' : 'var(--insights-positive)',
+          }}
+        >
+          {negative ? 'Pulling down' : 'Lifting up'}
+        </span>
+      </div>
       <p className="-mt-[6px] text-[11px] leading-[1.4] text-[var(--text-muted)]">{caption}</p>
       {ordered.length ? (
         <ul className="flex flex-col gap-[14px]">

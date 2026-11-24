@@ -65,17 +65,17 @@ function FunctionLink({
     <Link
       to={functionHref}
       aria-label={`View ${cardFunction} function`}
-      className="group/btn inline-flex min-h-[34px] w-full items-center justify-center gap-[6px] rounded-[9px] border px-[10px] py-[5px] text-[12px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
+      className="group/btn inline-flex min-h-[28px] shrink-0 items-center justify-center gap-[4px] rounded-[9px] border px-[10px] py-[4px] text-[11.5px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
       style={{
         background: style.bg,
         color: style.color,
         borderColor: `color-mix(in srgb, ${style.color} 26%, transparent)`,
       }}
     >
-      View function
+      Open
       <ArrowRight
         aria-hidden="true"
-        className="size-[13px] transition-transform duration-200 group-hover/btn:translate-x-0.5"
+        className="size-[12px] transition-transform duration-200 group-hover/btn:translate-x-0.5"
       />
     </Link>
   );
@@ -165,9 +165,10 @@ function FunctionCard({
   return (
     <article
       aria-label={`${card.function} function`}
-      className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[16px] p-[14px]"
+      className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[18px] p-[15px]"
       style={{
-        backgroundImage: `radial-gradient(circle at 100% 0%, color-mix(in srgb, ${style.color} 10%, transparent) 0%, transparent 62%), var(--pms-glass-card-bg)`,
+        backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
+        borderColor: `color-mix(in srgb, ${tone.gauge} 20%, var(--pms-glass-card-border))`,
       }}
     >
       {/* Smooth Linear-Gradient Top Grade Accent Strip */}
@@ -300,9 +301,9 @@ function FunctionCard({
       {/* Zone 4: Fixed-Height 6-Month Sparkline Chart */}
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
 
-      {/* Zone 5: Uniform Bottom-Aligned Footer */}
+      {/* Zone 5: Uniform Bottom-Aligned Footer (Figma split: teams/status on left, Open → pill on right) */}
       {showTeamButtons || showTeamDump || (linkable && !onSelectFunction) ? (
-        <div className="mt-auto flex flex-col gap-[7px] border-t border-[var(--insights-row-border)] pt-[8px]">
+        <div className="mt-auto flex flex-col gap-[7px] border-t border-[var(--insights-row-border)] pt-[9px]">
           {showTeamButtons && onSelectTeam ? (
             <div className="flex flex-wrap gap-[5px]">
               {card.teams.map((team) => (
@@ -316,17 +317,22 @@ function FunctionCard({
                 </button>
               ))}
             </div>
-          ) : showTeamDump ? (
-            <p
-              className="truncate min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--text-secondary)]"
-              title={card.teams.join(' · ')}
-            >
-              {card.teams.join(' · ')}
-            </p>
-          ) : null}
-
-          {linkable && !onSelectFunction && (
-            <FunctionLink cardFunction={card.function} style={style} />
+          ) : (
+            <div className="flex items-center justify-between gap-[8px]">
+              {showTeamDump ? (
+                <p
+                  className="min-w-0 flex-1 truncate text-[11.5px] font-medium leading-[1.35] text-[var(--text-secondary)]"
+                  title={card.teams.join(' · ')}
+                >
+                  {card.teams.join(' · ')}
+                </p>
+              ) : (
+                <span className="min-w-0 flex-1" />
+              )}
+              {linkable && !onSelectFunction && (
+                <FunctionLink cardFunction={card.function} style={style} />
+              )}
+            </div>
           )}
         </div>
       ) : null}
@@ -377,20 +383,20 @@ export default function FunctionCards({
     noted.length === cards.length && new Set(noted.map((card) => card.basis_context?.message)).size === 1;
 
   const attentionCount = useMemo(
-    () => cards.filter((c) => c.score !== null && c.score < 85).length,
+    () => cards.filter((c) => c.score !== null && c.score < 90).length,
     [cards],
   );
   const healthyCount = useMemo(
-    () => cards.filter((c) => c.score !== null && c.score >= 85).length,
+    () => cards.filter((c) => c.score !== null && c.score >= 90).length,
     [cards],
   );
 
   const displayedCards = useMemo(() => {
     let list = [...cards];
     if (filterMode === 'attention') {
-      list = list.filter((c) => c.score !== null && c.score < 85);
+      list = list.filter((c) => c.score !== null && c.score < 90);
     } else if (filterMode === 'healthy') {
-      list = list.filter((c) => c.score !== null && c.score >= 85);
+      list = list.filter((c) => c.score !== null && c.score >= 90);
     }
 
     if (sortMode === 'lowest') {
@@ -404,29 +410,34 @@ export default function FunctionCards({
   }, [cards, filterMode, sortMode]);
 
   return (
-    <section aria-labelledby="exec-functions-title" className="pms-glass-well flex flex-col gap-[14px] rounded-[20px] p-[16px] sm:p-[20px]">
-      <div className="flex flex-wrap items-center justify-between gap-[8px]">
-        <div className="flex flex-wrap items-center gap-[8px]">
-          <h2 id="exec-functions-title" className="text-[17px] font-bold text-[var(--insights-heading)]">
-            Functions
-          </h2>
-          <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
-            {count ?? cards.length} functions
-          </span>
-          {range && <span className="text-[12px] text-[var(--text-muted)]">{coveredPeriodLabel(null, range)}</span>}
+    <section aria-labelledby="exec-functions-title" className="pms-glass-well flex flex-col gap-[16px] rounded-[22px] p-[18px] sm:p-[22px]">
+      <div className="flex flex-wrap items-start justify-between gap-[10px]">
+        <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-wrap items-center gap-[8px]">
+            <h2 id="exec-functions-title" className="text-[17px] font-bold tracking-[-0.015em] text-[var(--insights-heading)]">
+              Functions Overview
+            </h2>
+            <span className="rounded-full bg-[var(--exec-chip-bg)] px-[9px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
+              {count ?? cards.length} functions
+            </span>
+            {range && <span className="text-[12px] text-[var(--text-muted)]">{coveredPeriodLabel(null, range)}</span>}
+          </div>
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Sorted worst-first so functions needing support stand out immediately{linkable ? ' · Click any card to drill down' : ''}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {cards.length > 2 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              {/* Filter Pills */}
-              <div className="inline-flex items-center rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-0.5">
+              {/* Filter Pills (Figma 90% threshold pills) */}
+              <div className="pms-glass-stage inline-flex items-center rounded-full p-0.5">
                 <button
                   type="button"
                   onClick={() => setFilterMode('all')}
-                  className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                  className={`rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors ${
                     filterMode === 'all'
-                      ? 'bg-[var(--exec-tile-bg)] text-[var(--insights-heading)]'
+                      ? 'bg-[var(--insights-accent-soft)] text-[var(--insights-accent-text)]'
                       : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                   }`}
                 >
@@ -436,41 +447,41 @@ export default function FunctionCards({
                   <button
                     type="button"
                     onClick={() => setFilterMode('attention')}
-                    className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors ${
                       filterMode === 'attention'
-                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                        ? 'bg-rose-500/12 text-rose-700 dark:text-rose-300'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    Below 85% ({attentionCount})
+                    Below 90% ({attentionCount})
                   </button>
                 )}
                 {healthyCount > 0 && (
                   <button
                     type="button"
                     onClick={() => setFilterMode('healthy')}
-                    className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors ${
                       filterMode === 'healthy'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                     }`}
                   >
-                    On Track ({healthyCount})
+                    On Track ≥90% ({healthyCount})
                   </button>
                 )}
               </div>
 
               {/* Sort Pills */}
-              <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-1.5 py-0.5">
+              <div className="pms-glass-stage inline-flex items-center gap-1 rounded-full px-2 py-0.5">
                 <ArrowDownUp size={11} className="text-[var(--text-muted)]" aria-hidden="true" />
                 {(['lowest', 'highest', 'momentum', 'default'] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setSortMode(mode)}
-                    className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors ${
                       sortMode === mode
-                        ? 'bg-[var(--exec-tile-bg)] text-[var(--insights-heading)]'
+                        ? 'bg-[var(--bg-surface)] text-[var(--insights-heading)] shadow-2xs'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -489,24 +500,20 @@ export default function FunctionCards({
               <button
                 type="button"
                 onClick={() => setExpandedGrid((prev) => !prev)}
-                title={expandedGrid ? 'Switch to single-row view' : 'Expand to 3-column grid'}
-                className="inline-flex min-h-6 items-center gap-1 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--exec-tile-bg)] hover:text-[var(--insights-heading)]"
+                title={expandedGrid ? 'Switch to 4-column Figma grid' : 'Switch to 3-column wide grid'}
+                className="pms-glass-stage inline-flex min-h-7 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:text-[var(--insights-heading)]"
               >
                 {expandedGrid ? <Rows3 size={11} aria-hidden="true" /> : <LayoutGrid size={11} aria-hidden="true" />}
-                <span>{expandedGrid ? 'Single Row' : '3-Col Grid'}</span>
+                <span>{expandedGrid ? '4-Col Grid' : '3-Col Grid'}</span>
               </button>
             </div>
           )}
 
-          {featured ? (
-            <span className="text-[12px] text-[var(--text-muted)]">{note ?? 'Ranked by share of the gap'}</span>
+          {featured && note ? (
+            <span className="text-[12px] text-[var(--text-muted)]">{note}</span>
           ) : onSelectFunction ? (
             <span className="text-[12px] text-[var(--text-muted)]">
               Choose a function or a team to review it here
-            </span>
-          ) : linkable ? (
-            <span className="text-[12px] text-[var(--text-muted)]">
-              Click a function to open its Function Summary →
             </span>
           ) : null}
         </div>
@@ -518,7 +525,7 @@ export default function FunctionCards({
         className={
           expandedGrid
             ? 'grid grid-cols-1 gap-[14px] md:grid-cols-2 xl:grid-cols-3'
-            : 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,195px),1fr))] gap-[10px]'
+            : 'grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4'
         }
       >
         {displayedCards.map((card, index) => (
