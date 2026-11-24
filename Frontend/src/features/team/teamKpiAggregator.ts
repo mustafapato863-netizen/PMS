@@ -1,6 +1,6 @@
 import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord, KPIConfig, LocationKey } from '../../types';
-import { getKPIsForAgent, inboundCallCount, isHossamRecord } from '../../types';
+import { getKPIsForAgent, inboundCallCount, isHossamRecord, usesPublishedEmployeeScore } from '../../types';
 import { getWeightForLabel } from '../../utils/kpiScore';
 
 export interface AggregatedTeamKpi {
@@ -641,15 +641,15 @@ export function trendPointScore(input: {
 
 /**
  * Canonical team roll-up: pool KPI source totals first, then apply the KPI
- * achievement formulas and effective weights. Employee scores are never
- * averaged to produce the team overall.
+ * achievement formulas and effective weights. Published employee scorecards
+ * use the employee average supplied by the caller.
  */
 export function calculateAggregatedTeamPerformance(
   agents: AgentRecord[],
   config: TeamConfig | undefined,
   options: TeamKpiAggregationOptions = {},
 ): AggregatedTeamPerformance | null {
-  if (!config || agents.length === 0) return null;
+  if (!config || agents.length === 0 || agents.some(usesPublishedEmployeeScore)) return null;
 
   const isPreApprovalsTeam = config.team === 'Pre-Approvals IP'
     || config.team === 'Pre-Approvals IP Offshore'

@@ -1271,9 +1271,13 @@ function withInboundBookingRate(agent: AgentRecord, kpi: KPIConfig): KPIConfig {
   return { ...kpi, actual: rate, achievement, contribution };
 }
 
+export function usesPublishedEmployeeScore(agent: AgentRecord): boolean {
+  return agent.raw_data?.ScoringMethod === 'uae_published_employee_score';
+}
+
 export function usesStoredPeriodScore(agent: AgentRecord): boolean {
   const team = agent.identity?.team?.trim().toLowerCase();
-  return team === 'er dr' || team === 'radiologist' || team === 'qlty&case-mngt'
+  return usesPublishedEmployeeScore(agent) || team === 'er dr' || team === 'radiologist' || team === 'qlty&case-mngt'
     || (team === 'csr' && agent.raw_data?.ScoringMethod === 'csr_sharjah_october_2026');
 }
 
@@ -1314,6 +1318,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
       evaluationPinned: kpi.evaluation_pinned === true,
     }));
   }
+  if (usesPublishedEmployeeScore(agent)) return [];
 
   // Helper to parse AHT to minutes
   let ahtMinutes = 0;

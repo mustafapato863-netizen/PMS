@@ -10,7 +10,7 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
+import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, usesPublishedEmployeeScore, type AgentRecord } from '../../types';
 import { canonicalEgyptResubmissionTeam, dedupeEgyptResubmissionRecords, isEgyptResubmissionTeam } from '../team/countryTeamIdentity';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import {
@@ -129,7 +129,7 @@ function aboveZero(value: unknown): boolean {
  */
 export function hasRealActivity(agent: AgentRecord): boolean {
   if ((agent.identity?.name ?? '').trim().toLowerCase() === 'total') return false;
-  if (aboveZero(agent.evaluation?.score)) return true;
+  if (aboveZero(agent.evaluation?.score) || usesPublishedEmployeeScore(agent)) return true;
   if ((agent.kpi_values ?? []).some((kpi) => aboveZero(kpi?.contribution))) return true;
   const calls = agent.calls;
   if ([calls?.inbound, calls?.outbound, calls?.total_handled, calls?.abandoned].some(aboveZero)) return true;
@@ -156,7 +156,7 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       level: agent.performance_level || 'Employee',
       branches: SUMMARY_BRANCHES.filter((branch) => agentMatchesLocation(agent, branch.value as Parameters<typeof agentMatchesLocation>[1])).map((branch) => branch.value),
       period: periodOf(agent.year || fallbackYear, month),
-      score: normalizePerformanceScore(raw),
+      score: usesPublishedEmployeeScore(agent) ? raw : normalizePerformanceScore(raw),
       // Departmental lists show only KPIs that count in the score (stored weight above 0).
       kpis: (agent.kpi_values || []).filter((kpi) => kpiCountsInScore(kpi.weight_applied)),
       rawAgent: agent,
