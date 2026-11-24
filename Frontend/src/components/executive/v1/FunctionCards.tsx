@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import {
   ArrowDownUp,
   ArrowRight,
@@ -130,7 +130,7 @@ export function FunctionCohorts({
   );
 }
 
-function FunctionCard({
+const FunctionCard = memo(function FunctionCard({
   card,
   previous,
   range,
@@ -339,7 +339,7 @@ function FunctionCard({
       <span className="sr-only">{tone.label}</span>
     </article>
   );
-}
+});
 
 type FunctionSortMode = 'default' | 'lowest' | 'highest' | 'momentum';
 type FunctionFilterMode = 'all' | 'attention' | 'healthy';

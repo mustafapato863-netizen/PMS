@@ -449,7 +449,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
               {heroHeadline(summary)}
             </h2>
 
-            {takeaways.length > 0 ? (
+            {scope.view === 'corporate' && takeaways.length > 0 ? (
               <ul className="flex flex-col gap-[9px]">
                 {takeaways.map((item) => {
                   const Icon = item.kind === 'drag' ? AlertTriangle : item.kind === 'bright' ? TrendingUp : Sparkles;

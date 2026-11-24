@@ -1140,6 +1140,35 @@ function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?
   }));
 }
 
+/**
+ * Fast O(N) effective period key lookup without running full Executive Summary
+ * composition (avoids double-composing the entire dashboard in useExecutiveSummary).
+ */
+export function resolveEffectivePeriodKey(input: ComposeInput): string | null {
+  const { view, teamFunctions } = input;
+  const scopeFilters = { ...input.filters };
+  if (view === 'managerial' && input.team) scopeFilters.team = input.team;
+  if (view === 'function' && input.functionName) scopeFilters.teamFunction = input.functionName;
+  const monthly = applyFilters(input.records, { ...input, filters: scopeFilters }, teamFunctions);
+  const range = input.range ?? null;
+  const rangeEnd = range && range.months.length ? range.months[range.months.length - 1] : null;
+  if (range) {
+    if (!rangeEnd) return null;
+    const rangeKeys = new Set(range.months.map((m) => m.key));
+    return monthly.some((record) => rangeKeys.has(record.period.key)) ? rangeEnd.key : null;
+  }
+  let latestKey: string | null = null;
+  let hasRequested = false;
+  const requested = input.requestedPeriodKey ? periodFromKey(input.requestedPeriodKey) : null;
+  for (const record of monthly) {
+    const key = record.period.key;
+    if (requested && key === requested.key) hasRequested = true;
+    if (latestKey === null || key > latestKey) latestKey = key;
+  }
+  if (requested && hasRequested) return requested.key;
+  return latestKey;
+}
+
 export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const { view, teamFunctions } = input;
   const unavailable = new Set<ExecutiveSection>(['upload_meta']);

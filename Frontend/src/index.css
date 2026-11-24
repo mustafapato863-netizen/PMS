@@ -702,15 +702,17 @@ select option {
 .rf-page--insights {
   background: var(--pms-glass-page-bg);
   border-radius: 20px;
+  padding-bottom: 88px;
 }
 
 .pms-glass-surface {
   background: var(--pms-glass-card-bg);
   border: 1px solid var(--pms-glass-card-border);
   box-shadow: var(--pms-glass-card-shadow);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  contain: layout style;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .pms-glass-surface--interactive:hover {
@@ -722,8 +724,6 @@ select option {
   background: var(--pms-glass-stage-bg);
   border: 1px solid var(--pms-glass-stage-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .dark .pms-glass-stage {
@@ -734,8 +734,9 @@ select option {
   background: var(--pms-glass-well-bg);
   border: 1px solid var(--pms-glass-well-border);
   box-shadow: var(--pms-glass-card-shadow);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  contain: layout style;
 }
 
 /* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
