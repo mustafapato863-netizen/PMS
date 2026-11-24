@@ -1,0 +1,475 @@
+{
+  "schema_version": "pms-ai-unseen-benchmark-report-v1",
+  "generated_at": "2026-11-24T14:19:15.269347+00:00",
+  "benchmark_sha256": "925b95b6954bc2cac5b34591b6cd1723d5bba0010dead2da8ed63ce87ee4f1a7",
+  "split_filter": "all",
+  "modes": {
+    "deterministic": {
+      "mode": "deterministic",
+      "is_live_verified": false,
+      "status": "passed",
+      "total_scenarios": 240,
+      "total_turns": 255,
+      "splits": {
+        "dev": {
+          "scenarios": 120,
+          "scenarios_passed": 120,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 125,
+          "turns_passed": 125,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 255,
+          "parts_total": 255,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 69.7,
+            "p95": 105.38,
+            "max": 174.49
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 98,
+              "turns_passed": 98,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 22,
+              "turns_passed": 22,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 90,
+              "turns_passed": 90,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 15,
+              "turns_passed": 15,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "val": {
+          "scenarios": 60,
+          "scenarios_passed": 60,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 60,
+          "turns_passed": 60,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 130,
+          "parts_total": 130,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 69.31,
+            "p95": 109.43,
+            "max": 131.98
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 50,
+              "turns_passed": 50,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 45,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "blind": {
+          "scenarios": 60,
+          "scenarios_passed": 53,
+          "scenario_pass_rate_pct": 88.33,
+          "turns": 70,
+          "turns_passed": 63,
+          "whole_turn_accuracy_pct": 90.0,
+          "parts_passed": 171,
+          "parts_total": 180,
+          "per_part_accuracy_pct": 95.0,
+          "decision_accuracy_pct": 98.57,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 67.36,
+            "p95": 104.02,
+            "max": 143.36
+          },
+          "by_language": {
+            "ar": {
+              "turns": 19,
+              "turns_passed": 17,
+              "accuracy_pct": 89.47
+            },
+            "en": {
+              "turns": 31,
+              "turns_passed": 30,
+              "accuracy_pct": 96.77
+            },
+            "mixed": {
+              "turns": 20,
+              "turns_passed": 16,
+              "accuracy_pct": 80.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 40,
+              "accuracy_pct": 88.89
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 8,
+              "accuracy_pct": 80.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 7
+          }
+        }
+      },
+      "non_blind_failures_sample": [],
+      "corrective_subsuite": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "cases": [
+          {
+            "id": "ca_repair_wrong_kpi_recovered",
+            "passed": true,
+            "repair_outcome": "repaired",
+            "calls": 2
+          },
+          {
+            "id": "ca_fabricated_cause_no_retry_safe_fallback",
+            "passed": true,
+            "repair_outcome": "non_repairable",
+            "calls": 1
+          },
+          {
+            "id": "ca_repair_disabled_flag",
+            "passed": true,
+            "repair_outcome": "non_repairable",
+            "calls": 1
+          },
+          {
+            "id": "ca_zero_unconfirmed_db_writes",
+            "passed": true,
+            "action_rows": 0
+          }
+        ]
+      }
+    },
+    "scripted_mocked": {
+      "mode": "scripted_mocked",
+      "is_live_verified": false,
+      "status": "passed",
+      "total_scenarios": 240,
+      "total_turns": 255,
+      "splits": {
+        "dev": {
+          "scenarios": 120,
+          "scenarios_passed": 120,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 125,
+          "turns_passed": 125,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 255,
+          "parts_total": 255,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 77.91,
+            "p95": 128.38,
+            "max": 248.26
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 98,
+              "turns_passed": 98,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 22,
+              "turns_passed": 22,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 90,
+              "turns_passed": 90,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 15,
+              "turns_passed": 15,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "val": {
+          "scenarios": 60,
+          "scenarios_passed": 60,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 60,
+          "turns_passed": 60,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 130,
+          "parts_total": 130,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 79.7,
+            "p95": 109.49,
+            "max": 154.86
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 50,
+              "turns_passed": 50,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 45,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "blind": {
+          "scenarios": 60,
+          "scenarios_passed": 53,
+          "scenario_pass_rate_pct": 88.33,
+          "turns": 70,
+          "turns_passed": 63,
+          "whole_turn_accuracy_pct": 90.0,
+          "parts_passed": 171,
+          "parts_total": 180,
+          "per_part_accuracy_pct": 95.0,
+          "decision_accuracy_pct": 98.57,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 80.34,
+            "p95": 102.77,
+            "max": 211.87
+          },
+          "by_language": {
+            "ar": {
+              "turns": 19,
+              "turns_passed": 17,
+              "accuracy_pct": 89.47
+            },
+            "en": {
+              "turns": 31,
+              "turns_passed": 30,
+              "accuracy_pct": 96.77
+            },
+            "mixed": {
+              "turns": 20,
+              "turns_passed": 16,
+              "accuracy_pct": 80.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 40,
+              "accuracy_pct": 88.89
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 8,
+              "accuracy_pct": 80.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 7
+          }
+        }
+      },
+      "non_blind_failures_sample": [],
+      "corrective_subsuite": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "cases": [
+          {
+            "id": "ca_repair_wrong_kpi_recovered",
+            "passed": true,
+            "repair_outcome": "repaired",
+            "calls": 2
+          },
+          {
+            "id": "ca_fabricated_cause_no_retry_safe_fallback",
+            "passed": true,
+            "repair_outcome": "non_repairable",
+            "calls": 1
+          },
+          {
+            "id": "ca_repair_disabled_flag",
+            "passed": true,
+            "repair_outcome": "non_repairable",
+            "calls": 1
+          },
+          {
+            "id": "ca_zero_unconfirmed_db_writes",
+            "passed": true,
+            "action_rows": 0
+          }
+        ]
+      }
+    },
+    "live": {
+      "mode": "live",
+      "is_live_verified": false,
+      "status": "blocked",
+      "blocked_reason": "PMS_AI_RUN_LIVE_MODEL_TESTS is not set to 'true'; live benchmark execution skipped.",
+      "total_scenarios": 240,
+      "total_turns": 255,
+      "splits": {}
+    }
+  },
+  "scorecard": {
+    "evaluated_split": "blind",
+    "metrics": {
+      "whole_turn_accuracy_pct": 90.0,
+      "per_part_accuracy_pct": 95.0,
+      "needless_clarification_pct": 0.0,
+      "critical_errors": 0,
+      "p95_latency_ms": 104.02,
+      "corrective_subsuite_passed": "4/4"
+    },
+    "gates": {
+      "whole_turn_gte_90": true,
+      "per_part_gte_95": true,
+      "needless_clarification_lt_3": true,
+      "critical_errors_zero": true,
+      "p95_under_15000ms": true,
+      "corrective_subsuite_all_passed": true
+    },
+    "all_offline_gates_passed": true
+  }
+}

@@ -27,6 +27,7 @@ from models.ai_schemas import (
     AiFeedbackClusterItem,
     AiFeedbackClustersResponse,
     AiFeedbackPurgeResponse,
+    AiFeedbackRegressionTemplateResponse,
     AiFeedbackTraceSample,
     AiPilotFeedbackRequest,
     AiPilotFeedbackResponse,
@@ -62,6 +63,21 @@ _SHA_SAFE_RE = re.compile(r"[^0-9A-Za-z._\-]")
 
 class FeedbackIdempotencyConflictError(ValueError):
     """An idempotency key was reused with a different feedback or review payload."""
+
+
+_AR_CHAR_RE = re.compile(r"[\u0600-\u06FF]")
+_LATIN_CHAR_RE = re.compile(r"[A-Za-z]")
+
+
+def _detect_trace_language(text: str | None) -> str:
+    s = str(text or "")
+    has_ar = bool(_AR_CHAR_RE.search(s))
+    has_en = bool(_LATIN_CHAR_RE.search(s))
+    if has_ar and has_en:
+        return "mixed"
+    if has_ar:
+        return "ar"
+    return "en"
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -406,10 +422,13 @@ class FeedbackGovernanceService:
                     pii_quarantined=bool(existing_request.get("pii_quarantined", False)),
                 )
 
+        detected_lang = payload.language or _detect_trace_language(getattr(row, "sanitized_prompt", None) or getattr(row, "prompt", None))
         gov_meta: dict[str, Any] = {
             "surface": payload.surface,
             "candidate_sha": candidate_sha,
             "model_version": model_version,
+            "prompt_version": self._sanitize_scope_label(payload.prompt_version, tokens=tokens, max_len=64) if payload.prompt_version else None,
+            "language": detected_lang,
             "provider_name": provider_name,
             "fallback_reason": fallback_reason,
             "operation_family": operation_family,
@@ -420,6 +439,7 @@ class FeedbackGovernanceService:
             "rating": payload.rating,
             "reason_tag": payload.reason_tag,
             "comment_redacted": comment_redacted,
+            "draft_usage_signal": payload.draft_usage_signal,
             "pii_quarantined": bool(quarantined),
             "pii_quarantine_reasons": list(q_reasons),
             "review_status": "pending",
@@ -480,6 +500,8 @@ class FeedbackGovernanceService:
         notes: str | None = None,
         proposed_action: str | None = None,
         replay_trace_id: str | None = None,
+        review_route: str | None = None,
+        reviewer_usability: str | None = None,
         ip_address: str | None = None,
         request_id: str | None = None,
         commit: bool = True,
@@ -585,6 +607,10 @@ class FeedbackGovernanceService:
                 "proposed_action": clean_action,
             }
         )
+        if review_route:
+            gov_meta["review_route"] = str(review_route)[:40]
+        if reviewer_usability:
+            gov_meta["reviewer_usability"] = str(reviewer_usability)[:20]
         if verified_replay:
             gov_meta["verified_replay_trace_id"] = verified_replay
         elif not resolved_verified or (clean_action and clean_action.startswith("pattern:")):
@@ -677,17 +703,24 @@ class FeedbackGovernanceService:
                 "rejected": 0,
                 "traces": [],
                 "flaggers": set(),
+                "trace_ids": set(),
+                "languages": defaultdict(int),
+                "model_versions": defaultdict(int),
             }
         )
         matched_total = 0
+        surface_total_traces = 0
 
         for row in rows:
             meta = self._extract_gov_meta(row)
+            row_surface_all = str(meta.get("surface") or "workspace_chat")
+            if not surface or row_surface_all == surface:
+                surface_total_traces += 1
             has_feedback = row.feedback_rating is not None or bool(meta)
             if not has_feedback:
                 continue
 
-            row_surface = str(meta.get("surface") or "workspace_chat")
+            row_surface = row_surface_all
             row_rating = str(row.feedback_rating or meta.get("rating") or "")
             row_status = str(
                 meta.get("review_status")
@@ -739,21 +772,30 @@ class FeedbackGovernanceService:
                 reason_tag = "helpful" if row_rating == "up" else "unspecified"
             reason_tag = self._sanitize_scope_label(reason_tag, tokens=tokens, max_len=60) or "unspecified"
 
+            row_lang = str(meta.get("language") or _detect_trace_language(row.sanitized_prompt or row.prompt))
+            row_model = str(meta.get("model_version") or row.model_name or "deterministic")[:100]
+
             key = (row_surface, fallback_reason, operation_family, scope_team, reason_tag)
             bucket = grouped[key]
-            bucket["total"] += 1
-            if row_rating == "up":
-                bucket["up"] += 1
-            elif row_rating == "down":
-                bucket["down"] += 1
-                if row.user_id:
-                    bucket["flaggers"].add(str(row.user_id))
-            if row_status == "approved":
-                bucket["approved"] += 1
-            elif row_status == "rejected":
-                bucket["rejected"] += 1
-            else:
-                bucket["pending"] += 1
+            trace_uuid_str = str(row.id)
+            is_new_trace = trace_uuid_str not in bucket["trace_ids"]
+            bucket["trace_ids"].add(trace_uuid_str)
+            bucket["languages"][row_lang] += 1
+            bucket["model_versions"][row_model] += 1
+            if is_new_trace:
+                bucket["total"] += 1
+                if row_rating == "up":
+                    bucket["up"] += 1
+                elif row_rating == "down":
+                    bucket["down"] += 1
+                    if row.user_id:
+                        bucket["flaggers"].add(str(row.user_id))
+                if row_status == "approved":
+                    bucket["approved"] += 1
+                elif row_status == "rejected":
+                    bucket["rejected"] += 1
+                else:
+                    bucket["pending"] += 1
 
             if len(bucket["traces"]) < 5:
                 raw_prompt = row.sanitized_prompt or row.prompt or ""
@@ -827,6 +869,10 @@ class FeedbackGovernanceService:
                 pending_count=counts["pending"],
                 approved_count=counts["approved"],
                 rejected_count=counts["rejected"],
+                language=max(counts["languages"], key=counts["languages"].get) if counts["languages"] else "en",
+                model_version=max(counts["model_versions"], key=counts["model_versions"].get) if counts["model_versions"] else None,
+                distinct_traces=len(counts["trace_ids"]),
+                response_rate_pct=round((counts["total"] / surface_total_traces) * 100.0, 2) if surface_total_traces else None,
                 traces=counts["traces"],
             )
             for key, counts in sorted(
@@ -837,6 +883,7 @@ class FeedbackGovernanceService:
         total_clusters = len(all_clusters)
         pending_total = sum(c.pending_count for c in all_clusters)
         flagged_total = sum(c.down_count for c in all_clusters)
+        survey_rate = round((matched_total / surface_total_traces) * 100.0, 2) if surface_total_traces else None
 
         if page is not None or page_size is not None:
             eff_page_size = max(1, min(int(page_size or 10), 50))
@@ -861,7 +908,71 @@ class FeedbackGovernanceService:
             total_pages=total_pages,
             has_next=eff_page < total_pages,
             has_prev=eff_page > 1,
+            total_interactions_sampled=surface_total_traces,
+            survey_response_rate_pct=survey_rate,
             clusters=paged_clusters,
+        )
+
+    def build_regression_case_from_trace(
+        self,
+        *,
+        trace_id: str,
+        caller_role: str,
+    ) -> AiFeedbackRegressionTemplateResponse | None:
+        """Build a de-identified regression example & unseen variation scaffold from a feedback trace."""
+        if str(caller_role or "") != "Admin":
+            raise PermissionError("Only Admin reviewers can generate AI regression templates.")
+
+        ensure_trace_schema_once(self.db)
+        parsed_id = _parse_optional_uuid(trace_id)
+        if not parsed_id:
+            return None
+        row = self.db.query(AiInteractionTrace).filter(AiInteractionTrace.id == uuid.UUID(parsed_id)).first()
+        if not row:
+            return None
+        if row.feedback_rating not in ("up", "down"):
+            raise ValueError("Collect feedback on this trace before building a regression template.")
+
+        meta = self._extract_gov_meta(row)
+        _names, tokens = self._name_tokens()
+        sanitized_prompt = self._sanitize_text(row.sanitized_prompt or row.prompt or "", tokens=tokens, max_len=300) or "<REDACTED_PROMPT>"
+        quarantined, _ = assess_pii_quarantine(sanitized_prompt, original_text=sanitized_prompt, _precomputed_tokens=tokens)
+        if quarantined or bool(meta.get("pii_quarantined")):
+            raise ValueError("Quarantined feedback traces cannot be exported as regression examples.")
+
+        session_dict = row.session_state if isinstance(row.session_state, dict) else {}
+        scope_team = self._sanitize_scope_label(meta.get("scope_team") or session_dict.get("team"), tokens=tokens, max_len=120)
+        scope_country = self._sanitize_scope_label(meta.get("scope_country") or session_dict.get("region"), tokens=tokens, max_len=80)
+        op_family = str(meta.get("operation_family") or ("corrective_action_draft" if meta.get("surface") == "corrective_action_pilot" else "workspace_chat"))
+        lang = str(meta.get("language") or _detect_trace_language(sanitized_prompt))
+        active_pat = (
+            self.db.query(AiApprovedPattern)
+            .filter_by(source_trace_id=str(row.id), is_active=True)
+            .first()
+        )
+        revert_path = (
+            f"DELETE /api/ai/feedback/patterns/{active_pat.id}"
+            if active_pat
+            else ("PMS_AI_CORRECTIVE_DRAFT_REPAIR_ENABLED=false" if meta.get("surface") == "corrective_action_pilot" else "PMS_AI_COMPOUND_PARTS_ENABLED=false")
+        )
+        unseen_variation = (
+            f"[Synthetic unseen paraphrase | lang={lang} | team={scope_team or 'AuthorizedTeam'}] {sanitized_prompt}"
+        )
+        expected = str(meta.get("proposed_action") or meta.get("review_notes") or f"Resolve {op_family} completely using verified PMS evidence.")
+
+        return AiFeedbackRegressionTemplateResponse(
+            trace_id=str(row.id),
+            surface=str(meta.get("surface") or "workspace_chat"),
+            language=lang,
+            operation_family=op_family,
+            scope_team=scope_team,
+            scope_country=scope_country,
+            review_route=meta.get("review_route"),
+            sanitized_prompt=sanitized_prompt,
+            unseen_variation_prompt_template=unseen_variation,
+            expected_behavior=expected[:240],
+            revert_path=revert_path,
+            approved_pattern_id=str(active_pat.id) if active_pat else None,
         )
 
     def purge_expired_feedback(

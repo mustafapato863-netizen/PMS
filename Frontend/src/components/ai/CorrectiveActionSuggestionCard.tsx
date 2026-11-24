@@ -8,6 +8,8 @@ import {
   RefreshCw,
   ShieldAlert,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   X,
 } from 'lucide-react';
 import { apiFetch, ApiError } from '../../lib/apiClient';
@@ -18,6 +20,7 @@ import type {
   AiCorrectiveActionSuggestionPayload,
   AiCorrectiveActionSuggestionRequest,
   AiCorrectiveActionSuggestionResponse,
+  FeedbackCategoryType,
   ObservationStatus,
 } from '../../features/ai/types';
 
@@ -94,6 +97,13 @@ export default function CorrectiveActionSuggestionCard({
   const [data, setData] = useState<AiCorrectiveActionSuggestionPayload | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [draftInserted, setDraftInserted] = useState(false);
+  const [surveyRating, setSurveyRating] = useState<'up' | 'down' | null>(null);
+  const [showSurveyForm, setShowSurveyForm] = useState(false);
+  const [surveyTag, setSurveyTag] = useState<FeedbackCategoryType>('incorrect_kpi_interpretation');
+  const [surveyNote, setSurveyNote] = useState('');
+  const [surveySubmitting, setSurveySubmitting] = useState(false);
+  const [surveyError, setSurveyError] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const inFlightScopeRef = useRef<string | null>(null);
 
@@ -107,6 +117,11 @@ export default function CorrectiveActionSuggestionCard({
     setData(null);
     setErrorMessage(null);
     setErrorStatus(null);
+    setDraftInserted(false);
+    setSurveyRating(null);
+    setShowSurveyForm(false);
+    setSurveyNote('');
+    setSurveyError(false);
   }
 
   // Abort active in-flight request when context changes or on unmount
@@ -224,11 +239,52 @@ export default function CorrectiveActionSuggestionCard({
       .map((step, idx) => `${idx + 1}. ${step}`)
       .join('\n');
 
+    setDraftInserted(true);
     onApplyDraft({
       actionType: data.draft.action_type as ActionType,
       actionDescription: formattedSteps,
     });
   }, [data, onApplyDraft]);
+
+  const handleSubmitDraftSurvey = useCallback(
+    async (rating: 'up' | 'down', category?: FeedbackCategoryType, reason?: string) => {
+      if (!data?.draft || surveySubmitting) return;
+      setSurveySubmitting(true);
+      setSurveyError(false);
+      const focusKey = data.focus_kpi_key || linkedKpiKey;
+      try {
+        await apiFetch('/api/ai/corrective-action-suggestions/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            surface: 'corrective_action_pilot',
+            rating,
+            reason_tag:
+              rating === 'up'
+                ? 'good_quality_recommendation'
+                : category || surveyTag || 'poor_suggestion',
+            comment: reason?.trim() ? reason.trim().slice(0, 500) : undefined,
+            model_version: data.model_version ?? undefined,
+            provider_name: data.provider_used || 'deterministic',
+            fallback_reason: data.fallback_reason || 'none',
+            operation_family: 'corrective_action_draft',
+            scope_team: team,
+            scope_country: data.context?.country ?? undefined,
+            performance_level: data.context?.performance_level || 'Employee',
+            evidence_ids: focusKey ? [`kpi:${focusKey}`] : [],
+            draft_usage_signal: draftInserted ? 'inserted_not_saved' : undefined,
+          }),
+        });
+        setSurveyRating(rating);
+        setShowSurveyForm(false);
+      } catch {
+        setSurveyError(true);
+      } finally {
+        setSurveySubmitting(false);
+      }
+    },
+    [data, draftInserted, linkedKpiKey, surveySubmitting, surveyTag, team]
+  );
 
   return (
     <div
@@ -499,6 +555,121 @@ export default function CorrectiveActionSuggestionCard({
                 >
                   Enter Action Manually
                 </button>
+              )}
+            </div>
+
+            {/* Corrective Draft Usability Survey (separate from workspace chat ratings) */}
+            <div
+              data-testid="corrective-draft-survey"
+              className="mt-2 border-t border-[var(--border-light)] pt-2.5 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium text-[var(--text-muted)]">
+                  Was this corrective draft usable?
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {surveyRating === 'up' && (
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                      Usability rating saved
+                    </span>
+                  )}
+                  {surveyRating === 'down' && (
+                    <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      Draft issue flagged for review
+                    </span>
+                  )}
+                  {surveyError && (
+                    <span role="alert" className="text-xs font-semibold text-rose-600">
+                      Could not save rating. Try again.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="draft-survey-up-btn"
+                    disabled={surveySubmitting}
+                    onClick={() => void handleSubmitDraftSurvey('up', 'good_quality_recommendation')}
+                    className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      surveyRating === 'up'
+                        ? 'bg-emerald-500/15 font-semibold text-emerald-700 dark:text-emerald-300'
+                        : 'text-[var(--text-secondary)] hover:bg-emerald-500/10 hover:text-emerald-700'
+                    }`}
+                  >
+                    <ThumbsUp size={12} />
+                    <span>Usable</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="draft-survey-down-btn"
+                    disabled={surveySubmitting}
+                    aria-expanded={showSurveyForm}
+                    onClick={() => setShowSurveyForm((prev) => !prev)}
+                    className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      surveyRating === 'down' || showSurveyForm
+                        ? 'bg-rose-500/15 font-semibold text-rose-700 dark:text-rose-300'
+                        : 'text-[var(--text-secondary)] hover:bg-rose-500/10 hover:text-rose-700'
+                    }`}
+                  >
+                    <ThumbsDown size={12} />
+                    <span>Needs work</span>
+                  </button>
+                </div>
+              </div>
+
+              {showSurveyForm && (
+                <div
+                  data-testid="draft-survey-flag-panel"
+                  className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-2.5 space-y-2"
+                >
+                  <p className="text-xs font-bold text-[var(--text-primary)]">
+                    Select what missed the mark on this draft:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { key: 'incorrect_kpi_interpretation', label: 'Wrong focus KPI' },
+                        { key: 'unsupported_recommendation', label: 'Unsupported cause' },
+                        { key: 'irrelevant_action', label: 'Impractical action' },
+                        { key: 'missing_context', label: 'Missing context' },
+                      ] as const
+                    ).map((tag) => {
+                      const selected = surveyTag === tag.key;
+                      return (
+                        <button
+                          key={tag.key}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setSurveyTag(tag.key)}
+                          className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                            selected
+                              ? 'border-rose-500 bg-rose-600 text-white'
+                              : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-rose-400'
+                          }`}
+                        >
+                          {tag.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={surveyNote}
+                      onChange={(e) => setSurveyNote(e.target.value)}
+                      maxLength={120}
+                      aria-label="Draft usability note"
+                      placeholder="Optional note (avoid names/IDs)"
+                      className="min-w-0 flex-1 rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-rose-400 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={surveySubmitting}
+                      onClick={() => void handleSubmitDraftSurvey('down', surveyTag, surveyNote)}
+                      className="cursor-pointer rounded-full bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                    >
+                      {surveySubmitting ? 'Sending…' : 'Send survey'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

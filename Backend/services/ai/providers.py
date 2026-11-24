@@ -12,6 +12,11 @@ from models.ai_schemas import StructuredQueryPlan
 from services.ai.config import get_ai_runtime_config
 from services.ai.domain_policies import ParsedPromptSignals
 from services.ai.trace_logger import sanitize_prompt_for_router_training
+from services.ai.compound_parts_planner import (
+    compound_parts_enabled,
+    plan_compound_parts,
+    render_compound_parts_answer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -706,6 +711,252 @@ class DeterministicLocalProviderAdapter:
                 if missing_months
                 else ""
             )
+            def _human_kpi_name(mid: str) -> str:
+                leaf = mid.rsplit(":", 1)[-1].casefold()
+                labels = {
+                    "waitingtime": "Waiting Time",
+                    "bookings_count": "Bookings Count",
+                    "attended_count": "Attended Count",
+                    "handled_calls_count": "Handled Calls",
+                    "abandoned_calls_count": "Abandoned Calls",
+                    "booking_rate": "Booking Rate",
+                    "attendance_rate": "Attendance Rate",
+                    "attendance_compliance": "Attendance Compliance",
+                    "team_sla": "Team SLA",
+                    "abandon_rate": "Abandon Rate",
+                    "reachability": "Reachability",
+                    "aht": "AHT",
+                    "quality_errors": "Quality Errors",
+                    "quality_score": "Quality Score",
+                    "ajm_pharmacy_man_iv_cost_saving": "IV Cost Saving",
+                    "leakage": "Leakage",
+                    "tendercompliance": "Tender Compliance",
+                    "atv": "Average Transaction Value (ATV)",
+                    "mb_cpl": "CPL",
+                    "mb_leads": "Leads",
+                    "gd_rework": "Rework",
+                    "sms_response_time": "Response Time",
+                    "rejection": "Controllable Rejection Rate",
+                    "policyrejection": "Policy Rejection Rate",
+                }
+                return labels.get(leaf, leaf.replace("_", " ").title())
+
+            def _match_snap_for_metric(mid: str, snaps: list[dict[str, Any]]) -> dict[str, Any] | None:
+                leaf = mid.rsplit(":", 1)[-1].casefold().replace("_", "")
+                alias_map = {
+                    "waitingtime": "waitingtime",
+                    "bookingscount": "bookings",
+                    "attendedcount": "attended",
+                    "handledcallscount": "handled",
+                    "abandonedcallscount": "abandoned",
+                    "bookingrate": "bookingrate",
+                    "attendancerate": "attendancerate",
+                    "abandonrate": "abandonrate",
+                    "reachability": "reachability",
+                    "qualityerrors": "qualityerrors",
+                    "qualityscore": "qualityscore",
+                    "ajmpharmacymanivcostsaving": "ivcostsaving",
+                    "mbcpl": "cpl",
+                    "mbleads": "leads",
+                    "gdrework": "rework",
+                    "smsresponsetime": "responsetime",
+                    "rejection": "rejection",
+                    "policyrejection": "policyrejection",
+                }
+                probe = alias_map.get(leaf, leaf)
+                for s_item in snaps:
+                    s_key = re.sub(r"[^a-z0-9]", "", str(s_item.get("kpi_key") or "").casefold())
+                    s_lbl = re.sub(r"[^a-z0-9]", "", str(s_item.get("kpi_label") or "").casefold())
+                    if probe == s_key or probe == s_lbl or probe in s_lbl or probe in s_key:
+                        return {
+                            "display_name": s_item.get("kpi_label") or s_item.get("kpi_key"),
+                            "actual": s_item.get("numeric_value"),
+                            "target": s_item.get("target_numeric"),
+                            "unit": s_item.get("unit") or "",
+                            "direction": s_item.get("direction") or "higher_better",
+                        }
+                return None
+
+            from models.report_schemas import MONTHS as _M_MAP
+            _explicit_sp_periods: list[str] = []
+            for _rlbl in (sp.get("requested_period_labels") or []):
+                _parts_p = str(_rlbl or "").strip().split()
+                if len(_parts_p) == 2 and _parts_p[0] in _M_MAP and _parts_p[1].isdigit():
+                    _pk = f"{int(_parts_p[1]):04d}-{_M_MAP[_parts_p[0]]:02d}"
+                    if _pk not in _explicit_sp_periods:
+                        _explicit_sp_periods.append(_pk)
+
+            c_plan = (
+                plan_compound_parts(
+                    prompt or "",
+                    team=e_team,
+                    explicit_periods=_explicit_sp_periods or None,
+                    prior_metric_id=signals.detected_kpi,
+                )
+                if compound_parts_enabled()
+                else None
+            )
+            all_hist_sp = list(sp.get("all_history") or [])
+            covered_all_periods = {str(pt.get("period") or "").strip().casefold() for pt in all_hist_sp}
+            import calendar as _cal_p
+            req_lbls_p = [
+                str(lbl).strip()
+                for lbl in (
+                    sp.get("requested_period_labels")
+                    or (
+                        [
+                            f"{_cal_p.month_name[int(ep[5:7])]} {int(ep[:4])}"
+                            for ep in (c_plan.explicit_periods or [])
+                            if re.match(r"^\d{4}-\d{2}$", ep)
+                        ]
+                        if c_plan
+                        else []
+                    )
+                )
+                if str(lbl).strip()
+            ]
+            has_missing_req_period = bool(
+                covered_all_periods
+                and any(lbl.casefold() not in covered_all_periods for lbl in req_lbls_p)
+            )
+            all_snaps_pre = list(sp.get("all_kpi_snapshots") or [])
+            if sp.get("ranking_metric_actual") is not None and not any(
+                str(s.get("kpi_label") or "").casefold() == str(rank_metric_lbl or "").casefold()
+                for s in all_snaps_pre
+            ):
+                all_snaps_pre.insert(0, {
+                    "kpi_key": rank_metric_lbl,
+                    "kpi_label": rank_metric_lbl,
+                    "numeric_value": sp.get("ranking_metric_actual"),
+                    "target_numeric": sp.get("ranking_metric_target"),
+                    "unit": sp.get("ranking_metric_unit") or "",
+                    "direction": sp.get("ranking_metric_direction") or "higher_better",
+                })
+            missing_req_kpis: list[str] = []
+            if c_plan and all_snaps_pre:
+                for rm in (c_plan.requested_metrics or []):
+                    if rm == "overall_score":
+                        continue
+                    if _match_snap_for_metric(rm, all_snaps_pre) is None:
+                        hk = _human_kpi_name(rm)
+                        if hk not in missing_req_kpis:
+                            missing_req_kpis.append(hk)
+
+            compound_override_needed = bool(
+                compound_parts_enabled()
+                and c_plan is not None
+                and (sp.get("ranking_metric_actual") is not None or has_period_score or bool(all_snaps_pre))
+                and (
+                    c_plan.asks_target_gap
+                    or c_plan.asks_unsupported_action
+                    or c_plan.asks_causal_hypothesis
+                    or c_plan.asks_corrective_plan
+                    or len([m for m in c_plan.requested_metrics if m != "overall_score"]) >= 2
+                    or (len([m for m in c_plan.requested_metrics if m != "overall_score"]) >= 1 and (c_plan.asks_overall_score or asks_role_or_pos))
+                    or bool(missing_req_kpis and has_period_score)
+                    or (c_plan.asks_period_comparison and has_missing_req_period)
+                )
+            )
+            if compound_override_needed and sp.get("single_person") is False and r_dir not in ("best", "worst"):
+                compound_override_needed = False
+
+            def _render_employee_compound() -> tuple[str, list[str]]:
+                assert c_plan is not None
+                requested_specific = [m for m in (c_plan.requested_metrics or []) if m != "overall_score"]
+                matched_dicts: list[dict[str, Any]] = []
+                seen_matched_lbls: set[str] = set()
+                if sp.get("ranking_metric_actual") is not None:
+                    prim_dict = {
+                        "display_name": rank_metric_lbl,
+                        "actual": sp.get("ranking_metric_actual"),
+                        "target": sp.get("ranking_metric_target"),
+                        "unit": sp.get("ranking_metric_unit") or "",
+                        "direction": sp.get("ranking_metric_direction") or "higher_better",
+                    }
+                    matched_dicts.append(prim_dict)
+                    seen_matched_lbls.add(str(prim_dict["display_name"] or "").casefold())
+                for r_mid in requested_specific:
+                    m_snap = _match_snap_for_metric(r_mid, all_snaps_pre)
+                    if m_snap and str(m_snap.get("display_name") or "").casefold() not in seen_matched_lbls:
+                        matched_dicts.append(m_snap)
+                        seen_matched_lbls.add(str(m_snap.get("display_name") or "").casefold())
+
+                kpi_ev_dict = matched_dicts[0] if matched_dicts else None
+                extra_kpi_evs = matched_dicts[1:] if len(matched_dicts) > 1 else None
+
+                kpi_hist_sp = list(sp.get("kpi_history") or [])
+                if not kpi_hist_sp and kpi_ev_dict is None:
+                    kpi_hist_sp = [
+                        {"period": pt.get("period"), "value": pt.get("score")}
+                        for pt in all_hist_sp
+                        if pt.get("score") is not None
+                    ]
+                prev_requested_lbl = next(
+                    (lbl for lbl in req_lbls_p if lbl.casefold() != str(period).casefold()),
+                    None,
+                )
+                prev_ev_dict = None
+                if prev_requested_lbl and kpi_hist_sp:
+                    matched_prev_pt = next(
+                        (pt for pt in kpi_hist_sp if str(pt.get("period") or "").strip().casefold() == prev_requested_lbl.casefold()),
+                        None,
+                    )
+                    if matched_prev_pt and matched_prev_pt.get("value") is not None:
+                        prev_ev_dict = {"period": matched_prev_pt.get("period"), "actual": matched_prev_pt.get("value")}
+                if prev_ev_dict is None and len(kpi_hist_sp) >= 2:
+                    prev_pt = kpi_hist_sp[-2]
+                    prev_ev_dict = {
+                        "period": prev_pt.get("period"),
+                        "actual": prev_pt.get("value"),
+                    }
+                elif prev_ev_dict is None and has_period_score and kpi_ev_dict is None and chg is not None:
+                    prev_ev_dict = {
+                        "period": prev_lbl,
+                        "actual": round(sc - float(chg), 2),
+                    }
+
+                prev_ov_dict = None
+                if prev_requested_lbl and all_hist_sp:
+                    ov_pt = next(
+                        (pt for pt in all_hist_sp if str(pt.get("period") or "").strip().casefold() == prev_requested_lbl.casefold()),
+                        None,
+                    )
+                    if ov_pt and ov_pt.get("score") is not None:
+                        prev_ov_dict = {"period": ov_pt.get("period"), "actual": ov_pt.get("score")}
+                elif len(all_hist_sp) >= 2:
+                    ov_pt = all_hist_sp[-2]
+                    if ov_pt.get("score") is not None:
+                        prev_ov_dict = {"period": ov_pt.get("period"), "actual": ov_pt.get("score")}
+
+                missing_p: list[str] = [
+                    str(m) for m in (sp.get("missing_months") or [])
+                    if str(m).split()[0].casefold() in (prompt or "").casefold()
+                ]
+                if kpi_ev_dict is not None and c_plan.asks_period_comparison and not missing_req_kpis:
+                    for m in (sp.get("kpi_missing_months") or []):
+                        if str(m).split()[0].casefold() in (prompt or "").casefold() and str(m) not in missing_p:
+                            missing_p.append(str(m))
+                for lbl in req_lbls_p:
+                    if covered_all_periods and lbl.casefold() not in covered_all_periods and lbl not in missing_p:
+                        missing_p.append(lbl)
+                _ov_snap = _match_snap_for_metric("overall_score", all_snaps_pre)
+                _ov_tgt_val = float(_ov_snap["target"]) if (_ov_snap and _ov_snap.get("target") is not None) else 100.0
+                c_head_out, c_bul_out, _ = render_compound_parts_answer(
+                    plan=c_plan,
+                    subject_name=e_name,
+                    team_name=e_team,
+                    period_label=period,
+                    kpi_evidence=kpi_ev_dict,
+                    overall_score_val=sc if has_period_score else None,
+                    previous_kpi_evidence=prev_ev_dict,
+                    missing_periods=missing_p or None,
+                    extra_kpi_evidences=extra_kpi_evs,
+                    previous_overall_score=prev_ov_dict,
+                    missing_kpis=missing_req_kpis or None,
+                    overall_score_target=_ov_tgt_val,
+                )
+                return c_head_out, c_bul_out
+
             if (signals.asks_best_month_history or signals.asks_worst_month_history) and sp.get("all_history"):
                 is_worst_q = bool(signals.asks_worst_month_history)
                 target_label = "worst" if is_worst_q else "best"
@@ -814,6 +1065,11 @@ class DeterministicLocalProviderAdapter:
                         headline = f"Team benchmark for {e_team} in {period}: {sc_disp} (Grade {gr}){chg_txt}{six_txt}."
                     else:
                         headline = f"{e_team} scored {sc_disp} (Grade {gr}) in {period}{chg_txt}{six_txt}."
+                if compound_override_needed:
+                    c_headline, c_bullets = _render_employee_compound()
+                    if c_headline:
+                        headline = c_headline
+                        bullets.extend(b for b in c_bullets if b not in bullets)
             elif not has_period_score:
                 searched_win = str(sp.get("searched_window") or "")
                 avail_pts = list(sp.get("all_history") or [])
@@ -869,6 +1125,11 @@ class DeterministicLocalProviderAdapter:
                         f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
                         f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
+                if compound_override_needed:
+                    c_headline, c_bullets = _render_employee_compound()
+                    if c_headline:
+                        headline = f"{headline} {c_headline}"
+                        bullets.extend(b for b in c_bullets if b not in bullets)
             elif not signals.detected_employee_query:
                 if variant_idx == 1:
                     headline = (
@@ -883,6 +1144,18 @@ class DeterministicLocalProviderAdapter:
                         f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
                         f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
+                if compound_override_needed:
+                    c_headline, c_bullets = _render_employee_compound()
+                    if c_headline:
+                        headline = f"{headline} {c_headline}"
+                        bullets.extend(b for b in c_bullets if b not in bullets)
+            elif compound_override_needed:
+                c_headline, c_bullets = _render_employee_compound()
+                if c_headline:
+                    headline = c_headline
+                    bullets.extend(b for b in c_bullets if b not in bullets)
+                else:
+                    headline = f"{e_name} ({e_id}{pos_txt}) scored {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) in {period}{chg_txt}{six_txt}."
             elif asks_role_or_pos and e_pos and not signals.asks_trend and not signals.asks_worst_agent and not signals.asks_best_agent:
                 headline = (
                     f"{e_name} ({e_id}) holds the position of {e_pos} in {e_team} "
@@ -971,10 +1244,11 @@ class DeterministicLocalProviderAdapter:
                         last_p = avail_pts[-1]
                         net_pp = round(float(last_p["score"]) - float(first_p["score"]), 1)
                         net_str = "flat, 0.0 pp" if abs(net_pp) < 0.05 else f"{net_pp:+.1f} pp net"
+                        step_str = f", {chg:+.1f} pp vs {prev_lbl}" if chg is not None and len(avail_pts) >= 3 else ""
                         headline = (
                             f"Across {first_p['period']} to {last_p['period']} ({len(avail_pts)} months), "
                             f"{e_name} ({e_id}{pos_txt}) moved from {float(first_p['score']):.1f}% to "
-                            f"{float(last_p['score']):.1f}% Overall PMS Score ({net_str}; "
+                            f"{float(last_p['score']):.1f}% Overall PMS Score ({net_str}{step_str}; "
                             f"{period} Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}).{missing_headline_note}"
                         )
                         bullets.append(

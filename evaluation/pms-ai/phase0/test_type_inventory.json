@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 68,
-  "case_count": 886,
+  "file_count": 71,
+  "case_count": 900,
   "files_by_label": {
-    "synthetic": 18,
-    "mocked": 47,
+    "synthetic": 19,
+    "mocked": 49,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -90,6 +90,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_compound_parts.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 6,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_conversation_claim_ledger_paired.py",
       "kind": "test",
       "labels": [
@@ -129,6 +139,16 @@
       ],
       "cases": 19,
       "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_corrective_action_repair.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 5,
+      "evidence_status": "partial",
       "note": ""
     },
     {
@@ -188,6 +208,16 @@
         "mocked"
       ],
       "cases": 8,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_feedback_regression_loop.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
       "evidence_status": "partial",
       "note": ""
     },
@@ -649,7 +679,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 22,
+      "cases": 23,
       "evidence_status": "partial",
       "note": ""
     },

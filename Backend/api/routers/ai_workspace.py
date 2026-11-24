@@ -43,6 +43,7 @@ from models.ai_schemas import (
     AiFeedbackClustersResponse,
     AiFeedbackPurgeRequest,
     AiFeedbackPurgeResponse,
+    AiFeedbackRegressionTemplateResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
     AiPilotFeedbackRequest,
@@ -712,6 +713,8 @@ def post_ai_trace_review(
             notes=body.notes,
             proposed_action=body.proposed_action,
             replay_trace_id=body.replay_trace_id,
+            review_route=body.review_route,
+            reviewer_usability=body.reviewer_usability,
             ip_address=client_host,
             request_id=req_id,
         )
@@ -1051,6 +1054,36 @@ def export_ai_feedback_bundle(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     release_read_transaction(db)
     return bundle
+
+
+@admin_governance_router.get(
+    "/feedback/traces/{trace_id}/regression-template",
+    response_model=AiFeedbackRegressionTemplateResponse,
+)
+def get_feedback_regression_template(
+    trace_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiFeedbackRegressionTemplateResponse:
+    scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
+    try:
+        tmpl = FeedbackGovernanceService(db).build_regression_case_from_trace(
+            trace_id=trace_id,
+            caller_role=caller_role,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if tmpl is None:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
+    release_read_transaction(db)
+    return tmpl
 
 
 @admin_governance_router.get("/traces/export", response_model=AiDistillationExportResponse)

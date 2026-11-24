@@ -285,10 +285,14 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         signals.asks_decisions_or_what_if = True
 
     # Detect Best / Worst / Trend / Single-Person intent
-    if any(
-        re.search(rf"\b{w}\b", lower)
-        for w in ("better", "best", "top", "highest", "leader", "led", "leading", "star", "strongest", "number 1")
-    ) or "#1" in lower:
+    if (
+        any(
+            re.search(rf"\b{w}\b", lower)
+            for w in ("better", "best", "top", "highest", "leader", "led", "leading", "star", "strongest", "number 1")
+        )
+        or "#1" in lower
+        or any(tok in lower for tok in ("أعلى", "اعلى", "أفضل", "افضل", "أحسن", "احسن"))
+    ):
         # Exclude "top negative contributors" from being treated as "best agent"
         if "negative" not in lower and "below target" not in lower and "loss" not in lower:
             signals.asks_best_agent = True
@@ -296,7 +300,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     if any(
         re.search(rf"\b{w}\b", lower)
         for w in ("worst", "lowest", "weakest", "bottom", "lagging", "poorest")
-    ):
+    ) or any(tok in lower for tok in ("أقل", "اقل", "أسوأ", "اسوا", "أضعف", "اضعف")):
         signals.asks_worst_agent = True
 
     if any(
@@ -428,6 +432,12 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             "status", "result", "results", "department", "departments", "dep", "deps", "dept", "depts",
             "perormance", "preformance", "perfromance", "peformance", "performence",
             "pharmacy", "marketing", "coding", "submission", "resubmission", "rcm", "finance", "sales", "nursing", "pmo", "crm", "csr", "media", "buyer", "waiting", "time", "cpl",
+            "human", "resources", "administration", "offshore", "management", "quality", "reporting", "monthly", "quarterly", "weekly", "daily",
+            "compare", "comparing", "comparison", "versus", "vs", "between", "calculate", "explain", "describe", "summarize",
+            "share", "send", "email", "mail", "notify", "draft", "propose", "suggest", "recommend", "create", "make",
+            "analyze", "analyse", "examine", "inspect", "evaluate", "assess", "identify", "determine", "compute", "count",
+            "average", "detail", "details", "breakdown", "also", "then", "both", "either", "actual", "variance", "distance",
+            "difference", "change", "delta", "movement", "kpi", "kpis", "metric", "metrics",
         }
         import difflib
         person_search_text = re.sub(
@@ -791,7 +801,7 @@ def build_call_center_starter_prompts(session_state: SessionFilterContext) -> li
 
 
 _GREETING_PROMPT_RE = re.compile(
-    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening|how\s+(?:are\s+you|r\s+u)(?:\s+doing)?)(?:\s+there)?[\s!.,?]*$",
+    r"^\s*(?:hi|hello|hey|good morning|good afternoon|good evening|how\s+(?:are\s+you|r\s+u)(?:\s+doing)?)(?:\s+(?:there|pms\s+ai))?[\s!.,?]*$",
     re.I,
 )
 _THANKS_PROMPT_RE = re.compile(
@@ -822,7 +832,7 @@ _CAPABILITIES_HELP_PATTERNS: tuple[re.Pattern[str], ...] = (
         re.I,
     ),
     re.compile(
-        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:questions|things|topics)\s+|what\s+all\s+|what\s+)can\s+i\s+ask(?:\s+you)?(?:\s+(?:about|for|here|on)\b.*)?[\s?!.]*$",
+        r"^\s*(?:hi[,!]?\s*)?(?:what\s+(?:questions|things|topics|capabilities)\s+|what\s+all\s+|what\s+)(?:can\s+i\s+ask|(?:questions\s+can|capabilities\s+do)\s+you\s+(?:answer|support))(?:\s+(?:you|about|for|here|in|on)\b.*)?[\s?!.]*$",
         re.I,
     ),
     re.compile(
@@ -1014,10 +1024,16 @@ _PMS_BRANCH_OR_PERIOD_RE = re.compile(
 )
 
 _ARABIC_PMS_KEYWORDS: tuple[str, ...] = (
-    "أداء", "اداء", "نتيجة", "مؤشر", "مؤشرات", "تقييم", "حضور", "الحضور", "حجز", "حجوزات",
-    "جودة", "انباوند", "إنباوند", "اوتباوند", "أوتباوند", "ماركتنج", "التسويق", "دبي",
-    "الشارقة", "عجمان", "موظف", "الموظف", "كول سنتر", "ايراد", "إيراد",
-    "خطة", "ملخص", "تارجت", "واقع", "السبب",
+    "أداء", "اداء", "الأداء", "الاداء", "نتيجة", "مؤشر", "مؤشرات", "تقييم", "التقييم",
+    "حضور", "الحضور", "حجز", "حجوزات", "الحجوزات",
+    "جودة", "الجودة", "انباوند", "إنباوند", "اوتباوند", "أوتباوند", "ماركتنج", "التسويق", "دبي",
+    "الشارقة", "الشارقه", "عجمان", "موظف", "الموظف", "كول سنتر", "ايراد", "إيراد",
+    "خطة", "ملخص", "تارجت", "التارجت", "هدف", "الهدف", "واقع", "السبب", "سبب", "ليه", "لماذا",
+    "انتظار", "الانتظار", "وقت الانتظار", "سكور", "السكور", "كودينج", "كودنج", "الترميز",
+    "الصيدلية", "الصيدليه", "بكام", "بكم", "أعلى", "اعلى", "أقل", "اقل", "مقارنة", "قارن",
+    "نعمل", "تصحيح", "تحسين", "ايميل", "إيميل", "مشرف", "مصر", "الإمارات", "الامارات",
+    "سبتمبر", "أغسطس", "اغسطس", "أكتوبر", "اكتوبر", "يناير", "فبراير", "مارس", "أبريل", "ابريل",
+    "مايو", "يونيو", "يوليو", "نوفمبر", "ديسمبر",
 )
 
 
@@ -1096,7 +1112,7 @@ def is_bare_scope_or_period_refinement(prompt: str) -> bool:
     text = (prompt or "").strip()
     if not text:
         return False
-    tokens = re.findall(r"[A-Za-z0-9]+", text.casefold())
+    tokens = re.findall(r"[A-Za-z0-9\u0600-\u06FF]+", text.casefold())
     if not tokens or len(tokens) > 4:
         return False
     has_scope_or_period = any(_PMS_BRANCH_OR_PERIOD_RE.fullmatch(tok) for tok in tokens)
@@ -1171,8 +1187,11 @@ def has_pms_performance_signal(prompt: str) -> bool:
         re.I,
     ):
         return True
-    if is_arabic_text(text) and any(kw in text for kw in _ARABIC_PMS_KEYWORDS):
-        return True
+    if is_arabic_text(text):
+        from services.ai.compound_parts_planner import normalize_bilingual_text
+        norm_ar = normalize_bilingual_text(text)
+        if any(kw in text or normalize_bilingual_text(kw) in norm_ar for kw in _ARABIC_PMS_KEYWORDS):
+            return True
     return False
 
 

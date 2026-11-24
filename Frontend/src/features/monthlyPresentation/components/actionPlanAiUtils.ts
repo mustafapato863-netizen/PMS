@@ -51,12 +51,15 @@ export interface AiCorrectiveActionDraftPayload {
 }
 
 export interface AiCorrectiveActionSuggestionPayload {
+  trace_id?: string | null;
   outcome: 'suggested' | 'insufficient_evidence' | 'model_unavailable' | 'draft_rejected';
   provider_used: 'cloudflare' | 'nvidia' | 'gemini' | 'none';
   fallback_used?: boolean;
   fallback_reason?: string | null;
   validation_errors?: string[];
   repair_attempted?: boolean;
+  repair_outcome?: 'not_needed' | 'repaired' | 'rejected' | 'time_exhausted' | 'non_repairable' | null;
+  repair_latency_ms?: number | null;
   context?: AiCorrectiveActionSuggestionContext;
   focus_kpi_key?: string | null;
   cohort_in_scope_count?: number | null;

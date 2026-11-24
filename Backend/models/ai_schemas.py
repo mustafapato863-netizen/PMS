@@ -343,6 +343,8 @@ FeedbackCategoryType = Literal[
 FeedbackSurfaceType = Literal["workspace_chat", "corrective_action_pilot"]
 FeedbackReviewDecisionType = Literal["approved", "rejected"]
 FeedbackReviewStatusType = Literal["pending", "approved", "rejected"]
+FeedbackReviewRouteType = Literal["data", "routing", "rendering", "draft_generation", "wording"]
+DraftUsageSignalType = Literal["saved_unedited", "saved_edited", "inserted_not_saved", "dismissed"]
 
 
 class AiPageHelpSection(BaseModel):
@@ -564,6 +566,10 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     fallback_reason: str | None = None
     validation_errors: list[str] = Field(default_factory=list)
     repair_attempted: bool = False
+    repair_outcome: Literal[
+        "not_needed", "repaired", "rejected", "time_exhausted", "non_repairable"
+    ] | None = None
+    repair_latency_ms: float | None = None
     context: AiCorrectiveActionSuggestionContext
     focus_kpi_key: str | None = None
     cohort_in_scope_count: int | None = None
@@ -1116,6 +1122,8 @@ class AiTraceReviewRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=240)
     proposed_action: str | None = Field(default=None, max_length=240)
     replay_trace_id: str | None = Field(default=None, max_length=36)
+    review_route: FeedbackReviewRouteType | None = None
+    reviewer_usability: Literal["usable", "not_usable"] | None = None
 
     @model_validator(mode="after")
     def _sync_decision_and_verified(self) -> "AiTraceReviewRequest":
@@ -1158,6 +1166,9 @@ class AiPilotFeedbackRequest(BaseModel):
     scope_country: str | None = Field(default=None, max_length=80)
     performance_level: str | None = Field(default=None, max_length=40)
     evidence_ids: list[str] = Field(default_factory=list, max_length=50)
+    draft_usage_signal: DraftUsageSignalType | None = None
+    prompt_version: str | None = Field(default=None, max_length=64)
+    language: Literal["en", "ar", "mixed"] | None = None
 
 
 class AiPilotFeedbackResponse(BaseModel):
@@ -1206,7 +1217,27 @@ class AiFeedbackClusterItem(BaseModel):
     pending_count: int = 0
     approved_count: int = 0
     rejected_count: int = 0
+    language: str = "en"
+    model_version: str | None = None
+    distinct_traces: int = 0
+    response_rate_pct: float | None = None
     traces: list[AiFeedbackTraceSample] = Field(default_factory=list)
+
+
+class AiFeedbackRegressionTemplateResponse(BaseModel):
+    success: bool = True
+    trace_id: str
+    surface: str
+    language: str = "en"
+    operation_family: str
+    scope_team: str | None = None
+    scope_country: str | None = None
+    review_route: FeedbackReviewRouteType | None = None
+    sanitized_prompt: str
+    unseen_variation_prompt_template: str
+    expected_behavior: str
+    revert_path: str
+    approved_pattern_id: str | None = None
 
 
 class AiSharedLearningFamily(BaseModel):
@@ -1228,6 +1259,8 @@ class AiFeedbackClustersResponse(BaseModel):
     total_pages: int = 1
     has_next: bool = False
     has_prev: bool = False
+    total_interactions_sampled: int = 0
+    survey_response_rate_pct: float | None = None
     clusters: list[AiFeedbackClusterItem] = Field(default_factory=list)
     shared_learning: list[AiSharedLearningFamily] = Field(default_factory=list)
 

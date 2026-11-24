@@ -1,0 +1,686 @@
+{
+  "schema_version": "pms-ai-staging-matrix-v1",
+  "generated_at": "2026-11-24T14:20:10.723405+00:00",
+  "total_scenarios": 240,
+  "rollout_flags": {
+    "PMS_AI_COMPOUND_PARTS_ENABLED": {
+      "effective": true,
+      "default": true,
+      "revert": "export PMS_AI_COMPOUND_PARTS_ENABLED=false"
+    },
+    "PMS_AI_CORRECTIVE_DRAFT_REPAIR_ENABLED": {
+      "effective": true,
+      "default": true,
+      "revert": "export PMS_AI_CORRECTIVE_DRAFT_REPAIR_ENABLED=false"
+    },
+    "PMS_AI_MODEL_LED_PILOT_ENABLED": {
+      "effective": true,
+      "default": false,
+      "revert": "export PMS_AI_MODEL_LED_PILOT_ENABLED=false"
+    },
+    "PMS_AI_NVIDIA_ROUTING_ENABLED": {
+      "effective": false,
+      "default": false,
+      "revert": "export PMS_AI_NVIDIA_ROUTING_ENABLED=false"
+    }
+  },
+  "arms": {
+    "legacy_rules_flags_off": {
+      "label": "baseline_legacy_rules_flags_off",
+      "is_live_verified": false,
+      "status": "completed",
+      "overall": {
+        "total_turns": 255,
+        "whole_turn_accuracy_pct": 65.88,
+        "per_part_accuracy_pct": 76.81,
+        "needless_clarification_pct": 0.0,
+        "critical_errors": 5,
+        "latency_p50_ms": 68.92,
+        "latency_p95_ms": 109.86,
+        "dev_whole_turn_pct": 78.4,
+        "val_whole_turn_pct": 66.67,
+        "blind_whole_turn_pct": 42.86,
+        "blind_per_part_pct": 61.11
+      },
+      "splits": {
+        "dev": {
+          "scenarios": 120,
+          "scenarios_passed": 93,
+          "scenario_pass_rate_pct": 77.5,
+          "turns": 125,
+          "turns_passed": 98,
+          "whole_turn_accuracy_pct": 78.4,
+          "parts_passed": 214,
+          "parts_total": 255,
+          "per_part_accuracy_pct": 83.92,
+          "decision_accuracy_pct": 96.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 68.16,
+            "p95": 109.86,
+            "max": 203.41
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 98,
+              "turns_passed": 82,
+              "accuracy_pct": 83.67
+            },
+            "mixed": {
+              "turns": 22,
+              "turns_passed": 11,
+              "accuracy_pct": 50.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 90,
+              "turns_passed": 68,
+              "accuracy_pct": 75.56
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 5,
+              "accuracy_pct": 50.0
+            },
+            "unsupported_request": {
+              "turns": 15,
+              "turns_passed": 15,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 27
+          }
+        },
+        "val": {
+          "scenarios": 60,
+          "scenarios_passed": 40,
+          "scenario_pass_rate_pct": 66.67,
+          "turns": 60,
+          "turns_passed": 40,
+          "whole_turn_accuracy_pct": 66.67,
+          "parts_passed": 110,
+          "parts_total": 130,
+          "per_part_accuracy_pct": 84.62,
+          "decision_accuracy_pct": 91.67,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 68.92,
+            "p95": 89.9,
+            "max": 107.61
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 50,
+              "turns_passed": 30,
+              "accuracy_pct": 60.0
+            },
+            "mixed": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 30,
+              "accuracy_pct": 66.67
+            },
+            "partial_answer": {
+              "turns": 5,
+              "turns_passed": 0,
+              "accuracy_pct": 0.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 20
+          }
+        },
+        "blind": {
+          "scenarios": 60,
+          "scenarios_passed": 20,
+          "scenario_pass_rate_pct": 33.33,
+          "turns": 70,
+          "turns_passed": 30,
+          "whole_turn_accuracy_pct": 42.86,
+          "parts_passed": 110,
+          "parts_total": 180,
+          "per_part_accuracy_pct": 61.11,
+          "decision_accuracy_pct": 85.71,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 5,
+          "latency_ms": {
+            "p50": 66.97,
+            "p95": 88.65,
+            "max": 97.66
+          },
+          "by_language": {
+            "ar": {
+              "turns": 19,
+              "turns_passed": 12,
+              "accuracy_pct": 63.16
+            },
+            "en": {
+              "turns": 31,
+              "turns_passed": 10,
+              "accuracy_pct": 32.26
+            },
+            "mixed": {
+              "turns": 20,
+              "turns_passed": 8,
+              "accuracy_pct": 40.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 5,
+              "accuracy_pct": 50.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 20,
+              "accuracy_pct": 44.44
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 0,
+              "accuracy_pct": 0.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 40
+          }
+        }
+      },
+      "corrective_recovery": {
+        "first_pass_valid": false,
+        "recovered_valid": false,
+        "safe_pms_evidence_fallback": true,
+        "repair_outcome": "non_repairable",
+        "provider_calls": 1,
+        "latency_ms": 44.44,
+        "cost_usd": null,
+        "billing_status": "unavailable_offline_mocked_provider"
+      },
+      "billing_status": "not_applicable_deterministic",
+      "estimated_cost_usd": 0.0
+    },
+    "improved_app_flags_on": {
+      "label": "improved_compound_and_repair_enabled",
+      "is_live_verified": false,
+      "status": "completed",
+      "overall": {
+        "total_turns": 255,
+        "whole_turn_accuracy_pct": 97.25,
+        "per_part_accuracy_pct": 98.41,
+        "needless_clarification_pct": 0.0,
+        "critical_errors": 0,
+        "latency_p50_ms": 69.63,
+        "latency_p95_ms": 114.0,
+        "dev_whole_turn_pct": 100.0,
+        "val_whole_turn_pct": 100.0,
+        "blind_whole_turn_pct": 90.0,
+        "blind_per_part_pct": 95.0
+      },
+      "splits": {
+        "dev": {
+          "scenarios": 120,
+          "scenarios_passed": 120,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 125,
+          "turns_passed": 125,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 255,
+          "parts_total": 255,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 66.67,
+            "p95": 114.0,
+            "max": 175.56
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 98,
+              "turns_passed": 98,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 22,
+              "turns_passed": 22,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 90,
+              "turns_passed": 90,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 15,
+              "turns_passed": 15,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "val": {
+          "scenarios": 60,
+          "scenarios_passed": 60,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 60,
+          "turns_passed": 60,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 130,
+          "parts_total": 130,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 68.74,
+            "p95": 91.95,
+            "max": 96.35
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 50,
+              "turns_passed": 50,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 45,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "blind": {
+          "scenarios": 60,
+          "scenarios_passed": 53,
+          "scenario_pass_rate_pct": 88.33,
+          "turns": 70,
+          "turns_passed": 63,
+          "whole_turn_accuracy_pct": 90.0,
+          "parts_passed": 171,
+          "parts_total": 180,
+          "per_part_accuracy_pct": 95.0,
+          "decision_accuracy_pct": 98.57,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 69.63,
+            "p95": 90.83,
+            "max": 116.8
+          },
+          "by_language": {
+            "ar": {
+              "turns": 19,
+              "turns_passed": 17,
+              "accuracy_pct": 89.47
+            },
+            "en": {
+              "turns": 31,
+              "turns_passed": 30,
+              "accuracy_pct": 96.77
+            },
+            "mixed": {
+              "turns": 20,
+              "turns_passed": 16,
+              "accuracy_pct": 80.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 40,
+              "accuracy_pct": 88.89
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 8,
+              "accuracy_pct": 80.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 7
+          }
+        }
+      },
+      "corrective_recovery": {
+        "first_pass_valid": false,
+        "recovered_valid": true,
+        "safe_pms_evidence_fallback": false,
+        "repair_outcome": "repaired",
+        "provider_calls": 2,
+        "latency_ms": 43.4,
+        "cost_usd": null,
+        "billing_status": "unavailable_offline_mocked_provider"
+      },
+      "billing_status": "not_applicable_deterministic_and_mocked",
+      "estimated_cost_usd": 0.0
+    },
+    "forced_timeout_fallback": {
+      "label": "model_led_forced_timeout_graceful_fallback",
+      "is_live_verified": false,
+      "status": "completed",
+      "overall": {
+        "total_turns": 255,
+        "whole_turn_accuracy_pct": 97.25,
+        "per_part_accuracy_pct": 98.41,
+        "needless_clarification_pct": 0.0,
+        "critical_errors": 0,
+        "latency_p50_ms": 79.56,
+        "latency_p95_ms": 128.85,
+        "dev_whole_turn_pct": 100.0,
+        "val_whole_turn_pct": 100.0,
+        "blind_whole_turn_pct": 90.0,
+        "blind_per_part_pct": 95.0
+      },
+      "splits": {
+        "dev": {
+          "scenarios": 120,
+          "scenarios_passed": 120,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 125,
+          "turns_passed": 125,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 255,
+          "parts_total": 255,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 76.12,
+            "p95": 128.85,
+            "max": 293.11
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 98,
+              "turns_passed": 98,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 22,
+              "turns_passed": 22,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 90,
+              "turns_passed": 90,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 15,
+              "turns_passed": 15,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "val": {
+          "scenarios": 60,
+          "scenarios_passed": 60,
+          "scenario_pass_rate_pct": 100.0,
+          "turns": 60,
+          "turns_passed": 60,
+          "whole_turn_accuracy_pct": 100.0,
+          "parts_passed": 130,
+          "parts_total": 130,
+          "per_part_accuracy_pct": 100.0,
+          "decision_accuracy_pct": 100.0,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 79.56,
+            "p95": 106.71,
+            "max": 234.55
+          },
+          "by_language": {
+            "ar": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "en": {
+              "turns": 50,
+              "turns_passed": 50,
+              "accuracy_pct": 100.0
+            },
+            "mixed": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 45,
+              "accuracy_pct": 100.0
+            },
+            "partial_answer": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {}
+        },
+        "blind": {
+          "scenarios": 60,
+          "scenarios_passed": 53,
+          "scenario_pass_rate_pct": 88.33,
+          "turns": 70,
+          "turns_passed": 63,
+          "whole_turn_accuracy_pct": 90.0,
+          "parts_passed": 171,
+          "parts_total": 180,
+          "per_part_accuracy_pct": 95.0,
+          "decision_accuracy_pct": 98.57,
+          "needless_clarification_pct": 0.0,
+          "critical_errors": 0,
+          "latency_ms": {
+            "p50": 77.31,
+            "p95": 110.07,
+            "max": 221.19
+          },
+          "by_language": {
+            "ar": {
+              "turns": 19,
+              "turns_passed": 17,
+              "accuracy_pct": 89.47
+            },
+            "en": {
+              "turns": 31,
+              "turns_passed": 30,
+              "accuracy_pct": 96.77
+            },
+            "mixed": {
+              "turns": 20,
+              "turns_passed": 16,
+              "accuracy_pct": 80.0
+            }
+          },
+          "by_decision_class": {
+            "clarification": {
+              "turns": 10,
+              "turns_passed": 10,
+              "accuracy_pct": 100.0
+            },
+            "direct_answer": {
+              "turns": 45,
+              "turns_passed": 40,
+              "accuracy_pct": 88.89
+            },
+            "partial_answer": {
+              "turns": 10,
+              "turns_passed": 8,
+              "accuracy_pct": 80.0
+            },
+            "unsupported_request": {
+              "turns": 5,
+              "turns_passed": 5,
+              "accuracy_pct": 100.0
+            }
+          },
+          "failure_taxonomy": {
+            "answer_failure": 7
+          }
+        }
+      },
+      "corrective_recovery": {
+        "first_pass_valid": false,
+        "recovered_valid": false,
+        "safe_pms_evidence_fallback": true,
+        "repair_outcome": null,
+        "provider_calls": 1,
+        "latency_ms": 36.49,
+        "cost_usd": null,
+        "billing_status": "unavailable_offline_mocked_provider"
+      },
+      "billing_status": "unavailable_offline_timeout_simulation",
+      "estimated_cost_usd": null
+    },
+    "staging_live_candidate": {
+      "label": "live_cloud_staging_candidate",
+      "is_live_verified": false,
+      "status": "blocked",
+      "blocked_reason": "PMS_AI_RUN_LIVE_MODEL_TESTS is not set to 'true'; live benchmark execution skipped.",
+      "billing_status": "unavailable_live_execution_blocked",
+      "estimated_cost_usd": null
+    }
+  },
+  "section5_release_scorecard": {
+    "blind_whole_turn_pct": 90.0,
+    "blind_per_part_pct": 95.0,
+    "blind_needless_clarification_pct": 0.0,
+    "blind_critical_errors": 0,
+    "blind_p95_ms": 90.83,
+    "overall_whole_turn_delta_pp": 31.37,
+    "corrective_repair_recovered": true,
+    "timeout_safe_fallback_verified": true,
+    "live_staging_status": "blocked",
+    "all_offline_scorecard_gates_passed": true
+  }
+}
