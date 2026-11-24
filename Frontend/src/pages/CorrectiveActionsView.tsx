@@ -14,7 +14,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { useActionStore, useFollowUp, useUpdateActionStatus } from '../hooks/useActionStore';
+import { useActionStore, useAllTeamActions, useFollowUp, useUpdateActionStatus } from '../hooks/useActionStore';
 import CorrectiveActionsCard from '../components/executive/v1/CorrectiveActionsCard';
 import { MONTHS, periodOf, summarizeActions } from '../features/executive/compose';
 import { executiveFunctionForTeam } from '../features/executive/functions';
@@ -22,6 +22,7 @@ import { useUserRole } from '../context/RoleContext';
 import CustomDropdown from '../components/common/CustomDropdown';
 import ResponsiveFilters from '../components/common/ResponsiveFilters';
 import { ActionFollowUpPanel } from '../components/actions/ActionFollowUpBoard';
+import { TeamActionsPanel } from '../components/actions/TeamActionsPanel';
 import { canDeleteCorrectiveAction, canEditActionFollowUp, dueBadgeLabel } from '../components/actions/dueBadge';
 import { StatusPill } from '../components/actions/ActionStatusMenu';
 import type { ActionType, PMSAction } from '../types';
@@ -225,7 +226,8 @@ export default function CorrectiveActionsView() {
   const allowDelete = canDeleteCorrectiveAction(role) && typeof deleteAction === 'function';
   const followUp = useFollowUp({});
   const overdueCount = followUp.data?.summary.overdue ?? 0;
-  const [pageTab, setPageTab] = useState<'all' | 'follow-up'>('all');
+  const teamActionsQuery = useAllTeamActions(true);
+  const [pageTab, setPageTab] = useState<'all' | 'follow-up' | 'team-actions'>('all');
   const [search, setSearch] = useState('');
   const [teamFilter, setTeamFilter] = useState(params.get('team') ?? 'All teams');
   const [monthFilter, setMonthFilter] = useState(params.get('month') ?? 'All months');
@@ -235,6 +237,11 @@ export default function CorrectiveActionsView() {
 
   const actions = getAllActions();
   const functionFilter = params.get('function');
+  const teamActionsCount = useMemo(() => {
+    const items = teamActionsQuery.data ?? [];
+    if (!functionFilter) return items.length;
+    return items.filter((item) => executiveFunctionForTeam(item.team) === functionFilter).length;
+  }, [teamActionsQuery.data, functionFilter]);
   const teams = useMemo(() => Array.from(new Set(actions.map((action) => action.team).filter(Boolean))).sort(), [actions]);
   const months = useMemo(() => Array.from(new Set(actions.map((action) => action.month).filter(Boolean))), [actions]);
   const filteredActions = useMemo(() => {
@@ -288,19 +295,25 @@ export default function CorrectiveActionsView() {
         )}
       </header>
 
-      <div role="tablist" aria-label="Corrective action views" className="pms-glass-stage inline-flex w-fit gap-1.5 rounded-2xl p-1">
+      <div role="tablist" aria-label="Corrective action views" className="pms-glass-stage inline-flex w-fit flex-wrap gap-1.5 rounded-2xl p-1">
         <button type="button" role="tab" aria-selected={pageTab === 'all'} onClick={() => setPageTab('all')} className={`min-h-10 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'all' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'all' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>All actions</button>
         <button type="button" role="tab" aria-selected={pageTab === 'follow-up'} onClick={() => setPageTab('follow-up')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'follow-up' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'follow-up' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>
           Follow-up
           {overdueCount > 0 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
         </button>
+        <button type="button" role="tab" aria-selected={pageTab === 'team-actions'} onClick={() => setPageTab('team-actions')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'team-actions' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'team-actions' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>
+          Team actions
+          {teamActionsCount > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-black ${pageTab === 'team-actions' ? 'bg-white/25 text-white' : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'}`} aria-label={`${teamActionsCount} team actions`}>{teamActionsCount}</span>}
+        </button>
       </div>
 
       {pageTab === 'follow-up' && <ActionFollowUpPanel canEdit={canEditActionFollowUp(role)} scopeFunction={functionFilter} initialFilters={{ team: teamFilter === 'All teams' ? undefined : teamFilter, month: monthFilter === 'All months' ? undefined : monthFilter }} />}
 
+      {pageTab === 'team-actions' && <TeamActionsPanel canEdit={canEditActionFollowUp(role)} scopeFunction={functionFilter} availableTeams={teams} />}
+
       {pageTab === 'all' && exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
 
-      {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} />}
+      {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} hideWorkspaceLink />}
 
       {pageTab === 'all' && <section className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
         <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-info)', borderColor: 'var(--pms-grad-panel-info-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} /><p className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>

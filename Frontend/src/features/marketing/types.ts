@@ -76,6 +76,7 @@ export interface MarketingKpiAggregate extends MarketingKpiConfig {
   previousBaselineActual: number | null;
   previousBaselinePeriodLabel: string | null;
   isNewBaseline: boolean;
+  trendSeries?: Array<{ month: string; actual: number | null; target: number | null }>;
 }
 
 export type PositionDataStatus = 'Active' | 'No Uploaded Data' | 'No Results for Filters';

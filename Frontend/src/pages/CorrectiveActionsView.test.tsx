@@ -2,13 +2,28 @@ import { MemoryRouter } from 'react-router-dom';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PMSAction } from '../types';
+import type { UnifiedTeamAction } from '../hooks/useActionStore';
 
-const { getAllActions, deleteAction, roleState, downloadCorrectiveActionsPowerPoint, followUpState } = vi.hoisted(() => ({
+const {
+  getAllActions,
+  deleteAction,
+  roleState,
+  downloadCorrectiveActionsPowerPoint,
+  followUpState,
+  teamActionsState,
+  createTeamActionMutate,
+  updateTeamActionStatusMutate,
+  deleteTeamActionMutate,
+} = vi.hoisted(() => ({
   getAllActions: vi.fn(),
   deleteAction: vi.fn(),
   roleState: { role: 'Admin' },
   downloadCorrectiveActionsPowerPoint: vi.fn(() => Promise.resolve()),
   followUpState: { overdue: 0, actions: [] as PMSAction[] },
+  teamActionsState: { items: [] as UnifiedTeamAction[] },
+  createTeamActionMutate: vi.fn(() => Promise.resolve({ success: true })),
+  updateTeamActionStatusMutate: vi.fn(() => Promise.resolve({ success: true })),
+  deleteTeamActionMutate: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
 vi.mock('../hooks/useActionStore', () => ({
@@ -16,6 +31,10 @@ vi.mock('../hooks/useActionStore', () => ({
   useFollowUp: () => ({ data: { summary: { overdue: followUpState.overdue, due_soon: 0, open: 0, in_progress: 0, completed_this_month: 0, completion_rate: 0 }, actions: followUpState.actions }, isLoading: false, isError: false, refetch: vi.fn() }),
   useActionOwners: () => ({ data: [] }),
   useUpdateActionStatus: () => ({ mutateAsync: vi.fn() }),
+  useAllTeamActions: () => ({ data: teamActionsState.items, isLoading: false, isError: false, refetch: vi.fn() }),
+  useCreateTeamActionPlanItem: () => ({ mutateAsync: createTeamActionMutate, isPending: false }),
+  useUpdateTeamActionStatus: () => ({ mutateAsync: updateTeamActionStatusMutate, isPending: false }),
+  useDeleteTeamAction: () => ({ mutateAsync: deleteTeamActionMutate, isPending: false }),
 }));
 
 vi.mock('../context/RoleContext', () => ({
@@ -50,6 +69,13 @@ describe('CorrectiveActionsView', () => {
     roleState.role = 'Admin';
     followUpState.overdue = 0;
     followUpState.actions = [];
+    teamActionsState.items = [];
+    createTeamActionMutate.mockReset();
+    createTeamActionMutate.mockResolvedValue({ success: true });
+    updateTeamActionStatusMutate.mockReset();
+    updateTeamActionStatusMutate.mockResolvedValue({ success: true });
+    deleteTeamActionMutate.mockReset();
+    deleteTeamActionMutate.mockResolvedValue({ success: true });
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:actions') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   });
@@ -170,5 +196,71 @@ describe('CorrectiveActionsView', () => {
       expect(deleteAction).toHaveBeenLastCalledWith('a1', 'EMP-1');
     });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('shows Team actions tab beside Follow-up with whole-team actions and supports adding a new team action', async () => {
+    teamActionsState.items = [
+      {
+        id: 'ta-1',
+        card_id: 'coding-plan-1',
+        kind: 'cohort_plan',
+        team: 'Coding',
+        region: 'EGY',
+        month: 'October',
+        year: 2026,
+        title: 'Institute mandatory 100% pre-bill peer audit on OP Coding batches',
+        target_kpi: 'Coding EGY Quality Errors Rate (11.3% → ≤ 5.0%)',
+        scope_description: '',
+        owner: 'Coding & Audit QA Lead',
+        status: 'Open',
+        due_date: null,
+        expected_team_impact: 'Cut coding errors below 5%',
+      },
+      {
+        id: 'ta-2',
+        card_id: null,
+        kind: 'overall_action',
+        team: 'Inbound',
+        region: 'UAE',
+        month: 'October',
+        year: 2026,
+        title: 'Daily queue rebalance across peak inbound hours',
+        target_kpi: '',
+        scope_description: '',
+        owner: 'Call Center Manager',
+        status: 'In Progress',
+        due_date: '2026-11-15',
+        expected_team_impact: '',
+      },
+    ];
+
+    render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+
+    const teamTab = screen.getByRole('tab', { name: /Team actions/i });
+    expect(teamTab).toHaveTextContent('2');
+    fireEvent.click(teamTab);
+
+    const panel = screen.getByRole('region', { name: 'Team actions' });
+    expect(within(panel).getByText('Team-Level Action Plans')).toBeInTheDocument();
+    expect(within(panel).getByText('Institute mandatory 100% pre-bill peer audit on OP Coding batches')).toBeInTheDocument();
+    expect(within(panel).getByText('Daily queue rebalance across peak inbound hours')).toBeInTheDocument();
+    expect(within(panel).getByText('Whole-Team Action')).toBeInTheDocument();
+    expect(within(panel).getByText('Team Summary Action')).toBeInTheDocument();
+
+    // Add a new whole-team action
+    fireEvent.click(within(panel).getByRole('button', { name: /Add Team Action/i }));
+    const form = within(panel).getByRole('form', { name: 'Add whole-team action form' });
+    fireEvent.change(within(form).getByLabelText(/Action plan title/i), {
+      target: { value: 'Automate morning claim-queue partitioning' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save Team Action' }));
+    await waitFor(() => {
+      expect(createTeamActionMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Automate morning claim-queue partitioning',
+          status: 'Open',
+        }),
+      );
+    });
   });
 });
