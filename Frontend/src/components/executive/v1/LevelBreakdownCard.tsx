@@ -1,7 +1,8 @@
 import { Layers } from 'lucide-react';
 import type { ExecutiveLevel } from '../../../features/executive/types';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
-import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, gradeGradientVar } from './ExecPrimitives';
+import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
+import { gradeGradientVar } from './gradeGradient';
 
 export default function LevelBreakdownCard({ levels, title = 'Level breakdown', subtitle = 'Score, grade and headcount by performance level' }: { levels: ExecutiveLevel[]; title?: string; subtitle?: string }) {
   return (

@@ -21,7 +21,8 @@ import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodL
 import { functionSlug } from '../../../features/executive/functions';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { getGradeTone } from '../../../constants/grades';
-import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText, gradeGradientVar } from './ExecPrimitives';
+import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
+import { gradeGradientVar } from './gradeGradient';
 import FunctionTrendChart from './FunctionTrendChart';
 import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 

@@ -20,7 +20,8 @@ import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { formatPeriod } from '../../../features/executive/compose';
 import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
-import { Chip, GradePill, StatusPill, gradeGradientVar } from './ExecPrimitives';
+import { Chip, GradePill, StatusPill } from './ExecPrimitives';
+import { gradeGradientVar } from './gradeGradient';
 import ScoreTrendChart from './ScoreTrendChart';
 import { heroHeadline, heroNarrative, heroStatusLabel } from './execModel';
 

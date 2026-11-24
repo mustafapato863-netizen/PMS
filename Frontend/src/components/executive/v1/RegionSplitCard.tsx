@@ -3,7 +3,8 @@ import type { ExecutiveRegion, ExecutivePeriod, ExecutiveRangeBlock } from '../.
 import { arrow, fmtScore, fmtSigned, scoreTone } from '../../../features/executive/format';
 import { formatShare } from './execModel';
 import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
-import { ExecCard, ExecCardHeader, GradePill, ScoreText, SoftEmpty, StatLabel, ToneText, gradeGradientVar } from './ExecPrimitives';
+import { ExecCard, ExecCardHeader, GradePill, ScoreText, SoftEmpty, StatLabel, ToneText } from './ExecPrimitives';
+import { gradeGradientVar } from './gradeGradient';
 
 export default function RegionSplitCard({ regions, previous, range = null }: { regions: ExecutiveRegion[]; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null }) {
   const vs = vsLabel(previous, range, 'vs last');
