@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { Activity } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
-import PerformanceKpiCard, { computeTrendYDomain } from './PerformanceKpiCard';
+import PerformanceKpiCard from './PerformanceKpiCard';
 import {
   calculateKpiTargetProgress,
+  computeTrendYDomain,
   formatPercentOfTargetLabel,
   normalizePercentageKpiForDisplay,
   resolveKpiTargetStatus,

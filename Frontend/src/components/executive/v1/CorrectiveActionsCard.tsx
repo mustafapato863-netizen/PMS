@@ -26,7 +26,7 @@ import { ExecCard, ExecCardHeader, SoftEmpty, StatusPill } from './ExecPrimitive
 type Filter = 'all' | 'open' | 'overdue' | 'due_this_week' | 'closed';
 type TileFilter = Exclude<Filter, 'all'>;
 
-export interface ActionPlanSection {
+interface ActionPlanSection {
   title: string | null;
   steps: string[];
 }
@@ -68,7 +68,7 @@ function isStandaloneHeading(lines: string[]): boolean {
  * Parses free-form or multi-section corrective action notes into structured cards
  * so expanded rows display a scannable action plan instead of raw wall-of-text.
  */
-export function parseActionPlanSections(raw: string): ActionPlanSection[] {
+function parseActionPlanSections(raw: string): ActionPlanSection[] {
   const normalized = raw.replace(/\r\n/g, '\n').trim();
   if (!normalized) return [];
 
