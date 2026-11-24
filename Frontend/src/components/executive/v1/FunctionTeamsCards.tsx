@@ -101,7 +101,7 @@ export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[
           {rows.map((team) => {
             const detail = team.flag_detail;
             return (
-              <li key={team.team} className="flex flex-col gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] p-[12px]" data-testid="attention-team">
+              <li key={team.team} className="pms-glass-stage flex flex-col gap-[6px] rounded-[12px] p-[12px]" data-testid="attention-team">
                 <div className="flex items-start gap-[8px]">
                   <span className="flex min-w-0 flex-1 flex-col">
                     <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team)}</Link>

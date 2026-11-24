@@ -8,7 +8,7 @@ import { formatPeriod } from '../../../features/executive/compose';
 /** Shown when the requested month has no data but an earlier one does (default f). */
 export function FallbackNotice({ notice }: { notice: string }) {
   return (
-    <div role="status" className="flex items-start gap-[8px] rounded-[10px] border border-[var(--exec-warning-bg)] bg-[var(--exec-warning-bg)] px-[14px] py-[10px] text-[12px] font-medium text-[var(--exec-warning-text)]">
+    <div role="status" className="flex items-start gap-[8px] rounded-[12px] border border-[var(--pms-grad-panel-warn-border)] px-[14px] py-[10px] text-[12px] font-medium text-[var(--exec-warning-text)] shadow-2xs" style={{ background: 'var(--pms-grad-panel-warn)' }}>
       <Info aria-hidden="true" className="mt-px size-[14px] shrink-0" strokeWidth={2} />
       <span>{notice}</span>
     </div>
@@ -18,7 +18,7 @@ export function FallbackNotice({ notice }: { notice: string }) {
 export function ScopeBanner({ children, icon = 'lock' }: { children: ReactNode; icon?: 'lock' | 'eye' }) {
   const Icon = icon === 'lock' ? Lock : Eye;
   return (
-    <div role="note" className="flex items-start gap-[8px] rounded-[10px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[14px] py-[10px] text-[12px] text-[var(--insights-accent-text)]">
+    <div role="note" className="flex items-start gap-[8px] rounded-[12px] border border-[var(--pms-grad-panel-info-border)] px-[14px] py-[10px] text-[12px] text-[var(--insights-accent-text)] shadow-2xs" style={{ background: 'var(--pms-grad-panel-info)' }}>
       <Icon aria-hidden="true" className="mt-px size-[14px] shrink-0" strokeWidth={2} />
       <span>{children}</span>
     </div>
@@ -50,7 +50,7 @@ export function ExecutiveEmptyState({ monthLabel, canUpload, dataStatus, onPickM
   const month = monthLabel.split(' ')[0];
   return (
     <div className="flex flex-col gap-[16px]" data-testid="executive-empty">
-      <section aria-labelledby="exec-empty-title" className="flex flex-col items-center gap-[16px] rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[24px] py-[36px] text-center shadow-[var(--exec-card-shadow)]">
+      <section aria-labelledby="exec-empty-title" className="pms-glass-surface flex flex-col items-center gap-[16px] rounded-[18px] px-[24px] py-[36px] text-center">
         <span aria-hidden="true" className="flex size-[120px] items-center justify-center rounded-full bg-[var(--insights-accent-soft)]">
           <span className="flex size-[88px] items-center justify-center rounded-full bg-[var(--insights-accent-tag)]">
             <span className="flex size-[52px] items-center justify-center rounded-[12px] bg-[var(--bg-surface)] shadow-[var(--exec-card-shadow)]">

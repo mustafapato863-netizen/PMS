@@ -46,7 +46,7 @@ function Tile({ label, value, icon: Icon, color, active, onToggle }: {
       aria-pressed={active}
       onClick={onToggle}
       data-testid={`action-tile-${label.toLowerCase().replace(/[^a-z]+/g, '-').replace(/-$/, '')}`}
-      className={`flex flex-col gap-[6px] rounded-[10px] bg-[var(--exec-tile-bg)] px-[16px] py-[14px] text-left transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)] ${active ? 'ring-2 ring-[var(--insights-accent)]' : ''}`}
+      className={`pms-glass-stage flex flex-col gap-[6px] rounded-[12px] px-[16px] py-[14px] text-left transition-all hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)] ${active ? 'ring-2 ring-[var(--insights-accent)]' : ''}`}
     >
       <span className="inline-flex items-center gap-[6px] text-xs font-semibold text-[var(--text-muted)]">
         <Icon aria-hidden="true" className="size-[14px]" strokeWidth={1.75} />

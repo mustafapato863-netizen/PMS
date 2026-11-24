@@ -1,10 +1,10 @@
 import { Globe } from 'lucide-react';
-import { getGradeTone } from '../../../constants/grades';
 import type { ExecutiveRegion, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { arrow, fmtScore, fmtSigned, scoreTone } from '../../../features/executive/format';
 import { formatShare } from './execModel';
 import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { ExecCard, ExecCardHeader, GradePill, ScoreText, SoftEmpty, StatLabel, ToneText } from './ExecPrimitives';
+import { gradeGradientVar } from './gradeGradient';
 
 export default function RegionSplitCard({ regions, previous, range = null }: { regions: ExecutiveRegion[]; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null }) {
   const vs = vsLabel(previous, range, 'vs last');
@@ -16,11 +16,10 @@ export default function RegionSplitCard({ regions, previous, range = null }: { r
       {regions.length ? (
         <div className="flex flex-col gap-[12px]">
           {regions.map((region) => {
-            const tone = getGradeTone(region.score);
             return (
-              <div key={region.region} className="flex flex-col gap-[10px] rounded-[10px] bg-[var(--exec-tile-bg)] p-[14px]" data-testid="region-box">
+              <div key={region.region} className="pms-glass-stage flex flex-col gap-[10px] rounded-[12px] p-[14px]" data-testid="region-box">
                 <div className="flex flex-wrap items-center gap-[8px]">
-                  <span className="rounded-[5px] bg-[var(--exec-info-bg)] px-[6px] py-px text-xs font-bold text-[var(--exec-info-text)]">{region.region}</span>
+                  <span className="rounded-[6px] px-[7px] py-px text-xs font-bold text-[var(--exec-info-text)]" style={{ background: 'var(--exec-info-bg)' }}>{region.region}</span>
                   <span className="flex-1 text-[13px] font-semibold text-[var(--insights-heading)]">{region.label}</span>
                   <GradePill score={region.score} />
                 </div>
@@ -35,8 +34,8 @@ export default function RegionSplitCard({ regions, previous, range = null }: { r
                     <ToneText tone={scoreTone(region.change)} className="text-[12px] font-bold">{arrow(region.change)} {fmtSigned(region.change)}</ToneText>
                   </div>
                 </div>
-                <div aria-hidden="true" className="h-[8px] w-full rounded-full bg-[var(--insights-track)]">
-                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, region.score ?? 0))}%`, background: tone.solid }} />
+                <div aria-hidden="true" className="h-[8px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, region.score ?? 0))}%`, background: gradeGradientVar(region.score) }} />
                 </div>
                 <span className="text-xs text-[var(--text-muted)]">
                   {region.employees} employees · {region.teams_count} teams
