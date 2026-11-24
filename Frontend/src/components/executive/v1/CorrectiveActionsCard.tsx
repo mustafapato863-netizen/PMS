@@ -1,5 +1,19 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Inbox, Plus, Shield, type LucideIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardList,
+  Clock,
+  Inbox,
+  Plus,
+  Shield,
+  Target,
+  UserCheck,
+  type LucideIcon,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveActionItem, ExecutiveCorrectiveActions, ExecutivePeriod } from '../../../features/executive/types';
 import { fmtDate } from '../../../features/executive/format';
@@ -12,6 +26,11 @@ import { ExecCard, ExecCardHeader, SoftEmpty, StatusPill } from './ExecPrimitive
 type Filter = 'all' | 'open' | 'overdue' | 'due_this_week' | 'closed';
 type TileFilter = Exclude<Filter, 'all'>;
 
+export interface ActionPlanSection {
+  title: string | null;
+  steps: string[];
+}
+
 /** Rows shown before "Show all". The list is already ordered: overdue, due soonest, newest. */
 const PREVIEW_ROWS = 10;
 const FILTER_LABEL: Record<TileFilter, string> = {
@@ -21,8 +40,80 @@ const FILTER_LABEL: Record<TileFilter, string> = {
   closed: 'closed this month',
 };
 /** Columns from md up: Employee, Action, Reason / KPI, Owner, Due, Status. */
-const ROW_COLUMNS = 'md:grid-cols-[minmax(0,1.3fr)_minmax(0,2.6fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.85fr)_150px]';
-const HEAD = 'text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]';
+const ROW_COLUMNS = 'md:grid-cols-[minmax(0,1.25fr)_minmax(0,2.25fr)_minmax(0,1.75fr)_minmax(0,0.95fr)_minmax(0,0.9fr)_148px]';
+const HEAD = 'text-[12px] font-bold uppercase tracking-[0.04em] text-[var(--text-muted)]';
+
+function cleanStepLine(line: string): string {
+  return line.replace(/^(?:[-*•–—]\s+|\d+[.)]\s+)/, '').trim();
+}
+
+function cleanHeadingLine(line: string): string {
+  return line
+    .replace(/^#{1,4}\s+/, '')
+    .replace(/^\*\*(.+)\*\*$/, '$1')
+    .replace(/:$/, '')
+    .trim();
+}
+
+function isStandaloneHeading(lines: string[]): boolean {
+  if (lines.length !== 1) return false;
+  const line = lines[0];
+  if (line.length === 0 || line.length > 72) return false;
+  if (/^#{1,4}\s+/.test(line) || /^\*\*.+\*\*$/.test(line) || line.endsWith(':')) return true;
+  // Short title-style heading without terminal sentence punctuation (e.g. "Booking & Closing", "AHT / Call Efficiency")
+  return !/[.!?]$/.test(line) && !/^[-*•–—]\s+/.test(line);
+}
+
+/**
+ * Parses free-form or multi-section corrective action notes into structured cards
+ * so expanded rows display a scannable action plan instead of raw wall-of-text.
+ */
+export function parseActionPlanSections(raw: string): ActionPlanSection[] {
+  const normalized = raw.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const blocks = normalized
+    .split(/\n\s*\n+/)
+    .map((block) => block.split('\n').map((line) => line.trim()).filter(Boolean))
+    .filter((lines) => lines.length > 0);
+
+  if (blocks.length === 0) return [];
+
+  const sections: ActionPlanSection[] = [];
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    const next = blocks[i + 1];
+
+    // Pattern 1: Standalone heading block followed by a body block
+    if (next && isStandaloneHeading(block) && !isStandaloneHeading(next)) {
+      sections.push({
+        title: cleanHeadingLine(block[0]),
+        steps: next.map(cleanStepLine).filter(Boolean),
+      });
+      i += 1;
+      continue;
+    }
+
+    // Pattern 2: Single block whose first line explicitly marks a heading (e.g. "Focus Area:" or "**Focus Area**")
+    if (
+      block.length >= 2
+      && (block[0].endsWith(':') || /^#{1,4}\s+/.test(block[0]) || /^\*\*.+\*\*$/.test(block[0]))
+    ) {
+      sections.push({
+        title: cleanHeadingLine(block[0]),
+        steps: block.slice(1).map(cleanStepLine).filter(Boolean),
+      });
+      continue;
+    }
+
+    sections.push({
+      title: null,
+      steps: block.map(cleanStepLine).filter(Boolean),
+    });
+  }
+
+  return sections;
+}
 
 const ACTION_TYPE_PILL: Record<string, string> = {
   PIP: 'border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800 dark:border-rose-400/25 dark:from-rose-500/15 dark:to-red-500/15 dark:text-rose-300',
@@ -107,31 +198,51 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
   const overdue = item.follow_up_state === 'overdue';
   const text = (item.action_text || item.title || '').trim();
   const firstLine = text.split('\n')[0];
+  const sections = useMemo(() => (text ? parseActionPlanSections(text) : []), [text]);
+  const titledSections = sections.filter((section) => section.title !== null);
+  const fullReason = formatActionRootCauseNote(item.root_cause);
   const detailId = `action-detail-${item.id}`;
   const employeeHref = item.employee_id ? `/employee/${encodeURIComponent(item.employee_id)}${item.month ? `?month=${encodeURIComponent(item.month)}` : ''}` : workspaceHref;
   const pillClass = item.action_type
     ? (ACTION_TYPE_PILL[item.action_type] ?? 'border-[var(--border-light)] bg-[var(--exec-chip-bg)] text-[var(--exec-chip-text)]')
     : '';
+  const hasMultipleCards = sections.length >= 2;
+  const sectionGridClass = sections.length >= 3
+    ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+    : 'grid-cols-1 md:grid-cols-2';
+
   return (
     <>
       <div
         role="row"
         data-testid="action-row"
-        className={`flex flex-col gap-[6px] border-b border-[var(--insights-row-border)] px-[14px] py-[11px] transition-colors last:border-b-0 hover:bg-white/60 dark:hover:bg-slate-800/35 md:grid md:min-h-[54px] md:items-center md:gap-[12px] md:py-[8px] ${ROW_COLUMNS}`}
+        className={`flex flex-col gap-[8px] border-b border-[var(--insights-row-border)] px-[16px] py-[11px] transition-colors last:border-b-0 md:grid md:min-h-[56px] md:items-center md:gap-[14px] md:py-[9px] ${ROW_COLUMNS} ${
+          open
+            ? 'border-l-[3px] border-l-[var(--insights-accent)] bg-sky-50/55 dark:bg-sky-950/30'
+            : 'hover:bg-white/60 dark:hover:bg-slate-800/35'
+        }`}
       >
         <span role="cell" className="min-w-0">
-          <Link to={employeeHref} className="block truncate text-[13px] font-bold text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">
+          <Link to={employeeHref} className="block truncate text-[13.5px] font-bold text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">
             {item.employee_name || 'Whole team'}
           </Link>
-          {item.team && <span className="block truncate text-xs font-medium text-[var(--text-muted)]">{item.team}</span>}
+          {item.team && <span className="block truncate text-[12px] font-medium text-[var(--text-muted)]">{item.team}</span>}
         </span>
+
         <span role="cell" className="flex min-w-0 items-center gap-[8px]">
           {item.action_type && (
-            <span className={`shrink-0 rounded-full border px-[9px] py-[2px] text-[11px] font-bold ${pillClass}`}>
+            <span className={`shrink-0 rounded-full border px-[9px] py-[2px] text-[12px] font-bold ${pillClass}`}>
               {item.action_type}
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--insights-heading)]">{firstLine || 'No action text'}</span>
+          <span className="min-w-0 truncate text-[13px] font-semibold text-[var(--insights-heading)]" title={firstLine || undefined}>
+            {firstLine || 'No action text'}
+          </span>
+          {titledSections.length > 1 && (
+            <span className="hidden shrink-0 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[7px] py-[1px] text-[12px] font-semibold text-[var(--insights-accent-text)] lg:inline-flex">
+              +{titledSections.length - 1} {titledSections.length - 1 === 1 ? 'area' : 'areas'}
+            </span>
+          )}
           {text && (
             <button
               type="button"
@@ -139,22 +250,29 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
               aria-controls={detailId}
               aria-label={open ? `Hide full action for ${item.employee_name || 'this action'}` : `Show full action for ${item.employee_name || 'this action'}`}
               onClick={onToggle}
-              className="inline-flex size-[28px] shrink-0 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-light)] hover:bg-[var(--bg-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]"
+              className={`ml-auto inline-flex size-[28px] shrink-0 items-center justify-center rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)] ${
+                open
+                  ? 'border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] text-[var(--insights-accent-text)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:border-[var(--border-light)] hover:bg-[var(--bg-surface)] hover:text-[var(--insights-heading)]'
+              }`}
             >
               <ChevronDown aria-hidden="true" size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
             </button>
           )}
         </span>
-        <span role="cell" className="min-w-0 text-xs text-[var(--text-secondary)]">
+
+        <span role="cell" className="min-w-0 text-[12.5px] text-[var(--text-secondary)]">
           <span className="md:hidden text-[var(--text-muted)]">Reason: </span>
-          <span className="block truncate font-medium">{formatActionRootCauseNote(item.root_cause) || '—'}</span>
-          {item.linked_kpi_key && <span className="block truncate text-[11px] text-[var(--text-muted)]">KPI: {item.linked_kpi_key}</span>}
+          <span className="block truncate font-medium" title={fullReason || undefined}>{fullReason || '—'}</span>
+          {item.linked_kpi_key && <span className="block truncate text-[12px] text-[var(--text-muted)]">KPI: {item.linked_kpi_key}</span>}
         </span>
-        <span role="cell" className={`min-w-0 text-xs font-medium ${item.owner ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>
+
+        <span role="cell" className={`min-w-0 text-[12.5px] font-medium ${item.owner ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>
           <span className="md:hidden text-[var(--text-muted)]">Owner: </span>
           <span className="block truncate">{item.owner?.name ?? 'Unassigned'}</span>
         </span>
-        <span role="cell" className="text-xs md:text-right" style={{ color: overdue ? 'var(--insights-negative)' : 'var(--text-secondary)' }}>
+
+        <span role="cell" className="text-[12.5px]" style={{ color: overdue ? 'var(--insights-negative)' : 'var(--text-secondary)' }}>
           <span className="md:hidden text-[var(--text-muted)]">Due: </span>
           {item.due_date ? (
             <span className={overdue ? 'inline-flex rounded-full border border-rose-300/60 bg-rose-500/10 px-2 py-0.5 font-bold text-rose-700 dark:border-rose-400/30 dark:text-rose-300' : 'font-medium'}>
@@ -165,15 +283,136 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
           )}
           {overdue && <span className="sr-only"> (overdue)</span>}
         </span>
+
         <span role="cell" className="flex items-center md:justify-end">
           {canEdit && onStatusChange
             ? <ActionStatusMenu status={item.status} canEdit ariaLabel={`Status for ${firstLine || item.employee_name || 'action'}`} compact onChange={(update) => onStatusChange(item.id, update)} />
             : <StatusPill tone={status.tone} icon={status.icon}>{status.label}</StatusPill>}
         </span>
       </div>
+
       {open && text && (
-        <div id={detailId} role="row" className="border-b border-[var(--insights-row-border)] bg-sky-50/40 px-[16px] py-[12px] dark:bg-sky-950/20">
-          <p role="cell" className="whitespace-pre-wrap text-[13px] leading-[1.55] text-[var(--text-secondary)]">{text}</p>
+        <div
+          id={detailId}
+          role="row"
+          data-testid="action-detail-drawer"
+          className="border-b border-[var(--insights-row-border)] border-l-[3px] border-l-[var(--insights-accent)] px-[16px] py-[16px]"
+          style={{ background: 'var(--pms-grad-panel-info)' }}
+        >
+          <div role="cell" className="flex flex-col gap-[14px]">
+            {/* Top Context Strip: Full untruncated Reason/KPI + Metadata & Profile Link */}
+            <div className="flex flex-col gap-[10px] rounded-[12px] border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)]/85 px-[14px] py-[12px] md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0 flex-1 space-y-[4px]">
+                <div className="flex flex-wrap items-center gap-[6px]">
+                  <span className="inline-flex items-center gap-[5px] text-[12px] font-bold uppercase tracking-[0.04em] text-[var(--text-muted)]">
+                    <Target aria-hidden="true" className="size-[13px] text-[var(--insights-accent-text)]" />
+                    Trigger &amp; KPI Context
+                  </span>
+                  {item.linked_kpi_key && (
+                    <span className="inline-flex items-center rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[8px] py-[1px] text-[12px] font-semibold text-[var(--insights-accent-text)]">
+                      {item.linked_kpi_key}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[13px] font-medium leading-[1.5] text-[var(--insights-heading)]">
+                  {fullReason || 'No root-cause note recorded for this action.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-[8px] md:shrink-0 md:justify-end">
+                <span className="inline-flex items-center gap-[5px] rounded-full border border-[var(--border-light)] bg-[var(--pms-glass-stage-bg)] px-[10px] py-[3px] text-[12px] font-semibold text-[var(--text-secondary)]">
+                  <UserCheck aria-hidden="true" className="size-[12px] text-[var(--text-muted)]" />
+                  {item.owner?.name ?? 'Unassigned'}
+                </span>
+                {item.month && (
+                  <span className="inline-flex items-center gap-[5px] rounded-full border border-[var(--border-light)] bg-[var(--pms-glass-stage-bg)] px-[10px] py-[3px] text-[12px] font-semibold text-[var(--text-secondary)]">
+                    <Calendar aria-hidden="true" className="size-[12px] text-[var(--text-muted)]" />
+                    {item.month}
+                  </span>
+                )}
+                {item.employee_id && (
+                  <Link
+                    to={employeeHref}
+                    className="inline-flex items-center gap-[4px] rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[3px] text-[12px] font-bold text-[var(--insights-accent-text)] transition-colors hover:brightness-95"
+                  >
+                    Employee profile
+                    <ArrowUpRight aria-hidden="true" className="size-[12px]" />
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {/* Structured Action Plan Cards */}
+            <div className="space-y-[8px]">
+              <div className="flex items-center justify-between gap-[8px]">
+                <span className="inline-flex items-center gap-[6px] text-[12px] font-bold uppercase tracking-[0.04em] text-[var(--text-muted)]">
+                  <ClipboardList aria-hidden="true" className="size-[13px] text-[var(--insights-accent-text)]" />
+                  Action Plan
+                </span>
+                {hasMultipleCards && (
+                  <span className="text-[12px] font-semibold text-[var(--text-muted)]">
+                    {sections.length} focus {sections.length === 1 ? 'area' : 'areas'}
+                  </span>
+                )}
+              </div>
+
+              {hasMultipleCards ? (
+                <div className={`grid gap-[12px] ${sectionGridClass}`}>
+                  {sections.map((section, idx) => (
+                    <div
+                      key={`${section.title ?? 'section'}-${idx}`}
+                      data-testid="action-plan-section"
+                      className="flex flex-col rounded-[12px] border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)]/90 p-[14px] shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between gap-[8px]">
+                        <div className="flex min-w-0 items-center gap-[8px]">
+                          <span className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--insights-accent-soft)] text-[12px] font-bold tabular-nums text-[var(--insights-accent-text)]">
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+                          <h4 className="truncate text-[13.5px] font-bold text-[var(--insights-heading)]">
+                            {section.title ?? `Focus Area ${idx + 1}`}
+                          </h4>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-[var(--pms-glass-stage-bg)] px-[7px] py-[1px] text-[12px] font-semibold text-[var(--text-muted)]">
+                          {section.steps.length} {section.steps.length === 1 ? 'step' : 'steps'}
+                        </span>
+                      </div>
+
+                      <ul className="mt-[10px] flex flex-col gap-[7px] border-t border-[var(--border-light)] pt-[10px]">
+                        {section.steps.map((step, stepIdx) => (
+                          <li key={stepIdx} className="flex items-start gap-[8px] text-[13px] leading-[1.5] text-[var(--text-secondary)]">
+                            <span
+                              aria-hidden="true"
+                              className="mt-[7px] size-[5px] shrink-0 rounded-full bg-[var(--insights-accent)]"
+                            />
+                            <span>{step}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  data-testid="action-plan-section"
+                  className="rounded-[12px] border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)]/90 px-[16px] py-[13px] shadow-2xs"
+                >
+                  {sections[0]?.title && (
+                    <h4 className="mb-[8px] text-[13.5px] font-bold text-[var(--insights-heading)]">
+                      {sections[0].title}
+                    </h4>
+                  )}
+                  <div className="flex flex-col gap-[6px]">
+                    {(sections[0]?.steps ?? [text]).map((line, lineIdx) => (
+                      <p key={lineIdx} className="text-[13px] leading-[1.55] text-[var(--text-secondary)]">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </>
@@ -260,13 +499,13 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
           ) : (
             <>
               <div role="table" aria-label={title} className="pms-glass-stage flex flex-col overflow-hidden rounded-[14px]">
-                <div role="row" className={`hidden border-b border-[var(--insights-row-border)] bg-[var(--exec-table-head-bg)] px-[14px] py-[10px] md:grid md:items-center md:gap-[12px] ${ROW_COLUMNS}`}>
+                <div role="row" className={`hidden border-b border-[var(--insights-row-border)] bg-[var(--exec-table-head-bg)] px-[16px] py-[10px] md:grid md:items-center md:gap-[14px] ${ROW_COLUMNS}`}>
                   <span role="columnheader" className={HEAD}>Employee</span>
                   <span role="columnheader" className={HEAD}>Action</span>
                   <span role="columnheader" className={HEAD}>Reason / KPI</span>
                   <span role="columnheader" className={HEAD}>Owner</span>
-                  <span role="columnheader" className={`${HEAD} md:text-right`}>Due</span>
-                  <span role="columnheader" className={HEAD}>Status</span>
+                  <span role="columnheader" className={HEAD}>Due</span>
+                  <span role="columnheader" className={`${HEAD} md:text-right`}>Status</span>
                 </div>
                 {shown.map((item) => (
                   <ActionRow
