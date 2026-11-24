@@ -23,7 +23,7 @@ import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { formatPeriod } from '../../../features/executive/compose';
 import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
-import { Chip, GradePill, StatusPill } from './ExecPrimitives';
+import { Chip, StatusPill } from './ExecPrimitives';
 import { gradeGradientVar } from './gradeGradient';
 import ScoreTrendChart from './ScoreTrendChart';
 import { heroHeadline, heroNarrative, heroStatusLabel } from './execModel';
@@ -173,7 +173,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
   const scoredTeams = summary.teams.filter((t) => t.score !== null);
   const atRiskTeamsCount = scoredTeams.filter((t) => (t.score ?? 0) < 90).length;
   const healthyTeamsCount = scoredTeams.filter((t) => (t.score ?? 0) >= 90).length;
-  const healthyRatio = scoredTeams.length > 0 ? (healthyTeamsCount / scoredTeams.length) * 100 : 0;
+  const hasComparisonCard = Boolean(comparison && comparison.score !== null);
 
   // Build Figma's 3 structured takeaway insights from real summary data
   const sortedFunctions = [...summary.functions]
@@ -250,8 +250,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
 
   return (
     <section aria-labelledby="exec-hero-title" className="flex flex-col gap-[16px]">
-      {/* ROW 1 — Figma 4-Column Frosted Pastel-Gradient KPI Strip */}
-      <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4">
+      {/* ROW 1 — Frosted Pastel-Gradient KPI Strip (3 cards on Corporate, 4 when benchmark comparison exists) */}
+      <div className={`grid grid-cols-1 gap-[14px] ${hasComparisonCard ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-3'}`}>
         <TopKpiCard
           icon={ChartNoAxesColumnIncreasing}
           label={hero.score_basis === 'leader_scorecard' ? 'Leader scorecard' : hero.score_basis === 'team_scorecard' ? 'Team score' : 'People average'}
@@ -312,7 +312,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
           barGradient={changeTone === 'bad' ? 'var(--pms-grad-grade-e)' : changeTone === 'good' ? 'var(--pms-grad-grade-a)' : 'var(--pms-grad-accent)'}
         />
 
-        {comparison && comparison.score !== null ? (
+        {hasComparisonCard && comparison && (
           <TopKpiCard
             icon={BarChart3}
             label={isFunction ? 'vs Company' : `vs ${comparison.label}`}
@@ -329,39 +329,21 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
             barScore={comparison.score}
             barGradient={scoreTone(comparison.difference) === 'bad' ? 'var(--pms-grad-grade-d)' : 'var(--pms-grad-grade-a)'}
           />
-        ) : (
-          <TopKpiCard
-            icon={Users}
-            label="Teams Health"
-            value={atRiskTeamsCount > 0 ? `${atRiskTeamsCount} At Risk` : 'All On Track'}
-            inlineBadge={scoredTeams.length > 0 ? `${healthyTeamsCount} On Track ≥90%` : undefined}
-            inlineBadgeColor="var(--pms-grade-a-text)"
-            valueColor={atRiskTeamsCount > 0 ? 'var(--pms-grade-c-text)' : 'var(--pms-grade-a-text)'}
-            tintColor={atRiskTeamsCount > 0 ? 'var(--pms-grade-c-solid)' : 'var(--pms-grade-a-solid)'}
-            sub={
-              scoredTeams.length > 0
-                ? `${atRiskTeamsCount} of ${scoredTeams.length} teams scored under 90% threshold`
-                : `${hero.functions_count} functions · ${hero.teams_count} teams`
-            }
-            barScore={scoredTeams.length > 0 ? Math.max(12, healthyRatio) : 100}
-            barGradient={atRiskTeamsCount > 0 ? 'var(--pms-grad-grade-c)' : 'var(--pms-grad-grade-a)'}
-          />
         )}
       </div>
 
-      {/* ROW 2 — Figma 2-Column Split: Left = Executive Takeaway Card | Right = Company Score Trend Card */}
+      {/* ROW 2 — 2-Column Split: Left = Executive Takeaway Card | Right = Company Score Trend Card */}
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="pms-glass-surface flex min-w-0 flex-col justify-between gap-[16px] rounded-[20px] p-[20px] sm:p-[22px]">
-          <div className="flex flex-col gap-[14px]">
+        <div className="pms-glass-surface flex min-w-0 flex-col justify-between gap-[14px] rounded-[20px] p-[20px] sm:p-[22px]">
+          <div className="flex flex-col gap-[12px]">
             <div className="flex flex-wrap items-center justify-between gap-[8px]">
               <div className="flex flex-wrap items-center gap-[8px]">
-                <span aria-hidden="true" className="flex size-[34px] items-center justify-center rounded-[10px] border border-white/60 bg-[var(--insights-accent-tag)] dark:border-white/10">
-                  <EyebrowIcon className="size-[18px] text-[var(--insights-accent)]" strokeWidth={1.9} />
+                <span aria-hidden="true" className="flex size-[32px] items-center justify-center rounded-[10px] border border-white/60 bg-[var(--insights-accent-tag)] dark:border-white/10">
+                  <EyebrowIcon className="size-[17px] text-[var(--insights-accent)]" strokeWidth={1.9} />
                 </span>
                 <span className="text-[15px] font-bold text-[var(--insights-heading)]">
                   {scope.view === 'function' ? `${hero.label} Performance Brief` : eyebrow.label}
                 </span>
-                <GradePill score={hero.score} className="!px-[10px] !py-[3px] !text-[11px]" />
                 {statusLabel && (
                   <StatusPill tone={statusTone} icon={statusTone === 'success' ? CheckCircle2 : AlertTriangle}>{statusLabel}</StatusPill>
                 )}
@@ -467,13 +449,8 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
               {heroHeadline(summary)}
             </h2>
 
-            {narrative && (
-              <p className="text-[13px] leading-[1.6] text-[var(--text-secondary)]">{narrative}</p>
-            )}
-
-            {/* Figma 3 Key Insights List */}
-            {takeaways.length > 0 && (
-              <ul className="flex flex-col gap-[10px]">
+            {takeaways.length > 0 ? (
+              <ul className="flex flex-col gap-[9px]">
                 {takeaways.map((item) => {
                   const Icon = item.kind === 'drag' ? AlertTriangle : item.kind === 'bright' ? TrendingUp : Sparkles;
                   const iconBg = item.kind === 'drag'
@@ -489,7 +466,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                   return (
                     <li
                       key={item.title}
-                      className="pms-glass-stage flex items-start gap-[10px] rounded-[12px] px-[12px] py-[10px]"
+                      className="pms-glass-stage flex items-start gap-[10px] rounded-[12px] px-[12px] py-[9px]"
                     >
                       <span
                         aria-hidden="true"
@@ -506,7 +483,9 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
                   );
                 })}
               </ul>
-            )}
+            ) : narrative ? (
+              <p className="text-[13px] leading-[1.6] text-[var(--text-secondary)]">{narrative}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-[10px] border-t border-[var(--exec-card-border)] pt-[12px]">
@@ -522,7 +501,6 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
               </button>
             )}
             <div className="flex flex-wrap gap-[6px]">
-              <Chip icon={Users}>{hero.employees.toLocaleString('en-US')} employees</Chip>
               {scope.view === 'corporate'
                 ? <Chip icon={Layers}>{hero.functions_count} functions · {hero.teams_count} teams</Chip>
                 : scope.view === 'function' ? <Chip icon={Layers}>{hero.teams_count} teams</Chip> : null}
