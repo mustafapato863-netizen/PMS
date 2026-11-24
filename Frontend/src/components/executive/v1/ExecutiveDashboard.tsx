@@ -2,7 +2,7 @@
  * Body of the Executive Summary per view (Figma 47:2 corporate, 47:3051
  * managerial). The Function Summary (PR B) reuses the same sections.
  */
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
@@ -31,7 +31,7 @@ export interface ExecutiveDashboardPermissions {
   canCreateActions: boolean;
 }
 
-export default function ExecutiveDashboard({
+const ExecutiveDashboard = memo(function ExecutiveDashboard({
   summary,
   permissions,
   functionBreakdownSlot = null,
@@ -137,13 +137,17 @@ export default function ExecutiveDashboard({
         </div>
       </div>
       {/* Figma Row 5: Full-Width Priority Teams Needing Attention */}
-      <div id="exec-risk-section">
+      <div id="exec-risk-section" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 380px' }}>
         <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
       </div>
       {/* Figma Row 6: Full-Width Corrective Actions & Coaching Pulse */}
       {permissions.canSeeActions && (
-        <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
+        <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
+          <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
+        </div>
       )}
     </div>
   );
-}
+});
+
+export default ExecutiveDashboard;

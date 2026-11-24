@@ -241,6 +241,13 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     />
   );
 
+  const dashboardPermissions = useMemo(() => ({
+    canOpenFunctions: canAccessFunctionSummary(role),
+    canOpenInsights: canAccessInsights(role),
+    canSeeActions: canSeeSummaryActionAnalytics(role),
+    canCreateActions: canEditActionFollowUp(role),
+  }), [role]);
+
   let body: ReactNode;
   if (isLoading && !summary) body = <ExecutiveViewSkeleton />;
   else if (error && !summary?.data_status.has_data) {
@@ -257,17 +264,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       />
     );
   } else {
-    body = (
-      <ExecutiveDashboard
-        summary={summary}
-        permissions={{
-          canOpenFunctions: canAccessFunctionSummary(role),
-          canOpenInsights: canAccessInsights(role),
-          canSeeActions: canSeeSummaryActionAnalytics(role),
-          canCreateActions: canEditActionFollowUp(role),
-        }}
-      />
-    );
+    body = <ExecutiveDashboard summary={summary} permissions={dashboardPermissions} />;
   }
 
   return (

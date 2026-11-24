@@ -21,7 +21,7 @@ import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/
 import { canonicalTeamName, type PMSAction } from '../../types';
 import { teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { InsightFilters } from '../insights/types';
-import { composeExecutiveSummary, monthsBetween, normalizeRegion, periodFromKey, previousRangeOf, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
+import { composeExecutiveSummary, monthsBetween, normalizeRegion, periodFromKey, previousRangeOf, resolveEffectivePeriodKey, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
 import { useSummaryRecords } from './useSummaryRecords';
 import { EXECUTIVE_FUNCTIONS, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type { ExecutiveFunction, ExecutiveSummary, ExecutiveView } from './types';
@@ -199,8 +199,33 @@ export function useExecutiveSummary({
     teamConfigs: teamConfigsList,
   }), [accessibleFunctions, branch, functionName, managerTeam, managerTeamOptions, performanceLevel, periodKey, position, rangeInput, records, region, resolvedToday, role, team, teamConfigsList, teamFunction, view]);
 
-  const preliminary = useMemo(() => (enabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, enabled, recordsLoading]);
-  const effectiveKey = preliminary?.period.effective?.key;
+  // Compute only the effective period key in O(N) instead of running the full
+  // composeExecutiveSummary pipeline twice on every render/filter change.
+  const canCompose = enabled && !recordsLoading;
+  const effectiveKey = useMemo(
+    () => (canCompose ? (resolveEffectivePeriodKey(baseInput) ?? undefined) : undefined),
+    [baseInput, canCompose],
+  );
+
+  // Pre-index records by employeeId and team once per records change so scopeAction
+  // runs in O(1) lookup instead of O(actions × records) linear scans.
+  const recordIndex = useMemo(() => {
+    const byEmployee = new Map<string, ExecRecord[]>();
+    const byTeam = new Map<string, ExecRecord[]>();
+    for (const record of records) {
+      if (record.employeeId) {
+        const list = byEmployee.get(record.employeeId);
+        if (list) list.push(record);
+        else byEmployee.set(record.employeeId, [record]);
+      }
+      if (record.team) {
+        const list = byTeam.get(record.team);
+        if (list) list.push(record);
+        else byTeam.set(record.team, [record]);
+      }
+    }
+    return { byEmployee, byTeam };
+  }, [records]);
 
   const insightFilters: InsightFilters = useMemo(() => {
     if (view === 'managerial') return { periodKey: effectiveKey, team: managerTeam ?? undefined, performanceLevel };
@@ -244,6 +269,8 @@ export function useExecutiveSummary({
     },
     enabled: actionsEnabled,
     retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const teamFunctions = workspace.data?.options?.team_functions as TeamFunctionMap | undefined;
 
@@ -257,14 +284,17 @@ export function useExecutiveSummary({
     if (view === 'function' && functionName && !summaryFunctionMatches(actionTeam, functionName, teamFunctions)) return false;
     if (teamFunction && actionTeam && !teamBelongsToFunction(actionTeam, teamFunction, teamFunctions)) return false;
     if (region || branch || performanceLevel || position) {
-      const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === actionTeam);
-      if (!matches.some((record) => (!normalizeRegion(region) || normalizeRegion(record.region) === normalizeRegion(region))
+      const normalizedRegion = normalizeRegion(region);
+      const matches = action.employee_id
+        ? (recordIndex.byEmployee.get(action.employee_id) ?? [])
+        : (recordIndex.byTeam.get(actionTeam) ?? []);
+      if (!matches.some((record) => (!normalizedRegion || normalizeRegion(record.region) === normalizedRegion)
         && (!branch || record.branches?.includes(branch))
         && (!performanceLevel || record.level === performanceLevel)
         && (!position || record.position === position))) return false;
     }
     return true;
-  }, [branch, functionName, managerTeam, managerTeamOptions, performanceLevel, position, records, region, team, teamFunction, teamFunctions, view]);
+  }, [branch, functionName, managerTeam, managerTeamOptions, performanceLevel, position, recordIndex, region, team, teamFunction, teamFunctions, view]);
 
   // Pending Sync: unsynced actions on this device, in the same page scope. Counted only; never added to the totals.
   const pendingActions = useMemo(() => (actionsEnabled && queuedActions
@@ -272,7 +302,7 @@ export function useExecutiveSummary({
     : null), [actionsEnabled, queuedActions, scopeAction]);
 
   const composed = useMemo(() => {
-    if (!preliminary) return null;
+    if (!canCompose) return null;
     return composeExecutiveSummary({
       ...baseInput,
       teamFunctions,
@@ -281,7 +311,7 @@ export function useExecutiveSummary({
       actions: followUp.data ? followUp.data.actions.map(toFollowUp).filter(scopeAction) : null,
       pendingActions,
     });
-  }, [baseInput, branch, driversEnabled, followUp.data, pendingActions, position, preliminary, role, scopeAction, teamFunctions, workspace.data]);
+  }, [baseInput, branch, canCompose, driversEnabled, followUp.data, pendingActions, position, role, scopeAction, teamFunctions, workspace.data]);
 
   const options = useMemo(() => buildExecutiveOptions(records, filterFields, view, teamFunctions, functionName), [filterFields, functionName, records, teamFunctions, view]);
 
