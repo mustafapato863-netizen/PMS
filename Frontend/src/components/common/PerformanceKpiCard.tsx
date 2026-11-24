@@ -1,6 +1,8 @@
 import { useEffect, useId, useState, type KeyboardEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Minus, RotateCcw, RotateCw, TrendingDown, TrendingUp } from 'lucide-react';
+import { getGradeTone } from '../../constants/grades';
+import { gradeGradientVar } from '../executive/v1/gradeGradient';
 import { formatPercentOfTargetLabel } from './performanceKpiProgress';
 
 export type PerformanceKpiBadgeType = 'success' | 'warning' | 'danger' | 'neutral';
@@ -50,12 +52,22 @@ const BADGE_CLASSES: Record<PerformanceKpiBadgeType, string> = {
   neutral: 'border-slate-500/20 bg-slate-500/10 text-slate-600 dark:text-slate-300',
 };
 
-const PROGRESS_GRADIENTS: Record<PerformanceKpiBadgeType, string> = {
-  success: 'var(--pms-grad-grade-a, linear-gradient(90deg, #10B981 0%, #34D399 100%))',
-  warning: 'var(--pms-grad-grade-c, linear-gradient(90deg, #F59E0B 0%, #FBBF24 100%))',
-  danger: 'var(--pms-grad-grade-e, linear-gradient(90deg, #F43F5E 0%, #FB7185 100%))',
-  neutral: 'var(--pms-grad-grade-na, linear-gradient(90deg, #94A3B8 0%, #CBD5E1 100%))',
-};
+/**
+ * Resolve the effective score (0–100) used to drive the Executive Summary
+ * 95 / 90 / 80 / 70 grade-gradient tokens (A / B / C / D / E / N/A).
+ */
+function resolveCardGradeScore(
+  progressPercent: number | null | undefined,
+  badgeType: PerformanceKpiBadgeType,
+): number | null {
+  if (progressPercent !== undefined && progressPercent !== null && Number.isFinite(progressPercent)) {
+    return Math.min(Math.max(progressPercent, 0), 100);
+  }
+  if (badgeType === 'success') return 100;
+  if (badgeType === 'warning') return 85;
+  if (badgeType === 'danger') return 65;
+  return null;
+}
 
 function formatTargetBadgeValue(val: string | number): string {
   if (typeof val === 'number') {
@@ -134,6 +146,7 @@ function MiniSixMonthTrend({
 
   const activeIdx = hoveredIdx !== null && hoveredIdx < points.length ? hoveredIdx : latestMeasuredIndex;
   const activePoint = activeIdx >= 0 ? points[activeIdx] : null;
+  const hoveredPoint = hoveredIdx !== null && hoveredIdx < points.length ? points[hoveredIdx] : null;
 
   const onTargetStats = measuredPoints.reduce(
     (acc, point) => {
@@ -149,7 +162,7 @@ function MiniSixMonthTrend({
 
   // SVG layout coordinates
   const width = 256;
-  const height = 102;
+  const height = 104;
   const padLeft = 34;
   const padRight = 10;
   const padTop = 10;
@@ -192,6 +205,13 @@ function MiniSixMonthTrend({
     ? `${actualPath} L ${actualCoords[actualCoords.length - 1].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} L ${actualCoords[0].x.toFixed(1)} ${(padTop + plotHeight).toFixed(1)} Z`
     : '';
 
+  const hoveredXPercent = hoveredIdx !== null && points.length > 0
+    ? Math.min(Math.max((xFor(hoveredIdx) / width) * 100, 18), 82)
+    : 50;
+  const hoveredMet = hoveredPoint
+    ? isPointOnTarget(hoveredPoint.actual, hoveredPoint.target, lowerBetter)
+    : null;
+
   return (
     <div className="flex h-full flex-col justify-between">
       <div className="flex items-start justify-between gap-2">
@@ -199,18 +219,21 @@ function MiniSixMonthTrend({
           <p className="truncate text-xs font-bold text-[var(--text-primary)]" title={label}>
             {label}
           </p>
-          <p className="text-[11px] font-semibold text-[var(--text-muted)]">
+          <p className="text-[12px] font-medium text-[var(--text-muted)]">
             Last {Math.max(points.length, 6)} mo · Actual vs Target
           </p>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)]">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2 py-0.5 text-[12px] font-semibold text-[var(--text-secondary)]">
           <RotateCcw size={11} aria-hidden="true" />
           Flip
         </span>
       </div>
 
       {activePoint ? (
-        <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2.5 py-1 text-[11px]">
+        <div
+          data-testid="kpi-trend-readout"
+          className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2.5 py-1 text-[12px]"
+        >
           <span className="font-bold text-[var(--text-primary)]">{activePoint.month}</span>
           <span className="flex items-center gap-2 font-semibold tabular-nums">
             <span className="text-sky-600 dark:text-sky-400">
@@ -225,7 +248,45 @@ function MiniSixMonthTrend({
       ) : null}
 
       {measuredPoints.length > 0 ? (
-        <div className="mt-1.5 w-full" aria-label={`${label} 6-month actual vs target trend`}>
+        <div
+          className="relative mt-1 w-full"
+          aria-label={`${label} 6-month actual vs target trend`}
+          onMouseLeave={() => setHoveredIdx(null)}
+        >
+          {/* Interactive Hover Tooltip showing Score & Target */}
+          {hoveredPoint && hoveredIdx !== null && (
+            <div
+              role="tooltip"
+              data-testid="kpi-trend-hover-tooltip"
+              className="pointer-events-none absolute top-0 z-20 -translate-x-1/2 rounded-lg border border-[var(--pms-glass-card-border)] bg-[var(--bg-surface)]/95 px-2.5 py-1.5 shadow-md backdrop-blur-sm"
+              style={{ left: `${hoveredXPercent}%` }}
+            >
+              <div className="flex items-center justify-between gap-2.5 text-[12px] leading-tight">
+                <span className="font-bold text-[var(--text-primary)]">{hoveredPoint.month}</span>
+                {hoveredMet !== null && (
+                  <span
+                    className={`font-bold ${
+                      hoveredMet
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {hoveredMet ? 'On target' : 'Below'}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 whitespace-nowrap text-[12px] font-semibold tabular-nums leading-tight">
+                <span className="text-sky-600 dark:text-sky-400">
+                  Score {formatTrendPointValue(hoveredPoint.actual, unit)}
+                </span>
+                <span className="text-[var(--text-muted)]">·</span>
+                <span className="text-amber-600 dark:text-amber-400">
+                  Tgt {formatTrendPointValue(hoveredPoint.target, unit)}
+                </span>
+              </div>
+            </div>
+          )}
+
           <svg
             viewBox={`0 0 ${width} ${height}`}
             className="h-[104px] w-full overflow-visible"
@@ -297,22 +358,69 @@ function MiniSixMonthTrend({
               />
             )}
 
+            {/* Vertical hover crosshair guide */}
+            {hoveredIdx !== null && (
+              <line
+                x1={xFor(hoveredIdx)}
+                y1={padTop}
+                x2={xFor(hoveredIdx)}
+                y2={padTop + plotHeight}
+                stroke="var(--insights-accent)"
+                strokeDasharray="2.5 2.5"
+                strokeWidth="1.2"
+                opacity="0.7"
+              />
+            )}
+
+            {/* Target point marker on hover */}
+            {hoveredIdx !== null &&
+              points[hoveredIdx]?.target !== null &&
+              Number.isFinite(points[hoveredIdx]?.target) && (
+                <circle
+                  cx={xFor(hoveredIdx)}
+                  cy={yFor(points[hoveredIdx].target as number)}
+                  r={3.2}
+                  fill="#F59E0B"
+                  stroke="var(--bg-surface)"
+                  strokeWidth="1.4"
+                />
+              )}
+
             {/* Data point markers */}
             {actualCoords.map(({ index, x, y, point }) => {
               const met = isPointOnTarget(point.actual, point.target, lowerBetter);
               const fill = met === true ? '#10B981' : met === false ? '#F43F5E' : '#0284C7';
               const isSelected = index === activeIdx;
               return (
-                <g
-                  key={point.month}
-                  onMouseEnter={() => setHoveredIdx(index)}
-                  onMouseLeave={() => setHoveredIdx(null)}
-                >
-                  {isSelected && <circle cx={x} cy={y} r={6} fill={fill} opacity={0.2} />}
-                  <circle cx={x} cy={y} r={isSelected ? 3.8 : 3} fill={fill} stroke="var(--bg-surface)" strokeWidth="1.5">
-                    <title>{`${point.month}: Actual ${formatTrendPointValue(point.actual, unit)} vs Target ${formatTrendPointValue(point.target, unit)}`}</title>
-                  </circle>
+                <g key={point.month} pointerEvents="none">
+                  {isSelected && <circle cx={x} cy={y} r={6.5} fill={fill} opacity={0.22} />}
+                  <circle cx={x} cy={y} r={isSelected ? 4 : 3} fill={fill} stroke="var(--bg-surface)" strokeWidth="1.5" />
                 </g>
+              );
+            })}
+
+            {/* Full-column interactive hover hit targets for every month */}
+            {points.map((point, index) => {
+              const cx = xFor(index);
+              const prevX = index > 0 ? xFor(index - 1) : padLeft;
+              const nextX = index < points.length - 1 ? xFor(index + 1) : width - padRight;
+              const hitLeft = index === 0 ? padLeft - 6 : (prevX + cx) / 2;
+              const hitRight = index === points.length - 1 ? width - padRight + 6 : (cx + nextX) / 2;
+              return (
+                <rect
+                  key={`hit-${point.month}-${index}`}
+                  data-testid={`kpi-trend-hit-${point.month}`}
+                  x={hitLeft}
+                  y={padTop - 4}
+                  width={Math.max(hitRight - hitLeft, 12)}
+                  height={plotHeight + padBottom + 4}
+                  fill="transparent"
+                  className="cursor-crosshair"
+                  onMouseEnter={() => setHoveredIdx(index)}
+                  onPointerEnter={() => setHoveredIdx(index)}
+                >
+                  <title>{`${point.month}: Score ${formatTrendPointValue(point.actual, unit)} · Target ${formatTrendPointValue(point.target, unit)}`}</title>
+                </rect>
               );
             })}
 
@@ -326,6 +434,7 @@ function MiniSixMonthTrend({
                 fill={index === activeIdx ? 'var(--text-primary)' : 'var(--text-muted)'}
                 fontSize="9"
                 fontWeight={index === activeIdx ? '700' : '600'}
+                pointerEvents="none"
               >
                 {point.month}
               </text>
@@ -338,7 +447,7 @@ function MiniSixMonthTrend({
         </div>
       )}
 
-      <div className="mt-1 flex items-center justify-between border-t border-[var(--border-light)] pt-2 text-[11px] font-semibold">
+      <div className="mt-1 flex items-center justify-between border-t border-[var(--border-light)] pt-2 text-[12px] font-semibold">
         <span className="inline-flex items-center gap-2.5 text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-sky-500" aria-hidden="true" />
@@ -350,7 +459,7 @@ function MiniSixMonthTrend({
           </span>
         </span>
         <span
-          className="rounded-full px-2 py-0.5 text-[11px] font-bold"
+          className="rounded-full px-2 py-0.5 text-[12px] font-bold"
           style={{
             background:
               onTargetStats.comparable > 0 && onTargetStats.met === onTargetStats.comparable
@@ -435,6 +544,14 @@ const PerformanceKpiCard = ({
       normalizedWeight !== null ? Math.max(normalizedWeight, 0) * 100 : 100,
     );
 
+  const gradeScore = resolveCardGradeScore(progressPercent, badgeType);
+  const gradeTone = getGradeTone(gradeScore);
+  const accentGradient = gradeGradientVar(gradeScore);
+  const cardSurfaceStyle = {
+    backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${gradeTone.gauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
+    borderColor: `color-mix(in srgb, ${gradeTone.gauge} 20%, var(--pms-glass-card-border))`,
+  };
+
   const toggleFlip = () => {
     if (!flippable) return;
     setFlipped((prev) => !prev);
@@ -452,12 +569,9 @@ const PerformanceKpiCard = ({
     <>
       <span
         aria-hidden="true"
+        data-testid="kpi-card-accent-strip"
         className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-        style={{ background: PROGRESS_GRADIENTS[badgeType] }}
-      />
-      <div
-        className={`pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.06] transition-opacity duration-500 group-hover:opacity-[0.12] ${iconAccentColor ? '' : iconBgColor}`}
-        style={iconAccentColor ? { backgroundColor: iconAccentColor } : undefined}
+        style={{ background: accentGradient }}
       />
 
       <div className="relative flex items-start justify-between gap-2">
@@ -537,7 +651,7 @@ const PerformanceKpiCard = ({
           >
             <div
               className="h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${visualProgress}%`, background: PROGRESS_GRADIENTS[badgeType] }}
+              style={{ width: `${visualProgress}%`, background: accentGradient }}
             />
           </div>
           <span className="min-w-[74px] text-right text-xs font-semibold text-[var(--text-muted)]">
@@ -573,7 +687,10 @@ const PerformanceKpiCard = ({
 
   if (!flippable) {
     return (
-      <article className="pms-glass-surface pms-glass-surface--interactive glass-card group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4">
+      <article
+        className="pms-glass-surface pms-glass-surface--interactive glass-card group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+        style={cardSurfaceStyle}
+      >
         {frontContent}
       </article>
     );
@@ -595,7 +712,8 @@ const PerformanceKpiCard = ({
         {/* Front Face */}
         <div
           aria-hidden={flipped}
-          className="pms-flip-face pms-glass-surface pms-glass-surface--interactive glass-card relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+          className="pms-flip-face pms-flip-face--front pms-glass-surface pms-glass-surface--interactive glass-card relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+          style={cardSurfaceStyle}
         >
           {frontContent}
         </div>
@@ -605,11 +723,12 @@ const PerformanceKpiCard = ({
           aria-hidden={!flipped}
           data-testid="kpi-card-trend-back"
           className="pms-flip-face pms-flip-face--back pms-glass-surface relative flex flex-col justify-between overflow-hidden rounded-2xl p-4"
+          style={cardSurfaceStyle}
         >
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-            style={{ background: PROGRESS_GRADIENTS[badgeType] }}
+            style={{ background: accentGradient }}
           />
           <MiniSixMonthTrend
             label={label}

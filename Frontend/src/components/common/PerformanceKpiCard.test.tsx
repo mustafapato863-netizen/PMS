@@ -288,4 +288,100 @@ describe('PerformanceKpiCard', () => {
     expect(card).toHaveAttribute('data-flipped', 'true');
     expect(screen.getByText('No 6-month trend history available yet.')).toBeInTheDocument();
   });
+
+  it('applies Executive 95/90/80/70 grade-gradient rules to card accent and progress bars', () => {
+    const { rerender } = render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Quality Score"
+        value="94.0%"
+        targetValue="95%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={99.0}
+        contribution={4.9}
+        weight={0.05}
+      />,
+    );
+
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-a)',
+    });
+
+    rerender(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Conversion Rate"
+        value="84.0%"
+        targetValue="100%"
+        badgeText="Needs Attention"
+        badgeType="warning"
+        progressPercent={84.0}
+        contribution={20}
+        weight={0.25}
+      />,
+    );
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-c)',
+    });
+
+    rerender(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Revenue Ach"
+        value="38.5%"
+        targetValue="100%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={38.5}
+        contribution={3.9}
+        weight={0.1}
+      />,
+    );
+    expect(screen.getByTestId('kpi-card-accent-strip')).toHaveStyle({
+      background: 'var(--pms-grad-grade-e)',
+    });
+  });
+
+  it('shows interactive Score and Target tooltip when hovering a month on the flipped trend', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Quality Score"
+        value="94.0%"
+        targetValue="95%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={99.0}
+        contribution={4.9}
+        weight={0.05}
+        trendSeries={[
+          { month: 'May', actual: 91.2, target: 95 },
+          { month: 'Jun', actual: 92.5, target: 95 },
+          { month: 'Jul', actual: 95.4, target: 95 },
+          { month: 'Aug', actual: 93.1, target: 95 },
+          { month: 'Sep', actual: 94.0, target: 95 },
+          { month: 'Oct', actual: 96.2, target: 95 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /Quality Score/i });
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.queryByTestId('kpi-trend-hover-tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByTestId('kpi-trend-hit-Jul'));
+    const tooltip = screen.getByTestId('kpi-trend-hover-tooltip');
+    expect(tooltip).toHaveTextContent('Jul');
+    expect(tooltip).toHaveTextContent('Score 95.4%');
+    expect(tooltip).toHaveTextContent('Tgt 95.0%');
+    expect(tooltip).toHaveTextContent('On target');
+
+    fireEvent.mouseEnter(screen.getByTestId('kpi-trend-hit-Aug'));
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Score 93.1%');
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Tgt 95.0%');
+    expect(screen.getByTestId('kpi-trend-hover-tooltip')).toHaveTextContent('Below');
+  });
 });
