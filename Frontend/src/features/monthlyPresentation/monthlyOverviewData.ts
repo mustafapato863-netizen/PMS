@@ -1,4 +1,5 @@
 import type { ExecutiveSummary } from '../executive/types';
+import { functionSlug } from '../executive/functions';
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -55,7 +56,7 @@ export interface TeamAtRiskItem {
 export interface MonthlyOverviewData {
   title: string;
   FlowName: string;
-  regionCode: 'EGY' | 'UAE';
+  regionCode: 'EGY' | 'UAE' | 'ALL';
   regionName: string;
   monthLabel: string;
   previousMonthLabel: string;
@@ -499,16 +500,26 @@ function measuredGradeTakeaway(distribution: NonNullable<ExecutiveSummary['grade
   return `${distribution.total} ${people} graded in this region. ${ab} in A/B and ${de} in D/E.`;
 }
 
+function monthlyRegionName(region: 'EGY' | 'UAE' | 'ALL'): string {
+  return region === 'EGY' ? 'Offshore Egypt' : region === 'UAE' ? 'UAE Region' : 'All regions';
+}
+
 /**
  * Adapts live ExecutiveSummary data (when available and populated) into MonthlyOverviewData.
  * Egypt may keep its September snapshot when a section is empty. UAE must not borrow that snapshot.
  */
 export function adaptSummaryToMonthlyOverview(
   summary: ExecutiveSummary | null | undefined,
-  region: 'EGY' | 'UAE',
+  region: 'EGY' | 'UAE' | 'ALL',
   options: { allowSnapshotFallback?: boolean } = {},
 ): MonthlyOverviewData {
-  const snapshot = region === 'UAE' ? UAE_SEP_2026_DATA : OFFSHORE_EGYPT_SEP_2026_DATA;
+  // Only Egypt may borrow its September snapshot. UAE and the combined All
+  // view fall back to the truthful empty overview instead of Egypt numbers.
+  const snapshot = region === 'UAE'
+    ? UAE_SEP_2026_DATA
+    : region === 'ALL'
+      ? emptyMonthlyOverview('ALL', summary)
+      : OFFSHORE_EGYPT_SEP_2026_DATA;
   const allowSnapshotFallback = options.allowSnapshotFallback ?? true;
   const fallback = allowSnapshotFallback ? snapshot : emptyMonthlyOverview(region, summary);
   if (!summary || !summary.data_status.has_data || summary.hero.score === null) {
@@ -567,13 +578,13 @@ export function adaptSummaryToMonthlyOverview(
       ? summary.drivers.negative.slice(0, 4).map((d, idx) => ({
           id: `neg-${idx}`,
           kpiName: d.kpi_label,
-          team: d.team ?? region,
+          team: d.team ?? monthlyRegionName(region),
           functionName: d.function ?? 'Operations',
           impactPct: d.weighted_gap_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
           actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
         }))
-      : !allowSnapshotFallback || region === 'UAE'
+      : !allowSnapshotFallback || region !== 'EGY'
         ? []
         : fallback.drivers.negative;
 
@@ -582,13 +593,13 @@ export function adaptSummaryToMonthlyOverview(
       ? summary.drivers.positive.slice(0, 4).map((d, idx) => ({
           id: `pos-${idx}`,
           kpiName: d.kpi_label,
-          team: d.team ?? region,
+          team: d.team ?? monthlyRegionName(region),
           functionName: d.function ?? 'Operations',
           impactPct: d.impact_change_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
           actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
         }))
-      : !allowSnapshotFallback || region === 'UAE'
+      : !allowSnapshotFallback || region !== 'EGY'
         ? []
         : fallback.drivers.positive;
 
@@ -602,7 +613,7 @@ export function adaptSummaryToMonthlyOverview(
             const hasMajorIssue = fnGrade === 'D' || fnGrade === 'E' || fnScore < 80;
             return {
               functionName: fn.function,
-              slug: fn.function.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              slug: functionSlug(fn.function),
               score: fnScore,
               grade: fnGrade,
               gap: fn.gap ?? Number((fnScore - 100).toFixed(1)),
@@ -639,14 +650,14 @@ export function adaptSummaryToMonthlyOverview(
               flags,
             };
           })
-      : !allowSnapshotFallback || region === 'UAE'
+      : !allowSnapshotFallback || region !== 'EGY'
         ? []
         : fallback.teamsAtRisk;
 
   return {
     ...fallback,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: monthlyRegionName(region),
     monthLabel,
     previousMonthLabel,
     periodKey: summary.period.effective?.key ?? fallback.periodKey,
@@ -667,7 +678,7 @@ export function adaptSummaryToMonthlyOverview(
     gradeDistribution: {
       totalEmployees: distribution?.total || fallback.gradeDistribution.totalEmployees,
       rows: gradeRows,
-      takeaway: distribution && (!allowSnapshotFallback || region === 'UAE')
+      takeaway: distribution && (!allowSnapshotFallback || region !== 'EGY')
         ? measuredGradeTakeaway(distribution)
         : fallback.gradeDistribution.takeaway,
     },
@@ -681,7 +692,7 @@ export function adaptSummaryToMonthlyOverview(
 }
 
 function emptyMonthlyOverview(
-  region: 'EGY' | 'UAE',
+  region: 'EGY' | 'UAE' | 'ALL',
   summary: ExecutiveSummary | null | undefined,
 ): MonthlyOverviewData {
   const effective = summary?.period.effective;
@@ -690,7 +701,7 @@ function emptyMonthlyOverview(
     title: 'Monthly Review',
     FlowName: 'Authorized scope',
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: monthlyRegionName(region),
     monthLabel: label,
     previousMonthLabel: summary?.period.previous?.month ?? 'Previous period',
     periodKey: effective?.key ?? '',

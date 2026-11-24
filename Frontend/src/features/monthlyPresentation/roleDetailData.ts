@@ -717,7 +717,7 @@ function recordsForFunction(data: CallCenterDeepDiveData, records: ExecRecord[])
   const slug = normalizeFunctionSlug(data.functionSlug);
   const name = data.functionName.toLowerCase();
   return records.filter((record) => {
-    if (normalizeRegion(record.region) !== data.regionCode) return false;
+    if (data.regionCode !== 'ALL' && normalizeRegion(record.region) !== data.regionCode) return false;
     if (record.period.key !== data.periodKey) return false;
     const fn = executiveFunctionForTeam(record.team);
     return (
@@ -794,7 +794,7 @@ export function resolveRoleCards(
   const fromRecords = cardsFromRecords(scoped, records);
   if (fromRecords.length) return fromRecords;
   if (
-    data.regionCode === 'UAE' &&
+    (data.regionCode === 'UAE' || data.regionCode === 'ALL') &&
     data.supportPositions.length === 0 &&
     data.agentsNeedingAttention.length === 0
   ) {

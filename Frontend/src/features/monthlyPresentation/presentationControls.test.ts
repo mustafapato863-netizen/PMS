@@ -22,6 +22,21 @@ describe('presentationMonthOptions', () => {
     expect(options[0]?.label).toBe('September 2026');
   });
 
+  it('lists months from both regions for the All view, newest first', () => {
+    const options = presentationMonthOptions(
+      [
+        { region: 'EGY', periodKey: '2026-09' },
+        { region: 'UAE', periodKey: '2026-08' },
+        { region: 'EGY', periodKey: '2026-07' },
+      ],
+      'ALL',
+      today,
+      '2026-09',
+    );
+
+    expect(options.map((month) => month.key)).toEqual(['2026-09', '2026-08', '2026-07']);
+  });
+
   it('keeps the displayed month when that region has no measured rows', () => {
     const options = presentationMonthOptions([], 'UAE', today, '2026-09');
     expect(options).toEqual([{ key: '2026-09', label: 'September 2026' }]);

@@ -61,7 +61,7 @@ export interface MonthlyOverviewHeaderProps {
   flowName: string;
   regionName: string;
   monthLabel: string;
-  regionCode: 'EGY' | 'UAE';
+  regionCode: 'EGY' | 'UAE' | 'ALL';
   pageIndicatorLabel: string;
   toolbar?: ReactNode;
 }
@@ -92,7 +92,9 @@ export function MonthlyOverviewHeader({
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-xs font-semibold ${
               regionCode === 'EGY'
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-blue-200 bg-blue-50 text-blue-700'
+                : regionCode === 'ALL'
+                  ? 'border-violet-200 bg-violet-50 text-violet-700'
+                  : 'border-blue-200 bg-blue-50 text-blue-700'
             }`}
           >
             <span className="size-1.5 rounded-full bg-current" />

@@ -174,7 +174,7 @@ function mergeTeamPlanItems(
   return Array.from(byId.values());
 }
 
-export type MonthlyRegionFilter = 'EGY' | 'UAE';
+export type MonthlyRegionFilter = 'EGY' | 'UAE' | 'ALL';
 
 export interface MonthlyPresentationViewProps {
   /** Optional API-adapted or custom data override */
@@ -294,13 +294,20 @@ function MonthlyPresentationScreen({
     [authorizedFunctionNames],
   );
   const availableRegions = useMemo<MonthlyRegionFilter[]>(() => {
-    if (explicitPreview) return ['EGY', 'UAE'];
+    // The combined All view is offered whenever both regions are present
+    // (including the explicit preview), listed first, then EGY, UAE.
     const regions = new Set<MonthlyRegionFilter>();
-    for (const team of serverTeams) {
-      const normalized = normalizeRegion(team.region);
-      if (normalized === 'EGY' || normalized === 'UAE') regions.add(normalized);
+    if (explicitPreview) {
+      regions.add('EGY');
+      regions.add('UAE');
+    } else {
+      for (const team of serverTeams) {
+        const normalized = normalizeRegion(team.region);
+        if (normalized === 'EGY' || normalized === 'UAE') regions.add(normalized);
+      }
     }
-    return [...regions].sort((a, b) => (a === 'EGY' ? -1 : b === 'EGY' ? 1 : 0));
+    const ordered = [...regions].sort((a, b) => (a === 'EGY' ? -1 : b === 'EGY' ? 1 : 0));
+    return regions.size === 2 ? (['ALL', ...ordered] as MonthlyRegionFilter[]) : ordered;
   }, [explicitPreview, serverTeams]);
   const { getAllActions, saveAction, updateAction, deleteAction } = useActionStore();
   const storedActions = useMemo(() => getAllActions(), [getAllActions]);
@@ -311,8 +318,12 @@ function MonthlyPresentationScreen({
 
   const activeRegion: MonthlyRegionFilter = useMemo(() => {
     const validRegions: MonthlyRegionFilter[] = availableRegions.length ? availableRegions : ['EGY'];
+    // The combined view is never the default: it is only chosen explicitly
+    // (?region=all). The default stays the assigned / URL / preview region,
+    // then the first single region.
+    const defaultRegion = validRegions.find((region) => region !== 'ALL') ?? validRegions[0];
     if (
-      (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY') &&
+      (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'ALL') &&
       validRegions.includes(normalizedUrlRegion)
     ) return normalizedUrlRegion;
     const assignedRegion = normalizeRegion(assigned.region);
@@ -322,7 +333,7 @@ function MonthlyPresentationScreen({
     if (explicitPreview && data?.regionCode && validRegions.includes(data.regionCode)) {
       return data.regionCode;
     }
-    return validRegions[0];
+    return defaultRegion;
   }, [
     assigned.region,
     data?.regionCode,
@@ -379,7 +390,8 @@ function MonthlyPresentationScreen({
               view: 'corporate',
               role,
               records: authorizedRecords,
-              filters: { region: activeRegion },
+              // The All view aggregates both regions: no region filter.
+              filters: { region: activeRegion === 'ALL' ? undefined : activeRegion },
               today: clock,
               requestedPeriodKey,
             }),
@@ -388,7 +400,7 @@ function MonthlyPresentationScreen({
           );
     const regionFunctionSlugs = new Set(
       (explicitPreview ? authorizedFunctionNames : serverTeams
-        .filter((team) => normalizeRegion(team.region) === activeRegion)
+        .filter((team) => activeRegion === 'ALL' || normalizeRegion(team.region) === activeRegion)
         .flatMap((team) => team.functions))
         .map(normalizeFunctionSlug),
     );
@@ -414,7 +426,7 @@ function MonthlyPresentationScreen({
   ]);
 
   const latestAuthorizedPeriod = authorizedRecords
-    .filter((record) => normalizeRegion(record.region) === activeRegion)
+    .filter((record) => activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion)
     .map((record) => record.period.key)
     .sort((a, b) => b.localeCompare(a))[0];
   const currentPeriodKey = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, '0')}`;
@@ -451,7 +463,7 @@ function MonthlyPresentationScreen({
     if (functionScopeRestricted) return authorizedFunctionSlugs.has(fnSlug);
     if (explicitPreview) return overviewData.functions.some((fn) => fn.slug === fnSlug);
     return serverTeams.some((team) =>
-      normalizeRegion(team.region) === activeRegion &&
+      (activeRegion === 'ALL' || normalizeRegion(team.region) === activeRegion) &&
       team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
     );
   }, [activeRegion, authorizedFunctionSlugs, explicitPreview, functionScopeRestricted, overviewData.functions, serverTeams]);
@@ -462,40 +474,50 @@ function MonthlyPresentationScreen({
       fnSlug: string,
       region: MonthlyRegionFilter,
     ) => {
-      return serverTeams.some((team) =>
-        (slugifyIdentifier(team.team) === teamSlug
-          || slugifyIdentifier(mergedTeamName(team.team)) === teamSlug
-          || (parseTeamCountry(region) !== null && sameCountryBusinessTeam(team.team, teamSlug, parseTeamCountry(region) as 'EGY' | 'UAE'))) &&
-        normalizeRegion(team.region) === region &&
-        team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
-      );
+      return serverTeams.some((team) => {
+        // In the All view a team belongs by its own region, not the view's.
+        const teamCountry = parseTeamCountry(normalizeRegion(team.region));
+        return (
+          (slugifyIdentifier(team.team) === teamSlug
+            || slugifyIdentifier(mergedTeamName(team.team)) === teamSlug
+            || (teamCountry !== null && sameCountryBusinessTeam(team.team, teamSlug, teamCountry))) &&
+          (region === 'ALL' || normalizeRegion(team.region) === region) &&
+          team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug)
+        );
+      });
     },
     [serverTeams],
   );
 
   const selectedPeriodRecords = useMemo(
     () => authorizedRecords.filter(
-      (record) => normalizeRegion(record.region) === activeRegion && record.period.key === selectedPeriodKey,
+      (record) => (activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion) && record.period.key === selectedPeriodKey,
     ),
     [activeRegion, authorizedRecords, selectedPeriodKey],
   );
   const currentFunctionRecords = useMemo(
     () => selectedPeriodRecords.filter((record) => {
+      // The catalog team for a record sits in the record's own region; in a
+      // single-region view that is the active region.
+      const recordCountry = parseTeamCountry(normalizeRegion(record.region)) ?? parseTeamCountry(activeRegion);
       const metadata = serverTeams.find((team) =>
         (slugifyIdentifier(team.team) === slugifyIdentifier(record.team)
           || sameMergedTeam(team.team, record.team)
-          || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, record.team, parseTeamCountry(activeRegion) as 'EGY' | 'UAE'))) &&
-        normalizeRegion(team.region) === activeRegion,
+          || (recordCountry !== null && sameCountryBusinessTeam(team.team, record.team, recordCountry))) &&
+        (activeRegion === 'ALL'
+          ? normalizeRegion(record.region) === null || normalizeRegion(team.region) === normalizeRegion(record.region)
+          : normalizeRegion(team.region) === activeRegion),
       );
       return metadata?.functions.some((name) => normalizeFunctionSlug(name) === functionSlug) ?? false;
     }),
     [activeRegion, functionSlug, selectedPeriodRecords, serverTeams],
   );
   const currentTeamRecords = useMemo(
-    () => selectedPeriodRecords.filter((record) =>
-      slugifyIdentifier(record.team) === activeTeamSlug
-      || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(record.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE')),
-    ),
+    () => selectedPeriodRecords.filter((record) => {
+      const recordCountry = parseTeamCountry(normalizeRegion(record.region)) ?? parseTeamCountry(activeRegion);
+      return slugifyIdentifier(record.team) === activeTeamSlug
+        || (recordCountry !== null && sameCountryBusinessTeam(record.team, activeTeamSlug, recordCountry));
+    }),
     [activeRegion, activeTeamSlug, selectedPeriodRecords],
   );
 
@@ -525,7 +547,7 @@ function MonthlyPresentationScreen({
 
   useEffect(() => {
     if (catalogQuery.isLoading || !rawRegion || !normalizedUrlRegion) return;
-    if ((normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'UAE') && availableRegions.includes(normalizedUrlRegion)) return;
+    if ((normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'ALL') && availableRegions.includes(normalizedUrlRegion)) return;
     const next = new URLSearchParams(searchParams);
     next.delete('region');
     next.delete('deepDive');
@@ -697,7 +719,7 @@ function MonthlyPresentationScreen({
     if (effectivePeriodKey && effectivePeriodKey !== selectedPeriodKey) {
       return authorizedRecords.filter(
         (record) =>
-          normalizeRegion(record.region) === activeRegion &&
+          (activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion) &&
           record.period.key === effectivePeriodKey &&
           recordMatchesRole(record, activeRoleSlug, resolvedFunctionData),
       );
@@ -726,10 +748,17 @@ function MonthlyPresentationScreen({
     return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, authorizedRecords);
   }, [activeRoleSlug, authorizedRecords, resolvedFunctionData, storedActions]);
 
-  const teamsInActiveRegion = distinctCatalogTeams(
-    serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion),
-    activeRegion,
-  );
+  // The combined view dedupes each country's catalog separately, so a shared
+  // business team present in both regions lists once per region.
+  const teamsInActiveRegion = activeRegion === 'ALL'
+    ? [
+        ...distinctCatalogTeams(serverTeams.filter((team) => normalizeRegion(team.region) === 'EGY'), 'EGY'),
+        ...distinctCatalogTeams(serverTeams.filter((team) => normalizeRegion(team.region) === 'UAE'), 'UAE'),
+      ]
+    : distinctCatalogTeams(
+        serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion),
+        activeRegion,
+      );
   const teamsInCurrentFunction = functionSlug
     ? teamsInActiveRegion.filter((team) => team.functions.some((name) => normalizeFunctionSlug(name) === functionSlug))
     : teamsInActiveRegion;
@@ -743,7 +772,7 @@ function MonthlyPresentationScreen({
       recordRegion: record.region,
       recordLevel: record.level,
       catalogTeam: team.team,
-      catalogRegion: activeRegion,
+      catalogRegion: normalizeRegion(team.region),
       levels: team.performance_levels,
     })),
   );
@@ -752,20 +781,34 @@ function MonthlyPresentationScreen({
   const teamPeriodKey = resolvedTeamData?.periodKey ?? '';
   const teamMonthLabel = resolvedTeamData?.monthLabel ?? '';
 
+  // Action plans are stored per region; in the All view a team deep dive
+  // keeps the scope of the team's own region so its saved plans still load.
+  const canonicalTeamRegion = useMemo(() => {
+    if (!canonicalTeam) return null;
+    const match = serverTeams.find((team) =>
+      slugifyIdentifier(team.team) === slugifyIdentifier(canonicalTeam)
+      || sameMergedTeam(team.team, canonicalTeam)
+      || businessTeamName(team.team) === businessTeamName(canonicalTeam),
+    );
+    const normalized = normalizeRegion(match?.region);
+    return normalized === 'EGY' || normalized === 'UAE' ? normalized : null;
+  }, [canonicalTeam, serverTeams]);
+
   const activeTeamPlanScope = useMemo(() => {
     if (!canonicalTeam) return null;
     const parsedPeriod = periodFromKey(teamPeriodKey);
     const [, labelYear] = teamMonthLabel.split(' ');
     const month = resolvePeriodMonthName(parsedPeriod?.month, teamMonthLabel);
     const year = parsedPeriod?.year || Number(labelYear) || new Date().getFullYear();
+    const planRegion = canonicalTeamRegion ?? activeRegion;
     return {
       team: canonicalTeam,
-      region: activeRegion,
+      region: planRegion,
       month,
       year,
-      scopeKey: teamPlanScopeKey(canonicalTeam, month, year, activeRegion),
+      scopeKey: teamPlanScopeKey(canonicalTeam, month, year, planRegion),
     };
-  }, [activeRegion, canonicalTeam, teamPeriodKey, teamMonthLabel]);
+  }, [activeRegion, canonicalTeam, canonicalTeamRegion, teamPeriodKey, teamMonthLabel]);
 
   const [teamPlanItemsByScope, setTeamPlanItemsByScope] = useState<
     Record<string, TeamLevelActionPlanCard[]>
@@ -1067,8 +1110,9 @@ function MonthlyPresentationScreen({
   // The global filter counts the always-applied region plus the function deep
   // dive; the reporting month is a required dimension, not a filter (same as
   // InsightsHeader, which does not count its period either). Only the
-  // function deep dive can be cleared, back to the overview.
-  const monthlyFilterActiveCount = (activeRegion ? 1 : 0) + (functionSlug ? 1 : 0);
+  // function deep dive can be cleared, back to the overview. The combined
+  // All view is the unfiltered state, so it adds nothing to the badge.
+  const monthlyFilterActiveCount = (activeRegion !== 'ALL' ? 1 : 0) + (functionSlug ? 1 : 0);
   const monthlyFilterClearableCount = functionSlug ? 1 : 0;
   const headerToolbar = (
     <>
@@ -1078,6 +1122,22 @@ function MonthlyPresentationScreen({
         aria-label="Region filter"
         className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
       >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeRegion === 'ALL'}
+          data-testid="region-all"
+          onClick={() => handleRegionChange('ALL')}
+          disabled={!availableRegions.includes('ALL')}
+          className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+            activeRegion === 'ALL'
+              ? 'bg-white font-bold text-blue-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>All regions</span>
+        </button>
+
         <button
           type="button"
           role="tab"
@@ -1114,12 +1174,26 @@ function MonthlyPresentationScreen({
       </div>
     )}
       <ResponsiveFilters
+      variant="docked"
       activeCount={monthlyFilterActiveCount}
       clearableCount={monthlyFilterClearableCount}
       onClear={handleBackToOverview}
       label="Monthly filters"
     >
       <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+          Region
+          <select
+            aria-label="Region"
+            value={activeRegion}
+            onChange={(event) => handleRegionChange(event.target.value as MonthlyRegionFilter)}
+            className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+          >
+            <option value="ALL" disabled={!availableRegions.includes('ALL')}>All regions</option>
+            <option value="EGY" disabled={!availableRegions.includes('EGY')}>Egypt (EGY)</option>
+            <option value="UAE" disabled={!availableRegions.includes('UAE')}>UAE</option>
+          </select>
+        </label>
         <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
           Reporting month
           <select
@@ -1522,11 +1596,12 @@ function MonthlyPresentationScreen({
   const noDataForSelection = !explicitPreview && !pageIsLoading && !pageHasError &&
     !hasNoAssignments && !invalidScopeRequest && !selectionHasData;
   const scopeTeamsForNoData = activeTeamSlug
-    ? teamsInCurrentFunction.filter((team) =>
-        team.team !== CALL_CENTER_TEAM &&
-        (slugifyIdentifier(team.team) === activeTeamSlug
-        || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE'))),
-      )
+    ? teamsInCurrentFunction.filter((team) => {
+        const teamCountry = parseTeamCountry(normalizeRegion(team.region));
+        return team.team !== CALL_CENTER_TEAM &&
+          (slugifyIdentifier(team.team) === activeTeamSlug
+            || (teamCountry !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, teamCountry)));
+      })
     : teamsInCurrentFunction.filter((team) => team.team !== CALL_CENTER_TEAM);
   const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
 

@@ -76,6 +76,29 @@ describe('ResponsiveFilters', () => {
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
   });
 
+  it('renders a docked trigger in-flow with no stored position and opens the panel', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <div data-testid="toolbar">
+        <ResponsiveFilters variant="docked" label="Monthly filters">
+          <p>Filter controls</p>
+        </ResponsiveFilters>
+      </div>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Monthly filters' });
+    expect(trigger.parentElement).toHaveClass('responsive-filter-docked');
+    expect(container.querySelector('.responsive-filter-launcher')).toBeNull();
+
+    await user.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Monthly filters' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('pms:responsive-filter-position:v1')).toBeNull();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Monthly filters' })).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+
   it('lets the launcher move, keeps it in the viewport, and remembers its new position', async () => {
     const firstRender = render(<ResponsiveFilters label="Team filters"><p>Team filter controls</p></ResponsiveFilters>);
     const launcher = screen.getByRole('button', { name: /Team filters/ });

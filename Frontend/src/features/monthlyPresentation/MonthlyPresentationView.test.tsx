@@ -1115,6 +1115,104 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
   });
 
+  it('shows both regions in the All view, including the UAE Qlty&Case-Mngt function, and docks the filter in the toolbar', () => {
+    monthlyTestState.catalog!.data.teams.push(
+      { team: 'Qlty&Case-Mngt', region: 'UAE', functions: ['Qlty&Case-Mngt'], performance_levels: ['Employee'] },
+    );
+    const qltyKpis = [
+      { kpi_key: 'quality_errors_rate', label: 'Quality Errors Rate', actual_value: 0.02, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
+      { kpi_key: 'tat', label: 'TAT compliance %', actual_value: 0.95, target_value: 0.9, unit: '%', direction: 'higher_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
+    ];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'UAE7001', name: 'Aisha Rahman', team: 'Qlty&Case-Mngt', month: 'October', position: 'Quality Specialist' },
+          region: 'UAE',
+          year: 2026,
+          position: 'Quality Specialist',
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.85, grade: 'B' },
+          kpi_values: qltyKpis,
+        },
+        {
+          identity: { employee_id: 'UAE7002', name: 'Omar Khalid', team: 'Qlty&Case-Mngt', month: 'October', position: 'Case Manager' },
+          region: 'UAE',
+          year: 2026,
+          position: 'Case Manager',
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.9, grade: 'A' },
+          kpi_values: qltyKpis,
+        },
+        {
+          identity: { employee_id: 'SGHD70110', name: 'Karim Adel', team: 'Coding EGY', month: 'October', position: 'Coder' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Coder',
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.65, grade: 'E' },
+          kpi_values: [
+            { kpi_key: 'quality_errors_rate', label: 'Quality Errors Rate', actual_value: 0.08, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 0.62, contribution: 0.31, evaluation_pinned: true },
+            { kpi_key: 'tat', label: 'TAT compliance %', actual_value: 0.8, target_value: 0.9, unit: '%', direction: 'higher_better', weight_applied: 0.5, achievement_ratio: 0.89, contribution: 0.44, evaluation_pinned: true },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    // The default is still the first single region (EGY), not All.
+    expect(screen.getByTestId('region-egy')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('region-all')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
+
+    // The filter trigger is docked in the toolbar, not floating.
+    expect(document.querySelector('.responsive-filter-docked')).not.toBeNull();
+    expect(document.querySelector('.responsive-filter-launcher')).toBeNull();
+
+    // Switch to the combined view from the tab.
+    fireEvent.click(screen.getByTestId('region-all'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('region=all');
+    expect(screen.getByTestId('header-region-badge')).toHaveTextContent('All regions');
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+
+    // The docked panel opens from the toolbar and offers the Region select first.
+    fireEvent.click(screen.getByRole('button', { name: /Monthly filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    expect(dialog).toBeInTheDocument();
+    const regionSelect = within(dialog).getByLabelText('Region') as HTMLSelectElement;
+    expect(regionSelect.value).toBe('ALL');
+    expect(within(dialog).getByLabelText('Reporting month')).toBeInTheDocument();
+
+    // Focusing a branch from the filter narrows the view back to that region.
+    fireEvent.change(regionSelect, { target: { value: 'UAE' } });
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('region=uae');
+    expect(screen.queryByTestId('function-card-rcm')).not.toBeInTheDocument();
+    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+
+    // Back to All, the Qlty deep dive aggregates the UAE records.
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByTestId('region-all'));
+    fireEvent.click(screen.getByTestId('function-card-quality-case-management'));
+    expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
+    // The deep-dive title renders "Qlty&Case-Mngt Deep Dive", so the bare
+    // name never appears as an element's exact text; match it as a substring.
+    expect(screen.getAllByText(/Qlty&Case-Mngt/).length).toBeGreaterThan(0);
+  });
+
   it('steps from the control bar and saves agenda and notes for the region and month', () => {
     const { unmount } = render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>

@@ -4,6 +4,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Eraser, Filter, X } from 'lucide-react';
 import './ResponsiveFilters.css';
 
+export type ResponsiveFiltersVariant = 'floating' | 'docked';
+
 interface ResponsiveFiltersProps {
   children: ReactNode;
   activeCount?: number;
@@ -11,6 +13,12 @@ interface ResponsiveFiltersProps {
   onClear?: () => void;
   label?: string;
   className?: string;
+  /**
+   * 'floating' (default) is the draggable portal launcher used by every page.
+   * 'docked' renders the trigger in-flow (e.g. inside a toolbar) with no drag,
+   * no stored position and no safe-area clamping; only the panel stays portaled.
+   */
+  variant?: ResponsiveFiltersVariant;
 }
 
 interface FloatingPosition {
@@ -91,9 +99,13 @@ const ResponsiveFilters = ({
   onClear,
   label = 'Filters',
   className = '',
+  variant = 'floating',
 }: ResponsiveFiltersProps) => {
+  const isDocked = variant === 'docked';
   const [isOpen, setIsOpen] = useState(false);
   const [initial] = useState(() => {
+    // A docked trigger never moves, so it has no stored position to read.
+    if (variant === 'docked') return { stored: null, position: { x: 0, y: 0 } };
     const stored = readStoredPosition();
     return { stored, position: stored ? clampPosition(stored) : defaultFilterPosition() };
   });
@@ -108,6 +120,9 @@ const ResponsiveFilters = ({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; origin: FloatingPosition; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  // Docked panel anchor: viewport offset below the trigger, right-aligned.
+  // Measured in a layout effect so the first painted frame is already placed.
+  const [dockedAnchor, setDockedAnchor] = useState<{ top: number; right: number } | null>(null);
   const reduceMotion = useReducedMotion();
   const safeActiveCount = Math.max(0, activeCount);
   const safeClearableCount = Math.max(0, clearableCount ?? safeActiveCount);
@@ -124,17 +139,33 @@ const ResponsiveFilters = ({
     : Math.max(220, Math.min(470, window.innerWidth - 24, panelOpensRight ? rightSpace : leftSpace));
 
   useEffect(() => {
+    if (isDocked) return undefined;
     const handleResize = () => setPosition((current) => (followDefault.current ? defaultFilterPosition() : clampPosition(current)));
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [isDocked]);
 
   // The header and dock can mount in the same commit as the launcher, so measure again once they are in the DOM.
   useLayoutEffect(() => {
+    if (isDocked) return undefined;
     setPosition((current) => (followDefault.current ? defaultFilterPosition() : clampPosition(current)));
-  }, []);
+  }, [isDocked]);
+
+  // Keep the docked panel anchored below its trigger while it is open.
+  useLayoutEffect(() => {
+    if (!isDocked || !isOpen) return undefined;
+    const updateAnchor = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDockedAnchor({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    };
+    updateAnchor();
+    window.addEventListener('resize', updateAnchor);
+    return () => window.removeEventListener('resize', updateAnchor);
+  }, [isDocked, isOpen]);
 
   useEffect(() => {
+    if (isDocked) return undefined;
     const timer = window.setTimeout(() => {
       try {
         if (followDefault.current) {
@@ -147,7 +178,7 @@ const ResponsiveFilters = ({
       }
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [position]);
+  }, [isDocked, position]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
@@ -259,127 +290,178 @@ const ResponsiveFilters = ({
   const panelTop = typeof window === 'undefined'
     ? 0
     : Math.max(panelHalfHeight + 12, Math.min(position.y + buttonSize / 2, window.innerHeight - panelHalfHeight - 12));
-  const panelStyle = isCompact ? undefined : {
-    top: `${panelTop}px`,
-    left: panelOpensRight ? `${position.x + buttonSize + 12}px` : 'auto',
-    right: panelOpensRight ? 'auto' : `${window.innerWidth - position.x + 12}px`,
-    width: `${panelWidth}px`,
-    transformOrigin: panelOpensRight ? 'left center' : 'right center',
-  };
+  // Docked: below the trigger, right edge aligned with the trigger's right
+  // edge, same width logic as floating. Compact screens keep the existing
+  // full-width bottom-sheet CSS (panelStyle stays undefined there).
+  const dockedPanelWidth = typeof window === 'undefined'
+    ? 470
+    : Math.max(220, Math.min(470, window.innerWidth - 24));
+  const panelStyle = isCompact
+    ? undefined
+    : isDocked
+      ? dockedAnchor
+        ? {
+            top: `${dockedAnchor.top}px`,
+            left: 'auto',
+            right: `${dockedAnchor.right}px`,
+            width: `${dockedPanelWidth}px`,
+            transformOrigin: 'right top',
+          }
+        : undefined
+      : {
+          top: `${panelTop}px`,
+          left: panelOpensRight ? `${position.x + buttonSize + 12}px` : 'auto',
+          right: panelOpensRight ? 'auto' : `${window.innerWidth - position.x + 12}px`,
+          width: `${panelWidth}px`,
+          transformOrigin: panelOpensRight ? 'left center' : 'right center',
+        };
+  // A docked panel grows down from its trigger, so it enters from the right.
+  const panelEnterX = isDocked ? 24 : panelOpensRight ? -24 : 24;
+
+  const trigger = (
+    <div
+      className={isDocked
+        ? `responsive-filter-docked ${className}`.trim()
+        : `responsive-filter-launcher ${className}`.trim()}
+      style={isDocked ? undefined : { left: position.x, top: position.y }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className={isDocked
+          ? 'responsive-filter-trigger responsive-filter-trigger--docked'
+          : `responsive-filter-trigger${isDragging ? ' is-dragging' : ''}`}
+        aria-label={isDocked
+          ? accessibleLabel
+          : `${accessibleLabel}. Drag to move; use Alt plus arrow keys, or Alt plus Home to reset`}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        aria-haspopup="dialog"
+        {...(isDocked
+          ? {}
+          : {
+              'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Home',
+              title: `${label} · drag to move · Alt+arrow keys to reposition`,
+              onPointerDown: handlePointerDown,
+              onPointerMove: handlePointerMove,
+              onPointerUp: handlePointerUp,
+              onPointerCancel: handlePointerUp,
+              onKeyDown: handleLauncherKeyDown,
+            })}
+        onClick={(event) => {
+          if (!isDocked && suppressClickRef.current) {
+            suppressClickRef.current = false;
+            event.preventDefault();
+            return;
+          }
+          setIsOpen((open) => !open);
+        }}
+      >
+        <Filter size={20} aria-hidden="true" />
+        {safeActiveCount > 0 && (
+          <span className="responsive-filter-count" aria-hidden="true">{safeActiveCount}</span>
+        )}
+        <span className="responsive-filter-tooltip" aria-hidden="true">{label}</span>
+      </button>
+    </div>
+  );
+
+  const overlay = (
+    <AnimatePresence initial={false}>
+      {isOpen && (
+        <>
+          <motion.button
+            key="filter-scrim"
+            type="button"
+            className="responsive-filter-scrim"
+            aria-label={`Close ${label.toLowerCase()}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={transition}
+            onClick={close}
+          />
+          <motion.aside
+            key="filter-panel"
+            id={panelId}
+            ref={panelRef}
+            className={`responsive-filter-panel${isDocked ? ' responsive-filter-panel--docked' : ''}`}
+            style={panelStyle}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelEnterX * 0.75, scale: 0.98 }}
+            transition={transition}
+          >
+            <div className="responsive-filter-panel__header">
+              <div>
+                <h2 id={titleId} className="responsive-filter-panel__title">{label}</h2>
+                <p className="responsive-filter-panel__hint" aria-live="polite">
+                  {safeActiveCount > 0
+                    ? `${safeActiveCount} active filter${safeActiveCount === 1 ? '' : 's'} · changes apply as you choose`
+                    : 'Refine this view · changes apply as you choose'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {onClear && (
+                  <button
+                    type="button"
+                    className="responsive-filter-panel__clear"
+                    aria-label="Clear filters"
+                    title="Clear filters"
+                    disabled={safeClearableCount === 0}
+                    onClick={() => {
+                      onClear();
+                      window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+                    }}
+                  >
+                    <Eraser size={18} aria-hidden="true" />
+                  </button>
+                )}
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  className="responsive-filter-panel__close"
+                  aria-label={`Close ${label.toLowerCase()}`}
+                  onClick={close}
+                >
+                  <X size={19} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="responsive-filter-panel__fields">
+              {children}
+            </div>
+
+            <div className="responsive-filter-panel__footer">
+              <button type="button" className="responsive-filter-panel__done" onClick={close}>
+                Done
+              </button>
+            </div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
+  );
+
+  // Docked: the trigger renders in-flow where the component sits; only the
+  // scrim + panel are portaled. Floating keeps the old portal-everything shape.
+  if (isDocked) {
+    return (
+      <>
+        {trigger}
+        {createPortal(overlay, document.body)}
+      </>
+    );
+  }
 
   return createPortal(
     <>
-      <div className={`responsive-filter-launcher ${className}`.trim()} style={{ left: position.x, top: position.y }}>
-        <button
-          ref={triggerRef}
-          type="button"
-          className={`responsive-filter-trigger${isDragging ? ' is-dragging' : ''}`}
-          aria-label={`${accessibleLabel}. Drag to move; use Alt plus arrow keys, or Alt plus Home to reset`}
-          aria-expanded={isOpen}
-          aria-controls={panelId}
-          aria-haspopup="dialog"
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Home"
-          title={`${label} · drag to move · Alt+arrow keys to reposition`}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onKeyDown={handleLauncherKeyDown}
-          onClick={(event) => {
-            if (suppressClickRef.current) {
-              suppressClickRef.current = false;
-              event.preventDefault();
-              return;
-            }
-            setIsOpen((open) => !open);
-          }}
-        >
-          <Filter size={20} aria-hidden="true" />
-          {safeActiveCount > 0 && (
-            <span className="responsive-filter-count" aria-hidden="true">{safeActiveCount}</span>
-          )}
-          <span className="responsive-filter-tooltip" aria-hidden="true">{label}</span>
-        </button>
-      </div>
-
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <>
-            <motion.button
-              key="filter-scrim"
-              type="button"
-              className="responsive-filter-scrim"
-              aria-label={`Close ${label.toLowerCase()}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={transition}
-              onClick={close}
-            />
-            <motion.aside
-              key="filter-panel"
-              id={panelId}
-              ref={panelRef}
-              className="responsive-filter-panel"
-              style={panelStyle}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby={titleId}
-              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelOpensRight ? -24 : 24, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: panelOpensRight ? -18 : 18, scale: 0.98 }}
-              transition={transition}
-            >
-              <div className="responsive-filter-panel__header">
-                <div>
-                  <h2 id={titleId} className="responsive-filter-panel__title">{label}</h2>
-                  <p className="responsive-filter-panel__hint" aria-live="polite">
-                    {safeActiveCount > 0
-                      ? `${safeActiveCount} active filter${safeActiveCount === 1 ? '' : 's'} · changes apply as you choose`
-                      : 'Refine this view · changes apply as you choose'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {onClear && (
-                    <button
-                      type="button"
-                      className="responsive-filter-panel__clear"
-                      aria-label="Clear filters"
-                      title="Clear filters"
-                      disabled={safeClearableCount === 0}
-                      onClick={() => {
-                        onClear();
-                        window.requestAnimationFrame(() => closeButtonRef.current?.focus());
-                      }}
-                    >
-                      <Eraser size={18} aria-hidden="true" />
-                    </button>
-                  )}
-                  <button
-                    ref={closeButtonRef}
-                    type="button"
-                    className="responsive-filter-panel__close"
-                    aria-label={`Close ${label.toLowerCase()}`}
-                    onClick={close}
-                  >
-                    <X size={19} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="responsive-filter-panel__fields">
-                {children}
-              </div>
-
-              <div className="responsive-filter-panel__footer">
-                <button type="button" className="responsive-filter-panel__done" onClick={close}>
-                  Done
-                </button>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      {trigger}
+      {overlay}
     </>,
     document.body,
   );

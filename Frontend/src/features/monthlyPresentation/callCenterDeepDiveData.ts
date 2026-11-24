@@ -31,6 +31,13 @@ import {
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, UAE_SEP_2026_DATA, type GradeLetter } from './monthlyOverviewData';
 
+export type MonthlyRegion = 'EGY' | 'UAE' | 'ALL';
+
+/** Display name for a monthly region, including the combined All regions view. */
+export function regionDisplayName(region: MonthlyRegion): string {
+  return region === 'EGY' ? 'Offshore Egypt' : region === 'UAE' ? 'UAE Region' : 'All regions';
+}
+
 export type SupportImpactLevel = 'Strong' | 'Partial' | 'Mixed' | 'Limited';
 
 export type FullGradeLabel =
@@ -80,7 +87,7 @@ export function normalizeFunctionSlug(rawSlugOrName: string): string {
   if (s === 'quality-management') return 'quality-management';
   if (s === 'er-dr' || s === 'erdr') return 'er-dr';
   if (s === 'radiology' || s === 'radiologist') return 'radiology';
-  if (s === 'quality-case-management' || s === 'qlty-and-case-mngt' || s === 'qlty-case-mngt') return 'quality-case-management';
+  if (s === 'quality-case-management' || s === 'qlty-and-case-mngt' || s === 'qlty-case-mngt' || s === 'qltyandcase-mngt') return 'quality-case-management';
   return s || 'call-center';
 }
 
@@ -221,7 +228,7 @@ export interface CallCenterDeepDiveData {
   functionSlug: string;
   title: string;
   functionName: string;
-  regionCode: 'EGY' | 'UAE';
+  regionCode: 'EGY' | 'UAE' | 'ALL';
   regionName: string;
   monthLabel: string;
   previousMonthLabel: string;
@@ -2027,8 +2034,9 @@ export const FUNCTION_DEEP_DIVE_BASELINES_SEP_2026: Record<string, CallCenterDee
 
 export function scopeRecordsToRegion(
   records: ExecRecord[],
-  region: 'EGY' | 'UAE',
+  region: 'EGY' | 'UAE' | 'ALL',
 ): ExecRecord[] {
+  if (region === 'ALL') return [...records];
   return records.filter((record) => normalizeRegion(record.region) === region);
 }
 
@@ -2044,12 +2052,12 @@ export function scopeRecordsToRegion(
  */
 export function emptyMeasuredFunctionDeepDive(
   functionSlug: string,
-  region: 'EGY' | 'UAE',
+  region: 'EGY' | 'UAE' | 'ALL',
   requestedPeriodKey?: string,
 ): CallCenterDeepDiveData {
   const norm = normalizeFunctionSlug(functionSlug);
   const fnName = canonicalFunctionNameFromSlug(norm);
-  const regionName = region === 'EGY' ? 'Offshore Egypt' : 'UAE Region';
+  const regionName = regionDisplayName(region);
   const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
   const snapshot = region === 'UAE' ? UAE_SEP_2026_DATA : null;
   const monthLabel = requested
@@ -2099,21 +2107,22 @@ export function emptyMeasuredFunctionDeepDive(
 
 export function getBaselineFunctionDeepDive(
   functionSlug: string,
-  region: 'EGY' | 'UAE' = 'EGY',
+  region: 'EGY' | 'UAE' | 'ALL' = 'EGY',
   requestedPeriodKey?: string,
 ): CallCenterDeepDiveData {
   const norm = normalizeFunctionSlug(functionSlug);
-  if (region === 'UAE') {
+  if (region !== 'EGY') {
     // A no-rows dive is labelled with the month that was actually
-    // requested, not the September snapshot month.
-    return emptyMeasuredFunctionDeepDive(norm, 'UAE', requestedPeriodKey);
+    // requested, not the September snapshot month. Only Egypt may borrow
+    // its September snapshot; UAE and the combined All view stay empty.
+    return emptyMeasuredFunctionDeepDive(norm, region, requestedPeriodKey);
   }
   const found = FUNCTION_DEEP_DIVE_BASELINES_SEP_2026[norm];
   if (found) {
     return {
       ...found,
       regionCode: region,
-      regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+      regionName: regionDisplayName(region),
     };
   }
   const fnName = canonicalFunctionNameFromSlug(norm);
@@ -2123,7 +2132,7 @@ export function getBaselineFunctionDeepDive(
     title: `${fnName} Deep Dive`,
     functionName: fnName,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
   };
 }
 
@@ -2293,7 +2302,7 @@ export function buildFunctionScoreTrend(
 export function buildCallCenterDeepDiveFromRecords(
   allRecords: ExecRecord[],
   actions: PMSAction[] = [],
-  region: 'EGY' | 'UAE' = 'EGY',
+  region: 'EGY' | 'UAE' | 'ALL' = 'EGY',
   requestedPeriodKey?: string,
   options: { allowSnapshotFallback?: boolean } = {},
 ): CallCenterDeepDiveData {
@@ -2772,7 +2781,7 @@ export function buildCallCenterDeepDiveFromRecords(
     title: 'Call Center Deep Dive',
     functionName: 'Call Center',
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
     monthLabel: `${effective.month} ${effective.year}`,
     previousMonthLabel: previousMonthLabel,
     periodKey: effective.key,
@@ -2841,7 +2850,7 @@ export function buildFunctionDeepDiveFromRecords(
   functionSlug: string,
   allRecords: ExecRecord[],
   actions: PMSAction[] = [],
-  region: 'EGY' | 'UAE' = 'EGY',
+  region: 'EGY' | 'UAE' | 'ALL' = 'EGY',
   requestedPeriodKey?: string,
   options: { allowSnapshotFallback?: boolean } = {},
 ): CallCenterDeepDiveData {
@@ -3128,7 +3137,7 @@ export function buildFunctionDeepDiveFromRecords(
     title: `${canonicalFn} Deep Dive`,
     functionName: canonicalFn,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    regionName: regionDisplayName(region),
     monthLabel: `${effective.month} ${effective.year}`,
     previousMonthLabel,
     periodKey: effective.key,
