@@ -1,4 +1,4 @@
-import { isHossamRecord, type AgentRecord, type PMSAction } from '../../types';
+import { isHossamRecord, usesPublishedEmployeeScore, type AgentRecord, type PMSAction } from '../../types';
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import type { ObservationStatus } from '../ai/types';
@@ -375,6 +375,7 @@ export function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: str
   if (leader !== null) return round1(leader);
   const agents = records.map((record) => record.rawAgent).filter((agent): agent is AgentRecord => Boolean(agent));
   const average = mean(records.map((record) => record.score));
+  if (average !== null && agents.some(usesPublishedEmployeeScore)) return round1(average);
   const resolvedTeamConfig = teamConfig ?? defaultResubmissionConfig(records);
   const config = resolvedTeamConfig ?? (canonicalTeam === 'Inbound'
     ? INBOUND_TEAM_CONFIG

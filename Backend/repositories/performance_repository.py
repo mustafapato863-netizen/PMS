@@ -7,6 +7,7 @@ from repositories.base_repository import BaseRepository
 from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple_
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team, UploadLog
+from services.uae_published_scores import FIRST_PERIOD, INACTIVE_STAFF_GRADE, METHOD_ID as UAE_PUBLISHED_SCORE_METHOD
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 from utils.team_identity import logical_team_name, team_country_filter_values, team_name_for_country
 from utils.months import MONTH_NUMBERS
@@ -83,6 +84,28 @@ def month_number_sql():
     """Chronological month number (1-12, else 0) of PerformanceRecord.month;
     the SQL twin of utils.months.month_number."""
     return case(MONTH_NUMBERS, value=func.lower(func.trim(PerformanceRecord.month, REGION_WHITESPACE)), else_=0)
+
+
+def _dashboard_score_sql():
+    score = PerformanceRecord.score
+    method = PerformanceRecord.record_payload["raw_data"]["ScoringMethod"].as_string()
+    return case((method == UAE_PUBLISHED_SCORE_METHOD, score), else_=score_percent_sql(score))
+
+
+def _legacy_unscored_csr():
+    """Historical CSR uploads assigned a calculated score to inactive rows with no published grade."""
+    year, month = FIRST_PERIOD
+    raw = PerformanceRecord.record_payload["raw_data"]
+    evaluation_basis = PerformanceRecord.record_payload["evaluation_basis"]
+    return and_(
+        func.lower(func.coalesce(Team.display_name, Team.name)) == "csr",
+        func.lower(_row_region()) == "uae",
+        PerformanceRecord.performance_level == "Employee",
+        or_(PerformanceRecord.year > year, and_(PerformanceRecord.year == year, month_number_sql() >= month)),
+        func.coalesce(func.lower(func.trim(raw["PerformanceGrade"].as_string())), "") == INACTIVE_STAFF_GRADE,
+        func.coalesce(func.lower(func.trim(raw["Status"].as_string())), "") == "inactive",
+        func.coalesce(evaluation_basis["version_id"].as_string(), "") == "",
+    )
 
 
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
@@ -233,9 +256,11 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         periods: list[tuple[int, str]] | None = None,
         employee_search: str | None = None,
     ):
-        if team:
-            team_values = set(_team_filter_values(team, region))
+        team_values = set(_team_filter_values(team, region)) if team else set()
+        if team_values:
             query = query.filter(_team_name_clause(team_values))
+        if not team_values or "csr" in team_values:
+            query = query.filter(~_legacy_unscored_csr())
         if month and month.lower() != "all":
             query = query.filter(PerformanceRecord.month == month)
         if employee_id:
@@ -273,7 +298,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         if branch:
             query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
         if score_lt is not None:
-            query = query.filter(score_percent_sql(PerformanceRecord.score) < score_lt)
+            query = query.filter(_dashboard_score_sql() < score_lt)
         if periods:
             period_clauses = [
                 and_(PerformanceRecord.year == period_year, PerformanceRecord.month == period_month)
@@ -770,7 +795,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         name_key = func.lower(Employee.name)
         employee_key = func.lower(Employee.employee_id)
         record_key = func.replace(func.lower(cast(PerformanceRecord.id, String)), "-", "")
-        score_key = score_percent_sql(PerformanceRecord.score)
+        score_key = _dashboard_score_sql()
         normalized_sort = str(sort or "name").strip().lower()
         if normalized_sort not in {"name", "score_desc", "score_asc"}:
             raise ValueError("sort must be name, score_desc, or score_asc")
