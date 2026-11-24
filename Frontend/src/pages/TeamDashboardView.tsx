@@ -47,6 +47,7 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
+import { buildTeamKpiSixMonthTrends } from '../features/team/kpiSixMonthTrend';
 import { aggregateConfiguredTeamKpis, averagePrintedChannelScores, calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
 import type { TeamConfig } from '../schemas/teamConfig.schema';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
@@ -1728,6 +1729,49 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     });
   }, [dashboardMonths, allAgents, matchesRouteTeam, location, getCanonicalTeamScore, getCallCenterThreeGroupSummary, activeTeamWeights, isCallCenterParent, isCallCenterAggregate, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
 
+  const kpiTrends = useMemo(() => {
+    if (teamId === 'all') return undefined;
+    let scopedAgents = allAgents.filter((a) => matchesRouteTeam(a.identity.team));
+    if (isCallCenterParent && callCenterChannel !== 'all') {
+      scopedAgents = scopedAgents.filter((a) => isCallCenterChannelTeam(a.identity.team, callCenterChannel));
+    }
+    scopedAgents = scopedAgents.filter(matchesPresentationScope);
+    if (location !== 'all') {
+      scopedAgents = scopedAgents.filter((a) => agentMatchesLocation(a, location));
+    }
+    const effectiveTeamId = isRcmParent && workflowConfigTeam
+      ? workflowConfigTeam.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      : scoredTeamId;
+    return buildTeamKpiSixMonthTrends({
+      agents: scopedAgents,
+      dashboardMonths,
+      activeMonth: month === 'All' ? undefined : activeMonthName,
+      teamConfig,
+      location,
+      teamId: effectiveTeamId,
+      isMergedTeam,
+      isEgyptInbound,
+      isOutbound: effectiveTeamId?.toLowerCase() === 'outbound',
+    });
+  }, [
+    teamId,
+    allAgents,
+    matchesRouteTeam,
+    isCallCenterParent,
+    callCenterChannel,
+    matchesPresentationScope,
+    location,
+    isRcmParent,
+    workflowConfigTeam,
+    scoredTeamId,
+    dashboardMonths,
+    month,
+    activeMonthName,
+    teamConfig,
+    isMergedTeam,
+    isEgyptInbound,
+  ]);
+
   const performanceBullets = useMemo(() => {
     const bullets: Array<{
       icon: LucideIcon;
@@ -2416,6 +2460,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             prevMonthLabel={prevMonthShort}
             month={month}
             teamName={(isRcmParent && workflowConfigTeam ? workflowConfigTeam : teamName) ?? undefined}
+            kpiTrends={kpiTrends}
           />
         )
       )}

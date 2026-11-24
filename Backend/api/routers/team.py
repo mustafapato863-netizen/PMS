@@ -47,6 +47,29 @@ class TeamPlanItemResponse(BaseModel):
     is_deleted: bool = False
 
 
+class UnifiedTeamActionResponse(BaseModel):
+    id: str
+    card_id: Optional[str] = None
+    kind: Literal["cohort_plan", "overall_action"] = "cohort_plan"
+    team: str
+    region: Optional[str] = None
+    month: str
+    year: int
+    title: str
+    target_kpi: str = ""
+    scope_description: str = ""
+    owner: str = ""
+    status: Literal["Open", "In Progress", "Completed", "Planned"] = "Open"
+    due_date: Optional[str] = None
+    expected_team_impact: str = ""
+    created_by: str = ""
+    updated_at: Optional[str] = None
+
+
+class TeamActionStatusUpdateRequest(BaseModel):
+    status: Literal["Open", "In Progress", "Completed", "Planned"]
+
+
 @router.get("/", response_model=StandardResponse)
 def get_team_action(
     request: Request,
@@ -224,3 +247,97 @@ def delete_team_plan_item(
         raise
     except Exception:
         return StandardResponse(success=False, message="Failed to delete team plan item.")
+
+
+@router.get("/all", response_model=StandardResponse)
+def list_all_team_actions(
+    request: Request,
+    team: Optional[str] = Query(default=None),
+    month: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("view_actions")),
+):
+    try:
+        scope = get_current_user_scope(db, request)
+        items = TeamActionService(db).list_all_team_actions(
+            current_user=scope,
+            team=team,
+            month=month,
+            status=status,
+        )
+        validated = [UnifiedTeamActionResponse(**item).model_dump() for item in items]
+        return StandardResponse(
+            success=True,
+            message="Team actions retrieved successfully",
+            data=validated,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        return StandardResponse(success=False, message="Failed to load team actions.")
+
+
+@router.patch("/{action_id}/status", response_model=StandardResponse)
+def update_team_action_status(
+    action_id: str,
+    payload: TeamActionStatusUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("create_actions")),
+):
+    try:
+        scope = get_current_user_scope(db, request)
+        updated = TeamActionService(db).update_team_action_status(
+            action_id=action_id,
+            status=payload.status,
+            current_user=scope,
+        )
+        validated = UnifiedTeamActionResponse(**updated).model_dump()
+        return StandardResponse(
+            success=True,
+            message="Team action status updated successfully",
+            data=validated,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail == "Team action not found" else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        return StandardResponse(success=False, message="Failed to update team action status.")
+
+
+@router.delete("/{action_id}", response_model=StandardResponse)
+def delete_team_action(
+    action_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("create_actions")),
+):
+    try:
+        scope = get_current_user_scope(db, request)
+        result = TeamActionService(db).delete_team_action_by_id(
+            action_id=action_id,
+            current_user=scope,
+        )
+        return StandardResponse(
+            success=True,
+            message="Team action deleted successfully",
+            data=result,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail == "Team action not found" else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        return StandardResponse(success=False, message="Failed to delete team action.")

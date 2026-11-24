@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Activity } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import PerformanceKpiCard from './PerformanceKpiCard';
@@ -224,5 +224,68 @@ describe('PerformanceKpiCard', () => {
     expect(card).toHaveTextContent('Contribution—');
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('flips 180deg on click and keyboard to show the last 6 months actual vs target trend', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Revenue Ach"
+        value="38.5%"
+        targetValue="100%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={38.5}
+        contribution={3.9}
+        weight={0.1}
+        trendSeries={[
+          { month: 'May', actual: 28.4, target: 100 },
+          { month: 'Jun', actual: 31.0, target: 100 },
+          { month: 'Jul', actual: 33.2, target: 100 },
+          { month: 'Aug', actual: 35.1, target: 100 },
+          { month: 'Sep', actual: 33.8, target: 100 },
+          { month: 'Oct', actual: 38.5, target: 100 },
+        ]}
+        trendSeriesUnit="%"
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /OP Revenue Ach/i });
+    expect(card).toHaveAttribute('data-flippable', 'true');
+    expect(card).toHaveAttribute('data-flipped', 'false');
+    expect(card).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(card).toHaveAttribute('aria-pressed', 'true');
+
+    const backFace = screen.getByTestId('kpi-card-trend-back');
+    expect(backFace).toHaveTextContent('Last 6 mo · Actual vs Target');
+    expect(backFace).toHaveTextContent('Act 38.5%');
+    expect(backFace).toHaveTextContent('Tgt 100.0%');
+    expect(backFace).toHaveTextContent('0/6 on target');
+    expect(screen.getByRole('img', { name: /OP Revenue Ach actual vs target trend chart/i })).toBeInTheDocument();
+
+    // Keyboard flip back
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(card).toHaveAttribute('data-flipped', 'false');
+  });
+
+  it('renders an empty trend fallback on the back face when trendSeries is empty', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="OP Census Ach"
+        value="92.0%"
+        contribution={9.2}
+        weight={0.1}
+        trendSeries={[]}
+      />,
+    );
+
+    const card = screen.getByRole('button', { name: /OP Census Ach/i });
+    fireEvent.click(card);
+    expect(card).toHaveAttribute('data-flipped', 'true');
+    expect(screen.getByText('No 6-month trend history available yet.')).toBeInTheDocument();
   });
 });
