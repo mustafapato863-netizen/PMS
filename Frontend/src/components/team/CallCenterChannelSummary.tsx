@@ -81,10 +81,12 @@ const getSignal = (score: number | null) => {
   const grade = getGradeClassOrNull(score);
   if (!grade) return {
     label: 'No data',
+    shortLabel: 'No data',
     tone: 'border-[var(--border-light)] bg-[var(--bg-sunken)] text-[var(--text-muted)]',
   };
   return {
     label: GRADE_PALETTE[grade].label,
+    shortLabel: GRADE_PALETTE[grade].statusLabel,
     tone: `grade-${grade}`,
   };
 };
@@ -225,11 +227,14 @@ const CallCenterChannelSummary = ({
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.045] p-4">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.06em] text-blue-700 dark:text-blue-300">Department performance</p>
-            <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${overallSignal.tone}`}>
+            <span
+              title={overallSignal.label}
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${overallSignal.tone}`}
+            >
               <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-              {overallSignal.label}
+              {overallSignal.shortLabel}
             </span>
           </div>
           <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${displayedScorePoint(overallScore).toFixed(1)}%`}</p>
@@ -284,19 +289,22 @@ const CallCenterChannelSummary = ({
                   className={`group relative overflow-hidden rounded-xl border bg-[var(--bg-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${isFocus ? 'border-amber-400/60 shadow-[0_0_0_2px_rgba(245,158,11,0.08)]' : 'border-[var(--border-light)]'} ${meta.glow}`}
                 >
                   <span className={`pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full opacity-10 blur-2xl transition-opacity duration-200 group-hover:opacity-30 ${meta.accent}`} />
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${meta.tone}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.tone}`}>
                         <Icon size={17} />
                       </span>
-                      <div>
-                        <h5 className="text-sm font-extrabold text-[var(--text-primary)]">{snapshot.label}</h5>
-                        <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
+                      <div className="min-w-0">
+                        <h5 className="truncate text-sm font-extrabold text-[var(--text-primary)]">{snapshot.label}</h5>
+                        <p className="mt-0.5 truncate text-xs font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
                       </div>
                     </div>
-                    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${signal.tone}`}>
+                    <span
+                      title={signal.label}
+                      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${signal.tone}`}
+                    >
                       <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-                      {signal.label}
+                      {signal.shortLabel}
                     </span>
                   </div>
                   <div className="mt-4 flex items-end justify-between gap-3">
