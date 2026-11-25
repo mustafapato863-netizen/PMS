@@ -2143,7 +2143,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   // An id that is not a known team gets the not-found state, never an invented title or data.
   if (teamId !== 'all' && !resolvedTeamName) {
     return (
-      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
+      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800">
         <Breadcrumb items={[
           { label: 'Executive Summary', href: '/executive', icon: 'home' },
           { label: 'Team not found', icon: 'team' },
@@ -2181,7 +2181,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       ? branchSelections.map((branch) => branchLabels[branch]).join(' and ')
       : '';
     return (
-      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
+      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800">
         <TeamHeader
           displayName={displayName}
           month={month}
@@ -2330,7 +2330,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   ] : [];
 
   return (
-    <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
+    <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800">
       {/* Header */}
       {showBscFallbackMessage && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
@@ -2516,7 +2516,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       {teamId !== 'all' && !isCallCenterAggregate && (
         <div className={`mt-6 grid w-full grid-cols-1 gap-4 ${teamKpiAnalysis.length > 0 ? 'xl:grid-cols-1' : 'xl:grid-cols-2'}`}>
           {/* Card 1: Performance Summary */}
-          {teamKpiAnalysis.length === 0 && <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-2xl">
+          {teamKpiAnalysis.length === 0 && <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)]">
             <div className="flex h-full flex-col">
               {/* Header Banner */}
               <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-4 py-3">
@@ -2571,21 +2571,21 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                     return (
                       <li
                         key={idx}
-                        className="flex items-start gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/45 p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/40 dark:border-white/[0.05] dark:bg-white/[0.02] dark:hover:border-white/10 dark:hover:bg-white/[0.05]"
+                        className="flex items-start gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/45 p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/40"
                       >
                         <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 bg-gradient-to-br ${config.bg} ${config.glow} ${config.iconColor}`}>
                           <BulletIcon size={18} />
                         </div>
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className="text-sm font-bold text-[var(--text-primary)] dark:text-slate-100">{bullet.title}</span>
+                            <span className="text-sm font-bold text-[var(--text-primary)]">{bullet.title}</span>
                             {bullet.badgeText && (
                               <span className={`text-xs font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md ${config.badge}`}>
                                 {bullet.badgeText}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs font-medium leading-relaxed text-[var(--text-secondary)] dark:text-slate-300">{bullet.desc}</p>
+                          <p className="text-xs font-medium leading-relaxed text-[var(--text-secondary)]">{bullet.desc}</p>
                         </div>
                       </li>
                     );
@@ -2600,7 +2600,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           </div>}
 
           {/* Card 2: Key Actions & Corrective Action Summary */}
-          <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-2xl">
+          <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)]">
             <div className="flex h-full flex-col">
               {/* Header Banner */}
               <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-4 py-3">
@@ -2625,40 +2625,40 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               <div className="flex flex-1 flex-col justify-between space-y-4 p-4">
                 <div className="space-y-4">
                   {/* Key Action bullet */}
-                  <div className="flex items-start gap-4.5 rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-orange-500/[0.08] p-4 shadow-[0_0_30px_rgba(245,158,11,0.05)] transition-all duration-300 dark:from-amber-500/[0.03] dark:to-orange-500/[0.03]">
+                  <div className="flex items-start gap-4.5 rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-orange-500/[0.08] p-4 shadow-[0_0_30px_rgba(245,158,11,0.05)] transition-all duration-300">
                     <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 shadow-[0_0_15px_rgba(245,158,11,0.4)] text-white shrink-0 mt-0.5">
                       <Lightbulb size={18} className="animate-pulse" />
                     </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center justify-between gap-2.5">
-                        <span className="text-sm font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                        <span className="text-sm font-bold uppercase tracking-wide text-amber-700">
                           Key Action Required
                         </span>
                         {!isEditingAction && (
-                          <span className="animate-pulse rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                          <span className="animate-pulse rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-amber-700">
                             HIGH PRIOR
                           </span>
                         )}
                       </div>
-                      <div className="text-xs leading-relaxed text-[var(--text-secondary)] dark:text-slate-200">
+                      <div className="text-xs leading-relaxed text-[var(--text-secondary)]">
                         {isEditingAction ? (
                           <div className="space-y-3.5 mt-2">
                             {teamActionSaveError && (
                               <div
                                 role="alert"
                                 aria-live="assertive"
-                                className="flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-100"
+                                className="flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-rose-900"
                               >
-                                <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600 dark:text-rose-300" />
+                                <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600" />
                                 <div className="min-w-0 flex-1 space-y-1">
                                   <p className="text-xs font-extrabold">Couldn’t save this key action</p>
-                                  <p className="text-xs leading-relaxed text-rose-800 dark:text-rose-200">
+                                  <p className="text-xs leading-relaxed text-rose-800">
                                     {teamActionSaveError.message}
                                   </p>
                                   {teamActionSaveError.requestId && (
                                     <p className="pt-1 text-xs font-semibold">
                                       Reference:{' '}
-                                      <code className="select-all rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-black/20">
+                                      <code className="select-all rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs">
                                         {teamActionSaveError.requestId}
                                       </code>
                                     </p>
@@ -2668,7 +2668,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   type="button"
                                   onClick={() => setTeamActionSaveError(null)}
                                   aria-label="Dismiss save error"
-                                  className="rounded-md p-1 text-rose-700 transition hover:bg-rose-100 dark:text-rose-200 dark:hover:bg-rose-900/50"
+                                  className="rounded-md p-1 text-rose-700 transition hover:bg-rose-100"
                                 >
                                   <X size={15} />
                                 </button>
@@ -2682,7 +2682,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                               }}
                               placeholder="Specify the key action needed for this team..."
                               rows={3}
-                              className="w-full rounded-xl border border-amber-500/30 bg-[var(--bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--text-primary)] transition-all placeholder:text-[var(--text-faint)] focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500/20 dark:bg-slate-950/90 dark:text-slate-100 dark:placeholder:text-slate-600"
+                              className="w-full rounded-xl border border-amber-500/30 bg-[var(--bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--text-primary)] transition-all placeholder:text-[var(--text-faint)] focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
                             />
                             <div className="flex justify-end gap-2.5">
                               <button
@@ -2692,7 +2692,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   setActionInput(teamAction);
                                   setTeamActionSaveError(null);
                                 }}
-                                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3.5 py-1.5 text-xs font-bold text-[var(--text-secondary)] transition-all hover:bg-[var(--bg-surface)] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3.5 py-1.5 text-xs font-bold text-[var(--text-secondary)] transition-all hover:bg-[var(--bg-surface)]"
                               >
                                 <X size={13} />
                                 Cancel
@@ -2709,7 +2709,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                             </div>
                           </div>
                         ) : (
-                          <p className="mt-1 font-semibold italic leading-relaxed text-[var(--text-secondary)] dark:text-slate-200">
+                          <p className="mt-1 font-semibold italic leading-relaxed text-[var(--text-secondary)]">
                             "{teamAction || 'Under review by administration. Admin can click edit to add key action.'}"
                           </p>
                         )}
@@ -2718,8 +2718,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                   </div>
 
                   {/* Summary of Corrective Actions */}
-                  <div className="space-y-3 border-t border-[var(--border-light)] pt-4 dark:border-white/10">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] dark:text-slate-300">
+                  <div className="space-y-3 border-t border-[var(--border-light)] pt-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                       Corrective Actions Summary for Agents ({teamActionsThisMonth.length})
                     </h4>
                     {teamActionsThisMonth.length === 0 ? (
@@ -2732,7 +2732,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                           return (
                             <div
                               key={act.id}
-                              className="flex items-start gap-3 rounded-lg border border-transparent bg-[var(--bg-sunken)]/40 p-3 text-xs transition-colors hover:border-blue-100 hover:bg-blue-50/50 dark:border-white/[0.02] dark:bg-white/[0.01] dark:hover:border-white/5 dark:hover:bg-white/[0.03]"
+                              className="flex items-start gap-3 rounded-lg border border-transparent bg-[var(--bg-sunken)]/40 p-3 text-xs transition-colors hover:border-blue-100 hover:bg-blue-50/50"
                             >
                               <div className={`p-1.5 rounded-lg bg-gradient-to-br ${actColor} shrink-0 mt-0.5 shadow-xs`}>
                                 <ActIcon size={12} />
@@ -2741,16 +2741,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                 <div className="flex items-center justify-between gap-2">
                                   <Link
                                     to={`/employee/${act.employee_id}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`}
-                                    className="truncate font-bold text-blue-600 hover:underline dark:text-blue-400"
+                                    className="truncate font-bold text-blue-600 hover:underline"
                                   >
                                     {act.employee_name}
                                   </Link>
-                                  <span className="text-xs font-bold uppercase text-[var(--text-muted)] dark:text-slate-400">
+                                  <span className="text-xs font-bold uppercase text-[var(--text-muted)]">
                                     {act.action_type}
                                   </span>
                                 </div>
                                 <p
-                                  className="truncate font-semibold text-[var(--text-primary)] dark:text-slate-200"
+                                  className="truncate font-semibold text-[var(--text-primary)]"
                                   onMouseEnter={(e) => {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setHoverTooltip({
@@ -2764,7 +2764,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   {act.action_text}
                                 </p>
                                 {act.root_cause_note && (
-                                  <p className="text-xs italic leading-relaxed text-[var(--text-muted)] dark:text-slate-400">
+                                  <p className="text-xs italic leading-relaxed text-[var(--text-muted)]">
                                     "{act.root_cause_note}"
                                   </p>
                                 )}
@@ -2804,7 +2804,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       {hoverTooltip && (
         <div
-          className="fixed z-[9999] px-4 py-3 text-xs font-semibold text-white bg-slate-900/95 dark:bg-slate-800/95 border border-slate-700/50 rounded-xl shadow-xl backdrop-blur-sm pointer-events-none -translate-x-1/2 -translate-y-full transition-all duration-200 animate-in fade-in zoom-in-95 max-w-[320px] break-words text-left"
+          className="fixed z-[9999] px-4 py-3 text-xs font-semibold text-white bg-slate-900/95 border border-slate-700/50 rounded-xl shadow-xl backdrop-blur-sm pointer-events-none -translate-x-1/2 -translate-y-full transition-all duration-200 animate-in fade-in zoom-in-95 max-w-[320px] break-words text-left"
           style={{
             left: hoverTooltip.x,
             top: hoverTooltip.y,
@@ -2830,7 +2830,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             }
             return <p className="leading-relaxed text-slate-100 text-center">{hoverTooltip.text}</p>;
           })()}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95 dark:border-t-slate-800/95" />
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95" />
         </div>
       )}
       <ContextualAssistantPanel pageContext={teamPageContext} onActionSaved={refreshPerformanceData} />

@@ -40,8 +40,8 @@ export function ChecksumCopy({ value, short, subject }: ChecksumCopyProps) {
         {state === 'copied' ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
         Copy checksum
       </button>
-      {state === 'copied' && <span role="status" className="font-semibold text-emerald-700 dark:text-emerald-300">Copied</span>}
-      {state === 'failed' && <span role="status" className="min-w-0 break-all font-semibold text-amber-800 dark:text-amber-300">Copy failed. Full checksum: <code className="font-mono">{value}</code></span>}
+      {state === 'copied' && <span role="status" className="font-semibold text-emerald-700">Copied</span>}
+      {state === 'failed' && <span role="status" className="min-w-0 break-all font-semibold text-amber-800">Copy failed. Full checksum: <code className="font-mono">{value}</code></span>}
     </div>
   );
 }

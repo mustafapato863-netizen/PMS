@@ -22,7 +22,6 @@ import { shouldShowMarketingNavigation } from '../../features/marketing/navigati
 import type { PerformanceLevel } from '../../types';
 import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM, teamPath, withTeamQuery } from '../../types';
 import { directorScope } from '../../lib/directorScope';
-import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
 import {
@@ -632,7 +631,6 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       </nav>
 
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
-        <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {renderLink({ name: 'Account settings', path: '/account', icon: <User size={18} /> }, undefined, false, true)}
         {canAccessSettingsContent(role) && renderLink({ name: 'Administration', path: '/settings', icon: <Settings size={18} />, matchSubpaths: true }, undefined, false, true)}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>

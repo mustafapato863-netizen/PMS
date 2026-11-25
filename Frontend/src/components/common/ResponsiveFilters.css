@@ -3,9 +3,7 @@
   z-index: 55;
   width: 54px;
   height: 54px;
-}
-
-.responsive-filter-launcher .responsive-filter-trigger {
+}.responsive-filter-launcher .responsive-filter-trigger {
   position: relative;
   display: grid;
   width: 54px;
@@ -21,31 +19,25 @@
   cursor: grab;
   touch-action: none;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
-}
-
-.responsive-filter-launcher .responsive-filter-trigger.is-dragging {
+}.responsive-filter-launcher .responsive-filter-trigger.is-dragging {
   cursor: grabbing;
   transform: scale(1.06);
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.26), 0 0 0 5px color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 12%, transparent);
   transition: none;
-}
-
-.responsive-filter-launcher .responsive-filter-trigger:hover:not(.is-dragging) {
+}.responsive-filter-launcher .responsive-filter-trigger:hover:not(.is-dragging) {
   transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 55%, var(--border-light));
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.23), 0 0 0 4px color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 10%, transparent);
-}
-
-/* Docked (in-toolbar) trigger: the floating launcher's circular language,
-   sized to a toolbar row (~40px). It sits in-flow, never drags, and never
+}/* Docked (in-toolbar) trigger: the floating launcher's circular language,
+sized to a toolbar row (~40px). It sits in-flow,
+never drags,
+and never
    reads or writes a stored position. */
 .responsive-filter-docked {
   position: relative;
   flex: 0 0 auto;
   height: 40px;
-}
-
-.responsive-filter-docked .responsive-filter-trigger {
+}.responsive-filter-docked .responsive-filter-trigger {
   position: relative;
   display: inline-flex;
   width: 40px;
@@ -61,75 +53,53 @@
   -webkit-backdrop-filter: blur(12px);
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
-}
-
-.responsive-filter-docked .responsive-filter-trigger:hover {
+}.responsive-filter-docked .responsive-filter-trigger:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 55%, var(--border-light));
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16), 0 0 0 4px color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 10%, transparent);
-}
-
-.responsive-filter-docked .responsive-filter-trigger:focus-visible {
+}.responsive-filter-docked .responsive-filter-trigger:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 60%, white);
   outline-offset: 3px;
-}
-
-.responsive-filter-docked .responsive-filter-trigger:hover .responsive-filter-tooltip,
+}.responsive-filter-docked .responsive-filter-trigger:hover .responsive-filter-tooltip,
 .responsive-filter-docked .responsive-filter-trigger:focus-visible .responsive-filter-tooltip {
   opacity: 1;
   transform: translate(0, -50%);
-}
-
-/* Variant inside PresentationControlBar dock: fills the DockItem slot smoothly
+}/* Variant inside PresentationControlBar dock: fills the DockItem slot smoothly
    and defers hover label rendering to DockLabel above the icon. */
 .responsive-filter-docked.responsive-filter-docked--in-bar {
   width: 100%;
   height: 100%;
-}
-
-.responsive-filter-docked--in-bar .responsive-filter-trigger {
+}.responsive-filter-docked--in-bar .responsive-filter-trigger {
   width: 100%;
   height: 100%;
   border-color: rgba(203, 213, 225, 0.7);
   background: rgb(241 245 249);
   color: rgb(71 85 105);
   box-shadow: none;
-}
-
-.responsive-filter-docked--in-bar .responsive-filter-trigger:hover {
+}.responsive-filter-docked--in-bar .responsive-filter-trigger:hover {
   transform: none;
   border-color: rgba(148, 163, 184, 0.75);
   background: rgb(226 232 240);
   color: rgb(30 41 59);
   box-shadow: none;
-}
-
-.responsive-filter-docked--in-bar .responsive-filter-trigger[aria-expanded='true'],
+}.responsive-filter-docked--in-bar .responsive-filter-trigger[aria-expanded='true'],
 .responsive-filter-docked--in-bar .responsive-filter-trigger.has-active-filters {
   border-color: rgba(2, 132, 199, 0.35);
   background: rgb(224 242 254);
   color: rgb(3 105 161);
   box-shadow: inset 0 0 0 1px rgba(2, 132, 199, 0.2);
-}
-
-.responsive-filter-docked--in-bar .responsive-filter-trigger:disabled {
+}.responsive-filter-docked--in-bar .responsive-filter-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-
-.responsive-filter-docked--in-bar .responsive-filter-tooltip {
+}.responsive-filter-docked--in-bar .responsive-filter-tooltip {
   display: none;
-}
-
-.responsive-filter-launcher .responsive-filter-trigger:focus-visible,
+}.responsive-filter-launcher .responsive-filter-trigger:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__done:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 60%, white);
   outline-offset: 3px;
-}
-
-.responsive-filter-count {
+}.responsive-filter-count {
   position: absolute;
   inset-block-start: -4px;
   inset-inline-end: -4px;
@@ -145,9 +115,7 @@
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
-}
-
-.responsive-filter-tooltip {
+}.responsive-filter-tooltip {
   position: absolute;
   inset-inline-end: calc(100% + 10px);
   top: 50%;
@@ -164,15 +132,11 @@
   pointer-events: none;
   transform: translate(4px, -50%);
   transition: opacity 150ms ease, transform 150ms ease;
-}
-
-.responsive-filter-launcher .responsive-filter-trigger:hover .responsive-filter-tooltip,
+}.responsive-filter-launcher .responsive-filter-trigger:hover .responsive-filter-tooltip,
 .responsive-filter-launcher .responsive-filter-trigger:focus-visible .responsive-filter-tooltip {
   opacity: 1;
   transform: translate(0, -50%);
-}
-
-.responsive-filter-scrim[aria-label] {
+}.responsive-filter-scrim[aria-label] {
   position: fixed;
   inset: 0;
   z-index: 70;
@@ -184,9 +148,7 @@
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   cursor: default;
-}
-
-.responsive-filter-panel[role='dialog'] {
+}.responsive-filter-panel[role='dialog'] {
   position: fixed;
   inset-block-start: 50%;
   z-index: 71;
@@ -202,14 +164,10 @@
   box-shadow: 0 26px 80px rgba(15, 23, 42, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1);
   translate: 0 -50%;
   transform-origin: right center;
-}
-
-/* A docked panel sits below its trigger instead of centering vertically. */
+}/* A docked panel sits below its trigger instead of centering vertically. */
 .responsive-filter-panel--docked[role='dialog'] {
   translate: none;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__header,
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__header,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__footer {
   display: flex;
   flex: 0 0 auto;
@@ -217,33 +175,23 @@
   justify-content: space-between;
   gap: 12px;
   padding: 16px 18px;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__header {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__header {
   border-bottom: 1px solid var(--border-light);
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__title,
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__title,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__hint {
   margin: 0;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__title {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__title {
   color: var(--text-primary);
   font-size: 16px;
   font-weight: 900;
   line-height: 1.25;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__hint {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__hint {
   margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 650;
   line-height: 1.4;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__close {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__close {
   display: inline-grid;
   width: 42px;
   height: 42px;
@@ -255,9 +203,7 @@
   background: var(--bg-sunken);
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear {
   display: inline-grid;
   width: 38px;
   height: 38px;
@@ -269,25 +215,17 @@
   background: transparent;
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:disabled {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:disabled {
   cursor: default;
   opacity: 0.4;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:hover:not(:disabled) {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 28%, var(--border-light));
   color: var(--sgh-cyan-primary, #00A3E0);
   background: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 8%, var(--bg-surface));
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:hover {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:hover {
   border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 35%, var(--border-light));
   color: var(--sgh-cyan-primary, #00A3E0);
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields {
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
@@ -297,60 +235,40 @@
   padding: 14px 18px;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields > * {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields > * {
   width: 100%;
   min-width: 0;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields > .responsive-filter-content {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields > .responsive-filter-content {
   grid-column: 1 / -1;
-}
-
-.responsive-filter-content {
+}.responsive-filter-content {
   width: 100%;
   min-width: 0;
   grid-column: 1 / -1;
-}
-
-.responsive-filter-content--insights,
+}.responsive-filter-content--insights,
 .responsive-filter-content--insights-extra,
 .responsive-filter-content--planning {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
   gap: 12px;
-}
-
-.responsive-filter-content--insights > *,
+}.responsive-filter-content--insights > *,
 .responsive-filter-content--insights-extra > *,
 .responsive-filter-content--planning > * {
   width: 100% !important;
   min-width: 0;
-}
-
-.responsive-filter-content--insights-extra {
+}.responsive-filter-content--insights-extra {
   padding-top: 2px;
-}
-
-.responsive-filter-function-switcher {
+}.responsive-filter-function-switcher {
   width: 100%;
   min-width: 0;
   grid-column: 1 / -1;
-}
-
-.responsive-filter-function-switcher > * {
+}.responsive-filter-function-switcher > * {
   width: 100%;
   min-width: 0;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__footer {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__footer {
   justify-content: flex-end;
   border-top: 1px solid var(--border-light);
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__done {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__done {
   min-width: 112px;
   min-height: 42px;
   padding-inline: 18px;
@@ -363,25 +281,18 @@
   font-weight: 850;
   cursor: pointer;
   transition: filter 150ms ease, transform 150ms ease;
-}
-
-.responsive-filter-panel[role='dialog'] .responsive-filter-panel__done:hover {
+}.responsive-filter-panel[role='dialog'] .responsive-filter-panel__done:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
 }
 
-@media (max-width: 639px) {
-  .responsive-filter-launcher {
+@media (max-width: 639px) {.responsive-filter-launcher {
     width: 44px;
     height: 44px;
-  }
-
-  .responsive-filter-launcher .responsive-filter-trigger {
+  }.responsive-filter-launcher .responsive-filter-trigger {
     width: 44px;
     height: 44px;
-  }
-
-  .responsive-filter-panel[role='dialog'] {
+  }.responsive-filter-panel[role='dialog'] {
     inset-block-start: auto;
     inset-inline: 10px;
     bottom: max(10px, env(safe-area-inset-bottom));
@@ -391,70 +302,40 @@
     border-radius: 22px;
     translate: none;
     transform-origin: center bottom;
-  }
-
-  .responsive-filter-panel[role='dialog'] .responsive-filter-panel__header,
-  .responsive-filter-panel[role='dialog'] .responsive-filter-panel__footer {
+  }.responsive-filter-panel[role='dialog'] .responsive-filter-panel__header,
+.responsive-filter-panel[role='dialog'] .responsive-filter-panel__footer {
     padding-inline: 14px;
-  }
-
-  .responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields {
+  }.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields {
     gap: 10px;
     padding-inline: 14px;
   }
 }
 
-@media (max-width: 420px) {
-  .responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields,
-  .responsive-filter-content--insights,
-  .responsive-filter-content--insights-extra,
-  .responsive-filter-content--planning {
+@media (max-width: 420px) {.responsive-filter-panel[role='dialog'] .responsive-filter-panel__fields,
+.responsive-filter-content--insights,
+.responsive-filter-content--insights-extra,
+.responsive-filter-content--planning {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .responsive-filter-launcher .responsive-filter-trigger,
-  .responsive-filter-docked .responsive-filter-trigger,
-  .responsive-filter-tooltip,
-  .responsive-filter-panel__close,
-  .responsive-filter-panel__clear,
-  .responsive-filter-panel__done {
+@media (prefers-reduced-motion: reduce) {.responsive-filter-launcher .responsive-filter-trigger,
+.responsive-filter-docked .responsive-filter-trigger,
+.responsive-filter-tooltip,
+.responsive-filter-panel__close,
+.responsive-filter-panel__clear,
+.responsive-filter-panel__done {
     transition-duration: 0.01ms;
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .responsive-filter-launcher .responsive-filter-trigger,
-  .responsive-filter-docked .responsive-filter-trigger {
+@media (prefers-reduced-transparency: reduce) {.responsive-filter-launcher .responsive-filter-trigger,
+.responsive-filter-docked .responsive-filter-trigger {
     background: var(--bg-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-  }
-
-  .responsive-filter-scrim[aria-label] {
+  }.responsive-filter-scrim[aria-label] {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
-}
-
-/* Dark theme: the docked trigger hard-codes light tones; follow the app theme. */
-.dark .responsive-filter-docked--in-bar .responsive-filter-trigger {
-  border-color: var(--insights-muted-surface-border, rgba(255, 255, 255, 0.12));
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary, #cbd5e1);
-}
-
-.dark .responsive-filter-docked--in-bar .responsive-filter-trigger:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--insights-heading, #f8fafc);
-}
-
-.dark .responsive-filter-docked--in-bar .responsive-filter-trigger[aria-expanded='true'],
-.dark .responsive-filter-docked--in-bar .responsive-filter-trigger.has-active-filters {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(56, 189, 248, 0.18);
-  color: var(--exec-info-text, #7dd3fc);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
 }

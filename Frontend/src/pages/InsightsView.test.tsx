@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import InsightsView from './InsightsView';
 import Sidebar from '../components/common/Sidebar';
-import { ThemeProvider } from '../context/ThemeContext';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
 import type { InsightFilters } from '../features/insights/types';
 
@@ -355,12 +354,12 @@ function renderWithRealSidebar(entries: string[]) {
   const rendered = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
-      <ThemeProvider>
+      <>
         <Routes>
           <Route path="/insights" element={<>{sidebar}<InsightsView /><LocationProbe /><HistoryProbe /></>} />
           <Route path="/executive" element={<>{sidebar}<p>Executive page</p><LocationProbe /></>} />
         </Routes>
-      </ThemeProvider>
+      </>
     </MemoryRouter>
     </QueryClientProvider>,
   );

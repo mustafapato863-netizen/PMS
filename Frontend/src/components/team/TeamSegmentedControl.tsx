@@ -16,7 +16,7 @@ const TeamSegmentedControl = ({
             onClick={() => setActiveTeam(t)}
             className={`relative px-6 py-2 rounded-lg text-sm font-bold transition-all duration-250 cursor-pointer ${
               activeTeam === t
-                ? 'bg-[var(--bg-surface)] text-blue-600 dark:text-blue-400 shadow-md scale-100'
+                ? 'bg-[var(--bg-surface)] text-blue-600 shadow-md scale-100'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]/40'
             }`}
           >

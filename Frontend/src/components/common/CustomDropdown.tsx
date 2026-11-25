@@ -248,7 +248,7 @@ export function CustomDropdown<T extends string | number = string>({
                 maxHeight: menuPosition.maxHeight,
                 zIndex: 9999,
               }}
-              className="fixed z-[9999] overflow-y-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:bg-slate-900/95 custom-scrollbar"
+              className="fixed z-[9999] overflow-y-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-2xl custom-scrollbar"
             >
               {parsedOptions.map((option, index) => {
                 const isSelected = option.value === value;
@@ -281,7 +281,7 @@ export function CustomDropdown<T extends string | number = string>({
                     }}
                     className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${
                       isSelected
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-extrabold'
+                        ? 'bg-blue-500/10 text-blue-600 font-extrabold'
                         : 'text-[var(--text-primary)] hover:bg-[var(--bg-sunken)] hover:text-blue-500'
                     }`}
                   >

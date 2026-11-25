@@ -169,7 +169,7 @@ export default function GlobalSearch() {
           className="app-header-control flex shrink-0 items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]/86 px-2 py-1.5 text-left shadow-sm backdrop-blur-xl transition-all hover:border-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3 xl:hidden [@media(max-width:768px)]:min-w-[44px]"
           aria-label="Open global search"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-300 shrink-0">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 shrink-0">
             <Search size={15} />
           </span>
           <span className="app-header-search-label hidden sm:inline-block min-w-0 flex-1 truncate text-xs font-semibold text-[var(--text-muted)] max-w-[120px]">
@@ -181,7 +181,7 @@ export default function GlobalSearch() {
           <div
             className={`flex items-center gap-2.5 rounded-[20px] border border-[var(--border-light)] bg-[var(--bg-surface)]/88 px-2.5 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl transition-all ${open ? 'border-blue-300 shadow-[0_14px_34px_rgba(37,99,235,0.14)]' : 'hover:border-blue-200'}`}
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-300">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
               <Search size={15} />
             </span>
             <input
@@ -225,7 +225,7 @@ export default function GlobalSearch() {
               className="mx-3 mt-4 overflow-hidden rounded-[30px] border border-[var(--border-light)] bg-[var(--bg-surface)]/98 shadow-[0_24px_70px_rgba(15,23,42,0.24)]"
             >
               <div className="flex items-center gap-3 border-b border-[var(--border-light)] px-4 py-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-300">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
                   <Search size={17} />
                 </span>
                 <input

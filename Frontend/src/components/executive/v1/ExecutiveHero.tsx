@@ -66,7 +66,7 @@ function TopKpiCard({
         <span className="text-[12.5px] font-semibold text-[var(--text-secondary)]">{label}</span>
         <span
           aria-hidden="true"
-          className="flex size-[30px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 dark:border-white/10"
+          className="flex size-[30px] shrink-0 items-center justify-center rounded-[10px] border border-white/60"
           style={{
             background: `color-mix(in srgb, ${glow} 12%, transparent)`,
             color: glow,
@@ -338,7 +338,7 @@ export default function ExecutiveHero({ summary, includeDecision = true }: { sum
           <div className="flex flex-col gap-[12px]">
             <div className="flex flex-wrap items-center justify-between gap-[8px]">
               <div className="flex flex-wrap items-center gap-[8px]">
-                <span aria-hidden="true" className="flex size-[32px] items-center justify-center rounded-[10px] border border-white/60 bg-[var(--insights-accent-tag)] dark:border-white/10">
+                <span aria-hidden="true" className="flex size-[32px] items-center justify-center rounded-[10px] border border-white/60 bg-[var(--insights-accent-tag)]">
                   <EyebrowIcon className="size-[17px] text-[var(--insights-accent)]" strokeWidth={1.9} />
                 </span>
                 <span className="text-[15px] font-bold text-[var(--insights-heading)]">

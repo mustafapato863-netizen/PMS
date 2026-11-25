@@ -287,7 +287,7 @@ export function SystemErrorsPanel() {
             <span className="block text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
               Primary Exception
             </span>
-            <span className="mt-1 block truncate text-sm font-black text-rose-600 dark:text-rose-400">
+            <span className="mt-1 block truncate text-sm font-black text-rose-600">
               {errorMetrics.topClass} ({errorMetrics.topCount})
             </span>
           </div>
@@ -341,7 +341,7 @@ export function SystemErrorsPanel() {
         {errorMessage && (
           <div
             role="alert"
-            className="flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"
+            className="flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-xs text-rose-800"
           >
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <span>{errorMessage}</span>
@@ -431,7 +431,7 @@ export function SystemErrorsPanel() {
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-300">
+                    <p className="text-xs font-black uppercase tracking-wider text-rose-600">
                       Admin diagnostics
                     </p>
                     <h3 className="mt-1 break-all text-sm font-black text-[var(--text-primary)]">
@@ -467,7 +467,7 @@ export function SystemErrorsPanel() {
                 )}
                 {selectedError.stack_trace && (
                   <details className="group">
-                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700">
                       <Activity size={14} /> Technical trace
                     </summary>
                     <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">

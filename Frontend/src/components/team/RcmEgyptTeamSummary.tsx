@@ -13,24 +13,24 @@ interface RcmEgyptTeamSummaryProps {
 
 const TONES = [
   {
-    tone: 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300',
+    tone: 'bg-violet-500/10 text-violet-600',
     accent: 'bg-violet-500',
-    glow: 'hover:border-violet-300/80 hover:shadow-[0_0_28px_rgba(139,92,246,0.24)] dark:hover:border-violet-400/60',
+    glow: 'hover:border-violet-300/80 hover:shadow-[0_0_28px_rgba(139,92,246,0.24)]',
   },
   {
-    tone: 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
+    tone: 'bg-blue-500/10 text-blue-600',
     accent: 'bg-blue-500',
-    glow: 'hover:border-blue-300/80 hover:shadow-[0_0_28px_rgba(59,130,246,0.24)] dark:hover:border-blue-400/60',
+    glow: 'hover:border-blue-300/80 hover:shadow-[0_0_28px_rgba(59,130,246,0.24)]',
   },
   {
-    tone: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+    tone: 'bg-emerald-500/10 text-emerald-600',
     accent: 'bg-emerald-500',
-    glow: 'hover:border-emerald-300/80 hover:shadow-[0_0_28px_rgba(16,185,129,0.24)] dark:hover:border-emerald-400/60',
+    glow: 'hover:border-emerald-300/80 hover:shadow-[0_0_28px_rgba(16,185,129,0.24)]',
   },
   {
-    tone: 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
+    tone: 'bg-amber-500/10 text-amber-600',
     accent: 'bg-amber-500',
-    glow: 'hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(245,158,11,0.24)] dark:hover:border-amber-400/60',
+    glow: 'hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(245,158,11,0.24)]',
   },
 ];
 

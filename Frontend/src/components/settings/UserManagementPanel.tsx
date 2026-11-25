@@ -514,7 +514,7 @@ export function UserManagementPanel() {
             <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
             Online Now
           </span>
-          <span className="mt-1 block text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-400">
+          <span className="mt-1 block text-lg font-black tabular-nums text-emerald-600">
             {userStats.onlineCount}
           </span>
         </div>
@@ -534,7 +534,7 @@ export function UserManagementPanel() {
             Role Reassignments
           </span>
           <span
-            className={`mt-1 block text-lg font-black tabular-nums ${userStats.reassignCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--text-primary)]'}`}
+            className={`mt-1 block text-lg font-black tabular-nums ${userStats.reassignCount > 0 ? 'text-amber-600' : 'text-[var(--text-primary)]'}`}
           >
             {userStats.reassignCount}
           </span>

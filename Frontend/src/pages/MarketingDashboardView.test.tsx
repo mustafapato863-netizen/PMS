@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { ThemeProvider } from '../context/ThemeContext';
 import type { AgentRecord } from '../types';
 import type { MarketingTeamConfig } from '../features/marketing/types';
 import { MarketingDashboardContent } from './MarketingDashboardView';
@@ -120,7 +119,7 @@ const renderDashboard = ({
   const onExport = vi.fn().mockResolvedValue(undefined);
   const onAddAction = vi.fn();
   render(
-    <ThemeProvider>
+    <>
       <MemoryRouter initialEntries={[initial]}>
         <Routes>
           <Route
@@ -144,7 +143,7 @@ const renderDashboard = ({
           />
         </Routes>
       </MemoryRouter>
-    </ThemeProvider>,
+    </>,
   );
   const filtersButton = screen.queryByRole('button', { name: /Filters/i });
   if (filtersButton) fireEvent.click(filtersButton);

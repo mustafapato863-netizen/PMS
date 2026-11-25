@@ -311,7 +311,7 @@ const FunctionCard = memo(function FunctionCard({
           ) : classic && card.lowest_team && card.lowest_team.score < 85 ? (
             <span
               aria-hidden="true"
-              className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
+              className="truncate text-xs font-semibold text-amber-700"
               title={`Lowest team: ${displayFunctionName(card.lowest_team.team)} (${card.lowest_team.score.toFixed(1)}%)`}
             >
               Low: {displayFunctionName(card.lowest_team.team)} ({card.lowest_team.score.toFixed(0)}%)
@@ -471,7 +471,7 @@ export default function FunctionCards({
                     onClick={() => setFilterMode('attention')}
                     className={`rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors ${
                       filterMode === 'attention'
-                        ? 'bg-rose-500/12 text-rose-700 dark:text-rose-300'
+                        ? 'bg-rose-500/12 text-rose-700'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -484,7 +484,7 @@ export default function FunctionCards({
                     onClick={() => setFilterMode('healthy')}
                     className={`rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors ${
                       filterMode === 'healthy'
-                        ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                        ? 'bg-emerald-500/12 text-emerald-700'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                     }`}
                   >

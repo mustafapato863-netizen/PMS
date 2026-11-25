@@ -186,13 +186,13 @@ export const MarketingDashboardContent = ({
         teamLabel={teamLabel}
       />
       {exportError && (
-        <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
+        <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm font-semibold text-rose-700">
           {exportError}
         </div>
       )}
 
       {!records.length && (
-        <div className="rounded-2xl border border-blue-500/20 bg-blue-500/8 px-5 py-4 text-sm font-semibold text-blue-800 dark:text-blue-200">
+        <div className="rounded-2xl border border-blue-500/20 bg-blue-500/8 px-5 py-4 text-sm font-semibold text-blue-800">
           {teamLabel} is configured and ready. Position dashboards will populate after the first Employee performance upload.
         </div>
       )}

@@ -46,10 +46,10 @@ interface PerformanceKpiCardProps {
 }
 
 const BADGE_CLASSES: Record<PerformanceKpiBadgeType, string> = {
-  success: 'border-emerald-500/25 bg-gradient-to-br from-emerald-500/12 to-teal-500/10 text-emerald-700 dark:text-emerald-300',
-  warning: 'border-amber-500/25 bg-gradient-to-br from-amber-500/12 to-orange-500/10 text-amber-700 dark:text-amber-300',
-  danger: 'border-rose-500/25 bg-gradient-to-br from-rose-500/12 to-pink-500/10 text-rose-600 dark:text-rose-300',
-  neutral: 'border-slate-500/20 bg-slate-500/10 text-slate-600 dark:text-slate-300',
+  success: 'border-emerald-500/25 bg-gradient-to-br from-emerald-500/12 to-teal-500/10 text-emerald-700',
+  warning: 'border-amber-500/25 bg-gradient-to-br from-amber-500/12 to-orange-500/10 text-amber-700',
+  danger: 'border-rose-500/25 bg-gradient-to-br from-rose-500/12 to-pink-500/10 text-rose-600',
+  neutral: 'border-slate-500/20 bg-slate-500/10 text-slate-600',
 };
 
 /**
@@ -276,11 +276,11 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
         >
           <span className="font-bold text-[var(--text-primary)]">{activePoint.month}</span>
           <span className="flex items-center gap-2 font-semibold tabular-nums">
-            <span className="text-sky-600 dark:text-sky-400">
+            <span className="text-sky-600">
               Act {formatTrendPointValue(activePoint.actual, unit)}
             </span>
             <span className="text-[var(--text-muted)]">/</span>
-            <span className="text-amber-600 dark:text-amber-400">
+            <span className="text-amber-600">
               Tgt {formatTrendPointValue(activePoint.target, unit)}
             </span>
           </span>
@@ -307,8 +307,8 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
                   <span
                     className={`font-bold ${
                       hoveredMet
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400'
+                        ? 'text-emerald-600'
+                        : 'text-rose-600'
                     }`}
                   >
                     {hoveredMet ? 'On target' : 'Below'}
@@ -316,11 +316,11 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
                 )}
               </div>
               <div className="mt-0.5 flex items-center gap-2 whitespace-nowrap text-[12px] font-semibold tabular-nums leading-tight">
-                <span className="text-sky-600 dark:text-sky-400">
+                <span className="text-sky-600">
                   Score {formatTrendPointValue(hoveredPoint.actual, unit)}
                 </span>
                 <span className="text-[var(--text-muted)]">·</span>
-                <span className="text-amber-600 dark:text-amber-400">
+                <span className="text-amber-600">
                   Tgt {formatTrendPointValue(hoveredPoint.target, unit)}
                 </span>
               </div>
@@ -660,7 +660,7 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
             <span
               aria-hidden="true"
               title="Click card to flip and view 6-month trend"
-              className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] text-[var(--text-muted)] opacity-75 transition-all group-hover:border-sky-400/50 group-hover:text-sky-600 group-hover:opacity-100 dark:group-hover:text-sky-400"
+              className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] text-[var(--text-muted)] opacity-75 transition-all group-hover:border-sky-400/50 group-hover:text-sky-600 group-hover:opacity-100"
             >
               <RotateCw size={12} />
             </span>
@@ -684,8 +684,8 @@ const PerformanceKpiCard = memo(function PerformanceKpiCard({
               stableTrend
                 ? 'text-[var(--text-muted)]'
                 : trendIsGood
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-rose-600 dark:text-rose-500'
+                  ? 'text-emerald-600'
+                  : 'text-rose-600'
             }`}>
               <TrendIcon size={11} />
               <span>

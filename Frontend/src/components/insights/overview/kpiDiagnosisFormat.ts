@@ -7,9 +7,9 @@ export const KPI_STATUS_LABEL: Record<InsightKpiStatus, string> = {
 };
 
 export const STATUS_CLASS: Record<InsightKpiStatus, string> = {
-  on_track: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  at_risk: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  critical: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+  on_track: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700',
+  at_risk: 'border-amber-500/25 bg-amber-500/10 text-amber-700',
+  critical: 'border-rose-500/25 bg-rose-500/10 text-rose-700',
 };
 
 /** Actual or target in the KPI's unit. Ratios (0.26 for 26%) and percentage points both read as a percent. */

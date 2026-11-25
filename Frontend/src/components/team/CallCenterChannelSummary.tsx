@@ -47,23 +47,23 @@ const GROUP_META: Record<CallCenterGroupKey, {
   inbound: {
     label: CALL_CENTER_CHANNEL_LABELS.inbound,
     icon: Headphones,
-    tone: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
+    tone: 'bg-cyan-500/10 text-cyan-600',
     accent: 'bg-cyan-500',
-    glow: 'hover:border-cyan-300/80 hover:shadow-[0_0_28px_rgba(6,182,212,0.24)] dark:hover:border-cyan-400/60 dark:hover:shadow-[0_0_34px_rgba(34,211,238,0.25)]',
+    glow: 'hover:border-cyan-300/80 hover:shadow-[0_0_28px_rgba(6,182,212,0.24)](34,211,238,0.25)]',
   },
   outbound: {
     label: CALL_CENTER_CHANNEL_LABELS.outbound,
     icon: PhoneOutgoing,
-    tone: 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
+    tone: 'bg-indigo-500/10 text-indigo-600',
     accent: 'bg-indigo-500',
-    glow: 'hover:border-indigo-300/80 hover:shadow-[0_0_28px_rgba(99,102,241,0.24)] dark:hover:border-indigo-400/60 dark:hover:shadow-[0_0_34px_rgba(129,140,248,0.25)]',
+    glow: 'hover:border-indigo-300/80 hover:shadow-[0_0_28px_rgba(99,102,241,0.24)](129,140,248,0.25)]',
   },
   support: {
     label: 'Support Positions',
     icon: ShieldCheck,
-    tone: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+    tone: 'bg-emerald-500/10 text-emerald-600',
     accent: 'bg-emerald-500',
-    glow: 'hover:border-emerald-300/80 hover:shadow-[0_0_28px_rgba(16,185,129,0.24)] dark:hover:border-emerald-400/60 dark:hover:shadow-[0_0_34px_rgba(52,211,153,0.25)]',
+    glow: 'hover:border-emerald-300/80 hover:shadow-[0_0_28px_rgba(16,185,129,0.24)](52,211,153,0.25)]',
   },
 };
 
@@ -204,12 +204,12 @@ const CallCenterChannelSummary = ({
     <section className="glass-panel rounded-xl p-4 shadow-sm sm:p-6" aria-labelledby="call-center-overview">
       <div className="flex flex-col gap-4 border-b border-[var(--border-light)] pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
             <Target size={19} />
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-600 dark:text-blue-300">Decision overview</p>
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-blue-600">Decision overview</p>
               <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2.5 py-0.5 text-xs font-semibold leading-5 text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of 3 teams' : 'No pooled KPI score'}</span>
             </div>
             <h3 id="call-center-overview" className="mt-1 heading-3">Call Center Overview</h3>
@@ -228,7 +228,7 @@ const CallCenterChannelSummary = ({
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.045] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.06em] text-blue-700 dark:text-blue-300">Department performance</p>
+            <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.06em] text-blue-700">Department performance</p>
             <span
               title={overallSignal.label}
               className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${overallSignal.tone}`}
@@ -246,7 +246,7 @@ const CallCenterChannelSummary = ({
         </article>
 
         <article className={`rounded-2xl border p-4 ${primaryDrag ? 'border-amber-500/25 bg-amber-500/[0.06]' : 'border-emerald-500/20 bg-emerald-500/[0.05]'}`}>
-          <p className={`text-xs font-extrabold uppercase tracking-[0.08em] ${primaryDrag ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>Measured KPI drag</p>
+          <p className={`text-xs font-extrabold uppercase tracking-[0.08em] ${primaryDrag ? 'text-amber-700' : 'text-emerald-700'}`}>Measured KPI drag</p>
           <p className="mt-3 truncate text-base font-extrabold text-[var(--text-primary)]" title={primaryDrag ? `${CALL_CENTER_CHANNEL_LABELS[primaryDrag.channel]} · ${primaryDrag.analysis.label}` : undefined}>
             {primaryDrag ? `${CALL_CENTER_CHANNEL_LABELS[primaryDrag.channel]} · ${primaryDrag.analysis.label}` : 'No measured drag'}
           </p>
@@ -258,7 +258,7 @@ const CallCenterChannelSummary = ({
         </article>
 
         <article className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.045] p-4">
-          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-rose-700 dark:text-rose-300">Employees affecting average</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-rose-700">Employees affecting average</p>
           <p className="mt-3 text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{impactingEmployees.length} priority employees</p>
           <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">Lowest score gaps versus the department average; this is mathematical influence, not a root-cause claim.</p>
         </article>
@@ -330,7 +330,7 @@ const CallCenterChannelSummary = ({
               <span className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">Priority review</span>
             </div>
             {impactingEmployees.length === 0 ? (
-              <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-3 text-xs font-semibold text-emerald-700">
                 No employee is currently below the department average.
               </div>
             ) : (
@@ -348,7 +348,7 @@ const CallCenterChannelSummary = ({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="min-w-0 truncate text-xs font-extrabold text-[var(--text-primary)]" title={row.name}>{row.name}</span>
-                        <span className="shrink-0 text-xs font-extrabold text-rose-600 dark:text-rose-300">{rowScore.toFixed(1)}%</span>
+                        <span className="shrink-0 text-xs font-extrabold text-rose-600">{rowScore.toFixed(1)}%</span>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
                         <span>{employeeChannel ? CALL_CENTER_CHANNEL_LABELS[employeeChannel] : 'Support Positions'}</span>
@@ -365,8 +365,8 @@ const CallCenterChannelSummary = ({
         <aside className="flex flex-col justify-between rounded-2xl border border-blue-500/20 bg-blue-500/[0.045] p-4">
           <div>
             <div className="flex items-center gap-2">
-              <CheckCircle2 size={16} className="text-blue-600 dark:text-blue-300" />
-              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-700 dark:text-blue-300">Next decision</p>
+              <CheckCircle2 size={16} className="text-blue-600" />
+              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-700">Next decision</p>
             </div>
             <h4 className="mt-3 text-lg font-extrabold text-[var(--text-primary)]">{primaryDrag ? 'Fix measured KPI drag' : `Review ${focusLabel}`}</h4>
             <p className="mt-1 text-xs font-medium leading-5 text-[var(--text-secondary)]">{decisionDetail}</p>

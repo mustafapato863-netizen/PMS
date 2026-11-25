@@ -240,7 +240,7 @@ const MarketingPositionDetail = ({
 
       <section aria-labelledby="position-kpis-title">
         <div className="mb-3 flex items-center gap-2">
-          <Gauge size={18} className="text-blue-600 dark:text-blue-400" />
+          <Gauge size={18} className="text-blue-600" />
           <h3 id="position-kpis-title" className="heading-3">{position} KPIs</h3>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -248,7 +248,7 @@ const MarketingPositionDetail = ({
         </div>
         {!analytics.currentRecords.length && (
           <div className="mt-4 rounded-xl border border-dashed border-amber-400/40 bg-amber-500/8 p-4 text-center">
-            <p className="font-extrabold text-amber-700 dark:text-amber-300">No uploaded results match this position and filter selection.</p>
+            <p className="font-extrabold text-amber-700">No uploaded results match this position and filter selection.</p>
             <p className="mt-1 text-sm font-semibold text-[var(--text-muted)]">Configured KPIs remain visible until matching data is uploaded.</p>
           </div>
         )}
@@ -261,8 +261,8 @@ const MarketingPositionDetail = ({
           <div className="flex items-center gap-3">
             <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${
               rosterView === 'top_bottom'
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                ? 'bg-emerald-500/10 text-emerald-600'
+                : 'bg-blue-500/10 text-blue-600'
             }`}>
               {rosterView === 'top_bottom' ? <Award size={20} /> : <Users size={20} />}
             </span>
@@ -330,13 +330,13 @@ const MarketingPositionDetail = ({
                       <tr key={employee.id} className="border-b border-[var(--border-light)] text-sm font-semibold text-[var(--text-secondary)] transition-colors last:border-b-0 hover:bg-blue-500/[0.035]">
                         <td className="px-4 py-3">
                           <div className="flex min-w-[220px] items-center gap-3">
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-500/10 bg-blue-500/10 text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-500/10 bg-blue-500/10 text-xs font-extrabold text-blue-600">
                               {initials}
                             </span>
                             <div>
                               <Link
                                 to={`/employee/${encodeURIComponent(employee.id)}?month=${encodeURIComponent(employee.record.identity.month)}&performance_level=Employee`}
-                                className="font-extrabold text-[var(--text-primary)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                                className="font-extrabold text-[var(--text-primary)] transition-colors hover:text-blue-600"
                               >
                                 {employee.name}
                               </Link>
@@ -361,7 +361,7 @@ const MarketingPositionDetail = ({
                             <div className="max-w-[190px]">
                               <Link
                                 to={`/employee/${encodeURIComponent(employee.id)}?month=${encodeURIComponent(employee.record.identity.month)}&performance_level=Employee`}
-                                className="line-clamp-1 text-xs font-bold text-[var(--text-secondary)] hover:text-blue-600 hover:underline dark:hover:text-blue-400"
+                                className="line-clamp-1 text-xs font-bold text-[var(--text-secondary)] hover:text-blue-600 hover:underline"
                                 title={actionRow.rootCauseAuto}
                               >
                                 {actionRow.rootCauseAuto}
@@ -418,7 +418,7 @@ const MarketingPositionDetail = ({
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[0.72fr_1.55fr]" aria-labelledby="position-summary-title">
         <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-extrabold text-[var(--text-primary)]">
-            <Target size={17} className="text-blue-600 dark:text-blue-400" />
+            <Target size={17} className="text-blue-600" />
             <h3 id="position-summary-title">{position} Performance Summary</h3>
           </div>
           <div className="mt-3 space-y-2">
@@ -433,7 +433,7 @@ const MarketingPositionDetail = ({
         <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm" aria-labelledby="performance-analysis-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-extrabold text-[var(--text-primary)]">
-              <Lightbulb size={16} className="text-violet-600 dark:text-violet-400" />
+              <Lightbulb size={16} className="text-violet-600" />
               <h3 id="performance-analysis-title">Performance Analysis</h3>
             </div>
             <div className="flex items-center gap-2">
@@ -472,14 +472,14 @@ const MarketingPositionDetail = ({
                 ))}
               </div>
               <div className="mt-3 flex flex-col gap-2 rounded-lg border border-violet-500/15 bg-violet-500/[0.055] p-2.5 sm:flex-row sm:items-center">
-                <span className="shrink-0 text-xs font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
+                <span className="shrink-0 text-xs font-extrabold text-violet-700">Recommended focus</span>
                 <div className="flex flex-wrap gap-2">
                   {attentionKpis.length ? attentionKpis.slice(0, 3).map((kpi) => (
-                    <span key={kpi.key} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-extrabold text-violet-700 dark:text-violet-300">
+                    <span key={kpi.key} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-extrabold text-violet-700">
                       {buildKpiRecommendation(kpi)}
                     </span>
                   )) : (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
                       <CheckCircle2 size={14} /> Maintain current KPI performance
                     </span>
                   )}
@@ -510,19 +510,19 @@ const PerformerGroup = ({
 }) => (
   <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/25 p-3">
     <div className="mb-3 flex items-center gap-2.5">
-      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${tone === 'top' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${tone === 'top' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
         {tone === 'top' ? <Award size={17} /> : <AlertTriangle size={17} />}
       </span>
       <div>
-        <h4 className={`text-xs font-extrabold uppercase tracking-wide ${tone === 'top' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{title}</h4>
+        <h4 className={`text-xs font-extrabold uppercase tracking-wide ${tone === 'top' ? 'text-emerald-700' : 'text-rose-600'}`}>{title}</h4>
         <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{subtitle}</p>
       </div>
     </div>
     <div className="space-y-2">
       {employees.length ? employees.map((employee, index) => (
         <Link key={employee.id} to={`/employee/${encodeURIComponent(employee.id)}`} className="flex min-h-14 items-center gap-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2.5 transition hover:border-blue-500/25">
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${tone === 'top' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-500/10 text-rose-600 dark:text-rose-300'}`}>{index + 1}</span>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-xs font-extrabold text-blue-600 dark:text-blue-400">{employee.name.trim().charAt(0).toUpperCase() || '?'}</span>
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${tone === 'top' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-600'}`}>{index + 1}</span>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-xs font-extrabold text-blue-600">{employee.name.trim().charAt(0).toUpperCase() || '?'}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{employee.name}</span>
             <span className="mt-0.5 block text-xs font-medium text-[var(--text-muted)]">{employee.id}</span>
@@ -546,23 +546,23 @@ const ANALYSIS_TONES: Record<KpiAnalysisTone, {
 }> = {
   positive: {
     shell: 'border-emerald-500/20 bg-emerald-500/[0.045]',
-    icon: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400',
-    badge: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    icon: 'bg-emerald-500/12 text-emerald-600',
+    badge: 'bg-emerald-500/10 text-emerald-700',
   },
   warning: {
     shell: 'border-amber-500/25 bg-amber-500/[0.045]',
-    icon: 'bg-amber-500/12 text-amber-600 dark:text-amber-400',
-    badge: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    icon: 'bg-amber-500/12 text-amber-600',
+    badge: 'bg-amber-500/10 text-amber-700',
   },
   critical: {
     shell: 'border-rose-500/25 bg-rose-500/[0.045]',
-    icon: 'bg-rose-500/12 text-rose-600 dark:text-rose-400',
-    badge: 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    icon: 'bg-rose-500/12 text-rose-600',
+    badge: 'bg-rose-500/10 text-rose-700',
   },
   neutral: {
     shell: 'border-slate-400/20 bg-slate-500/[0.035]',
-    icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
-    badge: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
+    icon: 'bg-slate-500/10 text-slate-600',
+    badge: 'bg-slate-500/10 text-slate-600',
   },
 };
 
@@ -578,9 +578,9 @@ const KpiAnalysisRow = ({
   const analysis = buildKpiAnalysis(kpi);
   const tone = ANALYSIS_TONES[analysis.tone];
   const movementColor = analysis.movement.positive === true
-    ? 'text-emerald-700 dark:text-emerald-300'
+    ? 'text-emerald-700'
     : analysis.movement.positive === false
-      ? 'text-rose-700 dark:text-rose-300'
+      ? 'text-rose-700'
       : 'text-[var(--text-secondary)]';
   const MovementIcon = analysis.movement.kind === 'increase'
     ? TrendingUp
@@ -626,7 +626,7 @@ const KpiAnalysisRow = ({
               </span>
             )}
             {(analysis.impact.lostPoints ?? 0) > 0 && (
-              <span className="shrink-0 font-extrabold text-rose-600 dark:text-rose-400">
+              <span className="shrink-0 font-extrabold text-rose-600">
                 · -{analysis.impact.lostPoints?.toFixed(1)}%
               </span>
             )}
@@ -636,15 +636,15 @@ const KpiAnalysisRow = ({
               <span>Baseline <strong className="text-[var(--text-primary)]">{baselineValue}</strong></span>
               <span>· {kpi.baselinePeriodLabel}</span>
               {analysis.baseline.isNew ? (
-                <span className="font-extrabold text-emerald-700 dark:text-emerald-300">
+                <span className="font-extrabold text-emerald-700">
                   · New baseline{baselineGap ? ` +${baselineGap}` : ''}
                 </span>
               ) : baselineGap && analysis.baseline.gap !== 0 ? (
-                <span className="font-extrabold text-amber-700 dark:text-amber-300">
+                <span className="font-extrabold text-amber-700">
                   · {kpi.currentPeriodLabel} - {baselineGap} From Baseline
                 </span>
               ) : (
-                <span className="font-extrabold text-emerald-700 dark:text-emerald-300">· At baseline</span>
+                <span className="font-extrabold text-emerald-700">· At baseline</span>
               )}
             </div>
           )}
@@ -661,15 +661,15 @@ const KpiAnalysisRow = ({
           <p className="font-medium text-[var(--text-secondary)]">{analysis.movement.detail}</p>
         </div>
         <div className="flex items-start gap-2">
-          <Award size={12} className={`mt-0.5 shrink-0 ${analysis.baseline.isNew ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'}`} />
+          <Award size={12} className={`mt-0.5 shrink-0 ${analysis.baseline.isNew ? 'text-emerald-600' : 'text-blue-600'}`} />
           <p className="font-medium text-[var(--text-secondary)]">{analysis.baseline.detail}</p>
         </div>
         <div className="flex items-start gap-2">
           <Target size={12} className={`mt-0.5 shrink-0 ${
             analysis.target.achieved === true
-              ? 'text-emerald-600 dark:text-emerald-400'
+              ? 'text-emerald-600'
               : analysis.target.achieved === false
-                ? 'text-amber-600 dark:text-amber-400'
+                ? 'text-amber-600'
                 : 'text-[var(--text-muted)]'
           }`} />
           <p className="font-medium text-[var(--text-secondary)]">{analysis.target.detail}</p>
@@ -677,8 +677,8 @@ const KpiAnalysisRow = ({
         <div className="flex items-start gap-2">
           <Gauge size={12} className={`mt-0.5 shrink-0 ${
             (analysis.impact.lostPoints ?? 0) > 0
-              ? 'text-rose-600 dark:text-rose-400'
-              : 'text-emerald-600 dark:text-emerald-400'
+              ? 'text-rose-600'
+              : 'text-emerald-600'
           }`} />
           <p className="font-medium text-[var(--text-secondary)]">{analysis.impact.detail}</p>
         </div>
@@ -701,10 +701,10 @@ const SummaryLine = ({
   tone: SummaryTone;
 }) => {
   const toneClass = {
-    neutral: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-    positive: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    critical: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    neutral: 'bg-blue-500/10 text-blue-600',
+    positive: 'bg-emerald-500/10 text-emerald-600',
+    warning: 'bg-amber-500/10 text-amber-600',
+    critical: 'bg-rose-500/10 text-rose-600',
   }[tone];
   return (
     <div className="flex items-start gap-2.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)]/25 p-2.5">

@@ -76,12 +76,12 @@ export function EvaluationKpiRow({
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span id={nameId} className="text-[14px] font-bold text-[var(--text-primary)]">{label}</span>
           <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">{tracking ? 'Tracking only' : 'Included in score'}</span>
-          {edited && <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300"><PencilLine size={12} aria-hidden="true" />Edited</span>}
+          {edited && <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700"><PencilLine size={12} aria-hidden="true" />Edited</span>}
         </div>
         {tracking
           ? <span className="text-xs text-[var(--text-muted)]">Enter a weight above 0% to include in the score.</span>
           : <button type="button" disabled={locked} onClick={() => onEditText(line.kpi_key, 'weightText', '0')} className={TRACK_BUTTON}>Track {label} only</button>}
-        {!supported && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{UNSUPPORTED_FORMULA_NOTE}</p>}
+        {!supported && <p role="status" className="text-xs text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
       </div>
 
       <div className="min-w-0">
@@ -103,7 +103,7 @@ export function EvaluationKpiRow({
           <span className="shrink-0 text-xs font-bold text-[var(--text-secondary)]">{unitSuffix}</span>
         </div>
         <span id={targetSavedId} className="mt-1 block text-xs text-[var(--text-muted)]">Saved target: {savedTargetSummary(savedLine)}.</span>
-        {targetProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800 dark:text-amber-300">{targetProblem.message}</span>}
+        {targetProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800">{targetProblem.message}</span>}
       </div>
 
       <div className="min-w-0">
@@ -125,7 +125,7 @@ export function EvaluationKpiRow({
           <span className="shrink-0 text-xs font-bold text-[var(--text-secondary)]">%</span>
         </div>
         <span id={weightSavedId} className="mt-1 block text-xs text-[var(--text-muted)]">Saved weight: {savedWeightSummary(savedLine.weight)}.</span>
-        {weightProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800 dark:text-amber-300">{weightProblem.message}</span>}
+        {weightProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800">{weightProblem.message}</span>}
       </div>
 
       <div className="min-w-0">

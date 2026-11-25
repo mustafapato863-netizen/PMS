@@ -177,7 +177,7 @@ export default function ReportsCenterWorkspace({
   const scopeSummary = selectedScope.join(' / ');
 
   const quickButtonClass = (active: boolean) => `inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-extrabold transition-colors ${active
-    ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]'
+    ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)]'
     : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/60 hover:text-[var(--sgh-cyan-primary,#00A3E0)]'
   }`;
 
@@ -192,7 +192,7 @@ export default function ReportsCenterWorkspace({
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-[var(--text-muted)]">
               <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">Role: {role}</span>
               <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">Period: {periodLabel(currentPeriod)}</span>
-              <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1.5 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
+              <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1.5 text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -234,7 +234,7 @@ export default function ReportsCenterWorkspace({
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">Use a shortcut, then refine any filter above.</p>
               </div>
             </div>
-            <span className="text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
+            <span className="text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {latestPeriod && <button type="button" aria-pressed={filters.period === latestPeriod.key} onClick={() => onApplyQuickFilter({ period: latestPeriod.key })} className={quickButtonClass(filters.period === latestPeriod.key)}>Latest period</button>}
@@ -253,7 +253,7 @@ export default function ReportsCenterWorkspace({
           )) : <span className="text-xs font-semibold text-[var(--text-muted)]">All authorized records</span>}
         </div>
 
-        {!canGeneratePptx && <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Preview only - report generation is unavailable for your role.</p>}
+        {!canGeneratePptx && <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700">Preview only - report generation is unavailable for your role.</p>}
       </section>
       </ResponsiveFilters>
 
@@ -265,15 +265,15 @@ export default function ReportsCenterWorkspace({
             <h2 className="font-extrabold text-[var(--text-primary)]">Choose a report type</h2>
             <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">Generate a ready-made PowerPoint sample using the filters above. The generated file will appear in report history for download.</p>
           </div>
-          <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1 text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]">{pptxTemplates.length} available</span>
+          <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1 text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)]">{pptxTemplates.length} available</span>
         </div>
 
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-2.5">
             <span className="rounded-lg bg-[var(--sgh-cyan-primary,#00A3E0)]/10 p-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><FileBarChart size={16} /></span>
             <div className="min-w-0">
-              <p className="text-xs font-extrabold text-blue-800 dark:text-[var(--sgh-cyan-light,#38BDF8)]">Active filters for report generation</p>
-              <p className="mt-1 truncate text-xs font-semibold text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]" aria-live="polite" title={scopeSummary}>{scopeSummary}</p>
+              <p className="text-xs font-extrabold text-blue-800(--sgh-cyan-light,#38BDF8)]">Active filters for report generation</p>
+              <p className="mt-1 truncate text-xs font-semibold text-blue-700(--sgh-cyan-primary,#00A3E0)]" aria-live="polite" title={scopeSummary}>{scopeSummary}</p>
             </div>
           </div>
           <span className="shrink-0 rounded-full bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-extrabold text-[var(--text-secondary)]">{scopeFilterCount} scope filter{scopeFilterCount === 1 ? '' : 's'}</span>
@@ -287,7 +287,7 @@ export default function ReportsCenterWorkspace({
             <div className="flex items-start justify-between gap-2">
               <span className="rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)]/10 p-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><FileBarChart size={20} /></span>
               <div className="flex flex-wrap justify-end gap-1">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-extrabold text-emerald-700 dark:text-emerald-300"><Presentation size={11} /> PPTX</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-extrabold text-emerald-700"><Presentation size={11} /> PPTX</span>
                 <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-1 text-xs font-extrabold text-[var(--text-muted)]">{template.category || template.type}</span>
               </div>
             </div>

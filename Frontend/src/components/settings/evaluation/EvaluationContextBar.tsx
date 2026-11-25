@@ -25,9 +25,9 @@ export type EvaluationContextBarProps = {
 };
 
 const TONE_ICON: Record<StatusTone, { icon: LucideIcon; className: string }> = {
-  info: { icon: Info, className: 'border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300' },
-  good: { icon: CircleCheck, className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
-  warning: { icon: TriangleAlert, className: 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300' },
+  info: { icon: Info, className: 'border-blue-500/25 bg-blue-500/10 text-blue-700' },
+  good: { icon: CircleCheck, className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700' },
+  warning: { icon: TriangleAlert, className: 'border-amber-500/30 bg-amber-500/10 text-amber-800' },
   neutral: { icon: Circle, className: 'border-[var(--border-light)] bg-[var(--bg-sunken)] text-[var(--text-secondary)]' },
 };
 

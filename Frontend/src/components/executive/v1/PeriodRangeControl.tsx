@@ -56,7 +56,7 @@ export default function PeriodRangeControl({
         <div
           role="group"
           aria-label="Period mode"
-          className="inline-flex h-[38px] items-center overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 p-0.5 text-xs font-semibold dark:border-slate-700/80 dark:bg-slate-800/90 shadow-2xs"
+          className="inline-flex h-[38px] items-center overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 p-0.5 text-xs font-semibold shadow-2xs"
         >
           <button
             type="button"
@@ -64,8 +64,8 @@ export default function PeriodRangeControl({
             onClick={() => onModeChange('month')}
             className={`h-full rounded-lg px-3 transition-all ${
               mode === 'month'
-                ? 'bg-white text-blue-600 shadow-xs dark:bg-slate-900 dark:text-blue-400 font-bold'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                ? 'bg-white text-blue-600 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             Month
@@ -76,8 +76,8 @@ export default function PeriodRangeControl({
             onClick={switchToRange}
             className={`h-full rounded-lg px-3 transition-all ${
               mode === 'range'
-                ? 'bg-white text-blue-600 shadow-xs dark:bg-slate-900 dark:text-blue-400 font-bold'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                ? 'bg-white text-blue-600 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             Range
@@ -105,22 +105,22 @@ export default function PeriodRangeControl({
                   onClick={() => choose(preset.selection)}
                   className={`h-[38px] rounded-xl border px-3 text-xs font-semibold transition-all ${
                     activePreset === preset.id
-                      ? 'border-blue-300 bg-blue-50 text-blue-700 font-bold dark:border-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      ? 'border-blue-300 bg-blue-50 text-blue-700 font-bold shadow-xs'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   {preset.label}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex items-center gap-2 text-xs text-slate-600">
               <label className="flex items-center gap-1">
                 <span>From</span>
                 <select
                   aria-label="From month"
                   value={from}
                   onChange={(event) => choose({ from: event.target.value, to: to || event.target.value })}
-                  className="h-[38px] rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-2xs"
+                  className="h-[38px] rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-700 shadow-2xs"
                 >
                   {fromChoices.map((key) => <option key={key} value={key}>{key}</option>)}
                 </select>
@@ -131,7 +131,7 @@ export default function PeriodRangeControl({
                   aria-label="To month"
                   value={to}
                   onChange={(event) => choose({ from: from || event.target.value, to: event.target.value })}
-                  className="h-[38px] rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-2xs"
+                  className="h-[38px] rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-700 shadow-2xs"
                 >
                   {toChoices.map((key) => <option key={key} value={key}>{key}</option>)}
                 </select>

@@ -33,32 +33,32 @@ const NOTIFICATION_COLORS: Record<Notification['type'], { bg: string; border: st
   error: {
     bg: 'bg-red-500/10',
     border: 'border-red-500/20',
-    icon: 'text-red-600 dark:text-red-400',
-    text: 'text-red-900 dark:text-red-100',
+    icon: 'text-red-600',
+    text: 'text-red-900',
   },
   success: {
     bg: 'bg-green-500/10',
     border: 'border-green-500/20',
-    icon: 'text-green-600 dark:text-green-400',
-    text: 'text-green-900 dark:text-green-100',
+    icon: 'text-green-600',
+    text: 'text-green-900',
   },
   info: {
     bg: 'bg-blue-500/10',
     border: 'border-blue-500/20',
-    icon: 'text-blue-600 dark:text-blue-400',
-    text: 'text-blue-900 dark:text-blue-100',
+    icon: 'text-blue-600',
+    text: 'text-blue-900',
   },
   upload: {
     bg: 'bg-purple-500/10',
     border: 'border-purple-500/20',
-    icon: 'text-purple-600 dark:text-purple-400',
-    text: 'text-purple-900 dark:text-purple-100',
+    icon: 'text-purple-600',
+    text: 'text-purple-900',
   },
   action: {
     bg: 'bg-amber-500/10',
     border: 'border-amber-500/20',
-    icon: 'text-amber-600 dark:text-amber-400',
-    text: 'text-amber-900 dark:text-amber-100',
+    icon: 'text-amber-600',
+    text: 'text-amber-900',
   },
 };
 

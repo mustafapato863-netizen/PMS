@@ -32,7 +32,7 @@ function Sparkline({ values }: { values: Array<number | null> }) {
 function chipClass(selected: boolean) {
   return `rounded-full border px-[10px] py-[3px] text-[12px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
     selected
-      ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+      ? 'border-blue-500/40 bg-blue-500/10 text-blue-700'
       : 'border-[var(--insights-row-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
   }`;
 }
@@ -230,7 +230,7 @@ export default function KpiDiagnosisTable({
                         <td className="py-[10px] pr-[12px] align-top">
                           <Sparkline values={row.six_months.map((month) => month.actual_value)} />
                         </td>
-                        <td className={`py-[10px] pr-[12px] align-top font-semibold tabular-nums ${row.effect_points !== null && row.effect_points < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-secondary)]'}`}>
+                        <td className={`py-[10px] pr-[12px] align-top font-semibold tabular-nums ${row.effect_points !== null && row.effect_points < 0 ? 'text-rose-600' : 'text-[var(--text-secondary)]'}`}>
                           {formatEffect(row.effect_points)}
                           {onTargetButLosing && (
                             <p className="mt-[2px] text-[12px] font-normal text-[var(--text-muted)]" data-testid={`kpi-on-target-note-${row.key}`}>

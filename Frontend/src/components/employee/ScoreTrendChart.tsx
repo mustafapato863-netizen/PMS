@@ -113,9 +113,9 @@ export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) =>
         const hasMom = typeof mom === 'number' && !Number.isNaN(mom);
         const momTone =
           hasMom && mom > 0.05
-            ? 'text-emerald-600 dark:text-emerald-400'
+            ? 'text-emerald-600'
             : hasMom && mom < -0.05
-              ? 'text-rose-600 dark:text-rose-400'
+              ? 'text-rose-600'
               : 'text-[var(--text-muted)]';
         const momArrow = hasMom && mom > 0.05 ? '↑ ' : hasMom && mom < -0.05 ? '↓ ' : '';
         const momSign = hasMom && mom > 0 ? '+' : '';

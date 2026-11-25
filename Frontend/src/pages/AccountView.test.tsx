@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../types';
-import { ThemeProvider } from '../context/ThemeContext';
 import AccountView from './AccountView';
 
 const state = vi.hoisted(() => ({
@@ -13,10 +12,10 @@ const state = vi.hoisted(() => ({
 vi.mock('../context/auth', () => ({ useAuth: () => ({ currentUser: state.user, updateProfile: state.updateProfile, changePassword: state.changePassword, logout: state.logout }) }));
 vi.mock('../hooks/useToast', () => ({ useToast: () => ({ toast: { success: state.success } }) }));
 
-const show = () => render(<MemoryRouter initialEntries={['/account']}><ThemeProvider><Routes>
+const show = () => render(<MemoryRouter initialEntries={['/account']}><><Routes>
   <Route path="/account" element={<AccountView />} />
   <Route path="/login" element={<p>Sign in again</p>} />
-</Routes></ThemeProvider></MemoryRouter>);
+</Routes></></MemoryRouter>);
 
 describe('personal account settings', () => {
   beforeEach(() => {
@@ -76,14 +75,6 @@ describe('personal account settings', () => {
     expect(state.changePassword).toHaveBeenCalledWith('OldPassword123!', 'NewPassword456!');
     expect(state.logout).toHaveBeenCalledOnce();
     expect(await screen.findByText('Sign in again')).toBeInTheDocument();
-  });
-
-  it('selects and remembers the browser appearance without a profile API write', async () => {
-    show();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Dark' }));
-    expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
-    expect(localStorage.getItem('pms_theme')).toBe('dark');
-    expect(state.updateProfile).not.toHaveBeenCalled();
   });
 
   it('recovers from a rejected profile request', async () => {

@@ -3,9 +3,9 @@ import type { ActionStatus } from '../../types';
 import { ACTION_STATUSES } from './dueBadge';
 
 const STATUS_CLASS: Record<string, string> = {
-  Open: 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-  'In Progress': 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300',
-  Completed: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  Open: 'border-sky-500/25 bg-sky-500/10 text-sky-700',
+  'In Progress': 'border-amber-500/30 bg-amber-500/10 text-amber-800',
+  Completed: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700',
   Cancelled: 'border-[var(--exec-card-border)] bg-[var(--bg-sunken)] text-[var(--text-muted)]',
 };
 

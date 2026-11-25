@@ -1,6 +1,5 @@
 import React from 'react';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
 import MoMIndicator from './MoMIndicator';
 
 interface KpiCardProps {
@@ -34,8 +33,6 @@ export function KpiCard({
   accent,
   variant = 'gradient',
 }: KpiCardProps) {
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
 
   const isIndigo = accent.includes('indigo');
   const isEmerald = accent.includes('emerald');
@@ -43,31 +40,24 @@ export function KpiCard({
   const isOrange = accent.includes('orange');
 
   let lightStart = '#E6F1FB';
-  let darkStart = '#172554'; // dark blue
-  let iconColor = 'text-blue-600 dark:text-blue-400';
+  let iconColor = 'text-blue-600';
 
   if (isIndigo) {
     lightStart = '#EEEDFE';
-    darkStart = '#311042'; // dark purple
-    iconColor = 'text-indigo-600 dark:text-indigo-400';
+    iconColor = 'text-indigo-600';
   } else if (isEmerald) {
     lightStart = '#EAF3DE';
-    darkStart = '#064e3b'; // dark green
-    iconColor = 'text-emerald-600 dark:text-emerald-400';
+    iconColor = 'text-emerald-600';
   } else if (isRed) {
     lightStart = '#FCEBEB';
-    darkStart = '#450a0a'; // dark red
-    iconColor = 'text-red-600 dark:text-red-400';
+    iconColor = 'text-red-600';
   } else if (isOrange) {
     lightStart = '#FFF1E6';
-    darkStart = '#431407';
-    iconColor = 'text-orange-600 dark:text-orange-400';
+    iconColor = 'text-orange-600';
   }
 
-  const startColor = isDark ? darkStart : lightStart;
-
   const backgroundStyle = variant === 'gradient'
-    ? { background: `linear-gradient(135deg, ${startColor} 0%, var(--bg-surface) 60%)` }
+    ? { background: `linear-gradient(135deg, ${lightStart} 0%, var(--bg-surface) 60%)` }
     : { background: 'var(--bg-surface)' };
 
   return (
@@ -81,7 +71,7 @@ export function KpiCard({
           <div className="text-display-card font-bold text-[var(--text-primary)] leading-none tracking-tight">{value}</div>
         </div>
         <div
-          style={{ backgroundColor: startColor }}
+          style={{ backgroundColor: lightStart }}
           className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
         >
           <span className={iconColor}>{icon}</span>
@@ -96,8 +86,8 @@ export function KpiCard({
             trendDelta === 0
               ? 'text-[var(--text-muted)]'
               : (lowerTrendIsBetter ? trendDelta < 0 : trendDelta > 0)
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-rose-600 dark:text-rose-500'
+                ? 'text-emerald-600'
+                : 'text-rose-600'
           }`}>
             {trendDelta === 0 ? <Minus size={12} /> : trendDelta < 0 ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
             <span>{trendText}</span>

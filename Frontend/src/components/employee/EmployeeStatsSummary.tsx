@@ -58,18 +58,18 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
   
   const getStabilityBadge = () => {
     let icon = <TrendingUp className="w-3.5 h-3.5" />;
-    let colorClass = "text-emerald-600 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400 dark:bg-emerald-500/20";
+    let colorClass = "text-emerald-600 bg-emerald-500/10 border-emerald-500/20";
     const text = stability;
     
     if (stability === 'Declining') {
       icon = <TrendingDown className="w-3.5 h-3.5" />;
-      colorClass = "text-rose-600 bg-rose-500/10 border-rose-500/20 dark:text-rose-400 dark:bg-rose-500/20";
+      colorClass = "text-rose-600 bg-rose-500/10 border-rose-500/20";
     } else if (stability === 'Volatile') {
       icon = <AlertCircle className="w-3.5 h-3.5" />;
-      colorClass = "text-amber-600 bg-amber-500/10 border-amber-500/20 dark:text-amber-400 dark:bg-amber-500/20";
+      colorClass = "text-amber-600 bg-amber-500/10 border-amber-500/20";
     } else if (stability === 'Stable') {
       icon = <Minus className="w-3.5 h-3.5" />;
-      colorClass = "text-blue-600 bg-blue-500/10 border-blue-500/20 dark:text-blue-400 dark:bg-blue-500/20";
+      colorClass = "text-blue-600 bg-blue-500/10 border-blue-500/20";
     }
     
     return (

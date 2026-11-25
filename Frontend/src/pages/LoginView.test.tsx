@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LoginView from './LoginView';
-import { ThemeProvider } from '../context/ThemeContext';
 
 const mockLogin = vi.fn();
 const mockNavigate = vi.fn();
@@ -32,9 +31,9 @@ describe('LoginView', () => {
   const renderLogin = () => {
     return render(
       <MemoryRouter>
-        <ThemeProvider>
+        <>
           <LoginView />
-        </ThemeProvider>
+        </>
       </MemoryRouter>
     );
   };

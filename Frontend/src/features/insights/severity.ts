@@ -23,10 +23,10 @@ export const SEVERITY_LABELS: Record<SeverityDisplay, string> = {
 
 /** Bordered pill / tile styles used across Insights. */
 export const SEVERITY_STYLES: Record<SeverityDisplay, string> = {
-  critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
-  risk: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
-  opportunity: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
+  critical: 'border-rose-200 bg-rose-50 text-rose-600',
+  risk: 'border-amber-200 bg-amber-50 text-amber-700',
+  opportunity: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   // Neutral: on target, but worth keeping an eye on.
-  watch: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300',
-  data_issue: 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300',
+  watch: 'border-slate-200 bg-slate-50 text-slate-600',
+  data_issue: 'border-blue-200 bg-blue-50 text-blue-600',
 };

@@ -315,7 +315,7 @@ const TeamKpiSection = ({
     const Icon = stable ? Minus : isDown ? TrendingDown : TrendingUp;
     const colorClass = stable
       ? 'text-[var(--text-muted)]'
-      : isGood ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500';
+      : isGood ? 'text-emerald-600' : 'text-rose-600';
     return (
       <span className={`inline-flex items-center gap-1 font-semibold ${colorClass}`}>
         <Icon size={12} />
