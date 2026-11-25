@@ -1012,7 +1012,18 @@ export interface TeamsAtRiskSectionProps {
   onSelectTeam?: (team: TeamAtRiskItem) => void;
 }
 
+function fallbackStatusLabel(row: TeamAtRiskItem): string | null {
+  if (row.statusLabel) return row.statusLabel;
+  if (row.grade === 'E' || row.score < 70) return 'Critical <70%';
+  if (row.score < 90) return 'Below 90%';
+  return row.flags[0] ?? null;
+}
+
 export function TeamsAtRiskSection({ teams, onSelectTeam }: TeamsAtRiskSectionProps) {
+  const gridCols = onSelectTeam
+    ? 'md:grid-cols-[minmax(0,1.45fr)_156px_118px_minmax(0,1.65fr)_132px_114px]'
+    : 'md:grid-cols-[minmax(0,1.45fr)_156px_118px_minmax(0,1.65fr)_132px]';
+
   return (
     <section
       id="presentation-section-teams"
@@ -1030,75 +1041,121 @@ export function TeamsAtRiskSection({ teams, onSelectTeam }: TeamsAtRiskSectionPr
           </h2>
         </div>
         <span className="rounded-full border border-red-200 bg-red-50 px-3 py-0.5 text-xs font-semibold text-red-700">
-          {teams.length} teams flagged
+          {teams.length} {teams.length === 1 ? 'team' : 'teams'} flagged
         </span>
       </div>
 
       {teams.length === 0 ? (
         <p className="mt-4 text-sm text-slate-500">No teams in this region are on the risk list.</p>
       ) : (
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-xs font-semibold tracking-wider text-slate-500 uppercase">
-              <th className="py-3 pr-4">Team</th>
-              <th className="px-4 py-3">Function</th>
-              <th className="px-4 py-3 text-right">Score</th>
-              <th className="px-4 py-3 text-center">Grade</th>
-              <th className="px-4 py-3 text-right">Gap</th>
-              <th className="py-3 pl-4">Why flagged</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {teams.map((row) => {
-              const style = GRADE_STYLES[row.grade];
-              return (
-                <tr
-                  key={`${row.functionName}-${row.team}`}
-                  className="transition-colors hover:bg-slate-50/80"
-                >
-                  <td className="py-3 pr-4 font-semibold text-slate-900">
-                    {onSelectTeam ? (
-                      <button
-                        type="button"
-                        data-testid={`team-at-risk-${slugifyIdentifier(row.team)}`}
-                        onClick={() => onSelectTeam(row)}
-                        className="font-semibold text-slate-900 hover:text-blue-700"
-                      >
-                        {row.team}
-                      </button>
-                    ) : (
-                      row.team
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{row.functionName}</td>
-                  <td className={`px-4 py-3 text-right font-bold ${style.scoreText}`}>
-                    {row.score.toFixed(1)}%
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <GradePill grade={row.grade} size="sm" />
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-red-600">
-                    {row.gap > 0 ? `+${row.gap.toFixed(1)}%` : `${row.gap.toFixed(1)}%`}
-                  </td>
-                  <td className="py-3 pl-4">
-                    <div className="flex flex-wrap gap-1.5">
-                      {row.flags.map((flag) => (
-                        <span
-                          key={flag}
-                          className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
-                        >
-                          {flag}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+        <div role="table" aria-label="Teams at Risk (Summary)" className="mt-4 flex flex-col gap-2">
+          <div
+            role="row"
+            className={`hidden items-center gap-3 px-4 py-1.5 text-xs font-semibold text-slate-500 md:grid ${gridCols}`}
+          >
+            <span role="columnheader">Team &amp; Scope</span>
+            <span role="columnheader">Score &amp; Grade</span>
+            <span role="columnheader">Gap Share</span>
+            <span role="columnheader">Primary Bottleneck KPI</span>
+            <span role="columnheader">Status</span>
+            {onSelectTeam && <span role="columnheader" className="text-right">Action</span>}
+          </div>
+
+          {teams.map((row, index) => {
+            const lead = index === 0;
+            const statusLabel = fallbackStatusLabel(row);
+            const scopeMeta = [
+              row.functionName,
+              row.regions?.length ? row.regions.join(' + ') : null,
+              row.employees && row.employees > 0
+                ? `${row.employees} ${row.employees === 1 ? 'person' : 'people'}`
+                : null,
+              row.scoreBasis === 'leader_scorecard' ? 'Leader scorecard' : null,
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            const bottleneck = row.bottleneckLabel || '—';
+
+            return (
+              <div
+                role="row"
+                key={`${row.functionName}-${row.team}-${(row.regions ?? []).join('-')}`}
+                data-testid="monthly-risk-row"
+                className={`flex flex-col gap-2.5 rounded-xl border px-4 py-3 transition-all hover:shadow-xs md:grid md:items-center md:gap-3 ${gridCols} ${
+                  lead
+                    ? 'border-red-200/80 bg-red-50/40'
+                    : 'border-slate-200/80 bg-slate-50/50 hover:border-slate-300/90 hover:bg-white'
+                }`}
+              >
+                {/* Col 1: Team & Scope */}
+                <div role="cell" className="flex min-w-0 flex-col gap-0.5">
+                  {onSelectTeam ? (
+                    <button
+                      type="button"
+                      data-testid={`team-at-risk-${slugifyIdentifier(row.team)}`}
+                      onClick={() => onSelectTeam(row)}
+                      className="truncate text-left text-sm font-bold leading-snug text-slate-900 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    >
+                      {row.team}
+                    </button>
+                  ) : (
+                    <span className="truncate text-sm font-bold leading-snug text-slate-900">
+                      {row.team}
+                    </span>
+                  )}
+                  <span className="truncate text-xs text-slate-500">{scopeMeta}</span>
+                </div>
+
+                {/* Col 2: Score & Grade */}
+                <div role="cell" className="flex items-center gap-2">
+                  <ScoreText score={row.score} className="text-[15px] tabular-nums">
+                    {fmtScore(row.score)}
+                  </ScoreText>
+                  <ExecGradePill score={row.score} className="!px-[8px] !py-[2px]" />
+                </div>
+
+                {/* Col 3: Gap Share */}
+                <div role="cell" className="text-xs font-semibold tabular-nums text-slate-600">
+                  <span className="text-slate-400 md:hidden">Gap Share: </span>
+                  {row.gapSharePercent != null && row.gapSharePercent > 0
+                    ? `${formatShare(row.gapSharePercent)}% of gap`
+                    : `${arrow(row.gap)} ${fmtSigned(row.gap)}`}
+                </div>
+
+                {/* Col 4: Primary Bottleneck KPI */}
+                <div role="cell" className="min-w-0 text-xs font-medium text-slate-800">
+                  <span className="text-slate-400 md:hidden">Bottleneck: </span>
+                  <span className="block truncate" title={bottleneck}>
+                    {bottleneck}
+                  </span>
+                </div>
+
+                {/* Col 5: Status */}
+                <div role="cell" className="flex flex-wrap items-center gap-1">
+                  {statusLabel ? (
+                    <StatusPill tone="danger">{statusLabel}</StatusPill>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </div>
+
+                {/* Col 6: Action */}
+                {onSelectTeam && (
+                  <div role="cell" className="flex items-center md:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onSelectTeam(row)}
+                      className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold text-blue-700 transition-colors hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    >
+                      Review Team
+                      <ArrowRight aria-hidden="true" className="size-3.5" strokeWidth={2.2} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </section>
   );

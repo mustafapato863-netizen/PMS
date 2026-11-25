@@ -1186,6 +1186,15 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(regionShare).getByText(/gap share:/i)).toBeInTheDocument();
     expect(regionShare).toHaveTextContent(/UAE gap share:\s*85% of the overall -77\.7% company gap from 67% of evaluated headcount\./i);
 
+    const teamsAtRisk = screen.getByRole('table', { name: 'Teams at Risk (Summary)' });
+    expect(within(teamsAtRisk).getByRole('columnheader', { name: 'Team & Scope' })).toBeInTheDocument();
+    expect(within(teamsAtRisk).getByRole('columnheader', { name: 'Score & Grade' })).toBeInTheDocument();
+    expect(within(teamsAtRisk).getByRole('columnheader', { name: 'Gap Share' })).toBeInTheDocument();
+    expect(within(teamsAtRisk).getByRole('columnheader', { name: 'Primary Bottleneck KPI' })).toBeInTheDocument();
+    expect(within(teamsAtRisk).getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
+    expect(within(teamsAtRisk).getAllByText(/% of gap/i).length).toBeGreaterThan(0);
+    expect(within(teamsAtRisk).getAllByText('Critical <70%').length).toBeGreaterThan(0);
+
     // The filter trigger is docked inside the bottom control bar, not in the top header or floating.
     const header = screen.getByRole('banner', { name: 'Monthly Presentation Header' });
     const bar = screen.getByTestId('presentation-control-bar');

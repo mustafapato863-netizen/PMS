@@ -113,7 +113,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         {showRegionSplit ? (
           <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)] xl:items-start">
             <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
-            <RegionSplitCard regions={summary.regions} previous={previous} />
+            <RegionSplitCard regions={summary.regions} previous={previous} overallGap={summary.hero.gap} />
           </div>
         ) : (
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
@@ -136,7 +136,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         <DriversCard summary={summary} viewAllHref={null} />
         {showRegionSplit ? (
           <ExecCard as="div" className="h-full justify-between" data-testid="region-grade-unified-card">
-            <RegionSplitCard regions={summary.regions} previous={previous} range={range} embedded />
+            <RegionSplitCard regions={summary.regions} previous={previous} overallGap={summary.hero.gap} range={range} embedded />
             <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} compact embedded />
           </ExecCard>
         ) : (

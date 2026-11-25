@@ -6,14 +6,35 @@ import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodL
 import { ExecCard, ExecCardHeader, GradePill, ScoreText, SoftEmpty, ToneText } from './ExecPrimitives';
 import { gradeGradientVar } from './gradeGradient';
 
+function resolveOverallGap(
+  overallGap: number | null | undefined,
+  regions: ExecutiveRegion[],
+): number | null {
+  if (overallGap !== null && overallGap !== undefined && Number.isFinite(overallGap)) {
+    return overallGap;
+  }
+  let weightedScore = 0;
+  let totalEmployees = 0;
+  for (const region of regions) {
+    if (region.score !== null && Number.isFinite(region.score) && region.employees > 0) {
+      weightedScore += region.score * region.employees;
+      totalEmployees += region.employees;
+    }
+  }
+  if (totalEmployees === 0) return null;
+  return Number((weightedScore / totalEmployees - 100).toFixed(1));
+}
+
 export default function RegionSplitCard({
   regions,
   previous,
+  overallGap = null,
   range = null,
   embedded = false,
 }: {
   regions: ExecutiveRegion[];
   previous: ExecutivePeriod | null;
+  overallGap?: number | null;
   range?: ExecutiveRangeBlock | null;
   /** Render inline inside a parent ExecCard (Figma Corporate Row 4 unified right card). */
   embedded?: boolean;
@@ -23,6 +44,9 @@ export default function RegionSplitCard({
   const share = [...regions]
     .filter((region) => region.gap_share_percent !== null)
     .sort((l, r) => (r.gap_share_percent ?? 0) - (l.gap_share_percent ?? 0))[0];
+  const resolvedOverallGap = resolveOverallGap(overallGap, regions);
+  const overallGapLabel =
+    resolvedOverallGap !== null && resolvedOverallGap < 0 ? fmtSigned(resolvedOverallGap) : null;
 
   const body = (
     <>
@@ -95,7 +119,16 @@ export default function RegionSplitCard({
       )}
       {share && regions.length > 1 && share.headcount_share_percent !== null && (
         <p className="text-[12px] text-[var(--text-muted)]">
-          {share.region} gap share: {Math.round(share.gap_share_percent ?? 0)}% of the company gap from {Math.round(share.headcount_share_percent)}% of headcount.
+          {share.region} gap share: {Math.round(share.gap_share_percent ?? 0)}% of the{' '}
+          {overallGapLabel ? (
+            <>
+              overall <span className="font-semibold text-[var(--insights-heading)] tabular-nums">{overallGapLabel}</span>{' '}
+              company gap
+            </>
+          ) : (
+            'company gap'
+          )}{' '}
+          from {Math.round(share.headcount_share_percent)}% of headcount.
         </p>
       )}
     </>

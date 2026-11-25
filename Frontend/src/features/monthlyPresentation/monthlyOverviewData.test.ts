@@ -130,4 +130,46 @@ describe('adaptSummaryToMonthlyOverview', () => {
     expect(overview.drivers.positive).toEqual([]);
     expect(overview.teamsAtRisk).toEqual([]);
   });
+
+  it('maps Executive Teams at Risk metadata (scope, gap share, primary bottleneck KPI, status)', () => {
+    const summary = liveSummary(null);
+    summary.teams = [
+      {
+        team: 'Coding',
+        source_team: 'Coding EGY',
+        function: 'RCM',
+        regions: ['EGY'],
+        employees: 2,
+        score: 52.6,
+        previous_score: 61.0,
+        change: -8.4,
+        gap: -47.4,
+        gap_share_percent: 1.2,
+        grade: 'E',
+        flags: ['grade_e', 'lowest_in_function'],
+        flag_detail: {
+          kpi_key: 'quality_errors_rate',
+          kpi_label: 'Quality Errors Rate',
+          current_value: 11.3,
+          target_value: 5,
+          unit: '%',
+          text: null,
+        },
+      } as unknown as ExecutiveSummary['teams'][number],
+    ];
+
+    const overview = adaptSummaryToMonthlyOverview(summary, 'ALL', { allowSnapshotFallback: false });
+    expect(overview.teamsAtRisk).toHaveLength(1);
+    expect(overview.teamsAtRisk[0]).toMatchObject({
+      team: 'Coding',
+      functionName: 'RCM',
+      regions: ['EGY'],
+      employees: 2,
+      score: 52.6,
+      grade: 'E',
+      gapSharePercent: 1.2,
+      bottleneckLabel: 'Quality Errors Rate (11.3% vs 5%)',
+      statusLabel: 'Critical <70%',
+    });
+  });
 });

@@ -2,11 +2,14 @@ import type {
   ExecutiveFunctionCard,
   ExecutiveRegion,
   ExecutiveSummary,
+  ExecutiveTeam,
+  ExecutiveTeamFlag,
   ExecutiveTrendPoint,
 } from '../executive/types';
 import { fmtKpiDelta, fmtKpiValue } from '../executive/format';
 import { functionSlug } from '../executive/functions';
 import { presentationTeamName } from '../team/countryTeamIdentity';
+import { FLAG_LABEL, FLAG_ORDER } from '../../components/executive/v1/execModel';
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -63,6 +66,12 @@ export interface TeamAtRiskItem {
   grade: GradeLetter;
   gap: number;
   flags: string[];
+  regions?: string[];
+  employees?: number;
+  scoreBasis?: ExecutiveTeam['score_basis'];
+  gapSharePercent?: number | null;
+  bottleneckLabel?: string | null;
+  statusLabel?: string | null;
 }
 
 export interface MonthlyOverviewData {
@@ -675,13 +684,46 @@ export function adaptSummaryToMonthlyOverview(
           .sort((a, b) => a.score - b.score)
       : fallback.functions;
 
+function teamStatusBadgeLabel(team: ExecutiveTeam): string | null {
+  const primaryFlag: ExecutiveTeamFlag | undefined = FLAG_ORDER.find((flag) =>
+    team.flags.includes(flag),
+  );
+  if (team.flags.includes('grade_e') || (team.score !== null && team.score < 70)) {
+    return 'Critical <70%';
+  }
+  if (team.flags.includes('falling_2_months')) {
+    return 'Falling 2 mo';
+  }
+  if (primaryFlag === 'grade_d' || primaryFlag === 'grade_c' || (team.score !== null && team.score < 90)) {
+    return 'Below 90%';
+  }
+  return primaryFlag ? FLAG_LABEL[primaryFlag] : null;
+}
+
+function teamBottleneckLabel(team: ExecutiveTeam): string | null {
+  const detail = team.flag_detail;
+  if (detail) {
+    if (detail.kpi_label && detail.current_value !== null && detail.target_value !== null) {
+      return `${detail.kpi_label} (${fmtKpiValue(detail.current_value, detail.unit)} vs ${fmtKpiValue(detail.target_value, detail.unit)})`;
+    }
+    if (detail.text) return detail.text;
+    if (detail.kpi_label) return detail.kpi_label;
+  }
+  return team.score !== null && team.score >= 90 ? 'On track (≥90%)' : null;
+}
+
   const riskCandidates = summary.teams.filter(
     (t) => t.score !== null && (t.grade === 'D' || t.grade === 'E' || t.score < 85),
   );
   const teamsAtRisk: TeamAtRiskItem[] =
     riskCandidates.length > 0
       ? riskCandidates
-          .sort((a, b) => (a.score ?? 0) - (b.score ?? 0))
+          .sort(
+            (a, b) =>
+              (a.score ?? 0) - (b.score ?? 0) ||
+              (b.gap_share_percent ?? 0) - (a.gap_share_percent ?? 0) ||
+              a.team.localeCompare(b.team),
+          )
           .map((t) => {
             const tScore = t.score ?? 0;
             const tGrade = (t.grade as GradeLetter) || gradeForScore(tScore);
@@ -695,6 +737,12 @@ export function adaptSummaryToMonthlyOverview(
               grade: tGrade,
               gap: t.gap ?? Number((tScore - 100).toFixed(1)),
               flags,
+              regions: t.regions,
+              employees: t.employees,
+              scoreBasis: t.score_basis,
+              gapSharePercent: t.gap_share_percent,
+              bottleneckLabel: teamBottleneckLabel(t),
+              statusLabel: teamStatusBadgeLabel(t),
             };
           })
       : !allowSnapshotFallback || region !== 'EGY'
