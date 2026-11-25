@@ -79,10 +79,13 @@ export function fmtKpiValue(value: number | null | undefined, unit: string | nul
   if (kind === 's' || kind === 'sec' || kind === 'seconds') return `${Math.round(value)} s`;
   if (kind === 'min' || kind === 'minutes') return `${Number(value.toFixed(1))} min`;
   if (kind === 'days' || kind === 'day') return `${Number(value.toFixed(1))} days`;
-  if (kind === 'aed' || kind === 'currency') {
-    if (Math.abs(value) >= 1_000_000) return `AED ${Number((value / 1_000_000).toFixed(2))}M`;
-    if (Math.abs(value) >= 1_000) return `AED ${Number((value / 1_000).toFixed(1))}K`;
-    return `AED ${Math.round(value)}`;
+  if (kind === 'aed' || kind === 'egp' || kind === 'usd' || kind === 'sar' || kind === 'currency') {
+    const code = kind === 'currency' ? 'AED' : kind.toUpperCase();
+    const abs = Math.abs(value);
+    const sign = value < 0 ? MINUS : '';
+    if (abs >= 1_000_000) return `${sign}${code} ${Number((abs / 1_000_000).toFixed(2))}M`;
+    if (abs >= 1_000) return `${sign}${code} ${Number((abs / 1_000).toFixed(1))}K`;
+    return `${sign}${code} ${Math.round(abs)}`;
   }
   return Number.isInteger(value) ? value.toLocaleString('en-US') : Number(value.toFixed(2)).toLocaleString('en-US');
 }
@@ -97,6 +100,12 @@ export function fmtKpiDelta(value: number | null | undefined, unit: string | nul
   if (kind === 's' || kind === 'sec' || kind === 'seconds') return `${sign}${Math.round(abs)} s`;
   if (kind === 'min' || kind === 'minutes') return `${sign}${Number(abs.toFixed(1))} min`;
   if (kind === 'days' || kind === 'day') return `${sign}${Number(abs.toFixed(1))} d`;
+  if (kind === 'aed' || kind === 'egp' || kind === 'usd' || kind === 'sar' || kind === 'currency') {
+    const code = kind === 'currency' ? 'AED' : kind.toUpperCase();
+    if (abs >= 1_000_000) return `${sign}${code} ${Number((abs / 1_000_000).toFixed(2))}M`;
+    if (abs >= 1_000) return `${sign}${code} ${Number((abs / 1_000).toFixed(1))}K`;
+    return `${sign}${code} ${Math.round(abs)}`;
+  }
   return `${sign}${Number(abs.toFixed(2)).toLocaleString('en-US')}`;
 }
 

@@ -35,6 +35,7 @@ import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
   FUNCTION_DEEP_DIVE_BASELINES_SEP_2026,
   formatKpiValue,
+  resolveKpiDisplayUnit,
   fullGradeLabel,
   getBaselineFunctionDeepDive,
   mapWeakestKpiToOwner,
@@ -889,7 +890,12 @@ export function deriveAgentTrendContext(
     }, 0);
 
     for (const rawKpi of rawKpis) {
-      const unit = rawKpi.unit ?? '%';
+      const unit = resolveKpiDisplayUnit(rawKpi.unit, resolvedCurrent.region, {
+        kpiKey: rawKpi.kpi_key,
+        label: rawKpi.label,
+        actual: rawKpi.actual_value,
+        target: rawKpi.target_value,
+      });
       const lowerBetter = isLowerBetterKpi(rawKpi.kpi_key, rawKpi.direction);
       const observationStatus = classifyAgentKpiObservation(rawKpi, rawData, lowerBetter);
       const ratioHint = historicalRatioKpis.has(rawKpi.kpi_key);
@@ -2091,7 +2097,12 @@ function buildGenericTeamDeepDive(
   const currentKpis = monthlyKpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
   const sixPeriods = trailingPeriods(effective, 6);
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
-    const unit = row.unit ?? '%';
+    const unit = resolveKpiDisplayUnit(row.unit, current[0]?.region ?? region, {
+      kpiKey: row.kpi_key,
+      label: row.kpi_label,
+      actual: row.actual,
+      target: row.target,
+    });
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
     const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((period) => {
       const monthRecords = teamRecords.filter((record) => record.period.key === period.key);
@@ -2403,7 +2414,12 @@ export function buildTeamDeepDiveFromRecords(
   const kpis: TeamKpiItem[] =
     currentKpiRows.length > 0
       ? currentKpiRows.slice(0, 4).map((row) => {
-          const unit = row.unit ?? '%';
+          const unit = resolveKpiDisplayUnit(row.unit, current[0]?.region ?? region, {
+            kpiKey: row.kpi_key,
+            label: row.kpi_label,
+            actual: row.actual,
+            target: row.target,
+          });
           const lowerBetter = String(row.kpi_direction ?? '')
             .toLowerCase()
             .startsWith('lower');

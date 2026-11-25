@@ -23,6 +23,7 @@ import {
 import {
   canonicalFunctionNameFromSlug,
   formatKpiValue,
+  resolveKpiDisplayUnit,
   fullGradeLabel,
   mapWeakestKpiToOwner,
   normalizeFunctionSlug,
@@ -1225,13 +1226,19 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
   const totalRawWeight = rawWeights.reduce((sum, w) => sum + w, 0);
   const defaultWeight = round1(100 / Math.max(1, latestRows.length));
 
+  const unitRegion = latestRecords[0]?.region ?? null;
   const series = latestRows.map((row, rowIdx) => {
     const betterDirection: RoleKpiSeries['betterDirection'] = String(row.kpi_direction ?? '')
       .toLowerCase()
       .startsWith('lower')
       ? 'lower'
       : 'higher';
-    const unit = row.unit || '%';
+    const unit = resolveKpiDisplayUnit(row.unit, unitRegion, {
+      kpiKey: row.kpi_key,
+      label: row.kpi_label,
+      actual: row.actual,
+      target: row.target,
+    });
     const rowLabelSlug = slugifyIdentifier(row.kpi_label);
 
     const rawSlots = sixSlots.map((slot) => {

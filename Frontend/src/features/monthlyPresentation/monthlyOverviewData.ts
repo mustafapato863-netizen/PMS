@@ -1,4 +1,5 @@
 import type { ExecutiveSummary } from '../executive/types';
+import { fmtKpiDelta, fmtKpiValue } from '../executive/format';
 import { functionSlug } from '../executive/functions';
 import { presentationTeamName } from '../team/countryTeamIdentity';
 
@@ -574,10 +575,28 @@ export function adaptSummaryToMonthlyOverview(
         ? fallback.gradeDistribution.rows
         : [];
 
+  const isCurrencyUnit = (unit: string | null | undefined) => {
+    const u = String(unit ?? '').trim().toLowerCase();
+    return u === 'currency' || u === 'aed' || u === 'egp' || u === 'usd' || u === 'sar';
+  };
+  const resolveDriverUnit = (unit: string | null | undefined) => {
+    const u = String(unit ?? '').trim().toLowerCase();
+    if (u === 'currency') return region === 'EGY' ? 'EGP' : 'AED';
+    return unit;
+  };
   const formatUnitSuffix = (unit: string | null | undefined) =>
     unit === '%' ? '%' : unit ? ` ${unit}` : '';
+  const formatDriverValue = (value: number | null | undefined, unit: string | null | undefined) => {
+    if (value == null || !Number.isFinite(value)) return '—';
+    if (isCurrencyUnit(unit)) return fmtKpiValue(value, resolveDriverUnit(unit));
+    return `${value.toFixed(1)}${formatUnitSuffix(unit)}`;
+  };
   const formatMovement = (rawChange: number | null | undefined, unit: string | null | undefined) => {
     if (rawChange == null || !Number.isFinite(rawChange) || Math.abs(rawChange) < 0.05) return undefined;
+    if (isCurrencyUnit(unit)) {
+      const arrow = rawChange > 0 ? '↑ ' : '↓ ';
+      return `${arrow}${fmtKpiDelta(rawChange, resolveDriverUnit(unit))}`;
+    }
     const arrow = rawChange > 0 ? '↑ +' : '↓ ';
     return `${arrow}${rawChange.toFixed(1)}${formatUnitSuffix(unit)}`;
   };
@@ -591,7 +610,7 @@ export function adaptSummaryToMonthlyOverview(
           functionName: d.function ?? 'Operations',
           impactPct: d.weighted_gap_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${formatUnitSuffix(d.unit)}`,
+          actualValue: formatDriverValue(d.current_value, d.unit),
           movementLabel: formatMovement(d.raw_change, d.unit),
         }))
       : !allowSnapshotFallback || region !== 'EGY'
@@ -607,7 +626,7 @@ export function adaptSummaryToMonthlyOverview(
           functionName: d.function ?? 'Operations',
           impactPct: d.impact_change_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${formatUnitSuffix(d.unit)}`,
+          actualValue: formatDriverValue(d.current_value, d.unit),
           movementLabel: formatMovement(d.raw_change, d.unit),
         }))
       : !allowSnapshotFallback || region !== 'EGY'

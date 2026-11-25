@@ -197,8 +197,13 @@ function formatKpiAxisValue(value: number, unit: string): string {
   if (kind === 'min' || kind === 'mins' || kind === 'minutes') {
     return `${value.toFixed(value >= 100 ? 0 : 1)} min`;
   }
-  if (kind === 'aed' || kind === 'egp' || kind === 'usd') {
-    return `${Math.round(value).toLocaleString('en-US')} ${unit.toUpperCase()}`;
+  if (kind === 'aed' || kind === 'egp' || kind === 'usd' || kind === 'sar' || kind === 'currency') {
+    const code = kind === 'currency' ? 'AED' : unit.toUpperCase();
+    const abs = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+    if (abs >= 1_000_000) return `${sign}${Number((abs / 1_000_000).toFixed(2))}M ${code}`;
+    if (abs >= 10_000) return `${sign}${Number((abs / 1_000).toFixed(1))}K ${code}`;
+    return `${Math.round(value).toLocaleString('en-US')} ${code}`;
   }
   if (kind === '%' || kind === 'percent' || kind === 'percentage' || kind.includes('%')) {
     return `${value >= 100 || Number.isInteger(value) ? Math.round(value) : value.toFixed(1)}%`;

@@ -16,7 +16,7 @@ import {
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
 import { heroDecision, heroNarrative, heroStatusLabel } from '../../components/executive/v1/execModel';
-import { formatKpiValue } from '../monthlyPresentation/callCenterDeepDiveData';
+import { formatKpiValue, resolveKpiDisplayUnit } from '../monthlyPresentation/callCenterDeepDiveData';
 import { executiveFunctionForTeam, functionFromSlug, functionSlug } from './functions';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
 
@@ -393,6 +393,37 @@ describe('direction-aware KPI rows', () => {
     expect(formatKpiValue(row.target, row.unit)).toBe('100.0%');
     const gap = Math.round(((row.actual ?? 0) - (row.target ?? 0)) * 10) / 10;
     expect(formatKpiValue(Math.abs(gap), row.unit)).toBe('51.2%');
+  });
+
+  it('formats revenue KPIs with currency units instead of percentages', () => {
+    const opRevenue = {
+      kpi_key: 'OPRevenue', label: 'OP Revenue Ach', unit: 'currency', direction: 'higher_better' as const,
+      actual_value: 370765.7, target_value: 1333635.0, achievement_ratio: 0.36, weight_applied: 0.10, contribution: 0.036,
+    };
+    const [row] = kpiRows([record(72, { team: 'Sales', region: 'UAE', kpis: [opRevenue] })], []);
+    const uaeUnit = resolveKpiDisplayUnit(row.unit, 'UAE', {
+      kpiKey: row.kpi_key, label: row.kpi_label, actual: row.actual, target: row.target,
+    });
+    expect(uaeUnit).toBe('AED');
+    expect(formatKpiValue(row.actual, uaeUnit)).toBe('AED 370.8K');
+    expect(formatKpiValue(row.target, uaeUnit)).toBe('AED 1.33M');
+    expect(formatKpiValue(Math.abs((row.actual ?? 0) - (row.target ?? 0)), uaeUnit)).toBe('AED 962.9K');
+    expect(formatKpiValue(row.actual, 'currency')).toBe('AED 370.8K');
+    expect(formatKpiValue(row.actual, 'currency', 'EGY')).toBe('EGP 370.8K');
+    expect(formatKpiValue(136, 'AED')).toBe('136 AED');
+    expect(formatKpiValue(15, 'Days')).toBe('15 days');
+    expect(formatKpiValue(250, 'Invoices')).toBe('250 Invoices');
+
+    // Defensive: raw revenue amounts mistakenly tagged as '%' still format as currency.
+    const mistaggedUnit = resolveKpiDisplayUnit('%', 'UAE', {
+      kpiKey: 'OPRevenue', label: 'OP Revenue Ach', actual: 370765.7, target: 1333635.0,
+    });
+    expect(mistaggedUnit).toBe('AED');
+    // Genuine percentage-based revenue achievement stays '%'.
+    const pctRevenueUnit = resolveKpiDisplayUnit('%', 'UAE', {
+      kpiKey: 'revenue_ach', label: 'Pharmacy Revenue Achievement %', actual: 92.5, target: 100,
+    });
+    expect(pctRevenueUnit).toBe('%');
   });
 });
 

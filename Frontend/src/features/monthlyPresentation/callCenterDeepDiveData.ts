@@ -315,19 +315,75 @@ export const IMPACT_LEVEL_STYLES: Record<
   },
 };
 
-export function formatKpiValue(value: number | null, unit: string | null | undefined): string {
+const REVENUE_KPI_PATTERN = /\brevenue\b|\bcollections?\b|\bebitda\b/i;
+
+export function resolveKpiDisplayUnit(
+  unit: string | null | undefined,
+  region?: string | null,
+  context?: {
+    kpiKey?: string | null;
+    label?: string | null;
+    actual?: number | null;
+    target?: number | null;
+  },
+): string {
+  const raw = String(unit ?? '').trim();
+  const u = raw.toLowerCase();
+  const regionCurrency = String(region ?? '').trim().toUpperCase() === 'EGY' ? 'EGP' : 'AED';
+  if (u === 'currency') return regionCurrency;
+  if (!u || u === '%' || u === 'percent' || u === 'percentage') {
+    const identity = `${context?.kpiKey ?? ''} ${context?.label ?? ''}`;
+    const hasCurrencyMagnitude =
+      (typeof context?.actual === 'number' && Number.isFinite(context.actual) && Math.abs(context.actual) > 1000) ||
+      (typeof context?.target === 'number' && Number.isFinite(context.target) && Math.abs(context.target) > 1000);
+    if (hasCurrencyMagnitude && REVENUE_KPI_PATTERN.test(identity)) {
+      return regionCurrency;
+    }
+    return '%';
+  }
+  return raw;
+}
+
+export function formatKpiValue(
+  value: number | null,
+  unit: string | null | undefined,
+  region?: string | null,
+): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  const u = String(unit ?? '%').trim().toLowerCase();
+  const raw = String(unit ?? '%').trim();
+  const u = raw.toLowerCase();
   if (u === 'min' || u === 'mins' || u === 'minutes') {
     return `${value.toFixed(2)} min`;
   }
-  if (u === 'aed' || u === 'egp' || u === 'usd') {
-    return `${Math.round(value).toLocaleString()} ${u.toUpperCase()}`;
+  if (u === 'sec' || u === 's' || u === 'seconds') {
+    return `${Math.round(value).toLocaleString('en-US')} sec`;
+  }
+  if (u === 'day' || u === 'days') {
+    return `${Number(value.toFixed(1)).toLocaleString('en-US')} days`;
+  }
+  if (u === 'aed' || u === 'egp' || u === 'usd' || u === 'sar' || u === 'currency') {
+    const code =
+      u === 'currency'
+        ? String(region ?? '').trim().toUpperCase() === 'EGY'
+          ? 'EGP'
+          : 'AED'
+        : u.toUpperCase();
+    const abs = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+    if (abs >= 1_000_000) return `${sign}${code} ${Number((abs / 1_000_000).toFixed(2))}M`;
+    if (abs >= 10_000) return `${sign}${code} ${Number((abs / 1_000).toFixed(1))}K`;
+    return `${Math.round(value).toLocaleString('en-US')} ${code}`;
   }
   if (u === 'number' || u === 'count' || u === 'visits' || u === 'hours') {
-    return `${Math.round(value).toLocaleString()}`;
+    return `${Math.round(value).toLocaleString('en-US')}`;
   }
-  return `${value.toFixed(1)}%`;
+  if (u === '%' || u === 'percent' || u === 'percentage' || u.includes('%')) {
+    return `${value.toFixed(1)}%`;
+  }
+  const formatted = Number.isInteger(value)
+    ? value.toLocaleString('en-US')
+    : Number(value.toFixed(1)).toLocaleString('en-US');
+  return raw ? `${formatted} ${raw}` : formatted;
 }
 
 export function mapWeakestKpiToOwner(
