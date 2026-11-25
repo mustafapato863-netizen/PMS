@@ -943,6 +943,167 @@ select option {
   color: var(--text-muted);
 }
 
+/* ────────────────────────────────────────────────────────────── */
+/*  MONTHLY REPORT DARK POLISH                                    */
+/*  Header chips, region tabs and semantic tiles on the monthly   */
+/*  pages hard-code light Tailwind tones; remap them onto the     */
+/*  dark tokens so they follow the app theme.                     */
+/* ────────────────────────────────────────────────────────────── */
+.dark .monthly-report-glass header [class*="bg-slate-100"],
+.dark .monthly-report-glass header [class*="bg-slate-50"] {
+  background: var(--exec-chip-bg);
+  border-color: var(--insights-muted-surface-border);
+}
+
+.dark .monthly-report-glass header [role="tablist"] .bg-white {
+  background: var(--insights-muted-surface);
+}
+
+.dark .monthly-report-glass header [role="tablist"] .text-blue-600 {
+  color: var(--insights-accent-text);
+}
+
+.dark .monthly-report-glass header [class*="bg-emerald-50"] {
+  background: var(--exec-pos-bg);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.dark .monthly-report-glass header .text-emerald-700 {
+  color: var(--exec-pos-text);
+}
+
+.dark .monthly-report-glass header [class*="bg-violet-50"] {
+  background: var(--exec-dir-lower-bg);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.dark .monthly-report-glass header .text-violet-700 {
+  color: var(--exec-dir-lower-text);
+}
+
+.dark .monthly-report-glass header [class*="bg-blue-50"] {
+  background: var(--exec-info-bg);
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
+.dark .monthly-report-glass header .text-blue-700 {
+  color: var(--exec-info-text);
+}
+
+.dark .monthly-report-glass header [class*="bg-cyan-50"] {
+  background: rgba(34, 211, 238, 0.14);
+  border-color: rgba(34, 211, 238, 0.28);
+}
+
+.dark .monthly-report-glass header .text-cyan-800,
+.dark .monthly-report-glass header .text-cyan-700 {
+  color: #A5F3FC;
+}
+
+.dark .monthly-report-glass header .hover\:bg-cyan-100:hover {
+  background: rgba(34, 211, 238, 0.22);
+}
+
+.dark .monthly-report-glass header .hover\:text-cyan-950:hover {
+  color: #ECFEFF;
+}
+
+/* Semantic badges and tiles on the monthly overview (movement
+   badge, Gap tile): dark-tinted surfaces with bright text. */
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] [class*="bg-emerald-50"] {
+  background: var(--exec-pos-bg);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-emerald-700 {
+  color: var(--exec-pos-text);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] [class*="bg-red-50"] {
+  background: var(--exec-neg-bg);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-red-700 {
+  color: var(--exec-neg-text);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] [class*="bg-amber-50"] {
+  background: var(--exec-warning-bg);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-amber-800,
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-amber-700 {
+  color: var(--exec-warning-text);
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  PRESENTATION CONTROL BAR — DARK                               */
+/*  The fixed bottom bar is portaled to <body> outside the glass  */
+/*  container and hard-codes a light shell; follow the app theme. */
+/* ────────────────────────────────────────────────────────────── */
+.dark [data-testid="presentation-control-bar"][data-collapsed="false"] {
+  background: rgba(13, 23, 41, 0.94);
+  border-color: var(--insights-muted-surface-border);
+  box-shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.6);
+}
+
+.dark [data-testid="presentation-control-bar"] .bg-slate-100 {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark [data-testid="presentation-control-bar"] .hover\:bg-slate-200:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dark [data-testid="presentation-control-bar"] .bg-sky-100 {
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.dark [data-testid="presentation-control-bar"] .text-slate-800,
+.dark [data-testid="presentation-control-bar"] .text-slate-700,
+.dark [data-testid="presentation-control-bar"] .text-slate-600 {
+  color: var(--text-secondary);
+}
+
+.dark [data-testid="presentation-control-bar"] .text-sky-800,
+.dark [data-testid="presentation-control-bar"] .text-sky-700 {
+  color: var(--exec-info-text);
+}
+
+.dark [data-testid="presentation-control-bar"] .text-slate-500,
+.dark [data-testid="presentation-control-bar"] .text-slate-400 {
+  color: var(--text-muted);
+}
+
+.dark [data-testid="presentation-month-list"] {
+  background: #0D1729;
+  border-color: var(--insights-muted-surface-border);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+.dark [data-testid="presentation-month-list"] .bg-blue-50 {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.dark [data-testid="presentation-month-list"] .text-blue-800 {
+  color: #BFDBFE;
+}
+
+.dark [data-testid="presentation-month-list"] .bg-slate-50,
+.dark [data-testid="presentation-month-list"] .hover\:bg-slate-50:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dark [data-testid="presentation-month-list"] .text-slate-800 {
+  color: var(--insights-heading);
+}
+
+.dark [data-testid="presentation-month-list"] .text-slate-700 {
+  color: var(--text-secondary);
+}
+
 /* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
 /* Independent per-face GPU transforms (no preserve-3d wrapper) so rounded-2xl
    + overflow-hidden never triggers Blink/DirectComposition mid-flip culling.
