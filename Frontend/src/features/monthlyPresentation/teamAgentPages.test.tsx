@@ -213,6 +213,14 @@ describe('TeamDeepDive agent pagination and caching', () => {
         achievementPct: 46.4,
         metTarget: false,
       },
+      {
+        kpiKey: 'admission_score',
+        label: 'Admission Rate Score',
+        actualFormatted: '17.2%',
+        targetFormatted: '95.0%',
+        achievementPct: 17.2,
+        metTarget: false,
+      },
     ];
 
     render(
@@ -231,10 +239,13 @@ describe('TeamDeepDive agent pagination and caching', () => {
     const subtexts = within(row).getAllByTestId('kpi-actual-subtext');
     const bars = within(row).getAllByTestId('kpi-ach-bar');
     const fills = within(row).getAllByTestId('kpi-ach-bar-fill');
-    expect(values).toHaveLength(3);
+    expect(values).toHaveLength(4);
     expect(values[0]).toHaveTextContent('62.9%');
     expect(values[1]).toHaveTextContent('104.6%');
     expect(values[2]).toHaveTextContent('46.4%');
+    expect(values[3]).toHaveTextContent('17.2%');
+    // 4th cell (17.2% actual === 17.2% ach with same target as column header) hides redundant subtext
+    expect(subtexts).toHaveLength(3);
     expect(subtexts[0]).toHaveTextContent('47.2%');
     expect(subtexts[1]).toHaveTextContent('68.0%');
     expect(subtexts[2]).toHaveTextContent('AED 2.55M / AED 5.50M');
@@ -242,7 +253,7 @@ describe('TeamDeepDive agent pagination and caching', () => {
       'title',
       'Reachability: 62.9% achievement (Actual 47.2% vs Target 75.0%)',
     );
-    expect(bars).toHaveLength(3);
+    expect(bars).toHaveLength(4);
     expect(bars[0]).toHaveAttribute('aria-valuenow', '63');
     expect(fills[0].style.width).toBe('62.9%');
     expect(fills[0].style.background).toContain('--pms-grad-grade-e');

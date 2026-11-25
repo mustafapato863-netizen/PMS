@@ -45,14 +45,21 @@ export function KpiAchievementCell({
         ? 'bg-rose-50 text-rose-700'
         : 'bg-amber-50 text-amber-800';
 
+  const normalizePctText = (value: string): string => {
+    const match = /^(-?\d+(?:\.\d+)?)%$/.exec(value.trim());
+    return match ? `${Number(match[1]).toFixed(1)}%` : value.trim();
+  };
   const hasDistinctPersonalTarget = Boolean(
     isMeasured &&
       targetFormatted &&
       targetFormatted !== '—' &&
       columnTargetFormatted &&
-      targetFormatted.trim() !== columnTargetFormatted.trim(),
+      normalizePctText(targetFormatted) !== normalizePctText(columnTargetFormatted),
   );
-  const actualSubtext = !isMeasured
+  const actualDuplicatesAch =
+    !hasDistinctPersonalTarget &&
+    normalizePctText(actualFormatted) === normalizePctText(achFormatted);
+  const actualSubtext = !isMeasured || actualDuplicatesAch
     ? null
     : hasDistinctPersonalTarget
       ? `${actualFormatted} / ${targetFormatted}`
