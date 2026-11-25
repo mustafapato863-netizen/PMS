@@ -2961,6 +2961,29 @@
         ]
       },
       {
+        "alias": "quality-case-management",
+        "id": "route-map:quality-case-management",
+        "kind": "route_display_db_mismatch",
+        "reason": "The same route id has different display and database names. Neither was chosen as a new team.",
+        "resolution": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+          "Frontend/src/types.ts#TEAM_NAME_MAP"
+        ],
+        "targets": [
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_NAME_MAP",
+            "target": "Quality and management"
+          }
+        ]
+      },
+      {
         "alias": "pre-approvals",
         "id": "route:pre-approvals",
         "kind": "same_alias_multiple_targets",
@@ -2979,6 +3002,28 @@
             "country": null,
             "source": "Frontend/src/types.ts#TEAM_ID_MAP",
             "target": "Pre-Approvals IP Offshore"
+          }
+        ]
+      },
+      {
+        "alias": "quality-case-management",
+        "id": "route:quality-case-management",
+        "kind": "same_alias_multiple_targets",
+        "reason": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
+        "resolution": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_ID_MAP"
+        ],
+        "targets": [
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Quality and management"
           }
         ]
       },
@@ -6820,7 +6865,7 @@
     "plan": "docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md#First product pilot"
   },
   "counts": {
-    "alias_conflicts": 37,
+    "alias_conflicts": 39,
     "countries": 3,
     "functions": 18,
     "kpis": 414,
@@ -7811,7 +7856,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "1731683e2bc3f6350521023be95f0cbec6e60c9fcf0933a6a4cb6101593d93f3",
+  "inputs_fingerprint": "078b5f4d17ccf07a77de754d122fa7363ff69c46377e7c0fb7ebc28dd3aa9bb9",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -37976,8 +38021,27 @@
         ]
       },
       {
+        "area": "route-map:quality-case-management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and management",
+        "current_code_state": "The same route id has different display and database names. Neither was chosen as a new team.",
+        "recommended_resolution_path": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+          "Frontend/src/types.ts#TEAM_NAME_MAP"
+        ]
+      },
+      {
         "area": "route:pre-approvals",
         "conflicting_or_ambiguous_evidence": "Pre-Approvals, Pre-Approvals IP Offshore",
+        "current_code_state": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
+        "recommended_resolution_path": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_ID_MAP"
+        ]
+      },
+      {
+        "area": "route:quality-case-management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and management",
         "current_code_state": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
         "recommended_resolution_path": "unresolved",
         "sources": [
