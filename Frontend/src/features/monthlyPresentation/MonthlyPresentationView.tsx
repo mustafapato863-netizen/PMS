@@ -765,7 +765,7 @@ function MonthlyPresentationScreen({
     next.delete('deepDive');
     next.delete('team');
     next.delete('role');
-    if (params.functionSlug) {
+    if (!isInline && params.functionSlug) {
       const basePath = location.pathname.startsWith('/monthly-view')
         ? '/monthly-view'
         : '/monthly-presentation';
@@ -775,7 +775,7 @@ function MonthlyPresentationScreen({
       setSearchParams(next);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
+  }, [isInline, location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
 
   const handleClearFilters = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -783,7 +783,7 @@ function MonthlyPresentationScreen({
     next.delete('deepDive');
     next.delete('team');
     next.delete('role');
-    if (params.functionSlug) {
+    if (!isInline && params.functionSlug) {
       const basePath = location.pathname.startsWith('/monthly-view')
         ? '/monthly-view'
         : '/monthly-presentation';
@@ -793,7 +793,7 @@ function MonthlyPresentationScreen({
       setSearchParams(next);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [branchLockedSingle, location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
+  }, [branchLockedSingle, isInline, location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
 
   const handleSelectAgentTeam = useCallback(
     (teamSlug: string, functionName?: string) => {
@@ -975,10 +975,14 @@ function MonthlyPresentationScreen({
   const selectedEmployee = inlineMembers.find((record) => record.employeeId === activeEmployeeId);
   const teamLabel = resolvedRoleData?.roleTitle ?? resolvedTeamData?.teamDisplayName ?? '';
   const employeePicker = isInline && inlineMembers.length > 0 ? (
-    <label className="inline-flex flex-wrap items-center gap-2 text-sm font-medium">
-      Employee
-      <select aria-label="Review employee" className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900"
-        value="" onChange={(event) => selectEmployee(event.target.value)}>
+    <label className="inline-flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
+      <span>Employee</span>
+      <select
+        aria-label="Review employee"
+        className="h-9 rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--insights-heading)] focus:border-[var(--insights-accent)] focus:outline-none"
+        value=""
+        onChange={(event) => selectEmployee(event.target.value)}
+      >
         <option value="">Select employee</option>
         {[...new Map(inlineMembers.map((record) => [record.employeeId, record])).values()]
           .sort((a, b) => a.name.localeCompare(b.name))
@@ -1467,7 +1471,7 @@ function MonthlyPresentationScreen({
       next.delete('team');
       next.delete('role');
     }
-    if (!result.slug && params.functionSlug) {
+    if (!isInline && !result.slug && params.functionSlug) {
       const basePath = location.pathname.startsWith('/monthly-view')
         ? '/monthly-view'
         : '/monthly-presentation';
@@ -1481,6 +1485,7 @@ function MonthlyPresentationScreen({
     functionSlug,
     functionSlugs,
     insideDetail,
+    isInline,
     location.pathname,
     navigate,
     nextDisabled,
@@ -1500,11 +1505,11 @@ function MonthlyPresentationScreen({
     }
 
     if (chooseTeamCountry) return (
-      <section aria-label="Choose team country" className="mx-auto w-full max-w-7xl space-y-3 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-5">
+      <section aria-label="Choose team country" className="pms-glass-surface mx-auto w-full max-w-7xl space-y-3 rounded-[16px] p-5">
         <button type="button" className={reviewButtonClass} onClick={handleBackToOverview}>Executive Summary</button>
-        <h1 className="text-xl font-bold">{resolvedTeamData?.teamDisplayName ?? businessTeamName(rawTeamParam)}</h1>
-        <p>Select a country to review this team.</p>
-        <div className="flex gap-2">
+        <h1 className="text-xl font-bold text-[var(--insights-heading)]">{resolvedTeamData?.teamDisplayName ?? businessTeamName(rawTeamParam)}</h1>
+        <p className="text-sm text-[var(--text-secondary)]">Select a country to review this team.</p>
+        <div className="flex flex-wrap gap-2">
           {teamCountries.map((country) => (
             <button key={country} type="button" className={reviewButtonClass} onClick={() => {
               const next = new URLSearchParams(searchParams);
@@ -1573,12 +1578,27 @@ function MonthlyPresentationScreen({
     }
 
     if (functionSlug && resolvedFunctionData) {
-      if (isInline) return (
-        <ExecutiveFunctionReview name={resolvedFunctionData.functionName} month={resolvedFunctionData.monthLabel}
-          score={resolvedFunctionData.headline.score} records={currentFunctionRecords} units={reviewUnits} actions={storedActions}
-          canSeeActions={canReadInlineActions} onOverview={handleBackToOverview} onSelectUnit={selectReviewUnit}
-        />
-      );
+      if (isInline) {
+        const inlineScopeChips = [
+          activeRegion === 'ALL' ? 'All countries' : activeRegion === 'EGY' ? 'Egypt (EGY)' : 'UAE',
+          activeBranchLabel ? `Branch: ${activeBranchLabel}` : null,
+          level && level !== 'all' ? `${level.charAt(0).toUpperCase()}${level.slice(1)} level` : null,
+        ].filter((chip): chip is string => Boolean(chip));
+        return (
+          <ExecutiveFunctionReview
+            name={resolvedFunctionData.functionName}
+            month={resolvedFunctionData.monthLabel}
+            score={resolvedFunctionData.headline.score}
+            records={currentFunctionRecords}
+            units={reviewUnits}
+            actions={storedActions}
+            canSeeActions={canReadInlineActions}
+            scopeChips={inlineScopeChips}
+            onOverview={handleBackToOverview}
+            onSelectUnit={selectReviewUnit}
+          />
+        );
+      }
       if (isRoleBasedFunction(resolvedFunctionData.functionSlug)) {
         return (
           <div className="mx-auto max-w-7xl space-y-6">
@@ -1883,12 +1903,15 @@ function MonthlyPresentationScreen({
   }
 
   if (pageHasError || hasNoAssignments || invalidScopeRequest || noDataForSelection) {
+    const surfaceName = isInline ? 'Executive Summary analysis' : 'Monthly Review';
     const heading = pageHasError
-        ? 'Monthly Review data could not be loaded'
+        ? `${surfaceName} data could not be loaded`
         : hasNoAssignments
-          ? 'No monthly review assignments'
+          ? isInline
+            ? 'No assigned teams in scope'
+            : 'No monthly review assignments'
           : invalidScopeRequest
-            ? 'This Monthly Review link is outside your access'
+            ? `This ${surfaceName} scope is outside your access`
             : activeBranchLabel
               ? `No performance data for ${activeBranchLabel} in ${selectedPeriodLabel}`
               : `No performance data for ${selectedPeriodLabel}`;
@@ -1896,7 +1919,7 @@ function MonthlyPresentationScreen({
         ? 'The authorized team list or performance records could not be fetched. Retry to load your scope again.'
         : hasNoAssignments
           ? functionScopeRestricted
-            ? 'Your account has no authorized function for Monthly Review. Contact your administrator to request access.'
+            ? `Your account has no authorized function for ${surfaceName}. Contact your administrator to request access.`
             : 'No active teams are currently assigned to your account. Contact your administrator if this looks wrong.'
           : invalidScopeRequest
             ? 'The requested region, branch, function, team, or position is not included in your authorized scope.'
@@ -1914,32 +1937,45 @@ function MonthlyPresentationScreen({
           data-testid={hasNoAssignments ? 'monthly-assignment-message' : noDataForSelection ? 'monthly-no-data' : pageHasError ? 'monthly-data-error' : 'monthly-scope-restricted'}
           role={pageHasError || invalidScopeRequest ? 'alert' : 'status'}
           aria-live="polite"
-          className={`rounded-2xl border p-5 sm:p-6 ${pageHasError || invalidScopeRequest ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`}
+          className={
+            isInline
+              ? `pms-glass-surface rounded-[16px] p-5 sm:p-6 ${pageHasError || invalidScopeRequest ? 'border-[var(--pms-grad-panel-neg-border)]' : ''}`
+              : `rounded-2xl border p-5 sm:p-6 ${pageHasError || invalidScopeRequest ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`
+          }
+          style={isInline && (pageHasError || invalidScopeRequest) ? { background: 'var(--pms-grad-panel-neg)' } : undefined}
         >
-          <h1 className="text-lg font-bold text-slate-900">{heading}</h1>
-          <p className="mt-2 text-sm text-slate-600">{detail}</p>
+          <h1 className={`text-lg font-bold ${isInline ? 'text-[var(--insights-heading)]' : 'text-slate-900'}`}>{heading}</h1>
+          <p className={`mt-2 text-sm ${isInline ? 'text-[var(--text-secondary)]' : 'text-slate-600'}`}>{detail}</p>
           {!pageIsLoading && !pageHasError && !hasNoAssignments && !invalidScopeRequest && (
             <div className="mt-4 flex flex-wrap items-end gap-3">
-              <label className="flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
+              <label className={`flex max-w-xs flex-col gap-1 text-xs font-semibold ${isInline ? 'text-[var(--text-secondary)]' : 'text-slate-600'}`}>
                 Reporting month
                 <select
                   aria-label="Reporting month"
                   value={selectedPeriodKey}
                   onChange={(event) => handlePeriodChange(event.target.value)}
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                  className={
+                    isInline
+                      ? 'h-10 rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 text-sm text-[var(--insights-heading)]'
+                      : 'h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900'
+                  }
                 >
                   {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
                 </select>
               </label>
               {availableBranches.length > 0 && (
-                <label className="flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
+                <label className={`flex max-w-xs flex-col gap-1 text-xs font-semibold ${isInline ? 'text-[var(--text-secondary)]' : 'text-slate-600'}`}>
                   Branch
                   <select
                     aria-label="Branch"
                     value={activeBranch}
                     disabled={branchLockedSingle}
                     onChange={(event) => handleBranchChange(event.target.value)}
-                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    className={
+                      isInline
+                        ? 'h-10 rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 text-sm text-[var(--insights-heading)] disabled:cursor-not-allowed disabled:opacity-60'
+                        : 'h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500'
+                    }
                   >
                     {!branchLockedSingle && <option value="">All branches</option>}
                     {availableBranches.map((option) => (
@@ -1948,7 +1984,7 @@ function MonthlyPresentationScreen({
                   </select>
                 </label>
               )}
-              {functionSlug && (
+              {!isInline && functionSlug && (
                 <button
                   type="button"
                   onClick={handleBackToOverview}
@@ -1962,7 +1998,11 @@ function MonthlyPresentationScreen({
           {pageHasError && (
             <button
               type="button"
-              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              className={
+                isInline
+                  ? `mt-4 ${reviewButtonClass}`
+                  : 'mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700'
+              }
               onClick={() => { void summaryRecordsQuery.refetch(); void catalogQuery.refetch(); }}
             >
               Try again

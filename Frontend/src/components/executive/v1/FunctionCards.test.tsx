@@ -35,7 +35,7 @@ const card: ExecutiveFunctionCard = {
 describe('FunctionCards trend chart', () => {
   afterEach(() => vi.unstubAllGlobals());
   it('draws a smooth trend and highlights the latest score in the grade palette', () => {
-    const { container } = render(<FunctionCards cards={[card]} previous={period('May', '05')} linkable={false} />);
+    const { container } = render(<MemoryRouter><FunctionCards cards={[card]} previous={period('May', '05')} linkable={false} /></MemoryRouter>);
 
     expect(screen.getByRole('img', { name: /RCM score trend, last six months/ })).toBeInTheDocument();
     expect(screen.getAllByTestId('function-trend-value')).toHaveLength(6);
@@ -46,14 +46,14 @@ describe('FunctionCards trend chart', () => {
   });
 
   it('does not invent a grade or score when the function and its history are unavailable', () => {
-    render(<FunctionCards cards={[{ ...card, score: null, trend: card.trend.map((point) => ({ ...point, score: null })) }]} previous={null} linkable={false} />);
+    render(<MemoryRouter><FunctionCards cards={[{ ...card, score: null, trend: card.trend.map((point) => ({ ...point, score: null })) }]} previous={null} linkable={false} /></MemoryRouter>);
     expect(screen.getByText('No grade')).toBeInTheDocument();
     expect(screen.getByTestId('function-trend-empty')).toBeVisible();
     expect(screen.queryByTestId('function-trend-value')).not.toBeInTheDocument();
   });
 
   it('keeps missing months as gaps without fabricating values or area fills', () => {
-    render(<FunctionCards cards={[{ ...card, trend: card.trend.map((point, index) => index === 2 ? { ...point, score: null } : point) }]} previous={null} linkable={false} />);
+    render(<MemoryRouter><FunctionCards cards={[{ ...card, trend: card.trend.map((point, index) => index === 2 ? { ...point, score: null } : point) }]} previous={null} linkable={false} /></MemoryRouter>);
     expect(screen.getAllByTestId('function-trend-series')).toHaveLength(2);
     expect(screen.getAllByTestId('function-trend-area')).toHaveLength(2);
     expect(screen.getAllByTestId('function-trend-value')).toHaveLength(5);
@@ -62,7 +62,7 @@ describe('FunctionCards trend chart', () => {
   it('renders static cards without resize observers, hover updates, tooltips, or animation', () => {
     const observer = vi.fn();
     vi.stubGlobal('ResizeObserver', observer);
-    render(<FunctionCards cards={[card]} previous={null} linkable={false} />);
+    render(<MemoryRouter><FunctionCards cards={[card]} previous={null} linkable={false} /></MemoryRouter>);
     const chart = screen.getByTestId('function-trend-chart');
     const markup = chart.innerHTML;
     fireEvent.pointerMove(chart, { clientX: 100, clientY: 50 });
@@ -75,9 +75,9 @@ describe('FunctionCards trend chart', () => {
   });
 
   it('labels the adaptive axis honestly and includes scores below 50 and above 100', () => {
-    const { rerender } = render(<FunctionCards cards={[card]} previous={null} linkable={false} />);
+    const { rerender } = render(<MemoryRouter><FunctionCards cards={[card]} previous={null} linkable={false} /></MemoryRouter>);
     expect(screen.getAllByTestId('function-trend-tick').map((tick) => tick.textContent)).toEqual(['50%', '75%', '100%']);
-    rerender(<FunctionCards cards={[{ ...card, trend: [{ period: period('January', '01'), score: 18 }, { period: period('February', '02'), score: 120 }] }]} previous={null} linkable={false} />);
+    rerender(<MemoryRouter><FunctionCards cards={[{ ...card, trend: [{ period: period('January', '01'), score: 18 }, { period: period('February', '02'), score: 120 }] }]} previous={null} linkable={false} /></MemoryRouter>);
     expect(screen.getAllByTestId('function-trend-tick').map((tick) => tick.textContent)).toEqual(['0%', '50%', '100%']);
     expect(screen.getAllByTestId('function-trend-value').map((label) => label.textContent)).toEqual(['18.0%', '120.0%']);
   });

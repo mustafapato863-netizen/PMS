@@ -581,4 +581,67 @@ describe('Executive Summary inline analysis', () => {
     expect(screen.getByTestId('review-location')).toHaveTextContent('review_role=');
   });
 
+  it('opens inline analysis when clicking a function card body, preserves Executive styling, and never renders Monthly Report redirect links', async () => {
+    renderAt('/executive?period=2026-09&level=Employee');
+    const rcmCard = screen.getByRole('article', { name: 'RCM function' });
+    fireEvent.click(rcmCard);
+
+    const inlineWrapper = await screen.findByRole('region', { name: 'Executive Summary analysis' });
+    expect(inlineWrapper).toHaveClass('rf-page--executive', 'executive-v1', 'executive-inline-analysis');
+    expect(screen.getByTestId('review-location')).toHaveTextContent(/^\/executive\?.*review_deepDive=RCM/);
+
+    const assertNoMonthlyReportLinks = () => {
+      const links = screen.queryAllByRole('link');
+      for (const link of links) {
+        const href = link.getAttribute('href') ?? '';
+        expect(href).not.toMatch(/\/monthly-(?:presentation|review|view)/i);
+      }
+    };
+    assertNoMonthlyReportLinks();
+
+    const priority = await screen.findByRole('region', { name: 'Priority teams and roles' });
+    fireEvent.click(within(priority).getByRole('button', { name: 'Coding · EGY' }));
+    expect(await screen.findByText('Egypt review cadence')).toBeInTheDocument();
+    expect(screen.getByText('Team Analysis')).toBeInTheDocument();
+    assertNoMonthlyReportLinks();
+
+    fireEvent.change(screen.getByLabelText('Review employee'), { target: { value: 'E1' } });
+    expect(screen.getByRole('heading', { name: 'Egypt Coder' })).toBeInTheDocument();
+    assertNoMonthlyReportLinks();
+  });
+
+  it('reaches the exact same team KPIs and saved decisions from both clicking a team name in Teams at Risk and the function card', async () => {
+    renderAt('/executive?period=2026-09&region=UAE');
+    const row = screen.getAllByTestId('risk-row').find((element) => element.textContent?.includes('RCM · UAE'));
+    expect(row).toBeDefined();
+    // Click the team name button directly (not only "Review Team").
+    fireEvent.click(within(row!).getByRole('button', { name: /^Coding/i }));
+    expect(await screen.findByText('UAE review cadence')).toBeInTheDocument();
+    expect(screen.queryByText('Egypt review cadence')).not.toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Switch KPI for 6-month trend' })).toHaveTextContent(/Quality Errors Rate/i);
+    expect(screen.getByRole('tablist', { name: 'Switch KPI for 6-month trend' })).toHaveTextContent(/TAT Compliance/i);
+    expect(screen.getByTestId('review-location')).toHaveTextContent(/^\/executive\?/);
+  });
+
+  it('shows priority teams first in Function view and expands all teams via "Show all teams"', async () => {
+    state.reviewRecords = [
+      state.reviewRecords[0],
+      {
+        ...state.reviewRecords[1],
+        evaluation: { ...state.reviewRecords[1].evaluation, score: 1.0 },
+      },
+    ];
+    state.summary = build({ records: toExecRecords(state.reviewRecords), requestedPeriodKey: period, comparisonRecords: null });
+
+    renderAt('/executive?review_deepDive=RCM&review_period=2026-09&review_region=all');
+    const priority = await screen.findByRole('region', { name: 'Priority teams and roles' });
+    expect(within(priority).getByRole('button', { name: 'Coding · EGY' })).toBeInTheDocument();
+    expect(within(priority).queryByRole('button', { name: 'Coding · UAE' })).not.toBeInTheDocument();
+
+    const toggle = within(priority).getByRole('button', { name: 'Show all teams' });
+    fireEvent.click(toggle);
+    expect(within(priority).getByRole('button', { name: 'Coding · UAE' })).toBeInTheDocument();
+    expect(within(priority).getByRole('button', { name: 'Show priority only' })).toBeInTheDocument();
+  });
+
 });

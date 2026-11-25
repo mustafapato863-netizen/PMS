@@ -739,6 +739,130 @@ select option {
   contain: layout style;
 }
 
+/* ────────────────────────────────────────────────────────────── */
+/*  EXECUTIVE SUMMARY INLINE DRILL-DOWN THEME SKINNING            */
+/*  Maps reused Monthly Report team/role detail surfaces onto     */
+/*  Executive Summary's frosted-glass & semantic color palette    */
+/*  in both Light and Dark themes without touching Monthly Report */
+/* ────────────────────────────────────────────────────────────── */
+.executive-inline-analysis [data-testid="team-deep-dive-page"],
+.executive-inline-analysis [data-testid="role-detail-page"] {
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] > header,
+.executive-inline-analysis [data-testid="team-deep-dive-page"] > section,
+.executive-inline-analysis [data-testid="role-detail-page"] > header,
+.executive-inline-analysis [data-testid="role-detail-page"] > section {
+  background: var(--pms-glass-card-bg);
+  border-color: var(--pms-glass-card-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .bg-white,
+.executive-inline-analysis [data-testid="role-detail-page"] .bg-white {
+  background: var(--pms-glass-stage-bg);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-slate-50"],
+.executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-slate-50"] {
+  background: var(--exec-tile-bg);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .bg-slate-100,
+.executive-inline-analysis [data-testid="role-detail-page"] .bg-slate-100 {
+  background: var(--exec-chip-bg);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="border-slate-"],
+.executive-inline-analysis [data-testid="role-detail-page"] [class*="border-slate-"] {
+  border-color: var(--exec-card-border);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-900,
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-800,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-900,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-800 {
+  color: var(--insights-heading);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-700,
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-600,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-700,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-600 {
+  color: var(--text-secondary);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-500,
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-slate-400,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-500,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-slate-400 {
+  color: var(--text-muted);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .bg-blue-600,
+.executive-inline-analysis [data-testid="role-detail-page"] .bg-blue-600 {
+  background: var(--insights-accent);
+  color: #ffffff;
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-blue-50"],
+.executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-blue-50"] {
+  background: var(--pms-grad-panel-info);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-blue-700,
+.executive-inline-analysis [data-testid="team-deep-dive-page"] .text-blue-600,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-blue-700,
+.executive-inline-analysis [data-testid="role-detail-page"] .text-blue-600 {
+  color: var(--insights-accent-text);
+}
+
+.executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="border-blue-"],
+.executive-inline-analysis [data-testid="role-detail-page"] [class*="border-blue-"] {
+  border-color: var(--insights-accent-border);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-red-50"],
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-rose-50"],
+.dark .executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-red-50"],
+.dark .executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-rose-50"] {
+  background: var(--exec-neg-bg);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-emerald-50"],
+.dark .executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-emerald-50"] {
+  background: var(--exec-pos-bg);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] [class*="bg-amber-50"],
+.dark .executive-inline-analysis [data-testid="role-detail-page"] [class*="bg-amber-50"] {
+  background: var(--exec-warning-bg);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] .text-red-700,
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] .text-rose-700,
+.dark .executive-inline-analysis [data-testid="role-detail-page"] .text-red-700,
+.dark .executive-inline-analysis [data-testid="role-detail-page"] .text-rose-700 {
+  color: var(--exec-neg-text);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] .text-emerald-700,
+.dark .executive-inline-analysis [data-testid="role-detail-page"] .text-emerald-700 {
+  color: var(--exec-pos-text);
+}
+
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] .text-amber-700,
+.dark .executive-inline-analysis [data-testid="team-deep-dive-page"] .text-amber-800,
+.dark .executive-inline-analysis [data-testid="role-detail-page"] .text-amber-700,
+.dark .executive-inline-analysis [data-testid="role-detail-page"] .text-amber-800 {
+  color: var(--exec-warning-text);
+}
+
 /* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
 /* Independent per-face GPU transforms (no preserve-3d wrapper) so rounded-2xl
    + overflow-hidden never triggers Blink/DirectComposition mid-flip culling.

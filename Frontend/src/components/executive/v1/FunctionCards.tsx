@@ -164,11 +164,23 @@ const FunctionCard = memo(function FunctionCard({
   const comparison = vsLabel(previous, range, 'vs last');
   const showTeamButtons = Boolean(onSelectTeam);
   const showTeamDump = !showTeamButtons && !featured && !(showCohorts && card.cohorts);
+  const cardOpensInline = Boolean(reviewHref && !onSelectFunction);
 
   return (
     <article
       aria-label={`${card.function} function`}
-      className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[18px] p-[15px]"
+      onClick={
+        cardOpensInline
+          ? (event) => {
+              const target = event.target as HTMLElement | null;
+              if (target?.closest('a, button, input, select, textarea')) return;
+              event.currentTarget.querySelector<HTMLAnchorElement>('a[data-card-primary-link]')?.click();
+            }
+          : undefined
+      }
+      className={`pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[18px] p-[15px] ${
+        cardOpensInline ? 'cursor-pointer' : ''
+      }`}
       style={{
         backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
         borderColor: `color-mix(in srgb, ${tone.gauge} 20%, var(--pms-glass-card-border))`,
@@ -197,7 +209,13 @@ const FunctionCard = memo(function FunctionCard({
               </button>
             ) : (
               <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
-                {reviewHref ? <Link to={reviewHref} className="hover:underline">{card.function}</Link> : card.function}
+                {reviewHref ? (
+                  <Link to={reviewHref} data-card-primary-link="" className="hover:underline">
+                    {card.function}
+                  </Link>
+                ) : (
+                  card.function
+                )}
               </h3>
             )}
           </div>

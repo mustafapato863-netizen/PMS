@@ -29,7 +29,10 @@ export default function ExecutiveInlineAnalysis() {
   }, [monthlyParams, setSearchParams]);
 
   return (
-    <section aria-label="Executive Summary analysis" className="app-page-shell rf-page executive-v1">
+    <section
+      aria-label="Executive Summary analysis"
+      className="app-page-shell rf-page rf-page--executive executive-v1 executive-inline-analysis"
+    >
       <MonthlyPresentationView inlineAnalysis={{ searchParams: monthlyParams, setSearchParams: update }} />
     </section>
   );

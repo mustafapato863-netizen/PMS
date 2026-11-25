@@ -6,7 +6,7 @@ import { memo, type ReactNode } from 'react';
 import type { ExecutiveSummary, ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
-import { ExecCard } from './ExecPrimitives';
+import { ExecCard, SoftButton } from './ExecPrimitives';
 import ExecutiveHero from './ExecutiveHero';
 import FunctionCards from './FunctionCards';
 import DriversCard from './DriversCard';
@@ -72,9 +72,9 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         {notices}
         <ExecutiveHero summary={summary} />
         {onReviewTeam && teamRow && (
-          <button type="button" className="self-start rounded-lg border px-3 py-2 text-sm font-semibold" onClick={() => onReviewTeam(teamRow)}>
-            Review Team
-          </button>
+          <div className="flex">
+            <SoftButton onClick={() => onReviewTeam(teamRow)}>Review Team</SoftButton>
+          </div>
         )}
         <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? teamPath(team) : null} />
         <EmployeesBelowTargetCard summary={summary} />
