@@ -278,7 +278,7 @@ select option {
   --glow-indigo: rgba(0, 105, 180, 0.18);
   --glow-emerald: rgba(0, 168, 89, 0.18);
 
-  --font-sans: 'Inter', 'Segoe UI', Arial, system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', 'Segoe UI', Arial, system-ui, -apple-system, sans-serif;
 
   /* Sidebar */
   --sidebar-bg: #F7FAFC;
