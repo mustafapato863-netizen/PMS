@@ -16,14 +16,18 @@ import { FullWordGradeBadge } from './TeamDeepDiveView';
 
 const ROLES_PER_ROW = 4;
 
-function ViewRoleButton({ tone }: { tone: 'drag' | 'carry' }) {
+function ViewRoleButton({ tone }: { tone: 'severe' | 'warning' | 'carry-a' | 'carry-b' }) {
   const toneClass =
-    tone === 'drag'
-      ? 'border-slate-900 bg-slate-900 text-white group-hover:border-blue-700 group-hover:bg-blue-700'
-      : 'border-slate-300 bg-white text-slate-800 group-hover:border-emerald-600 group-hover:bg-emerald-600 group-hover:text-white';
+    tone === 'severe'
+      ? 'border-rose-200/90 bg-gradient-to-r from-rose-50 to-red-50/90 text-rose-700 group-hover:border-rose-600 group-hover:from-rose-600 group-hover:to-red-600 group-hover:text-white group-hover:shadow-sm'
+      : tone === 'warning'
+        ? 'border-amber-200/90 bg-gradient-to-r from-amber-50 to-orange-50/85 text-amber-800 group-hover:border-amber-600 group-hover:from-amber-600 group-hover:to-orange-600 group-hover:text-white group-hover:shadow-sm'
+        : tone === 'carry-b'
+          ? 'border-blue-200/90 bg-gradient-to-r from-blue-50 to-sky-50/90 text-blue-700 group-hover:border-blue-600 group-hover:from-blue-600 group-hover:to-sky-600 group-hover:text-white group-hover:shadow-sm'
+          : 'border-emerald-200/90 bg-gradient-to-r from-emerald-50 to-teal-50/90 text-emerald-700 group-hover:border-emerald-600 group-hover:from-emerald-600 group-hover:to-teal-600 group-hover:text-white group-hover:shadow-sm';
   return (
     <span
-      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold shadow-2xs transition-colors ${toneClass}`}
+      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold shadow-2xs transition-all duration-200 ${toneClass}`}
     >
       View role
       <ArrowRight
@@ -201,7 +205,7 @@ function DraggingRoleCard({
       </div>
 
       <div className="mt-2.5 w-full">
-        <ViewRoleButton tone="drag" />
+        <ViewRoleButton tone={isSevere ? 'severe' : 'warning'} />
       </div>
     </button>
   );
@@ -279,7 +283,7 @@ function CarryingRoleCard({
       </div>
 
       <div className="mt-2 w-full">
-        <ViewRoleButton tone="carry" />
+        <ViewRoleButton tone={role.grade === 'B' ? 'carry-b' : 'carry-a'} />
       </div>
     </button>
   );

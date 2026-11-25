@@ -123,7 +123,7 @@ export function MonthlyOverviewHeader({
   return (
     <header
       aria-label="Monthly Presentation Header"
-      className="flex min-w-0 flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs sm:p-5"
+      className="pms-glass-surface flex min-w-0 flex-col gap-4 rounded-2xl p-4 sm:p-5"
     >
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -206,7 +206,7 @@ export function OverallCompanyPerformanceCard({
       id="presentation-section-score"
       data-section-label="Score"
       aria-labelledby="overall-performance-heading"
-      className="relative flex h-full w-full scroll-mt-24 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_10px_32px_-18px_rgba(15,23,42,0.28)] transition-shadow duration-300 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.34)] motion-reduce:transition-none"
+      className="pms-glass-surface relative flex h-full w-full scroll-mt-24 flex-col justify-between overflow-hidden rounded-2xl p-6"
     >
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -271,7 +271,7 @@ export function OverallCompanyPerformanceCard({
 
         {/* Two Small Metrics: Current / Gap */}
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+          <div className="pms-glass-stage rounded-xl px-4 py-3">
             <div className="text-xs font-medium text-slate-500">Current</div>
             <div className="mt-1 text-xl font-bold text-slate-900">
               {overall.score.toFixed(1)}%
@@ -286,7 +286,7 @@ export function OverallCompanyPerformanceCard({
       </div>
 
       {/* Small note about mixed evaluation settings */}
-      <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
+      <div className="pms-glass-stage mt-5 flex items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
         <Info className="mt-0.5 size-4 shrink-0 text-slate-400" />
         <span>{overall.evaluationNote}</span>
       </div>
@@ -391,7 +391,7 @@ export function RegionPerformanceShareSection({
       data-section-label="Regions"
       aria-labelledby="region-performance-share-heading"
       data-testid="monthly-region-performance-share"
-      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
@@ -558,7 +558,7 @@ export function GradeDistributionSection({
       id="presentation-section-grades"
       data-section-label="Grades"
       aria-labelledby="grade-distribution-heading"
-      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -698,7 +698,7 @@ function DriverRow({
   const betterText = item.betterDirection === 'lower' ? '↓ lower is better' : '↑ higher is better';
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 transition-colors hover:bg-slate-50">
+    <div className="pms-glass-stage flex items-center justify-between gap-3 rounded-xl p-3.5 transition-colors">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-slate-900 text-sm">{item.kpiName}</span>
@@ -746,7 +746,7 @@ export function ScoreDriversSection({
       id="presentation-section-drivers"
       data-section-label="Drivers"
       aria-labelledby="score-drivers-heading"
-      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
     >
       <div>
         <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
@@ -1084,7 +1084,7 @@ export function TeamsAtRiskSection({ teams, onSelectTeam }: TeamsAtRiskSectionPr
       id="presentation-section-teams"
       data-section-label="Teams"
       aria-labelledby="teams-at-risk-heading"
-      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>

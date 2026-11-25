@@ -863,6 +863,83 @@ select option {
   color: var(--exec-warning-text);
 }
 
+/* ────────────────────────────────────────────────────────────── */
+/*  MONTHLY REPORT FULL-PAGE GLASSY MODE                          */
+/*  Extends the luminous frosted-glass canvas and card surfaces   */
+/*  from Functions Overview / Executive Summary across the full   */
+/*  Monthly Report (overview + all deep-dive pages).              */
+/* ────────────────────────────────────────────────────────────── */
+.monthly-report-glass {
+  background: var(--pms-glass-page-bg);
+  border-radius: 20px;
+  min-height: 100%;
+}
+
+.monthly-report-glass [data-testid="monthly-overview-page"] > header,
+.monthly-report-glass [data-testid="monthly-overview-page"] > section:not(.pms-glass-well),
+.monthly-report-glass [data-testid="function-deep-dive-page"] > header,
+.monthly-report-glass [data-testid="function-deep-dive-page"] > section,
+.monthly-report-glass [data-testid="call-center-deep-dive-page"] > header,
+.monthly-report-glass [data-testid="call-center-deep-dive-page"] > section,
+.monthly-report-glass [data-testid="team-deep-dive-page"] > header,
+.monthly-report-glass [data-testid="team-deep-dive-page"] > section,
+.monthly-report-glass [data-testid="role-detail-page"] > header,
+.monthly-report-glass [data-testid="role-detail-page"] > section {
+  background: var(--pms-glass-card-bg);
+  border-color: var(--pms-glass-card-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.monthly-report-glass [data-testid="roles-dragging"],
+.monthly-report-glass [data-testid="roles-carrying"] {
+  background: var(--pms-glass-well-bg);
+  border-color: var(--pms-glass-well-border);
+  box-shadow: var(--pms-glass-card-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-900,
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-800,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-900,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-800,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-900,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-800,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-900,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-800,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-900,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-800 {
+  color: var(--insights-heading);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-700,
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-600,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-700,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-600,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-700,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-600,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-700,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-600,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-700,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-600 {
+  color: var(--text-secondary);
+}
+
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-500,
+.dark .monthly-report-glass [data-testid="monthly-overview-page"] .text-slate-400,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-500,
+.dark .monthly-report-glass [data-testid="function-deep-dive-page"] .text-slate-400,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-500,
+.dark .monthly-report-glass [data-testid="call-center-deep-dive-page"] .text-slate-400,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-500,
+.dark .monthly-report-glass [data-testid="team-deep-dive-page"] .text-slate-400,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-500,
+.dark .monthly-report-glass [data-testid="role-detail-page"] .text-slate-400 {
+  color: var(--text-muted);
+}
+
 /* ── 3D 180° Smooth Flip Card Utilities (PerformanceKpiCard) ──────────── */
 /* Independent per-face GPU transforms (no preserve-3d wrapper) so rounded-2xl
    + overflow-hidden never triggers Blink/DirectComposition mid-flip culling.

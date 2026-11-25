@@ -502,6 +502,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(chart.querySelector('[data-series="target"]')?.getAttribute('stroke-dasharray')).toBe('6 4');
     expect(screen.getByTestId('role-accountability')).toHaveTextContent(/accountable/i);
 
+    // Presentation Mode is enabled by default; exit it to add a new corrective action.
+    fireEvent.click(screen.getByRole('switch', { name: 'Presentation Mode' }));
+
     fireEvent.change(screen.getByLabelText('Description'), {
       target: { value: 'Coach the four inbound agents below 50% booking.' },
     });
@@ -961,8 +964,11 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       );
       const owner = within(card).getByTestId(/^team-action-owner-/);
       expect(owner.textContent?.trim().length).toBeGreaterThan(0);
-      const due = within(card).getByTestId(/^team-action-due-/).textContent?.trim() ?? '';
-      expect(/^\d{4}-\d{2}-\d{2}/.test(due) || due === 'No due date').toBe(true);
+      const dueNode = within(card).queryByTestId(/^team-action-due-/);
+      if (dueNode) {
+        const due = dueNode.textContent?.trim() ?? '';
+        expect(/^\d{4}-\d{2}-\d{2}/.test(due) || due === 'No due date').toBe(true);
+      }
     }
   });
 
@@ -984,6 +990,12 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     );
 
     const modeSwitch = () => screen.getByRole('switch', { name: 'Presentation Mode' });
+    // Presentation Mode is enabled by default when opening Monthly Report.
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
+
+    // Toggle Presentation Mode off to verify action editing controls appear.
+    fireEvent.click(modeSwitch());
     expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
     expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
 

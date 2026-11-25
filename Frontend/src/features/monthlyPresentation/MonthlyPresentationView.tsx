@@ -1564,7 +1564,7 @@ function MonthlyPresentationScreen({
     [deleteAction, resolvedRoleData?.employeeId, storedActions],
   );
 
-  const [presentationMode, setPresentationMode] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(true);
   // The global filter counts the always-applied region plus any active branch
   // and function deep dive; the reporting month is a required dimension, not a
   // filter (same as InsightsHeader, which does not count its period either).
@@ -2154,7 +2154,7 @@ function MonthlyPresentationScreen({
                 : 'No results were uploaded for your authorized scope in the selected period.';
 
     return (
-      <main className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+      <main className={`mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8 ${isInline ? '' : 'monthly-report-glass'}`}>
         {isInline && <button type="button" className={reviewButtonClass} onClick={handleBackToOverview}>Back to Executive Summary</button>}
         {!isInline && headerToolbar && <div className="flex flex-wrap items-center gap-3">{headerToolbar}</div>}
         <section
@@ -2265,7 +2265,7 @@ function MonthlyPresentationScreen({
 
   return (
     <>
-      <div className="pb-28">{renderActiveView()}</div>
+      <div className="monthly-report-glass pb-28">{renderActiveView()}</div>
       <PresentationControlBar
         region={activeRegion}
         availableRegions={availableRegions}
