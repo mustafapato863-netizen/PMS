@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import {
   INBOUND_TEAM_DEEP_DIVE_SEP_2026,
@@ -161,5 +161,28 @@ describe('TeamDeepDive agent pagination and caching', () => {
     const table = screen.getByTestId('agents-average-below-table');
     expect(within(table).getAllByTestId(/^low-agent-row-/)).toHaveLength(8);
     expect(screen.queryByTestId('agents-average-below-pager')).not.toBeInTheDocument();
+  });
+
+  it('triggers onSelectEmployee when clicking an agent name in the table or coaching card', async () => {
+    const user = userEvent.setup();
+    const onSelectEmployee = vi.fn();
+    const data = makeTeamData(2);
+
+    render(
+      <TeamDeepDiveView
+        data={data}
+        onNavigateToOverview={() => undefined}
+        onNavigateToCallCenter={() => undefined}
+        onSelectEmployee={onSelectEmployee}
+      />,
+    );
+
+    const table = screen.getByTestId('agents-average-below-table');
+    await user.click(within(table).getByRole('button', { name: 'Test Agent 01' }));
+    expect(onSelectEmployee).toHaveBeenCalledWith('emp-1');
+
+    const card = screen.getByTestId('individual-action-card-emp-2');
+    await user.click(within(card).getByRole('button', { name: 'Test Agent 02' }));
+    expect(onSelectEmployee).toHaveBeenCalledWith('emp-2');
   });
 });

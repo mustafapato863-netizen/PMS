@@ -1229,7 +1229,11 @@ function TeamDeepDiveViewContent({
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
             >
               <ArrowLeft className="size-3.5" />
-              <span>Back to {data.functionName} Deep Dive</span>
+              <span>
+                {overviewLabel === 'Executive Summary'
+                  ? `Back to ${data.functionName}`
+                  : `Back to ${data.functionName} Deep Dive`}
+              </span>
             </button>
 
             {onSwitchTeam && siblings.length > 1 && (
@@ -1268,7 +1272,7 @@ function TeamDeepDiveViewContent({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-0.5 text-xs font-bold tracking-wider text-white uppercase">
-                Team Deep Dive
+                {overviewLabel === 'Executive Summary' ? 'Team Analysis' : 'Team Deep Dive'}
               </span>
               <span className="text-xs font-semibold text-slate-500">
                 {data.regionName} · {data.monthLabel}
@@ -1663,8 +1667,14 @@ function TeamDeepDiveViewContent({
                     >
                       <td className="py-3.5 pr-4">
                         {onSelectEmployee ? (
-                          <button type="button" onClick={() => onSelectEmployee(agent.employeeId)} className="text-left font-bold text-blue-700 hover:underline">
-                            {agent.agentName}
+                          <button
+                            type="button"
+                            onClick={() => onSelectEmployee(agent.employeeId)}
+                            title="Open 360° Employee Profile"
+                            className="group inline-flex items-center gap-1 rounded-sm text-left font-bold text-[var(--insights-accent-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
+                          >
+                            <span>{agent.agentName}</span>
+                            <ArrowUpRight className="size-3.5 shrink-0 opacity-65 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" aria-hidden="true" />
                           </button>
                         ) : <div className="font-bold text-slate-900">{agent.agentName}</div>}
                         <div className="mt-0.5 text-xs text-slate-500">{agent.mainIssue}</div>
@@ -1866,7 +1876,17 @@ function TeamDeepDiveViewContent({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-bold text-slate-900">
-                        {card.agentName}
+                        {onSelectEmployee ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectEmployee(card.employeeId)}
+                            title="Open 360° Employee Profile"
+                            className="group inline-flex items-center gap-1 rounded-sm text-left transition-colors hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          >
+                            <span>{card.agentName}</span>
+                            <ArrowUpRight className="size-3.5 shrink-0 text-slate-400 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-blue-600" aria-hidden="true" />
+                          </button>
+                        ) : card.agentName}
                       </h3>
                       <span className={`text-sm font-extrabold tabular-nums ${gradeStyle.scoreText}`}>
                         {card.score.toFixed(1)}%

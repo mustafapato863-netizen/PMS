@@ -43,6 +43,7 @@ export interface CallCenterDeepDiveViewProps {
   onBackToOverview: () => void;
   onSelectAgentTeam: (teamSlug: TeamSlug) => void;
   onSelectRole?: (roleSlug: string) => void;
+  onSelectEmployee?: (employeeId: string) => void;
   toolbar?: ReactNode;
 }
 
@@ -405,6 +406,7 @@ export default function CallCenterDeepDiveView({
   onBackToOverview,
   onSelectAgentTeam,
   onSelectRole,
+  onSelectEmployee,
   toolbar,
 }: CallCenterDeepDiveViewProps) {
   const headlineGradeStyle = GRADE_STYLES[data.headline.grade];
@@ -948,9 +950,21 @@ export default function CallCenterDeepDiveView({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2.5">
-                        <span className="text-sm font-bold text-slate-900">
-                          {agent.agentName}
-                        </span>
+                        {onSelectEmployee && agent.employeeId ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectEmployee(agent.employeeId)}
+                            title="Open 360° Employee Profile"
+                            className="group inline-flex items-center gap-1 rounded-sm text-left text-sm font-bold text-slate-900 transition-colors hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          >
+                            <span>{agent.agentName}</span>
+                            <ArrowUpRight className="size-3.5 shrink-0 text-slate-400 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-blue-600" aria-hidden="true" />
+                          </button>
+                        ) : (
+                          <span className="text-sm font-bold text-slate-900">
+                            {agent.agentName}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => onSelectAgentTeam(agent.teamSlug)}

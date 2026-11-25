@@ -1568,8 +1568,14 @@ export default function RoleDetailView({
                       {/* Employee Name + Root-Cause Main Issue */}
                       <td className="py-3.5 pr-4">
                         {onSelectEmployee ? (
-                          <button type="button" onClick={() => onSelectEmployee(member.employeeId)} className="text-left font-bold text-blue-700 hover:underline">
-                            {member.personName}
+                          <button
+                            type="button"
+                            onClick={() => onSelectEmployee(member.employeeId)}
+                            title="Open 360° Employee Profile"
+                            className="group inline-flex items-center gap-1 rounded-sm text-left font-bold text-[var(--insights-accent-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
+                          >
+                            <span>{member.personName}</span>
+                            <ArrowUpRight className="size-3.5 shrink-0 opacity-65 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" aria-hidden="true" />
                           </button>
                         ) : <div className="font-bold text-slate-900">{member.personName}</div>}
                         <div className="mt-0.5 max-w-md text-xs text-slate-500">
@@ -1781,7 +1787,17 @@ export default function RoleDetailView({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-bold text-slate-900">
-                          {card.personName}
+                          {onSelectEmployee ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectEmployee(card.employeeId)}
+                              title="Open 360° Employee Profile"
+                              className="group inline-flex items-center gap-1 rounded-sm text-left transition-colors hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            >
+                              <span>{card.personName}</span>
+                              <ArrowUpRight className="size-3.5 shrink-0 text-slate-400 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-blue-600" aria-hidden="true" />
+                            </button>
+                          ) : card.personName}
                         </h3>
                         <span
                           className={`text-sm font-extrabold tabular-nums ${cardGradeStyle.scoreText}`}

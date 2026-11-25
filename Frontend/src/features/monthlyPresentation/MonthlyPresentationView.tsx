@@ -843,6 +843,21 @@ function MonthlyPresentationScreen({
     window.scrollTo({ top: 0 });
   };
 
+  const openEmployeeProfile = useCallback(
+    (employeeId: string) => {
+      const id = String(employeeId || '').trim();
+      if (!id) return;
+      const parsed = periodFromKey(selectedPeriodKey);
+      const params = new URLSearchParams();
+      const monthName = parsed?.label?.split(' ')[0];
+      if (monthName) params.set('month', monthName);
+      if (parsed?.year) params.set('year', String(parsed.year));
+      params.set('performance_level', 'Employee');
+      navigate(`/employee/${encodeURIComponent(id)}?${params.toString()}`);
+    },
+    [navigate, selectedPeriodKey],
+  );
+
   const selectReviewUnit = (unit: ReviewUnit) => {
     const next = new URLSearchParams(searchParams);
     next.delete('employee');
@@ -1521,7 +1536,7 @@ function MonthlyPresentationScreen({
           toolbar={isInline ? employeePicker : headerToolbar}
           presentationMode={isInline || presentationMode}
           overviewLabel={isInline ? 'Executive Summary' : undefined}
-          onSelectEmployee={isInline ? selectEmployee : undefined}
+          onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} />}
         </>
@@ -1550,7 +1565,7 @@ function MonthlyPresentationScreen({
           toolbar={isInline ? employeePicker : headerToolbar}
           presentationMode={isInline || presentationMode}
           overviewLabel={isInline ? 'Executive Summary' : undefined}
-          onSelectEmployee={isInline ? selectEmployee : undefined}
+          onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} overallOnly />}
         </>
@@ -1591,6 +1606,7 @@ function MonthlyPresentationScreen({
             onBackToOverview={handleBackToOverview}
             onSelectAgentTeam={handleSelectAgentTeam}
             onSelectRole={handleSelectRole}
+            onSelectEmployee={openEmployeeProfile}
             toolbar={headerToolbar}
           />
           {!explicitPreview && currentFunctionRecords.length > 0 && (
