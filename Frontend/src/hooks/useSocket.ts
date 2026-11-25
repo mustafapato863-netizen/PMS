@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import { SOCKET_URL } from '../config';
 import { getAccessToken } from '../lib/apiClient';
 
@@ -54,57 +54,76 @@ export function useSocket({
     }
 
     let client: Socket | null = null;
-    try {
-      queueMicrotask(() => {
-        setIsConnecting(true);
-        setError(null);
-      });
+    let disposed = false;
+    queueMicrotask(() => {
+      setIsConnecting(true);
+      setError(null);
+    });
 
-      const connectionUrl = namespace ? `${url.replace(/\/$/, '')}${namespace}` : url;
-      client = io(connectionUrl, {
-        auth: {
-          token: getAccessToken(),
-        },
-        withCredentials: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5,
-        transports: ['websocket', 'polling'],
-      });
-      const activeClient = client;
-      queueMicrotask(() => setSocket(activeClient));
+    const connectionUrl = namespace ? `${url.replace(/\/$/, '')}${namespace}` : url;
+    // Load socket.io-client on demand so the realtime runtime stays out of the
+    // initial bundle when realtime is disabled or the user never connects.
+    import('socket.io-client')
+      .then(({ io }) => {
+        if (disposed) {
+          return;
+        }
+        try {
+          client = io(connectionUrl, {
+            auth: {
+              token: getAccessToken(),
+            },
+            withCredentials: true,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5,
+            transports: ['websocket', 'polling'],
+          });
+          const activeClient = client;
+          queueMicrotask(() => {
+            if (!disposed) {
+              setSocket(activeClient);
+            }
+          });
 
-      activeClient.on('connect', () => {
-        console.log('Socket connected:', activeClient.id);
-        setIsConnected(true);
-        setIsConnecting(false);
-      });
+          activeClient.on('connect', () => {
+            console.log('Socket connected:', activeClient.id);
+            setIsConnected(true);
+            setIsConnecting(false);
+          });
 
-      activeClient.on('disconnect', () => {
-        console.log('Socket disconnected');
-        setIsConnected(false);
-        setIsConnecting(false);
-      });
+          activeClient.on('disconnect', () => {
+            console.log('Socket disconnected');
+            setIsConnected(false);
+            setIsConnecting(false);
+          });
 
-      activeClient.on('connect_error', (err) => {
-        console.error('Socket connection error:', err);
-        setError(err instanceof Error ? err : new Error(String(err)));
-        setIsConnecting(false);
-      });
+          activeClient.on('connect_error', (err) => {
+            console.error('Socket connection error:', err);
+            setError(err instanceof Error ? err : new Error(String(err)));
+            setIsConnecting(false);
+          });
 
-      activeClient.on('error', (err) => {
-        console.error('Socket error:', err);
-        setError(err instanceof Error ? err : new Error(String(err)));
-      });
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      queueMicrotask(() => {
+          activeClient.on('error', (err) => {
+            console.error('Socket error:', err);
+            setError(err instanceof Error ? err : new Error(String(err)));
+          });
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          queueMicrotask(() => {
+            setError(error);
+            setIsConnecting(false);
+          });
+          console.error('Failed to create socket connection:', error);
+        }
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
         setError(error);
         setIsConnecting(false);
+        console.error('Failed to load socket.io-client:', error);
       });
-      console.error('Failed to create socket connection:', error);
-    }
 
     // Keep the socket alive while the tab is in the background so presence
     // reflects an open signed-in session rather than only the visible tab.
@@ -127,12 +146,11 @@ export function useSocket({
 
     // Cleanup on unmount
     return () => {
+      disposed = true;
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('pageshow', handlePageShow);
-      if (client?.connected) {
-        client.disconnect();
-      }
+      client?.disconnect();
     };
   }, [autoConnect, url, namespace]);
 
