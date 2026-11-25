@@ -31,7 +31,7 @@ export default function FunctionTrendChart({
   const maximum = 100;
   const ticks = [minimum, (minimum + maximum) / 2, maximum];
   const plot = { left: 32, right: 304, top: 24, bottom: 94 };
-  const axisFontSize = 9.5;
+  const axisFontSize = 11;
   const x = (index: number) =>
     points.length > 1 ? 50 + index * (236 / (points.length - 1)) : 168;
   const y = (value: number) =>
@@ -173,7 +173,7 @@ export default function FunctionTrendChart({
                       x={x(index)}
                       y={isLast ? y(point.score) - 11.5 : y(point.score) + labelYOffset}
                       textAnchor="middle"
-                      fontSize={isLast ? 9.5 : 8.5}
+                      fontSize={isLast ? 11 : 10}
                       fontWeight={isLast ? 800 : 600}
                       fill={isLast ? color : 'var(--text-secondary)'}
                       fillOpacity={isLast ? 1 : 0.8}

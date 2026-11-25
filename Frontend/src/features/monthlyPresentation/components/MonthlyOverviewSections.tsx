@@ -1201,7 +1201,7 @@ export function TeamsAtRiskSection({ teams, onSelectTeam }: TeamsAtRiskSectionPr
                     <button
                       type="button"
                       onClick={() => onSelectTeam(row)}
-                      className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold text-blue-700 transition-colors hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      className="hit-area inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold text-blue-700 transition-colors hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                     >
                       Review Team
                       <ArrowRight aria-hidden="true" className="size-3.5" strokeWidth={2.2} />

@@ -361,7 +361,7 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
                       y={y + 3}
                       textAnchor="end"
                       fill="var(--text-muted)"
-                      fontSize="8.5"
+                      fontSize="10"
                       fontWeight="600"
                     >
                       {formatAxisTick(tickVal, unit)}
@@ -472,7 +472,7 @@ const MiniSixMonthTrend = memo(function MiniSixMonthTrend({
                 y={height - 4}
                 textAnchor="middle"
                 fill={index === activeIdx ? 'var(--text-primary)' : 'var(--text-muted)'}
-                fontSize="9"
+                fontSize="10"
                 fontWeight={index === activeIdx ? '700' : '600'}
                 pointerEvents="none"
               >
