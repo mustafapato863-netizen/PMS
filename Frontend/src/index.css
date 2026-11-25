@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4 defaults dark: to the OS setting. The app themes with a .dark class on <html>, so follow that. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ────────────────────────────────────────────────────────────── */
 /*  COMPACT DENSITY SCALE                                          */
 /*  The product renders at ~90% of Tailwind's default density so   */
