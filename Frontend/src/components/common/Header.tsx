@@ -346,13 +346,14 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           />
 
           <div className="min-w-0 flex-1">
-            <h1
+            {/* A div, not an h1: every page renders its own h1, so a second one gave screen readers two page headings. */}
+            <div
               className={`app-header-title font-bold text-[var(--text-primary)] tracking-tight truncate transition-all duration-300
                 ${isScrolled ? 'text-sm lg:text-[14px]' : 'text-[14px] lg:text-base'}`}
             >
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
-            </h1>
+            </div>
             <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-xs font-semibold tracking-tight text-blue-600 dark:text-blue-400">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
               {subtitle}
@@ -372,10 +373,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               type="button"
               onClick={handleOpenAskAi}
               aria-label="Ask AI analytical assistant"
-              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-400 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-blue-500/25 transition-transform hover:scale-[1.02]"
+              className="app-header-control inline-flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-400 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-blue-500/25 transition-transform hover:scale-[1.02]"
             >
               <Sparkles size={13} aria-hidden="true" />
-              <span>Ask AI</span>
+              <span className="hidden sm:inline">Ask AI</span>
             </button>
           )}
 

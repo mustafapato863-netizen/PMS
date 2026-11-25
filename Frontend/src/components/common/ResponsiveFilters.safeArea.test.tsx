@@ -95,10 +95,10 @@ describe('ResponsiveFilters safe area', () => {
     const { position } = renderLauncher();
     expect(position()).toEqual({ x: 900, y: 200 });
 
-    // Under 640px the button is 50px and the edge is 12px, so the right limit is 600 - 50 - 12 = 538.
+    // Under 640px the button is 44px and the edge is 12px, so the right limit is 600 - 44 - 12 = 544.
     setViewport(600, 768);
     fireEvent(window, new Event('resize'));
-    expect(position()).toEqual({ x: 538, y: 200 });
+    expect(position()).toEqual({ x: 544, y: 200 });
   });
 
   it('keeps an untouched launcher at the top-right corner as the window changes', () => {
@@ -106,6 +106,6 @@ describe('ResponsiveFilters safe area', () => {
     const { position } = renderLauncher();
     setViewport(600, 768);
     fireEvent(window, new Event('resize'));
-    expect(position()).toEqual({ x: 538, y: 66 });
+    expect(position()).toEqual({ x: 544, y: 66 });
   });
 });
