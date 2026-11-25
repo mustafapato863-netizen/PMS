@@ -1880,7 +1880,7 @@
         "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP"
       },
       {
-        "count": 64,
+        "count": 68,
         "mappings": [
           {
             "alias": "CSR",
@@ -2031,6 +2031,18 @@
             "country": null,
             "kind": "route",
             "target": "Quality Management"
+          },
+          {
+            "alias": "Quality and Case Management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and Case Management"
+          },
+          {
+            "alias": "Quality and management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and management"
           },
           {
             "alias": "RCM",
@@ -2217,6 +2229,18 @@
             "country": null,
             "kind": "route",
             "target": "Qlty&Case-Mngt"
+          },
+          {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and Case Management"
+          },
+          {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and management"
           },
           {
             "alias": "quality-management",
@@ -2414,7 +2438,7 @@
             "alias": "quality-case-management",
             "country": null,
             "kind": "route-display",
-            "target": "Qlty&Case-Mngt"
+            "target": "Quality and Case Management"
           },
           {
             "alias": "quality-management",
@@ -2961,6 +2985,29 @@
         ]
       },
       {
+        "alias": "quality-case-management",
+        "id": "route-map:quality-case-management",
+        "kind": "route_display_db_mismatch",
+        "reason": "The same route id has different display and database names. Neither was chosen as a new team.",
+        "resolution": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+          "Frontend/src/types.ts#TEAM_NAME_MAP"
+        ],
+        "targets": [
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_NAME_MAP",
+            "target": "Quality and Case Management"
+          }
+        ]
+      },
+      {
         "alias": "pre-approvals",
         "id": "route:pre-approvals",
         "kind": "same_alias_multiple_targets",
@@ -2979,6 +3026,33 @@
             "country": null,
             "source": "Frontend/src/types.ts#TEAM_ID_MAP",
             "target": "Pre-Approvals IP Offshore"
+          }
+        ]
+      },
+      {
+        "alias": "quality-case-management",
+        "id": "route:quality-case-management",
+        "kind": "same_alias_multiple_targets",
+        "reason": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
+        "resolution": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_ID_MAP"
+        ],
+        "targets": [
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Qlty&Case-Mngt"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Quality and Case Management"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Quality and management"
           }
         ]
       },
@@ -3712,6 +3786,7 @@
         "Pre-Approvals IP Final SHJAJM",
         "Pre-Approvals OP Dubai",
         "Pre-Approvals OP Final SHJAJM",
+        "Qlty&Case-Mngt",
         "Re-Submission",
         "Submission"
       ]
@@ -3738,7 +3813,6 @@
       "PMO",
       "Pharmacy",
       "Pre-Approvals",
-      "Qlty&Case-Mngt",
       "Quality Management",
       "RCM",
       "Radiology",
@@ -5702,42 +5776,6 @@
       {
         "basis": "template",
         "country": "UAE",
-        "function": "Qlty&Case-Mngt",
-        "level": "Employee",
-        "needs": {
-          "kpi_actual": {
-            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
-            "source": "Backend/models/models.py#KPIValue",
-            "status": "blocked",
-            "status_basis": "not_checked"
-          },
-          "kpi_direction": {
-            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
-            "source": "Backend/config/teams",
-            "status": "partial",
-            "status_basis": "single_source"
-          },
-          "kpi_target": {
-            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
-            "source": "Backend/models/models.py#KPIValue",
-            "status": "blocked",
-            "status_basis": "not_checked"
-          },
-          "prior_corrective_actions": {
-            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
-            "source": "Backend/services/action_history.py",
-            "status": "blocked",
-            "status_basis": "not_checked"
-          }
-        },
-        "pilot_required": true,
-        "position": "",
-        "subteam": "",
-        "team": "Qlty&Case-Mngt"
-      },
-      {
-        "basis": "template",
-        "country": "UAE",
         "function": "RCM",
         "level": "Employee",
         "needs": {
@@ -6130,6 +6168,42 @@
         "position": "OP Final",
         "subteam": "",
         "team": "Pre-Approvals OP Final SHJAJM"
+      },
+      {
+        "basis": "template",
+        "country": "UAE",
+        "function": "RCM",
+        "level": "Employee",
+        "needs": {
+          "kpi_actual": {
+            "reason": "actual_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "kpi_direction": {
+            "reason": "Every scored KPI on this scope has a direction in the team JSON. A second source was not checked. This is not catalog partial_evidence.",
+            "source": "Backend/config/teams",
+            "status": "partial",
+            "status_basis": "single_source"
+          },
+          "kpi_target": {
+            "reason": "target_col names are in the team JSON. kpi_values were not read, so no number is claimed.",
+            "source": "Backend/models/models.py#KPIValue",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          },
+          "prior_corrective_actions": {
+            "reason": "Prior actions live in the actions table and are read by action_history.py. Rows were not read, so this is not verified no data and not a generated draft.",
+            "source": "Backend/services/action_history.py",
+            "status": "blocked",
+            "status_basis": "not_checked"
+          }
+        },
+        "pilot_required": true,
+        "position": "",
+        "subteam": "",
+        "team": "Qlty&Case-Mngt"
       },
       {
         "basis": "corporate_bsc_catalog",
@@ -6820,9 +6894,9 @@
     "plan": "docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md#First product pilot"
   },
   "counts": {
-    "alias_conflicts": 37,
+    "alias_conflicts": 39,
     "countries": 3,
-    "functions": 18,
+    "functions": 17,
     "kpis": 414,
     "kpis_not_in_score": 35,
     "levels": 3,
@@ -7452,9 +7526,9 @@
       "db_name": "Qlty&Case-Mngt",
       "explanation_source": "Backend/config/teams/qlty_case_mngt.json",
       "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
+      "function": "RCM",
       "functions": [
-        "Qlty&Case-Mngt"
+        "RCM"
       ],
       "id": "team:Qlty&Case-Mngt",
       "kind": "team",
@@ -7811,7 +7885,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "1731683e2bc3f6350521023be95f0cbec6e60c9fcf0933a6a4cb6101593d93f3",
+  "inputs_fingerprint": "8a84e506eec27e9f22fee6d4d723893c01cb8ed5a3a581fc90518ce19b714014",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -13847,7 +13921,7 @@
       "definition_issues": [],
       "direction": "higher_better",
       "effective_from": null,
-      "function": "Qlty&Case-Mngt",
+      "function": "RCM",
       "key": "PerformanceScore",
       "label": "Performance Score",
       "level": "Employee",
@@ -30869,173 +30943,6 @@
       "basis": "template",
       "country": "UAE",
       "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "actual/target",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "comparison",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "follow-up",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "structural_block",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
-      ],
-      "not_in_score": false,
-      "operation": "navigation",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Route id quality-case-management is present. Access was not checked with user_can_access_team.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "ranking",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "score",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
-      "function": "Qlty&Case-Mngt",
-      "level": "Employee",
-      "measure": "",
-      "missing_evidence": [
-        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
-        "published performance_records / upload_log months not in the repo"
-      ],
-      "not_in_score": false,
-      "operation": "trend",
-      "ownership": "UAE",
-      "permission_check": "not_run",
-      "position": "",
-      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
-      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
-      "source_parity": "not_run",
-      "status": "blocked",
-      "status_basis": "not_checked",
-      "subteam": "",
-      "team": "Qlty&Case-Mngt"
-    },
-    {
-      "basis": "template",
-      "country": "UAE",
-      "freshness": "published period not in the repo",
       "function": "RCM",
       "level": "Employee",
       "measure": "",
@@ -33536,6 +33443,173 @@
       "status_basis": "not_checked",
       "subteam": "",
       "team": "Pre-Approvals OP Final SHJAJM"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "actual/target",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "comparison",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "follow-up",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "structural_block",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)"
+      ],
+      "not_in_score": false,
+      "operation": "navigation",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Route id quality-case-management is present. Access was not checked with user_can_access_team.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "ranking",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "score",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
+    },
+    {
+      "basis": "template",
+      "country": "UAE",
+      "freshness": "published period not in the repo",
+      "function": "RCM",
+      "level": "Employee",
+      "measure": "",
+      "missing_evidence": [
+        "permission check not executed (Backend/utils/report_scope.py user_can_access_team / user_can_access_team_level)",
+        "published performance_records / upload_log months not in the repo"
+      ],
+      "not_in_score": false,
+      "operation": "trend",
+      "ownership": "UAE",
+      "permission_check": "not_run",
+      "position": "",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
+      "source": "Backend/config/teams/qlty_case_mngt.json#kpis",
+      "source_parity": "not_run",
+      "status": "blocked",
+      "status_basis": "not_checked",
+      "subteam": "",
+      "team": "Qlty&Case-Mngt"
     },
     {
       "basis": "corporate_bsc_catalog",
@@ -37976,8 +38050,27 @@
         ]
       },
       {
+        "area": "route-map:quality-case-management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and Case Management",
+        "current_code_state": "The same route id has different display and database names. Neither was chosen as a new team.",
+        "recommended_resolution_path": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_DB_NAME_MAP",
+          "Frontend/src/types.ts#TEAM_NAME_MAP"
+        ]
+      },
+      {
         "area": "route:pre-approvals",
         "conflicting_or_ambiguous_evidence": "Pre-Approvals, Pre-Approvals IP Offshore",
+        "current_code_state": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
+        "recommended_resolution_path": "unresolved",
+        "sources": [
+          "Frontend/src/types.ts#TEAM_ID_MAP"
+        ]
+      },
+      {
+        "area": "route:quality-case-management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and Case Management, Quality and management",
         "current_code_state": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
         "recommended_resolution_path": "unresolved",
         "sources": [

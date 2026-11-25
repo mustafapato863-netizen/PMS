@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 71,
-  "case_count": 900,
+  "file_count": 72,
+  "case_count": 907,
   "files_by_label": {
-    "synthetic": 19,
-    "mocked": 49,
+    "synthetic": 18,
+    "mocked": 51,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -48,6 +48,16 @@
       "cases": 18,
       "evidence_status": "partial",
       "note": "The module text says source parity. The model side is DeterministicLocalProviderAdapter, so the label is mocked."
+    },
+    {
+      "path": "Backend/tests/test_ai_brain_intelligence.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 6,
+      "evidence_status": "partial",
+      "note": ""
     },
     {
       "path": "Backend/tests/test_ai_branch_bar_missing_value.py",
@@ -455,10 +465,10 @@
       "path": "Backend/tests/test_ai_product_guide.py",
       "kind": "test",
       "labels": [
-        "synthetic"
+        "mocked"
       ],
-      "cases": 6,
-      "evidence_status": "not applicable",
+      "cases": 7,
+      "evidence_status": "partial",
       "note": ""
     },
     {

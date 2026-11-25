@@ -75,7 +75,10 @@ vi.mock('../hooks/api/usePerformanceCatalog', () => {
   };
   return { usePerformanceCatalog: () => catalog };
 });
-vi.mock('../hooks/useTeamConfig', () => ({ useTeamConfig: () => ({ data: undefined }) }));
+vi.mock('../hooks/useTeamConfig', () => ({
+  useTeamConfig: () => ({ data: undefined }),
+  useAllTeamConfigs: () => ({ data: undefined }),
+}));
 vi.mock('../hooks/useActionStore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../hooks/useActionStore')>();
   return {

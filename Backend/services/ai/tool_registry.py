@@ -1884,7 +1884,11 @@ class DeterministicToolRegistry:
             if pooled_cc_vols is not None:
                 row_key_cf = str(row.key or "").strip().casefold()
                 team_cf = str(resolved["team"] or "").strip().casefold()
-                if row_key_cf in ("booking", "booking_rate", "bookingrate") and pooled_cc_vols.get("booking_complete"):
+                if (
+                    row_key_cf in ("booking", "booking_rate", "bookingrate")
+                    and pooled_cc_vols.get("booking_complete")
+                    and pooled_cc_vols.get("booking_ratio_consistent")
+                ):
                     denom = (
                         pooled_cc_vols.get("total_inbound_calls") or pooled_cc_vols.get("total_calls_handled")
                         if team_cf == "inbound"
@@ -1892,13 +1896,18 @@ class DeterministicToolRegistry:
                     )
                     if pooled_cc_vols.get("total_bookings") is not None and denom and float(denom) > 0:
                         pooled_override_ratio = float(pooled_cc_vols["total_bookings"]) / float(denom)
-                elif row_key_cf in ("attendance", "attendance_rate", "attendancerate") and pooled_cc_vols.get("attendance_complete"):
+                elif (
+                    row_key_cf in ("attendance", "attendance_rate", "attendancerate")
+                    and pooled_cc_vols.get("attendance_complete")
+                    and pooled_cc_vols.get("attendance_ratio_consistent")
+                ):
                     b_tot = pooled_cc_vols.get("total_bookings")
                     a_tot = pooled_cc_vols.get("total_attended")
                     if a_tot is not None and b_tot and float(b_tot) > 0:
                         pooled_override_ratio = float(a_tot) / float(b_tot)
                 elif (
                     "abandon" in clean_label.casefold()
+                    and pooled_cc_vols.get("abandon_ratio_consistent")
                     and pooled_cc_vols.get("total_abandoned") is not None
                     and pooled_cc_vols.get("total_calls_handled")
                     and float(pooled_cc_vols["total_calls_handled"]) > 0
@@ -6104,6 +6113,12 @@ class DeterministicToolRegistry:
         calls_present_count = 0
         inbound_calls_present_count = 0
         abandoned_present_count = 0
+        booking_consistency_checks = 0
+        booking_consistency_ok = True
+        attendance_consistency_checks = 0
+        attendance_consistency_ok = True
+        abandon_consistency_checks = 0
+        abandon_consistency_ok = True
 
         def _extract_metric_val(container: Any, field_name: str) -> Any:
             if container is None:
@@ -6210,6 +6225,8 @@ class DeterministicToolRegistry:
                 # All branches
                 matching_branch_records += 1
                 rec_has_branch_data = False
+                rec_b_sum = 0.0
+                rec_a_sum = 0.0
                 for bk in BRANCH_KEYS:
                     vb = _extract_metric_val(b_obj, bk)
                     va = _extract_metric_val(a_obj, bk)
@@ -6219,14 +6236,18 @@ class DeterministicToolRegistry:
                     try:
                         if vb is None:
                             raise ValueError
-                        total_bookings += float(vb)
+                        fb = float(vb)
+                        total_bookings += fb
+                        rec_b_sum += fb
                         bookings_present_count += 1
                     except (ValueError, TypeError):
                         bookings_missing_count += 1
                     try:
                         if va is None:
                             raise ValueError
-                        total_attended += float(va)
+                        fa = float(va)
+                        total_attended += fa
+                        rec_a_sum += fa
                         attended_present_count += 1
                     except (ValueError, TypeError):
                         attended_missing_count += 1
@@ -6236,28 +6257,66 @@ class DeterministicToolRegistry:
 
             # Calls metric presence
             calls = getattr(rec, "calls", None)
+            rec_calls_v: float | None = None
+            rec_inb_v: float | None = None
+            rec_ab_v: float | None = None
             if calls is not None:
                 val_c = _extract_metric_val(calls, "total_handled") or _extract_metric_val(calls, "inbound")
                 if val_c is not None:
                     try:
-                        total_calls += float(val_c)
+                        rec_calls_v = float(val_c)
+                        total_calls += rec_calls_v
                         calls_present_count += 1
                     except (ValueError, TypeError):
                         pass
                 val_inb = _extract_metric_val(calls, "inbound")
                 if val_inb is not None:
                     try:
-                        total_inbound_calls += float(val_inb)
+                        rec_inb_v = float(val_inb)
+                        total_inbound_calls += rec_inb_v
                         inbound_calls_present_count += 1
                     except (ValueError, TypeError):
                         pass
                 val_ab = _extract_metric_val(calls, "abandoned")
                 if val_ab is not None:
                     try:
-                        total_abandoned += float(val_ab)
+                        rec_ab_v = float(val_ab)
+                        total_abandoned += rec_ab_v
                         abandoned_present_count += 1
                     except (ValueError, TypeError):
                         pass
+
+            # Verify per-record volume ratios match kpi_values (all-branch only) so
+            # pooled ratios only apply when raw geo/calls volumes are internally consistent.
+            if not norm_branch and rec_has_branch_data:
+                r_team_cf = r_team.casefold()
+                for kv in (getattr(rec, "kpi_values", None) or []):
+                    kk = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "").strip().casefold()
+                    kl = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or "").strip().casefold()
+                    raw_act = kv.get("actual_value") if isinstance(kv, dict) else getattr(kv, "actual_value", None)
+                    if raw_act is None:
+                        continue
+                    try:
+                        act_ratio = float(raw_act)
+                    except (ValueError, TypeError):
+                        continue
+                    if act_ratio > 1.5:
+                        act_ratio = act_ratio / 100.0
+                    if kk in ("booking", "booking_rate", "bookingrate"):
+                        r_den = (rec_inb_v or rec_calls_v) if r_team_cf == "inbound" else rec_calls_v
+                        if r_den and r_den > 0:
+                            booking_consistency_checks += 1
+                            if abs((rec_b_sum / r_den) - act_ratio) > 0.025:
+                                booking_consistency_ok = False
+                    elif kk in ("attendance", "attendance_rate", "attendancerate"):
+                        if rec_b_sum > 0:
+                            attendance_consistency_checks += 1
+                            if abs((rec_a_sum / rec_b_sum) - act_ratio) > 0.025:
+                                attendance_consistency_ok = False
+                    elif "abandon" in kl and rec_ab_v is not None and rec_calls_v and rec_calls_v > 0:
+                        abandon_consistency_checks += 1
+                        if abs((rec_ab_v / rec_calls_v) - act_ratio) > 0.025:
+                            abandon_consistency_ok = False
 
         booking_present = bookings_present_count > 0
         attended_present = attended_present_count > 0
@@ -6273,9 +6332,12 @@ class DeterministicToolRegistry:
             "total_abandoned": round(total_abandoned, 1) if abandoned_present_count > 0 else None,
             "booking_present": booking_present,
             "booking_complete": booking_complete,
+            "booking_ratio_consistent": booking_consistency_checks > 0 and booking_consistency_ok,
             "has_partial_evidence": has_partial_evidence,
             "attended_present": attended_present,
             "attendance_complete": attended_present and attended_missing_count == 0,
+            "attendance_ratio_consistent": attendance_consistency_checks > 0 and attendance_consistency_ok,
+            "abandon_ratio_consistent": abandon_consistency_checks > 0 and abandon_consistency_ok,
             "calls_present": calls_present,
             "data_present": booking_present,
             "period_published": has_period_records,

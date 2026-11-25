@@ -1745,9 +1745,9 @@ def test_attempt_captures_token_usage_and_neurons(mock_cloudflare, mock_nvidia, 
 
 
 def test_glm_selection_recorded_everywhere_consistently(mock_cloudflare, mock_nvidia, cloudflare_config):
-    """FIX 2: Selecting GLM alter model records GLM consistently in request, attempt, and response."""
+    """FIX 2: Selecting the alter model records it consistently in request, attempt, and response."""
     mock_cloudflare.execute.return_value = (
-        "GLM generated analysis",
+        "Alter model generated analysis",
         TokenUsage(prompt_tokens=50, completion_tokens=30, total_tokens=80, neurons=1.4),
     )
     engine = UnifiedProviderEngine(
@@ -1756,17 +1756,17 @@ def test_glm_selection_recorded_everywhere_consistently(mock_cloudflare, mock_nv
         nvidia_adapter=mock_nvidia,
     )
     req = ProviderRequest(
-        messages=[ProviderMessage(role="user", content="Analyze with GLM")],
+        messages=[ProviderMessage(role="user", content="Analyze with alter model")],
         use_alter_model=True,
     )
     resp = engine.generate(req)
 
     assert resp.is_success is True
     assert resp.provider == "cloudflare"
-    assert resp.model == "@cf/zai-org/glm-4.7-flash"
+    assert resp.model == cloudflare_config.cloudflare_alter_model
     assert len(resp.attempts) == 1
     attempt = resp.attempts[0]
-    assert attempt.model == "@cf/zai-org/glm-4.7-flash"
+    assert attempt.model == cloudflare_config.cloudflare_alter_model
     assert attempt.status == "success"
     assert attempt.neurons == 1.4
     assert resp.usage.neurons == 1.4

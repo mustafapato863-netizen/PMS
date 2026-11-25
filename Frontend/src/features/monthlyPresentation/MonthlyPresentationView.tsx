@@ -2081,13 +2081,13 @@ function MonthlyPresentationScreen({
             top_gap_target: topRoleGap?.targetDisplay ?? null,
           }
         : {
-            headline_score: overviewData.companyPerformance?.overallScore ?? null,
+            headline_score: overviewData.overall?.score ?? null,
             score_basis: 'Executive summary',
-            headcount: overviewData.companyPerformance?.evaluatedEmployees ?? null,
+            headcount: overviewData.overall?.employeesCount ?? null,
             below_90_count: null,
             top_gap_kpi: topOverviewGap?.kpiName ?? null,
-            top_gap_actual: topOverviewGap?.actualFormatted ?? null,
-            top_gap_target: topOverviewGap?.targetFormatted ?? null,
+            top_gap_actual: topOverviewGap?.actualValue ?? null,
+            top_gap_target: null,
           };
     return {
       page_id: 'executive_summary',
@@ -2114,8 +2114,8 @@ function MonthlyPresentationScreen({
     explicitPreview,
     location.pathname,
     location.search,
-    overviewData.companyPerformance?.evaluatedEmployees,
-    overviewData.companyPerformance?.overallScore,
+    overviewData.overall?.employeesCount,
+    overviewData.overall?.score,
     overviewData.drivers?.negative,
     overviewData.monthLabel,
     resolvedFunctionData?.functionName,

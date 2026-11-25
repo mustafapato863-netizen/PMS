@@ -18,7 +18,7 @@ describe('insights workspace sections', () => {
   });
 
   it('keys the cache by the sections requested, and keeps the existing key without them', () => {
-    expect(insightsWorkspaceQueryKey(filters)).toEqual(['insights', 'workspace', 'full', filters]);
+    expect(insightsWorkspaceQueryKey(filters)).toEqual(['insights', 'workspace', 'full', 'anonymous', filters]);
 
     const page = insightsWorkspaceQueryKey(filters, 'full', INSIGHTS_PAGE_SECTIONS);
     expect(page).not.toEqual(insightsWorkspaceQueryKey(filters));

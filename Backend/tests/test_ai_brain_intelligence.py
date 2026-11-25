@@ -123,6 +123,7 @@ def test_pillar1_provider_defaults_and_clinical_scopes(monkeypatch: pytest.Monke
     assert DEFAULT_NVIDIA_DAILY_LIMIT == 500
 
     monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_MODEL_LED_ALL_ROLES_ENABLED", "true")
     cfg = get_ai_runtime_config()
     assert cfg.is_scope_allowed_for_cloud("ER Dr")
     assert cfg.is_scope_allowed_for_cloud("Radiologist")

@@ -111,16 +111,18 @@ class AiRuntimeConfig:
     redact_raw_prompts: bool
     conversation_state_enabled: bool = True
     model_led_pilot_enabled: bool = False
+    model_led_all_roles_enabled: bool = False
     guided_reads_enabled: bool = False
     compound_parts_enabled: bool = True
     pseudonymized_pii_synthesis_enabled: bool = False
 
     def can_use_model_led_planner(self, role: str | None, provider_override: str | None) -> bool:
-        return (
-            self.model_led_pilot_enabled
-            and bool((role or "").strip())
-            and provider_override != "deterministic"
-        )
+        if not self.model_led_pilot_enabled or provider_override == "deterministic":
+            return False
+        clean_role = (role or "").strip()
+        if not clean_role:
+            return False
+        return True if self.model_led_all_roles_enabled else clean_role == "Admin"
 
     def is_scope_allowed_for_cloud(self, team_or_function: str | None) -> bool:
         if "*" in self.pilot_scopes:
@@ -179,6 +181,9 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     model_led_pilot_enabled = _parse_bool(
         os.environ.get("PMS_AI_MODEL_LED_PILOT_ENABLED"), default=not in_pytest
     )
+    model_led_all_roles_enabled = _parse_bool(
+        os.environ.get("PMS_AI_MODEL_LED_ALL_ROLES_ENABLED"), default=not in_pytest
+    )
     guided_reads_enabled = _parse_bool(
         os.environ.get("PMS_AI_GUIDED_READS_ENABLED"), default=not in_pytest
     )
@@ -199,6 +204,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         redact_raw_prompts=redact_raw_prompts,
         conversation_state_enabled=conversation_state_enabled,
         model_led_pilot_enabled=model_led_pilot_enabled,
+        model_led_all_roles_enabled=model_led_all_roles_enabled,
         guided_reads_enabled=guided_reads_enabled,
         compound_parts_enabled=compound_parts_enabled,
         pseudonymized_pii_synthesis_enabled=pseudonymized_pii_synthesis_enabled,

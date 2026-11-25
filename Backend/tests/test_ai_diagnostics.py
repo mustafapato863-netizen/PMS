@@ -168,7 +168,7 @@ def test_4_cloudflare_credentials_make_cloudflare_the_active_provider(clean_prov
     health = provider_status()
     assert health["available"] is True
     assert health["active_provider"] == "cloudflare"
-    assert health["configured_model"] == "@cf/ibm-granite/granite-4.0-h-micro"
+    assert health["configured_model"] == "@cf/zai-org/glm-4.7-flash"
     assert health["endpoint_host"] == "api.cloudflare.com"
     assert health["reason"] == "primary_unconfigured_fallback_only"
     assert "token-test-not-real" not in json.dumps(health)

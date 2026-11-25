@@ -1460,7 +1460,7 @@ def test_v2_blueprint_conversational_analytics_and_owned_sessions(monkeypatch):
     assert r_correction.outcome == "answer"
     assert r_correction.structured_query is not None
     assert r_correction.structured_query.ranking_direction == "worst"
-    assert "lowest-scoring" in r_correction.headline
+    assert "has the lowest Booking Rate" in r_correction.headline
     assert "Mariam Hassan" in r_correction.headline
 
     # 9. "Thanks" -> Short acknowledgement without analytics

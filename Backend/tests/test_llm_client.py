@@ -150,9 +150,9 @@ def test_exploration_is_permanently_disabled(clean_env):
 
 def test_configured_model_name_follows_the_primary_provider(clean_env):
     clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "cloudflare")
-    assert configured_model_name() == "@cf/ibm-granite/granite-4.0-h-micro"
-    clean_env.setenv("CLOUDFLARE_AI_MODEL", "@cf/zai-org/glm-4.7-flash")
     assert configured_model_name() == "@cf/zai-org/glm-4.7-flash"
+    clean_env.setenv("CLOUDFLARE_AI_MODEL", "@cf/ibm-granite/granite-4.0-h-micro")
+    assert configured_model_name() == "@cf/ibm-granite/granite-4.0-h-micro"
     clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "nvidia")
     assert configured_model_name() == "nvidia/nemotron-3.5-super-vl-120b-a12b"
     clean_env.setenv("NVIDIA_FEEDBACK_MODEL", "nvidia/test-alternate-model")

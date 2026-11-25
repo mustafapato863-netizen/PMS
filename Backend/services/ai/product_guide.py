@@ -491,11 +491,25 @@ def _token_fuzzy_similarity(
     for c_tok in candidate_tokens:
         c_len = len(c_tok)
         if q_len >= 4 and (c_tok.startswith(query_tok) or query_tok.startswith(c_tok)):
-            best = max(best, 0.88)
+            if best < 0.88:
+                best = 0.88
             continue
-        if abs(q_len - c_len) > 3:
+        total_len = q_len + c_len
+        min_needed = 0.72 * total_len
+        # Mathematical upper bound: matching blocks cannot exceed min(q_len, c_len)
+        if 2 * (q_len if q_len < c_len else c_len) < min_needed:
             continue
-        ratio = SequenceMatcher(None, query_tok, c_tok).ratio()
+        # Mathematical upper bound: every matched char in query_tok must occur in c_tok
+        common_upper = 0
+        for ch in query_tok:
+            if ch in c_tok:
+                common_upper += 1
+        if 2 * common_upper < min_needed:
+            continue
+        sm = SequenceMatcher(None, query_tok, c_tok)
+        if sm.quick_ratio() < 0.72:
+            continue
+        ratio = sm.ratio()
         if ratio >= 0.72 and ratio > best:
             best = ratio
     return best

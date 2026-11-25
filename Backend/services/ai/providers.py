@@ -1172,7 +1172,7 @@ class DeterministicLocalProviderAdapter:
                     )
                 elif is_kpi_rank:
                     headline = (
-                        f"{e_name} ({e_id}{pos_txt}) leads {e_team} ({branch}) for {period} on {rank_metric_lbl} at "
+                        f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} on {rank_metric_lbl} at "
                         f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
                 else:
