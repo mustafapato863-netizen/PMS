@@ -470,6 +470,7 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'ER Dr': 'er-dr',
   Radiologist: 'radiologist',
   'Qlty&Case-Mngt': 'quality-case-management',
+  'Quality and management': 'quality-case-management',
 };
 
 export const TEAM_NAME_MAP: Record<string, string> = {
@@ -505,7 +506,7 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'quality-management': 'Quality Management',
   'er-dr': 'ER Dr',
   radiologist: 'Radiologist',
-  'quality-case-management': 'Qlty&Case-Mngt',
+  'quality-case-management': 'Quality and management',
 };
 
 export const TEAM_DB_NAME_MAP: Record<string, string> = {

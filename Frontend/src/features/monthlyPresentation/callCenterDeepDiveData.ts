@@ -87,7 +87,13 @@ export function normalizeFunctionSlug(rawSlugOrName: string): string {
   if (s === 'quality-management') return 'quality-management';
   if (s === 'er-dr' || s === 'erdr') return 'er-dr';
   if (s === 'radiology' || s === 'radiologist') return 'radiology';
-  if (s === 'quality-case-management' || s === 'qlty-and-case-mngt' || s === 'qlty-case-mngt' || s === 'qltyandcase-mngt') return 'quality-case-management';
+  if (
+    s === 'quality-case-management' ||
+    s === 'quality-and-management' ||
+    s === 'qlty-and-case-mngt' ||
+    s === 'qlty-case-mngt' ||
+    s === 'qltyandcase-mngt'
+  ) return 'quality-case-management';
   return s || 'call-center';
 }
 
@@ -121,7 +127,7 @@ export function canonicalFunctionNameFromSlug(functionSlug: string): string {
     case 'radiology':
       return 'Radiology';
     case 'quality-case-management':
-      return 'Qlty&Case-Mngt';
+      return 'Quality and management';
     default:
       return functionSlug
         .split('-')
@@ -2923,8 +2929,8 @@ export function buildFunctionDeepDiveFromRecords(
   const fnRecords = scopedRecords.filter((r) => {
     const recFn = executiveFunctionForTeam(r.team) ?? '';
     return (
-      slugifyIdentifier(recFn) === normSlug ||
-      slugifyIdentifier(r.team) === normSlug ||
+      normalizeFunctionSlug(recFn) === normSlug ||
+      normalizeFunctionSlug(r.team) === normSlug ||
       recFn.toLowerCase() === canonicalFn.toLowerCase()
     );
   });

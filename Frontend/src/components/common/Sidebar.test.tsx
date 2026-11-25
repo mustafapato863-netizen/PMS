@@ -138,15 +138,15 @@ describe('Sidebar team icons', () => {
 
   it('links the imported clinical teams to their October Employee dashboards', () => {
     const teams = [
-      ['ER Dr', 'er-dr'],
-      ['Radiologist', 'radiologist'],
-      ['Qlty&Case-Mngt', 'quality-case-management'],
+      ['ER Dr', 'ER Dr', 'er-dr'],
+      ['Radiologist', 'Radiologist', 'radiologist'],
+      ['Qlty&Case-Mngt', 'Quality and management', 'quality-case-management'],
     ];
     catalogState.scopes = teams.map(([team]) => ({ team, region: 'UAE', performance_level: 'Employee', position: '' }));
     renderSidebar('/executive?period=2026-10&region=UAE');
 
-    for (const [name, route] of teams) {
-      const link = screen.getByRole('link', { name });
+    for (const [, label, route] of teams) {
+      const link = screen.getByRole('link', { name: label });
       const destination = new URL(link.getAttribute('href')!, 'http://localhost');
       expect(destination.pathname).toBe(`/team/${route}`);
       expect(destination.searchParams.get('performance_level')).toBe('Employee');
@@ -215,16 +215,15 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     mockTeamConfigFetch();
   });
 
-  it.each(['Admin', 'Performance Team', 'General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Branch Director', 'Function Director'] as const)('shows Monthly Review next to Executive Summary for %s', (role) => {
+  it.each(['Admin', 'Performance Team', 'General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Branch Director', 'Function Director'] as const)('shows Executive Summary without a separate Monthly Review link for %s', (role) => {
     authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [] };
     renderSidebar();
-    const link = screen.getByRole('link', { name: 'Monthly Review' });
-    expect(link.getAttribute('href')).toMatch(/^\/monthly-presentation/);
-    const names = screen.getAllByRole('link').map((el) => el.textContent?.trim());
-    expect(names.indexOf('Monthly Review')).toBe(names.indexOf('Executive Summary') + 1);
+    const link = screen.getByRole('link', { name: 'Executive Summary' });
+    expect(link.getAttribute('href')).toMatch(/^\/executive/);
+    expect(screen.queryByRole('link', { name: 'Monthly Review' })).not.toBeInTheDocument();
   });
 
-  it.each(['Function Viewer', 'Agent', 'Employee'] as const)('hides Monthly Review for %s, the same roles that do not see Executive Summary', (role) => {
+  it.each(['Function Viewer', 'Agent', 'Employee'] as const)('hides Executive Summary and Monthly Review for %s', (role) => {
     authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [], employee_id: 'e-1' };
     renderSidebar();
     expect(screen.queryByRole('link', { name: 'Monthly Review' })).not.toBeInTheDocument();

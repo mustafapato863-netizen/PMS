@@ -145,8 +145,17 @@ function aliasByBusiness(name: string | null | undefined): CountryAlias | null {
   return COUNTRY_ALIASES.find((alias) => alias.routeId === route || exactKey(alias.business) === key) ?? null;
 }
 
+const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  'qlty&case-mngt': 'Quality and management',
+  'qltyandcase-mngt': 'Quality and management',
+  'qlty-and-case-mngt': 'Quality and management',
+  'qlty-case-mngt': 'Quality and management',
+};
+
 /** Business name. Stored source names such as "Coding EGY" stay out of the label. */
 export function businessTeamName(name: string | null | undefined): string {
+  const override = DISPLAY_NAME_OVERRIDES[exactKey(name)];
+  if (override) return override;
   return aliasByIdentity(name)?.alias.business ?? aliasByBusiness(name)?.business ?? String(name ?? '').trim();
 }
 

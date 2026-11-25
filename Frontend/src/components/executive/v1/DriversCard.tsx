@@ -2,7 +2,7 @@ import { Activity, TrendingDown, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveDriver, ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtKpiDelta, fmtKpiValue, fmtSigned, kpiChangeDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
-import { driverImpact } from './execModel';
+import { displayFunctionName, driverImpact } from './execModel';
 import { comparisonName, coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { DirectionTag, ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
@@ -22,7 +22,10 @@ function DriverRow({ driver, side, metric, max, note }: { driver: ExecutiveDrive
   const changeDelta = kpiChangeDelta(driver);
   const barColor = side === 'negative' ? 'var(--insights-negative)' : 'var(--insights-positive)';
   const width = impact === null || max <= 0 ? 0 : Math.max(6, Math.round((Math.abs(impact) / max) * 100));
-  const sub = [driver.team, driver.function].filter(Boolean).join(' · ');
+  const sub = [driver.team, driver.function]
+    .filter((value): value is string => Boolean(value))
+    .map(displayFunctionName)
+    .join(' · ');
   return (
     <li className="flex flex-col gap-[6px]" data-testid={`driver-${side}`}>
       <div className="flex items-start gap-[10px]">

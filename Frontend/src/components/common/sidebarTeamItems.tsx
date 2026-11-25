@@ -54,7 +54,7 @@ export const getTeamIcon = (teamName: string) => {
   if (norm === 'it') return <Monitor size={17} />;
   if (norm === 'administration' || norm.includes('offshore admin')) return <Building2 size={17} />;
   if (norm === 'human resources') return <Users size={17} />;
-  if (norm.includes('quality management')) return <ShieldCheck size={17} />;
+  if (norm.includes('quality management') || norm === 'quality and management' || norm === 'qlty&case-mngt') return <ShieldCheck size={17} />;
   if (norm.includes('nursing') || norm.includes('nurse')) return <Syringe size={17} />;
   if (norm.includes('re-submission')) return <RefreshCw size={17} />;
   if (norm.includes('submission')) return <Send size={17} />;
@@ -76,5 +76,5 @@ export const TEAM_ITEMS = [
   { name: 'Pharmacy', path: teamPath('Pharmacy'), icon: <Pill size={17} />, team: 'Pharmacy', region: 'uae' },
   { name: 'ER Dr', path: teamPath('ER Dr'), icon: <Stethoscope size={17} />, team: 'ER Dr', region: 'uae', requiresData: true },
   { name: 'Radiologist', path: teamPath('Radiologist'), icon: <ScanLine size={17} />, team: 'Radiologist', region: 'uae', requiresData: true },
-  { name: 'Qlty&Case-Mngt', path: teamPath('Qlty&Case-Mngt'), icon: <ShieldCheck size={17} />, team: 'Qlty&Case-Mngt', region: 'uae', requiresData: true },
+  { name: 'Quality and management', path: teamPath('Qlty&Case-Mngt'), icon: <ShieldCheck size={17} />, team: 'Qlty&Case-Mngt', region: 'uae', requiresData: true },
 ] as const;

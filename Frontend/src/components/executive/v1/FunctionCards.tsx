@@ -8,7 +8,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FUNCTION_STYLE, formatShare } from './execModel';
+import { FUNCTION_STYLE, displayFunctionName, formatShare } from './execModel';
 import type {
   ExecutiveFunction,
   ExecutiveFunctionCard,
@@ -64,7 +64,7 @@ function FunctionLink({
   return (
     <Link
       to={reviewHref ?? functionHref}
-      aria-label={`View ${cardFunction} function`}
+      aria-label={`View ${displayFunctionName(cardFunction)} function`}
       className="group/btn inline-flex min-h-[28px] shrink-0 items-center justify-center gap-[4px] rounded-[9px] border px-[10px] py-[4px] text-[11.5px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
       style={{
         background: style.bg,
@@ -157,6 +157,7 @@ const FunctionCard = memo(function FunctionCard({
   functionReviewHref?: (fn: ExecutiveFunction) => string | undefined;
 }) {
   const reviewHref = functionReviewHref?.(card.function);
+  const functionLabel = displayFunctionName(card.function);
   const tone = getGradeTone(card.score);
   const style = FUNCTION_STYLE[card.function];
   const changeTone = scoreTone(card.change);
@@ -168,7 +169,7 @@ const FunctionCard = memo(function FunctionCard({
 
   return (
     <article
-      aria-label={`${card.function} function`}
+      aria-label={`${functionLabel} function`}
       onClick={
         cardOpensInline
           ? (event) => {
@@ -202,19 +203,19 @@ const FunctionCard = memo(function FunctionCard({
               <button
                 type="button"
                 className="truncate text-left text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
-                aria-label={`Open ${card.function}`}
+                aria-label={`Open ${functionLabel}`}
                 onClick={() => onSelectFunction(card.function)}
               >
-                {card.function}
+                {functionLabel}
               </button>
             ) : (
               <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
                 {reviewHref ? (
                   <Link to={reviewHref} data-card-primary-link="" className="hover:underline">
-                    {card.function}
+                    {functionLabel}
                   </Link>
                 ) : (
-                  card.function
+                  functionLabel
                 )}
               </h3>
             )}
@@ -280,7 +281,7 @@ const FunctionCard = memo(function FunctionCard({
 
       {!classic && card.lowest_team && (
         <p className="truncate text-[11px] leading-[1.4] text-[var(--text-secondary)]">
-          Lowest team · {card.lowest_team.team} at {card.lowest_team.score.toFixed(1)}%
+          Lowest team · {displayFunctionName(card.lowest_team.team)} at {card.lowest_team.score.toFixed(1)}%
           {card.lowest_team.score_basis === 'leader_scorecard' ? ' · Leader scorecard' : ''}
           {card.lowest_team.kpi ? ` · ${card.lowest_team.kpi}` : ''}
         </p>
@@ -311,16 +312,16 @@ const FunctionCard = memo(function FunctionCard({
             <span
               aria-hidden="true"
               className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
-              title={`Lowest team: ${card.lowest_team.team} (${card.lowest_team.score.toFixed(1)}%)`}
+              title={`Lowest team: ${displayFunctionName(card.lowest_team.team)} (${card.lowest_team.score.toFixed(1)}%)`}
             >
-              Low: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)
+              Low: {displayFunctionName(card.lowest_team.team)} ({card.lowest_team.score.toFixed(0)}%)
             </span>
           ) : null}
         </div>
       )}
 
       {/* Zone 4: Fixed-Height 6-Month Sparkline Chart */}
-      <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
+      <FunctionTrendChart color={trendColor} title={`${functionLabel} score`} points={card.trend} />
 
       {/* Zone 5: Uniform Bottom-Aligned Footer (Figma split: teams/status on left, Open → pill on right) */}
       {showTeamButtons || showTeamDump || ((linkable || reviewHref) && !onSelectFunction) ? (
@@ -334,7 +335,7 @@ const FunctionCard = memo(function FunctionCard({
                   className="rounded-full border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] px-[7px] py-[2px] text-[11px] font-semibold text-[var(--insights-heading)] hover:underline"
                   onClick={() => onSelectTeam(team, card.function)}
                 >
-                  {team}
+                  {displayFunctionName(team)}
                 </button>
               ))}
             </div>
@@ -343,9 +344,9 @@ const FunctionCard = memo(function FunctionCard({
               {showTeamDump ? (
                 <p
                   className="min-w-0 flex-1 truncate text-[11.5px] font-medium leading-[1.35] text-[var(--text-secondary)]"
-                  title={card.teams.join(' · ')}
+                  title={card.teams.map(displayFunctionName).join(' · ')}
                 >
-                  {card.teams.join(' · ')}
+                  {card.teams.map(displayFunctionName).join(' · ')}
                 </p>
               ) : (
                 <span className="min-w-0 flex-1" />

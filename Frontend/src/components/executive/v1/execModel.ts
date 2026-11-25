@@ -14,6 +14,10 @@ import { presentationTeamName } from '../../../features/team/countryTeamIdentity
  * ("Call Center", "RCM"); label them explicitly as support teams so they are
  * never mistaken for the whole parent function.
  */
+export function displayFunctionName(name: string): string {
+  return presentationTeamName(name);
+}
+
 export function executiveTeamDisplayName(team: string, region?: string | null): string {
   const normalized = String(team ?? '').trim().toLowerCase();
   if (normalized === 'call center') return 'Call Center Support Team';

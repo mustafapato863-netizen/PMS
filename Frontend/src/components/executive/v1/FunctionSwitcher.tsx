@@ -1,4 +1,5 @@
 import type { ExecutiveFunction } from '../../../features/executive/types';
+import { displayFunctionName } from './execModel';
 
 /** Function Summary header switcher (Figma 48:3): segmented over the viewer's functions. */
 /** `assigned`: Function Viewer (functions come from its assignment; the first is its primary). */
@@ -22,7 +23,7 @@ export default function FunctionSwitcher({ functions, value, onChange, assigned 
               onClick={() => onChange(fn)}
               className={`min-h-[28px] max-w-full flex-[1_1_auto] whitespace-nowrap rounded-[6px] px-[10px] text-[12px] font-semibold transition-colors ${active ? 'bg-[var(--insights-accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--insights-accent-soft)]'}`}
             >
-              {fn}
+              {displayFunctionName(fn)}
             </button>
           );
         })}

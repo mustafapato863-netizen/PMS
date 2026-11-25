@@ -166,14 +166,14 @@ _ER_RETAINED_COLUMNS: list[str] = [
     "No of LAMA Retained",
 ]
 
-# Nominal weights for ER Dr
+# Nominal weights for ER Dr (workbook columns store 0-100% KPI achievement scores)
 _ER_NOMINAL_WEIGHTS: dict[str, tuple[str, float]] = {
-    "admission_rate": ("Admission rate", 0.40),
-    "revisit_rate": ("24-hour revisit rate", 0.10),
-    "time_to_assessment": ("Time to initial patient assessment", 0.15),
-    "satisfaction": ("Satisfaction", 0.15),
-    "documentation": ("Documentation", 0.10),
-    "lama_retention": ("LAMA retention", 0.10),
+    "admission_rate": ("Admission Rate Score", 0.40),
+    "revisit_rate": ("24-hour Re-visit Score", 0.10),
+    "time_to_assessment": ("Initial Assessment Time Score", 0.15),
+    "satisfaction": ("Satisfaction Score", 0.15),
+    "documentation": ("Documentation Score", 0.10),
+    "lama_retention": ("LAMA Retention Score", 0.10),
 }
 
 # Deduction KPIs (subtracted after normalization)
@@ -312,12 +312,12 @@ def score_er_dr(raw: Mapping[str, Any]) -> tuple[float, str, list[dict[str, Any]
 # ---------------------------------------------------------------------------
 
 _RAD_NOMINAL_WEIGHTS: dict[str, tuple[str, float]] = {
-    "tat": ("TAT", 0.20),
-    "productivity": ("Productivity", 0.35),
-    "report_quality": ("Report Quality", 0.10),
-    "imaging_protocol": ("Imaging Protocol", 0.10),
-    "critical_findings": ("Critical Findings", 0.15),
-    "patient_waiting_time": ("Patient Waiting Time", 0.10),
+    "tat": ("TAT Score", 0.20),
+    "productivity": ("Productivity Score", 0.35),
+    "report_quality": ("Report Quality Score", 0.10),
+    "imaging_protocol": ("Imaging Protocol Score", 0.10),
+    "critical_findings": ("Critical Findings Score", 0.15),
+    "patient_waiting_time": ("Patient Waiting Time Score", 0.10),
 }
 
 # Map from internal key to possible workbook column names
@@ -547,43 +547,43 @@ def score_qlty_case_mngt(raw: Mapping[str, Any]) -> tuple[float, str, list[dict[
     if cm_blank and revenue is not None and rej_blank:
         weights = {"audit": 0.30, "revenue_impact": 0.70}
         if weights["audit"] > 0:
-            kpi_values.append(_kpi_entry("audit", "Audit compliance", weights["audit"], audit_val))
+            kpi_values.append(_kpi_entry("audit", "Audit Compliance Score", weights["audit"], audit_val))
             weighted_sum += audit_val * weights["audit"]
         if weights["revenue_impact"] > 0:
-            kpi_values.append(_kpi_entry("revenue_impact", "Revenue impact", weights["revenue_impact"], rev_val))
+            kpi_values.append(_kpi_entry("revenue_impact", "Revenue Impact Score", weights["revenue_impact"], rev_val))
             weighted_sum += rev_val * weights["revenue_impact"]
 
     # Path 2: Quality with AF = 0
     elif case_mgmt is not None and case_mgmt == 0.0:
         weights = {"audit": 0.40, "rejection": 0.60}
         if weights["audit"] > 0:
-            kpi_values.append(_kpi_entry("audit", "Audit compliance", weights["audit"], audit_val))
+            kpi_values.append(_kpi_entry("audit", "Audit Compliance Score", weights["audit"], audit_val))
             weighted_sum += audit_val * weights["audit"]
         if weights["rejection"] > 0:
-            kpi_values.append(_kpi_entry("rejection", "Rejection rate", weights["rejection"], rej_val))
+            kpi_values.append(_kpi_entry("rejection", "Rejection Score", weights["rejection"], rej_val))
             weighted_sum += rej_val * weights["rejection"]
 
     # Path 3: AF nonzero, AD = 0 → Rejection 60% + Case Management 40%
     elif case_mgmt is not None and case_mgmt != 0.0 and (audit is None or audit == 0.0):
         weights = {"rejection": 0.60, "case_management": 0.40}
         if weights["rejection"] > 0:
-            kpi_values.append(_kpi_entry("rejection", "Rejection rate", weights["rejection"], rej_val))
+            kpi_values.append(_kpi_entry("rejection", "Rejection Score", weights["rejection"], rej_val))
             weighted_sum += rej_val * weights["rejection"]
         if weights["case_management"] > 0:
-            kpi_values.append(_kpi_entry("case_management", "Case management", weights["case_management"], cm_val))
+            kpi_values.append(_kpi_entry("case_management", "Case Management Score", weights["case_management"], cm_val))
             weighted_sum += cm_val * weights["case_management"]
 
     # Path 4: Full formula — Audit 30% + Rejection 50% + Case Management 20%
     elif case_mgmt is not None:
         weights = {"audit": 0.30, "rejection": 0.50, "case_management": 0.20}
         if weights["audit"] > 0:
-            kpi_values.append(_kpi_entry("audit", "Audit compliance", weights["audit"], audit_val))
+            kpi_values.append(_kpi_entry("audit", "Audit Compliance Score", weights["audit"], audit_val))
             weighted_sum += audit_val * weights["audit"]
         if weights["rejection"] > 0:
-            kpi_values.append(_kpi_entry("rejection", "Rejection rate", weights["rejection"], rej_val))
+            kpi_values.append(_kpi_entry("rejection", "Rejection Score", weights["rejection"], rej_val))
             weighted_sum += rej_val * weights["rejection"]
         if weights["case_management"] > 0:
-            kpi_values.append(_kpi_entry("case_management", "Case management", weights["case_management"], cm_val))
+            kpi_values.append(_kpi_entry("case_management", "Case Management Score", weights["case_management"], cm_val))
             weighted_sum += cm_val * weights["case_management"]
 
     else:
@@ -592,10 +592,10 @@ def score_qlty_case_mngt(raw: Mapping[str, Any]) -> tuple[float, str, list[dict[
             # Use Path 2 weights: Audit 40% + Rejection 60%
             weights = {"audit": 0.40, "rejection": 0.60}
             if weights["audit"] > 0:
-                kpi_values.append(_kpi_entry("audit", "Audit compliance", weights["audit"], audit_val))
+                kpi_values.append(_kpi_entry("audit", "Audit Compliance Score", weights["audit"], audit_val))
                 weighted_sum += audit_val * weights["audit"]
             if weights["rejection"] > 0:
-                kpi_values.append(_kpi_entry("rejection", "Rejection rate", weights["rejection"], rej_val))
+                kpi_values.append(_kpi_entry("rejection", "Rejection Score", weights["rejection"], rej_val))
                 weighted_sum += rej_val * weights["rejection"]
         else:
             return None

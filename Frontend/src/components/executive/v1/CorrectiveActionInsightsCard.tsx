@@ -8,6 +8,7 @@ import {
 import { actionAnalyticsStats } from '../../../features/executive/actionAnalytics';
 import type { ExecutiveCorrectiveActions, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
+import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
 import { summarizeRootCauses } from '../../../utils/rootCauseInsights';
 import { ExecCard, ExecCardHeader, Footnote, SoftEmpty, SoftLink } from './ExecPrimitives';
 
@@ -167,15 +168,15 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
           <select id={selectId} value={effectiveTeam} onChange={(event) => setSelectedTeam(event.target.value)}
             className="min-h-[40px] w-full max-w-[320px] rounded-[8px] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-[10px] py-[8px] text-[12px] text-[var(--text-primary)] transition-colors hover:border-[var(--insights-accent-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]">
             <option value="">All teams in this scope</option>
-            {teams.map((team) => <option key={team} value={team}>{team}</option>)}
+            {teams.map((team) => <option key={team} value={team}>{presentationTeamName(team)}</option>)}
           </select>
         </div>
         {stats.total ? <div className="grid gap-[24px] border-t border-[var(--insights-row-border)] pt-[16px] md:grid-cols-2 xl:grid-cols-4">
           <RankedActions title="Most common action types" rows={stats.types} total={stats.total} empty="No action types recorded." testId="action-type-rank" />
-          <RankedActions title="Teams with the most actions" rows={stats.teams} total={stats.total} empty="No teams recorded." testId="action-team-rank" />
-          <RankedActions title={effectiveTeam ? `Most repeated KPIs · ${effectiveTeam}` : 'Most repeated KPIs'} rows={stats.kpis.slice(0, 5)} total={stats.total}
+          <RankedActions title="Teams with the most actions" rows={stats.teams.map((row) => ({ ...row, label: presentationTeamName(row.label) }))} total={stats.total} empty="No teams recorded." testId="action-team-rank" />
+          <RankedActions title={effectiveTeam ? `Most repeated KPIs · ${presentationTeamName(effectiveTeam)}` : 'Most repeated KPIs'} rows={stats.kpis.slice(0, 5)} total={stats.total}
             empty="No KPI mentions or linked KPIs recorded for these actions." testId="action-kpi-rank" />
-          <RankedActions title={effectiveTeam ? `Most common reasons · ${effectiveTeam}` : 'Most common reasons'} rows={reasonRows} total={stats.total}
+          <RankedActions title={effectiveTeam ? `Most common reasons · ${presentationTeamName(effectiveTeam)}` : 'Most common reasons'} rows={reasonRows} total={stats.total}
             empty="No root causes recorded for these actions." testId="action-reason-rank" />
         </div> : <SoftEmpty>No corrective actions recorded for {period} in this scope.</SoftEmpty>}
         <Footnote>

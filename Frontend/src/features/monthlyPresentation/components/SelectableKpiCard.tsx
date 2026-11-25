@@ -49,6 +49,39 @@ const TONE: Record<KpiSelectionStatus, { pill: string; value: string; bar: strin
   },
 };
 
+const CLINICAL_SCORE_LABEL_OVERRIDES: Record<string, string> = {
+  'rejection rate': 'Rejection Score',
+  '24-hour revisit rate': '24-hour Re-visit Score',
+  '24-hour re-visit rate': '24-hour Re-visit Score',
+  'time to initial patient assessment': 'Initial Assessment Time Score',
+  'avg time to initial patient assessment': 'Initial Assessment Time Score',
+  'tat': 'TAT Score',
+  'patient waiting time': 'Patient Waiting Time Score',
+  'audit compliance': 'Audit Compliance Score',
+  'case management': 'Case Management Score',
+  'revenue impact': 'Revenue Impact Score',
+};
+
+function resolveAchievementScoreDisplay(
+  title: string,
+  betterDirection: KpiBetterDirection,
+  target: string,
+): { displayTitle: string; isAchievementScore: boolean } {
+  const trimmedTarget = target.trim();
+  const isFullScoreTarget = trimmedTarget === '100%' || trimmedTarget === '100.0%';
+  const normalizedTitle = title.trim().toLowerCase();
+  if (betterDirection === 'higher' && isFullScoreTarget) {
+    const mapped = CLINICAL_SCORE_LABEL_OVERRIDES[normalizedTitle];
+    if (mapped) {
+      return { displayTitle: mapped, isAchievementScore: true };
+    }
+    if (/\b(score|achievement)\s*$/i.test(title.trim())) {
+      return { displayTitle: title, isAchievementScore: true };
+    }
+  }
+  return { displayTitle: title, isAchievementScore: false };
+}
+
 export function SelectableKpiCard({
   selected,
   status,
@@ -96,6 +129,11 @@ export function SelectableKpiCard({
   const cappedPct = Math.min(100, Math.max(0, Number.isFinite(achievementPct) ? achievementPct : 0));
   const interactive = Boolean(onSelect) && !accessory && !children;
   const className = selectableKpiCardClass(selected);
+  const { displayTitle, isAchievementScore } = resolveAchievementScoreDisplay(
+    title,
+    betterDirection,
+    target,
+  );
 
   const body = (
     <>
@@ -103,11 +141,15 @@ export function SelectableKpiCard({
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-slate-950" title={titleTooltip || title}>
-            {title}
+          <p className="truncate text-[13px] font-semibold text-slate-950" title={titleTooltip || displayTitle}>
+            {displayTitle}
           </p>
           <p className="mt-0.5 text-[11px] text-slate-500">
-            {betterDirection === 'lower' ? 'Lower is better' : 'Higher is better'}
+            {isAchievementScore
+              ? 'KPI Achievement Score'
+              : betterDirection === 'lower'
+              ? 'Lower is better'
+              : 'Higher is better'}
           </p>
         </div>
         <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold ${tone.pill}`}>{status}</span>
@@ -117,7 +159,8 @@ export function SelectableKpiCard({
         {actual}
       </p>
       <p className="mt-1.5 text-[12px] text-slate-500">
-        Target <span className="font-medium text-slate-800 tabular-nums">{target}</span>
+        {isAchievementScore ? 'Full Score ' : 'Target '}
+        <span className="font-medium text-slate-800 tabular-nums">{target}</span>
       </p>
 
       <div className="mt-3 flex items-center gap-2">
@@ -125,7 +168,7 @@ export function SelectableKpiCard({
           <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${cappedPct}%` }} />
         </div>
         <span className="shrink-0 text-[11px] font-medium text-slate-600 tabular-nums">
-          {cappedPct.toFixed(1)}% of target
+          {cappedPct.toFixed(1)}% {isAchievementScore ? 'achieved' : 'of target'}
         </span>
       </div>
 

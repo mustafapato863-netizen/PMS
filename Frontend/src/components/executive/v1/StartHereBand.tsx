@@ -8,7 +8,7 @@ import { getGradeTone } from '../../../constants/grades';
 import { GradePill, ScoreBar, ScoreText, StatLabel, ToneText } from './ExecPrimitives';
 import FunctionTrendChart from './FunctionTrendChart';
 import { FunctionCohorts, FunctionIcon } from './FunctionCards';
-import { FUNCTION_STYLE, formatShare, heroDecision } from './execModel';
+import { FUNCTION_STYLE, displayFunctionName, formatShare, heroDecision } from './execModel';
 
 function functionHref(cardFunction: ExecutiveFunction, searchParams: URLSearchParams): string {
   const next = new URLSearchParams();
@@ -87,10 +87,10 @@ export default function StartHereBand({ summary, linkable }: { summary: Executiv
         {linkable && card && (
           <Link
             to={functionHref(card.function, searchParams)}
-            aria-label={`Review ${card.function} summary`}
+            aria-label={`Review ${displayFunctionName(card.function)} summary`}
             className="inline-flex min-h-[44px] items-center justify-center gap-[8px] rounded-[10px] bg-[var(--insights-accent)] px-[12px] text-[13px] font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)]"
           >
-            Review {card.function} <ArrowRight aria-hidden="true" className="size-[16px]" />
+            Review {displayFunctionName(card.function)} <ArrowRight aria-hidden="true" className="size-[16px]" />
           </Link>
         )}
       </div>
@@ -101,7 +101,7 @@ export default function StartHereBand({ summary, linkable }: { summary: Executiv
       )}
       {card && (
         <div className="lg:col-span-2">
-          <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
+          <FunctionTrendChart color={trendColor} title={`${displayFunctionName(card.function)} score`} points={card.trend} />
         </div>
       )}
     </section>

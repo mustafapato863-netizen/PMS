@@ -30,7 +30,7 @@ it('links each sidebar team item to its canonical team page', () => {
     ['Pharmacy', '/team/pharmacy'],
     ['ER Dr', '/team/er-dr'],
     ['Radiologist', '/team/radiologist'],
-    ['Qlty&Case-Mngt', '/team/quality-case-management'],
+    ['Quality and management', '/team/quality-case-management'],
   ]);
 });
 

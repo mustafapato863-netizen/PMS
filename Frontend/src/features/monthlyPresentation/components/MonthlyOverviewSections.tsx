@@ -23,6 +23,7 @@ import {
   ToneText,
 } from '../../../components/executive/v1/ExecPrimitives';
 import { FUNCTION_STYLE, formatShare } from '../../../components/executive/v1/execModel';
+import { presentationTeamName } from '../../team/countryTeamIdentity';
 import { gradeGradientVar } from '../../../components/executive/v1/gradeGradient';
 import FunctionTrendChart from '../../../components/executive/v1/FunctionTrendChart';
 import ScoreTrendChart from '../../../components/executive/v1/ScoreTrendChart';
@@ -909,7 +910,7 @@ export function FunctionsOverviewSection({
                       />
                     </span>
                     <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] group-hover/fcard:underline">
-                      {fn.functionName}
+                      {presentationTeamName(fn.functionName)}
                     </h3>
                   </div>
                   {isBlueB ? (
@@ -1008,9 +1009,9 @@ export function FunctionsOverviewSection({
                     <span
                       aria-hidden="true"
                       className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
-                      title={`Lowest team: ${fn.lowestTeam.team} (${fn.lowestTeam.score.toFixed(1)}%)`}
+                      title={`Lowest team: ${presentationTeamName(fn.lowestTeam.team)} (${fn.lowestTeam.score.toFixed(1)}%)`}
                     >
-                      Low: {fn.lowestTeam.team} ({fn.lowestTeam.score.toFixed(0)}%)
+                      Low: {presentationTeamName(fn.lowestTeam.team)} ({fn.lowestTeam.score.toFixed(0)}%)
                     </span>
                   )}
                 </div>
@@ -1021,7 +1022,7 @@ export function FunctionsOverviewSection({
                 <div className="w-full">
                   <FunctionTrendChart
                     color={trendColor}
-                    title={`${fn.functionName} score`}
+                    title={`${presentationTeamName(fn.functionName)} score`}
                     points={fn.trend ?? []}
                   />
                 </div>
@@ -1031,9 +1032,9 @@ export function FunctionsOverviewSection({
               <div className="mt-auto flex w-full items-center justify-between gap-[8px] border-t border-[var(--insights-row-border)] pt-[9px]">
                 <p
                   className="min-w-0 flex-1 truncate text-[11.5px] font-medium leading-[1.35] text-[var(--text-secondary)]"
-                  title={fn.teamsList || fn.functionName}
+                  title={fn.teamsList || presentationTeamName(fn.functionName)}
                 >
-                  {fn.teamsList || fn.functionName}
+                  {fn.teamsList || presentationTeamName(fn.functionName)}
                 </p>
                 <span
                   className="inline-flex min-h-[28px] shrink-0 items-center justify-center gap-[4px] rounded-[9px] border px-[10px] py-[4px] text-[11.5px] font-bold transition-all duration-200 group-hover/fcard:brightness-95"

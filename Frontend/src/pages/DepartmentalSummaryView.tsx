@@ -50,7 +50,9 @@ const PARAM: Record<keyof PageFilters, string> = {
   subTeam: 'sub_team',
 };
 
-const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: value }));
+import { presentationTeamName } from '../features/team/countryTeamIdentity';
+
+const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: presentationTeamName(value) }));
 
 function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'function'> }) {
   const { role } = useUserRole();

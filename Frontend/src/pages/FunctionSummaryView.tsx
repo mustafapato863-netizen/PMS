@@ -35,7 +35,9 @@ const PARAM: Record<Exclude<keyof PageFilters, 'teamFunction'>, string> = {
   subTeam: 'sub_team',
 };
 
-const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: value }));
+import { presentationTeamName } from '../features/team/countryTeamIdentity';
+
+const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: presentationTeamName(value) }));
 
 function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: ExecutiveFunction[] }) {
   const { role } = useUserRole();
@@ -168,7 +170,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
       team={fn === 'Marketing' ? filters.position ?? '' : filters.team ?? ''}
       teamOptions={toOptions(fn === 'Marketing' ? options.roles ?? [] : summaryTeamOptions(options.teams))}
       teamLabel={fn === 'Marketing' ? 'Roles' : 'Teams'}
-      teamAllLabel={fn === 'Marketing' ? 'All Marketing roles' : `All ${fn} teams`}
+      teamAllLabel={fn === 'Marketing' ? 'All Marketing roles' : `All ${presentationTeamName(fn)} teams`}
       onTeamChange={(value) => update(fn === 'Marketing' ? { position: value, team: undefined, subTeam: undefined } : { team: value, subTeam: undefined })}
       subTeam={filters.subTeam ?? ''}
       subTeamOptions={toOptions(preApprovalsSubTeamOptions(options.teams))}
