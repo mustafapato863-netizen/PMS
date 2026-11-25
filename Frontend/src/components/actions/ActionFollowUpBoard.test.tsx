@@ -118,4 +118,39 @@ describe('ActionFollowUpBoard', () => {
     expect(onDeleteAction).toHaveBeenCalledTimes(2);
     expect(onDeleteAction).toHaveBeenLastCalledWith(overdueAction);
   });
+
+  it('formats due dates cleanly, expands long actions, and supports sorting', async () => {
+    const user = userEvent.setup();
+    const longText =
+      'We will be working with the team member again on rework and arrange additional coaching sessions to revisit the brand guidelines and clarify every requirement in detail.';
+    const actions: PMSAction[] = [
+      { ...overdueAction, id: 'a-long', employee_name: 'Zara Member', action_text: longText, due_date: '2026-11-01', days_to_due: -24 },
+      { ...overdueAction, id: 'a-first', employee_name: 'Asser Mohamed', action_text: 'Short coaching check-in', due_date: '2026-11-15', days_to_due: 5, follow_up_state: 'due_soon', is_overdue: false },
+    ];
+    render(
+      <MemoryRouter>
+        <ActionFollowUpBoard
+          actions={actions}
+          summary={{ ...EMPTY_FOLLOW_UP_SUMMARY, overdue: 1, due_soon: 1, open: 2 }}
+          canEdit
+          owners={[{ id: 'owner-1', name: 'Ada Owner' }]}
+          teams={['Inbound']}
+          months={['September']}
+          filters={{}}
+          onFiltersChange={vi.fn()}
+          onStatusChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText('Nov 1, 2026').length).toBeGreaterThan(0);
+    const showMoreButtons = screen.getAllByRole('button', { name: /Show more/i });
+    await user.click(showMoreButtons[0]);
+    expect(screen.getAllByRole('button', { name: /Show less/i }).length).toBeGreaterThan(0);
+
+    const sortSelect = screen.getByLabelText('Sort follow-up actions');
+    await user.selectOptions(sortSelect, 'employee');
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows[0]).toHaveTextContent('Asser Mohamed');
+  });
 });

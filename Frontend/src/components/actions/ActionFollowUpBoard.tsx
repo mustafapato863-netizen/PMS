@@ -1,6 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CalendarDays, RefreshCw, Search, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowUpDown,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  RefreshCw,
+  Search,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import CustomDropdown from '../common/CustomDropdown';
 import { useActionOwners, useActionStore, useFollowUp, useUpdateActionStatus } from '../../hooks/useActionStore';
 import { useUserRole } from '../../context/RoleContext';
@@ -11,7 +22,7 @@ import { EMPTY_FOLLOW_UP_SUMMARY, type FollowUpFilters, type FollowUpSummary } f
 import { executiveFunctionForTeam } from '../../features/executive/functions';
 
 export type { FollowUpFilters, FollowUpSummary };
-export { EMPTY_FOLLOW_UP_SUMMARY };;
+export { EMPTY_FOLLOW_UP_SUMMARY };
 
 const STATE_OPTIONS = [
   { value: '', label: 'All states' },
@@ -22,6 +33,17 @@ const STATE_OPTIONS = [
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
+
+type SortMode = 'urgency' | 'due_date' | 'employee' | 'status';
+
+const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
+  { value: 'urgency', label: 'Sort: Most urgent' },
+  { value: 'due_date', label: 'Sort: Due date' },
+  { value: 'employee', label: 'Sort: Employee A–Z' },
+  { value: 'status', label: 'Sort: Status' },
+];
+
+const LONG_ACTION_THRESHOLD = 140;
 
 interface ActionFollowUpBoardProps {
   actions: PMSAction[];
@@ -41,10 +63,72 @@ interface ActionFollowUpBoardProps {
 }
 
 function badgeClass(action: PMSAction): string {
-  if (action.follow_up_state === 'overdue' || action.is_overdue) return 'bg-rose-500/10 text-rose-700 dark:text-rose-300';
-  if (action.follow_up_state === 'due_soon') return 'bg-amber-500/10 text-amber-700 dark:text-amber-300';
-  if (action.follow_up_state === 'completed') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
-  return 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]';
+  if (action.follow_up_state === 'overdue' || action.is_overdue) {
+    return 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300';
+  }
+  if (action.follow_up_state === 'due_soon') {
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300';
+  }
+  if (action.follow_up_state === 'completed' || action.status === 'Completed') {
+    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  }
+  return 'border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] text-[var(--text-secondary)]';
+}
+
+function rowAccentClass(action: PMSAction): string {
+  if (action.follow_up_state === 'overdue' || action.is_overdue) return 'border-l-[3px] border-l-rose-500/80';
+  if (action.follow_up_state === 'due_soon') return 'border-l-[3px] border-l-amber-400/80';
+  if (action.follow_up_state === 'completed' || action.status === 'Completed') return 'border-l-[3px] border-l-emerald-500/65';
+  return 'border-l-[3px] border-l-transparent';
+}
+
+function actionTypeBadgeClass(type?: string | null): string {
+  const normalized = String(type || '').trim().toLowerCase();
+  if (normalized.includes('pip') || normalized.includes('escalat')) {
+    return 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300';
+  }
+  if (normalized.includes('warn')) {
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300';
+  }
+  if (normalized.includes('train')) {
+    return 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300';
+  }
+  if (normalized.includes('coach')) {
+    return 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+  }
+  if (normalized.includes('recogn')) {
+    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+  }
+  return 'border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] text-[var(--text-secondary)]';
+}
+
+function initialsFor(name?: string | null): string {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'PL';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function formatHumanDate(isoDate?: string | null): string {
+  if (!isoDate) return 'No due date';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate.trim());
+  if (!match) return isoDate;
+  const year = Number(match[1]);
+  const monthIdx = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthName = months[monthIdx];
+  if (!monthName || !Number.isFinite(day)) return isoDate;
+  return `${monthName} ${day}, ${year}`;
+}
+
+function urgencyRank(action: PMSAction): number {
+  if (action.status === 'Completed') return 4;
+  if (action.status === 'Cancelled') return 5;
+  if (action.follow_up_state === 'overdue' || action.is_overdue) return 0;
+  if (action.follow_up_state === 'due_soon') return 1;
+  if (action.due_date) return 2;
+  return 3;
 }
 
 function SummaryChip({ label, value, tone, bg, border, accent }: { label: string; value: string | number; tone: string; bg?: string; border?: string; accent?: string }) {
@@ -55,43 +139,125 @@ function SummaryChip({ label, value, tone, bg, border, accent }: { label: string
     >
       {accent && <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[2.5px]" style={{ background: accent }} />}
       <p className="text-xs font-bold uppercase tracking-wide">{label}</p>
-      <p className="mt-1 text-xl font-black text-[var(--text-primary)]">{value}</p>
+      <p className="mt-1 text-xl font-black text-[var(--text-primary)] tabular-nums">{value}</p>
     </article>
   );
 }
 
 function DueBadge({ action }: { action: PMSAction }) {
+  const isOverdue = action.follow_up_state === 'overdue' || action.is_overdue;
   return (
-    <span className={`inline-flex rounded-full px-2 py-1 text-xs font-black ${badgeClass(action)}`}>
-      {dueBadgeLabel(action.due_date, action.days_to_due)}
+    <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold leading-5 ${badgeClass(action)}`}>
+      {isOverdue && <Clock className="size-3 shrink-0" aria-hidden="true" />}
+      <span>{dueBadgeLabel(action.due_date, action.days_to_due)}</span>
     </span>
   );
 }
 
-function EmployeeCell({ action }: { action: PMSAction }) {
-  if (!action.employee_id) {
-    return <span className="font-black text-[var(--text-primary)]">{action.plan?.name || 'Plan action'}</span>;
-  }
+function EmployeeIdentityCell({ action }: { action: PMSAction }) {
+  const displayName = action.employee_id
+    ? action.employee_name || action.employee_id
+    : action.plan?.name || 'Plan action';
+
   return (
-    <Link to={`/employee/${encodeURIComponent(action.employee_id)}`} className="font-black text-blue-600 hover:underline dark:text-blue-400">
-      {action.employee_name || action.employee_id}
-    </Link>
+    <div className="flex items-start gap-2.5">
+      <span
+        aria-hidden="true"
+        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-[var(--insights-accent-border)] bg-[var(--pms-grad-panel-info)] text-xs font-bold text-[var(--insights-accent-text)]"
+      >
+        {initialsFor(displayName)}
+      </span>
+      <div className="min-w-0 space-y-1">
+        {action.employee_id ? (
+          <Link
+            to={`/employee/${encodeURIComponent(action.employee_id)}`}
+            className="block text-sm font-bold leading-snug text-[var(--insights-heading)] transition-colors hover:text-[var(--insights-accent-text)] hover:underline"
+          >
+            {displayName}
+          </Link>
+        ) : (
+          <span className="block text-sm font-bold leading-snug text-[var(--insights-heading)]">
+            {displayName}
+          </span>
+        )}
+        <span className="inline-flex max-w-full items-center whitespace-nowrap rounded-md border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-2 py-0.5 text-xs font-medium text-[var(--text-secondary)]">
+          {action.team || 'Unassigned'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ActionDescriptionCell({
+  action,
+  expanded,
+  onToggleExpand,
+}: {
+  action: PMSAction;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const text = action.action_text || '';
+  const isLong = text.length > LONG_ACTION_THRESHOLD;
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span
+          className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-semibold leading-4 ${actionTypeBadgeClass(action.action_type)}`}
+        >
+          {action.action_type || 'Action'}
+        </span>
+        {action.month && (
+          <span className="text-xs font-medium text-[var(--text-muted)]">
+            {action.month}{action.year ? ` ${action.year}` : ''}
+          </span>
+        )}
+      </div>
+      <p
+        className={`text-[13.5px] leading-relaxed text-[var(--text-secondary)] ${
+          !expanded && isLong ? 'line-clamp-2' : ''
+        }`}
+      >
+        {text}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={expanded}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--insights-accent-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
+        >
+          <span>{expanded ? 'Show less' : 'Show more'}</span>
+          {expanded ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
+        </button>
+      )}
+    </div>
   );
 }
 
 function DueDateSetter({ action, onStatusChange }: { action: PMSAction; onStatusChange: ActionFollowUpBoardProps['onStatusChange'] }) {
   const [dueDate, setDueDate] = useState('');
-  if (action.due_date) return <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.due_date}</span>;
+  if (action.due_date) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium tabular-nums text-[var(--text-muted)]"
+        title={action.due_date}
+      >
+        <CalendarDays className="size-3.5 shrink-0 opacity-75" aria-hidden="true" />
+        <span>{formatHumanDate(action.due_date)}</span>
+      </span>
+    );
+  }
   return (
     <form
-      className="flex flex-wrap items-center gap-1"
+      className="flex flex-wrap items-end gap-1.5"
       onSubmit={(event) => {
         event.preventDefault();
         if (!dueDate) return;
         void onStatusChange(action.id, { status: (action.status || 'Open') as ActionStatus, due_date: dueDate });
       }}
     >
-      <label className="text-xs font-bold text-[var(--text-muted)]">
+      <label className="text-xs font-semibold text-[var(--text-muted)]">
         Set due date
         <input
           aria-label={`Set due date for ${action.action_text}`}
@@ -99,11 +265,43 @@ function DueDateSetter({ action, onStatusChange }: { action: PMSAction; onStatus
           min={todayIso()}
           value={dueDate}
           onChange={(event) => setDueDate(event.target.value)}
-          className="mt-1 block min-h-9 rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2 text-xs"
+          className="mt-1 block min-h-8 rounded-lg border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-2 text-xs text-[var(--text-primary)]"
         />
       </label>
-      <button type="submit" className="min-h-9 rounded-lg bg-blue-600 px-2 text-xs font-black text-white">Save</button>
+      <button
+        type="submit"
+        className="min-h-8 rounded-lg bg-[var(--insights-accent)] px-2.5 text-xs font-bold text-white transition-opacity hover:opacity-90"
+      >
+        Save
+      </button>
     </form>
+  );
+}
+
+function TableLoadingSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading follow-up actions"
+      className="pms-glass-surface overflow-hidden rounded-[16px]"
+    >
+      <div className="border-b border-[var(--exec-card-border)] bg-[var(--exec-table-head-bg)] px-5 py-3">
+        <div className="h-3.5 w-44 animate-pulse rounded bg-[var(--exec-chip-bg)]" />
+      </div>
+      <div className="divide-y divide-[var(--exec-card-border)]">
+        {[0, 1, 2, 3].map((row) => (
+          <div key={row} className="flex items-center gap-4 px-5 py-4">
+            <div className="size-8 shrink-0 animate-pulse rounded-full bg-[var(--exec-chip-bg)]" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3.5 w-1/4 animate-pulse rounded bg-[var(--exec-chip-bg)]" />
+              <div className="h-3 w-3/4 animate-pulse rounded bg-[var(--exec-chip-bg)]" />
+            </div>
+            <div className="h-6 w-24 animate-pulse rounded-full bg-[var(--exec-chip-bg)]" />
+            <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--exec-chip-bg)]" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -124,6 +322,8 @@ export function ActionFollowUpBoard({
   onDeleteAction,
 }: ActionFollowUpBoardProps) {
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<SortMode>('urgency');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [confirmTarget, setConfirmTarget] = useState<{ id: string; surface: 'table' | 'card' } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
@@ -139,6 +339,15 @@ export function ActionFollowUpBoard({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [confirmTarget, deletingId]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleConfirmDelete = async (action: PMSAction) => {
     if (!onDeleteAction) return;
@@ -166,17 +375,19 @@ export function ActionFollowUpBoard({
       <div
         role="alertdialog"
         aria-label={`Confirm delete action for ${action.employee_name || action.employee_id}`}
-        className="mt-2 rounded-xl border border-rose-500/25 bg-rose-500/5 p-3"
+        className="mt-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/25 bg-rose-500/5 px-4 py-3"
       >
-        <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
-          Delete corrective action for {action.employee_name || action.employee_id}?
-        </p>
-        {deleteError && (
-          <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
-            {deleteError}
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+            Delete corrective action for {action.employee_name || action.employee_id}?
           </p>
-        )}
-        <div className="mt-2 flex justify-end gap-2">
+          {deleteError && (
+            <p role="alert" className="mt-1 text-xs font-semibold text-rose-700 dark:text-rose-300">
+              {deleteError}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             disabled={isDeleting}
@@ -184,7 +395,7 @@ export function ActionFollowUpBoard({
               setConfirmTarget(null);
               setDeleteError('');
             }}
-            className="rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] disabled:opacity-50"
+            className="rounded-lg border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] disabled:opacity-50"
           >
             Cancel
           </button>
@@ -192,7 +403,7 @@ export function ActionFollowUpBoard({
             type="button"
             disabled={isDeleting}
             onClick={() => void handleConfirmDelete(action)}
-            className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-black text-white hover:bg-rose-700 disabled:opacity-50"
+            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
           >
             {isDeleting ? 'Deleting…' : 'Delete Action'}
           </button>
@@ -203,10 +414,31 @@ export function ActionFollowUpBoard({
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return actions;
-    return actions.filter((action) => [action.employee_name, action.employee_id, action.team, action.action_text, action.owner?.name, action.action_type]
-      .some((value) => String(value || '').toLowerCase().includes(query)));
-  }, [actions, search]);
+    const filtered = !query
+      ? actions
+      : actions.filter((action) =>
+          [action.employee_name, action.employee_id, action.team, action.action_text, action.owner?.name, action.action_type]
+            .some((value) => String(value || '').toLowerCase().includes(query)),
+        );
+
+    return [...filtered].sort((left, right) => {
+      if (sortBy === 'employee') {
+        const leftName = left.employee_name || left.employee_id || left.plan?.name || '';
+        const rightName = right.employee_name || right.employee_id || right.plan?.name || '';
+        return leftName.localeCompare(rightName);
+      }
+      if (sortBy === 'due_date') {
+        return String(left.due_date || '9999-99-99').localeCompare(String(right.due_date || '9999-99-99'));
+      }
+      if (sortBy === 'status') {
+        return String(left.status || 'Open').localeCompare(String(right.status || 'Open'));
+      }
+      return (
+        urgencyRank(left) - urgencyRank(right) ||
+        String(left.due_date || '9999-99-99').localeCompare(String(right.due_date || '9999-99-99'))
+      );
+    });
+  }, [actions, search, sortBy]);
 
   const ownerOptions = [{ value: '', label: 'All owners' }, ...owners.map((owner) => ({ value: owner.id, label: owner.name }))];
 
@@ -233,125 +465,185 @@ export function ActionFollowUpBoard({
         <CustomDropdown ariaLabel="Filter follow-up by month" value={filters.month || ''} options={[{ value: '', label: 'All months' }, ...months.map((month) => ({ value: month, label: month }))]} onChange={(month) => onFiltersChange({ ...filters, month })} icon={<CalendarDays size={14} />} className="w-full" buttonClassName="w-full min-h-10 rounded-xl" />
       </div>
 
-      {isLoading && <p className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-8 text-center text-sm font-semibold text-[var(--text-muted)]">Loading follow-up…</p>}
+      {isLoading && <TableLoadingSkeleton />}
       {isError && (
-        <div role="alert" className="rounded-2xl border border-rose-500/20 bg-rose-500/5 px-4 py-6 text-center">
+        <div role="alert" className="pms-glass-surface rounded-[16px] border-rose-500/25 px-4 py-6 text-center" style={{ background: 'var(--pms-grad-panel-neg)' }}>
           <AlertCircle className="mx-auto text-rose-600" size={22} />
-          <p className="mt-2 text-sm font-bold text-rose-700">Follow-up could not be loaded.</p>
-          {onRetry && <button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-500/30 px-3 text-xs font-bold text-rose-700"><RefreshCw size={14} />Try again</button>}
+          <p className="mt-2 text-sm font-bold text-rose-700 dark:text-rose-300">Follow-up could not be loaded.</p>
+          {onRetry && <button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl border border-rose-500/30 bg-[var(--bg-surface)] px-3.5 text-xs font-bold text-rose-700 dark:text-rose-300"><RefreshCw size={14} />Try again</button>}
         </div>
       )}
       {!isLoading && !isError && visible.length === 0 && (
-        <div className="glass-card rounded-2xl px-4 py-10 text-center">
-          <p className="text-sm font-black text-[var(--text-primary)]">No follow-up actions</p>
+        <div className="pms-glass-surface rounded-[16px] px-4 py-10 text-center">
+          <p className="text-sm font-bold text-[var(--insights-heading)]">No follow-up actions</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">Tracked actions with a due date, and plan actions, will show up here.</p>
         </div>
       )}
       {!isLoading && !isError && visible.length > 0 && (
         <>
-          <div className="hidden overflow-x-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] md:block">
-            <table className="w-full min-w-[920px] text-left">
-              <thead className="text-xs font-black uppercase tracking-wide text-[var(--text-muted)]">
-                <tr>
-                  {[
-                    'Employee',
-                    'Team',
-                    'Type',
-                    'Action',
-                    'Owner',
-                    'Due date',
-                    'Due',
-                    'Status',
-                    ...(showDeleteCol ? ['Actions'] : []),
-                  ].map((heading) => (
-                    <th key={heading} className="px-3 py-2">{heading}</th>
+          <div className="pms-glass-surface hidden overflow-hidden rounded-[16px] md:block">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--exec-card-border)] px-5 py-3">
+              <p className="text-xs font-semibold text-[var(--text-muted)] tabular-nums">
+                Showing <span className="font-bold text-[var(--insights-heading)]">{visible.length}</span>{' '}
+                {visible.length === 1 ? 'corrective action' : 'corrective actions'}
+              </p>
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
+                <ArrowUpDown className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="sr-only">Sort follow-up actions</span>
+                <select
+                  aria-label="Sort follow-up actions"
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as SortMode)}
+                  className="h-8 cursor-pointer rounded-lg border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-2.5 text-xs font-semibold text-[var(--insights-heading)] focus:border-[var(--insights-accent)] focus:outline-none"
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((action) => {
-                  const canDeleteRow = showDeleteCol && Boolean(action.employee_id);
-                  const isConfirmingTable = confirmTarget?.id === action.id && confirmTarget.surface === 'table';
-                  const cells = [
-                    'employee',
-                    'team',
-                    'type',
-                    'action',
-                    'owner',
-                    'due',
-                    'badge',
-                    'status',
-                    ...(showDeleteCol ? ['actions'] : []),
-                  ];
-                  return (
-                    <Fragment key={action.id}>
-                      <tr className="border-t border-[var(--border-light)] align-top">
-                        {cells.map((cell) => (
-                          <td key={cell} className="px-3 py-3">
-                            {cell === 'employee' && <EmployeeCell action={action} />}
-                            {cell === 'team' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.team || 'Unassigned'}</span>}
-                            {cell === 'type' && <span className="text-xs font-bold text-[var(--text-primary)]">{action.action_type}</span>}
-                            {cell === 'action' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</span>}
-                            {cell === 'owner' && <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.owner?.name || 'Unassigned'}</span>}
-                            {cell === 'due' && (canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold text-[var(--text-secondary)]">{action.due_date || 'No due date'}</span>)}
-                            {cell === 'badge' && <DueBadge action={action} />}
-                            {cell === 'status' && (
-                              <ActionStatusMenu
-                                status={action.status || 'Open'}
-                                canEdit={canEdit}
-                                ariaLabel={`Status for ${action.action_text}`}
-                                onChange={(update) => onStatusChange(action.id, update)}
-                              />
-                            )}
-                            {cell === 'actions' && canDeleteRow && (
-                              <button
-                                type="button"
-                                data-testid={`delete-follow-up-action-${action.id}`}
-                                aria-label={`Delete action for ${action.employee_name || action.employee_id}`}
-                                onClick={() => {
-                                  setDeleteError('');
-                                  setConfirmTarget({ id: action.id, surface: 'table' });
-                                }}
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
-                              >
-                                <Trash2 size={13} aria-hidden="true" />
-                                Delete
-                              </button>
-                            )}
+                </select>
+              </label>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] border-collapse text-left">
+                <thead className="sticky top-0 z-10 border-b border-[var(--exec-card-border)] bg-[var(--exec-table-head-bg)] text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  <tr>
+                    <th className="w-[230px] px-5 py-3">Employee &amp; Team</th>
+                    <th className="px-4 py-3">Action Plan</th>
+                    <th className="w-[148px] whitespace-nowrap px-4 py-3">Owner</th>
+                    <th className="w-[172px] whitespace-nowrap px-4 py-3">Due &amp; Timeline</th>
+                    <th className="w-[142px] whitespace-nowrap px-4 py-3">Status</th>
+                    {showDeleteCol && (
+                      <th className="w-[56px] px-4 py-3 text-right">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--exec-card-border)]">
+                  {visible.map((action) => {
+                    const canDeleteRow = showDeleteCol && Boolean(action.employee_id);
+                    const isConfirmingTable = confirmTarget?.id === action.id && confirmTarget.surface === 'table';
+                    const colCount = showDeleteCol ? 6 : 5;
+                    return (
+                      <Fragment key={action.id}>
+                        <tr
+                          className={`align-top transition-colors duration-150 hover:bg-[var(--exec-tile-bg)] ${rowAccentClass(action)}`}
+                        >
+                          <td className="px-5 py-4">
+                            <EmployeeIdentityCell action={action} />
                           </td>
-                        ))}
-                      </tr>
-                      {isConfirmingTable && (
-                        <tr>
-                          <td colSpan={cells.length} className="px-3 pb-3 pt-0">
-                            {renderDeleteDialog(action)}
+
+                          <td className="px-4 py-4">
+                            <ActionDescriptionCell
+                              action={action}
+                              expanded={expandedIds.has(action.id)}
+                              onToggleExpand={() => toggleExpand(action.id)}
+                            />
                           </td>
+
+                          <td className="whitespace-nowrap px-4 py-4">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)]">
+                              <UserRound className="size-3.5 shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
+                              <span>{action.owner?.name || 'Unassigned'}</span>
+                            </span>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-4">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <DueBadge action={action} />
+                              {canEdit ? (
+                                <DueDateSetter action={action} onStatusChange={onStatusChange} />
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium tabular-nums text-[var(--text-muted)]"
+                                  title={action.due_date || undefined}
+                                >
+                                  <CalendarDays className="size-3.5 shrink-0 opacity-75" aria-hidden="true" />
+                                  <span>{formatHumanDate(action.due_date)}</span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-4">
+                            <ActionStatusMenu
+                              status={action.status || 'Open'}
+                              canEdit={canEdit}
+                              ariaLabel={`Status for ${action.action_text}`}
+                              onChange={(update) => onStatusChange(action.id, update)}
+                            />
+                          </td>
+
+                          {showDeleteCol && (
+                            <td className="px-4 py-4 text-right">
+                              {canDeleteRow && (
+                                <button
+                                  type="button"
+                                  data-testid={`delete-follow-up-action-${action.id}`}
+                                  aria-label={`Delete action for ${action.employee_name || action.employee_id}`}
+                                  title="Delete action"
+                                  onClick={() => {
+                                    setDeleteError('');
+                                    setConfirmTarget({ id: action.id, surface: 'table' });
+                                  }}
+                                  className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:text-rose-400"
+                                >
+                                  <Trash2 size={15} aria-hidden="true" />
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {isConfirmingTable && (
+                          <tr className="bg-rose-500/[0.03]">
+                            <td colSpan={colCount} className="px-5 pb-4 pt-0">
+                              {renderDeleteDialog(action)}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
+
           <div className="grid gap-3 md:hidden">
             {visible.map((action) => {
               const canDeleteCard = showDeleteCol && Boolean(action.employee_id);
               const isConfirmingCard = confirmTarget?.id === action.id && confirmTarget.surface === 'card';
               return (
-                <article key={action.id} className="glass-card space-y-2 rounded-2xl p-3">
+                <article
+                  key={action.id}
+                  className={`pms-glass-surface space-y-3 rounded-[16px] p-4 ${rowAccentClass(action)}`}
+                >
                   <div className="flex items-start justify-between gap-2">
-                    <EmployeeCell action={action} />
+                    <EmployeeIdentityCell action={action} />
                     <StatusPill status={action.status || 'Open'} />
                   </div>
-                  <p className="text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned'} · {action.action_type}</p>
-                  <p className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</p>
-                  <p className="text-xs font-semibold text-[var(--text-muted)]">Owner {action.owner?.name || 'Unassigned'}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DueBadge action={action} />
-                    {canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold">{action.due_date || 'No due date'}</span>}
+                  <ActionDescriptionCell
+                    action={action}
+                    expanded={expandedIds.has(action.id)}
+                    onToggleExpand={() => toggleExpand(action.id)}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--exec-card-border)] pt-2.5 text-xs text-[var(--text-muted)]">
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-secondary)]">
+                      <UserRound className="size-3.5" aria-hidden="true" />
+                      {action.owner?.name || 'Unassigned'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <DueBadge action={action} />
+                      {canEdit ? (
+                        <DueDateSetter action={action} onStatusChange={onStatusChange} />
+                      ) : (
+                        <span className="font-medium tabular-nums">{formatHumanDate(action.due_date)}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <ActionStatusMenu
                       status={action.status || 'Open'}
                       canEdit={canEdit}
@@ -367,9 +659,9 @@ export function ActionFollowUpBoard({
                           setDeleteError('');
                           setConfirmTarget({ id: action.id, surface: 'card' });
                         }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
                       >
-                        <Trash2 size={13} aria-hidden="true" />
+                        <Trash2 size={14} aria-hidden="true" />
                         Delete
                       </button>
                     )}

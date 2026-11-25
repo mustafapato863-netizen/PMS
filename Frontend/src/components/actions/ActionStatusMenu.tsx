@@ -3,10 +3,10 @@ import type { ActionStatus } from '../../types';
 import { ACTION_STATUSES } from './dueBadge';
 
 const STATUS_CLASS: Record<string, string> = {
-  Open: 'bg-blue-500/10 text-blue-700 dark:text-blue-300',
-  'In Progress': 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  Completed: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  Cancelled: 'bg-[var(--bg-sunken)] text-[var(--text-muted)]',
+  Open: 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  'In Progress': 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300',
+  Completed: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  Cancelled: 'border-[var(--exec-card-border)] bg-[var(--bg-sunken)] text-[var(--text-muted)]',
 };
 
 interface ActionStatusMenuProps {
@@ -66,12 +66,16 @@ export function ActionStatusMenu({ status, canEdit, ariaLabel, compact = false, 
           value={current}
           disabled={saving}
           onChange={(event) => choose(event.target.value)}
-          className={`rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] font-bold text-[var(--text-primary)] ${compact ? 'min-h-8 px-2 text-xs' : 'min-h-10 px-2 text-xs'}`}
+          className={`cursor-pointer rounded-[10px] border font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--insights-accent-ring)] disabled:cursor-not-allowed disabled:opacity-60 ${STATUS_CLASS[current] || STATUS_CLASS.Open} ${compact ? 'min-h-8 px-2.5 text-xs' : 'min-h-9 px-2.5 text-xs'}`}
         >
-          {ACTION_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
+          {ACTION_STATUSES.map((value) => (
+            <option key={value} value={value} className="bg-[var(--bg-surface)] text-[var(--text-primary)]">
+              {value}
+            </option>
+          ))}
         </select>
       ) : (
-        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${STATUS_CLASS[current]}`}>{current}</span>
+        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-5 ${STATUS_CLASS[current]}`}>{current}</span>
       )}
       {pending && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4" role="presentation">
