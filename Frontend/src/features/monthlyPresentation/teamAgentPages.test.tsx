@@ -185,4 +185,45 @@ describe('TeamDeepDive agent pagination and caching', () => {
     await user.click(within(card).getByRole('button', { name: 'Test Agent 02' }));
     expect(onSelectEmployee).toHaveBeenCalledWith('emp-2');
   });
+
+  it('renders a smooth grade-gradient achievement bar under each measured KPI actual', () => {
+    const data = makeTeamData(1);
+    data.agentsAverageOrBelow[0].kpiCells = [
+      {
+        kpiKey: 'reachability',
+        label: 'Reachability',
+        actualFormatted: '47.2%',
+        targetFormatted: '75.0%',
+        achievementPct: 62.9,
+        metTarget: false,
+      },
+      {
+        kpiKey: 'attendance',
+        label: 'Attendance Rate',
+        actualFormatted: '68.0%',
+        targetFormatted: '65.0%',
+        achievementPct: 104.6,
+        metTarget: true,
+      },
+    ];
+
+    render(
+      <TeamDeepDiveView
+        data={data}
+        onNavigateToOverview={() => undefined}
+        onNavigateToCallCenter={() => undefined}
+      />,
+    );
+
+    const row = screen.getByTestId('low-agent-row-emp-1');
+    const bars = within(row).getAllByTestId('kpi-ach-bar');
+    const fills = within(row).getAllByTestId('kpi-ach-bar-fill');
+    expect(bars).toHaveLength(2);
+    expect(bars[0]).toHaveAttribute('aria-valuenow', '63');
+    expect(fills[0].style.width).toBe('62.9%');
+    expect(fills[0].style.background).toContain('--pms-grad-grade-e');
+    expect(bars[1]).toHaveAttribute('aria-valuenow', '100');
+    expect(fills[1].style.width).toBe('100%');
+    expect(fills[1].style.background).toContain('--pms-grad-grade-a');
+  });
 });

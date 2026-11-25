@@ -44,6 +44,7 @@ import {
 } from '../../../components/employee/ScoreTrendChart';
 import ScoreTrendChart from '../../../components/employee/ScoreTrendChart';
 import { KpiTrendMovement, SelectableKpiCard } from './SelectableKpiCard';
+import { KpiAchievementCell } from './KpiAchievementCell';
 import { GRADE_STYLES, type GradeLetter } from '../monthlyOverviewData';
 import type { FullGradeLabel } from '../callCenterDeepDiveData';
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
@@ -1707,17 +1708,13 @@ function TeamDeepDiveViewContent({
 
                       {agent.kpiCells.map((cell) => (
                         <td key={cell.kpiKey} className="px-4 py-3.5 text-right">
-                          <span
-                            className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
-                              cell.metTarget
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : cell.achievementPct < 75
-                                ? 'bg-rose-50 text-rose-700'
-                                : 'bg-amber-50 text-amber-800'
-                            }`}
-                          >
-                            {cell.actualFormatted}
-                          </span>
+                          <KpiAchievementCell
+                            label={cell.label}
+                            actualFormatted={cell.actualFormatted}
+                            targetFormatted={cell.targetFormatted}
+                            achievementPct={cell.achievementPct}
+                            metTarget={cell.metTarget}
+                          />
                         </td>
                       ))}
 

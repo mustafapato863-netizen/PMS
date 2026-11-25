@@ -50,6 +50,7 @@ import type {
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
 import { memberPageWindow } from '../roleMemberPages';
 import { SelectableKpiCard } from './SelectableKpiCard';
+import { KpiAchievementCell } from './KpiAchievementCell';
 import { FullWordGradeBadge } from './TeamDeepDiveView';
 
 const KPI_CARDS_PER_ROW = 4;
@@ -1611,25 +1612,19 @@ export default function RoleDetailView({
                         )}
                       </td>
 
-                      {/* Per-KPI Actual Cells with Diagnostic Coloring */}
+                      {/* Per-KPI Actual Cells with Diagnostic Coloring + Achievement Gradient Bar */}
                       {(member.kpiCells ?? []).map((cell) => (
                         <td
                           key={cell.kpiKey}
                           className="px-4 py-3.5 text-right tabular-nums"
                         >
-                          <span
-                            className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
-                              cell.metTarget === null
-                                ? 'bg-slate-100 text-slate-500'
-                                : cell.metTarget
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : (cell.achievementPct ?? 0) < 75
-                                ? 'bg-rose-50 text-rose-700'
-                                : 'bg-amber-50 text-amber-800'
-                            }`}
-                          >
-                            {cell.actualFormatted}
-                          </span>
+                          <KpiAchievementCell
+                            label={cell.label}
+                            actualFormatted={cell.actualFormatted}
+                            targetFormatted={cell.targetFormatted}
+                            achievementPct={cell.achievementPct}
+                            metTarget={cell.metTarget}
+                          />
                         </td>
                       ))}
 
