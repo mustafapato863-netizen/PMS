@@ -1184,6 +1184,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(regionShare).getByTestId('monthly-region-share-card-egy')).toBeInTheDocument();
     expect(within(regionShare).getByTestId('monthly-region-share-card-uae')).toBeInTheDocument();
     expect(within(regionShare).getByText(/gap share:/i)).toBeInTheDocument();
+    expect(regionShare).toHaveTextContent(/UAE gap share:\s*85% of the overall -77\.7% company gap from 67% of evaluated headcount\./i);
 
     // The filter trigger is docked inside the bottom control bar, not in the top header or floating.
     const header = screen.getByRole('banner', { name: 'Monthly Presentation Header' });

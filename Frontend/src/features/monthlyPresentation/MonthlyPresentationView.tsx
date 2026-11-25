@@ -1888,6 +1888,7 @@ function MonthlyPresentationScreen({
         {overviewData.regionCode === 'ALL' && (overviewData.regions?.length ?? 0) > 1 && (
           <RegionPerformanceShareSection
             regions={overviewData.regions ?? []}
+            overallGap={overviewData.overall.gap}
             previousMonthLabel={overviewData.previousMonthLabel}
             onSelectRegion={(region) => handleRegionChange(region)}
           />

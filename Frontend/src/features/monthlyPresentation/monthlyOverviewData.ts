@@ -1,4 +1,9 @@
-import type { ExecutiveRegion, ExecutiveSummary, ExecutiveTrendPoint } from '../executive/types';
+import type {
+  ExecutiveFunctionCard,
+  ExecutiveRegion,
+  ExecutiveSummary,
+  ExecutiveTrendPoint,
+} from '../executive/types';
 import { fmtKpiDelta, fmtKpiValue } from '../executive/format';
 import { functionSlug } from '../executive/functions';
 import { presentationTeamName } from '../team/countryTeamIdentity';
@@ -44,6 +49,11 @@ export interface FunctionOverviewItem {
   teamsList: string;
   hasMajorIssue: boolean;
   highlightBadge?: string;
+  regions?: string[];
+  trend?: ExecutiveFunctionCard['trend'];
+  lowestTeam?: ExecutiveFunctionCard['lowest_team'];
+  isMostImproved?: boolean;
+  fallingMonths?: number | null;
 }
 
 export interface TeamAtRiskItem {
@@ -655,6 +665,11 @@ export function adaptSummaryToMonthlyOverview(
               teamsList: (fn.teams ?? []).join(' · '),
               hasMajorIssue,
               highlightBadge: hasMajorIssue ? 'Major issue — deep dive next' : undefined,
+              regions: fn.regions,
+              trend: fn.trend,
+              lowestTeam: fn.lowest_team,
+              isMostImproved: fn.is_most_improved,
+              fallingMonths: fn.falling_months,
             };
           })
           .sort((a, b) => a.score - b.score)
