@@ -59,7 +59,7 @@ To guarantee CI stays **100% green** and never repeats past failures, ALWAYS fol
 
 ## Rule 4 — Verify Backend Manifest & Changed Test Suites Together
 - Never push Backend AI or config changes after running only a subset of unit tests without ALSO running:
-  1. All tests touching modified modules
+  1. All tests touching modified modules (and `Backend/tests/test_ai_phase3_tool_contracts.py` whenever `AUTHORIZED_MODEL_LED_TOOLS` changes)
   2. `Backend/tests/test_pms_ai_phase1_baseline_links.py`
   3. `evaluation/pms-ai/phase2/tests/test_coverage_manifest.py`
 - If modifying `DevOps/scripts/*.sh`, `docker-compose.yml`, or `compose.production.yml`, also run `python -m unittest discover -s scripts -p 'test_validate_deployment_compose.py'`.

@@ -71,6 +71,16 @@ def daily_user_request_limit() -> int:
     return _read_non_negative_int(("PMS_AI_DAILY_USER_REQUEST_LIMIT",), 0, minimum=0)
 
 
+def enforce_tier_budgets() -> bool:
+    """Whether widened access tiers enforce default TIER_BUDGETS caps.
+
+    Defaults to False (unlimited AI chat) unless explicitly enabled via
+    ``PMS_AI_ENFORCE_TIER_BUDGETS=true``.
+    """
+    raw = os.environ.get("PMS_AI_ENFORCE_TIER_BUDGETS", "").strip().casefold()
+    return raw in {"1", "true", "yes", "on", "enabled"}
+
+
 # Persona-tier budgets from USER_AWARE_360_SPEC §4.7. Used when the access tier
 # is widened beyond admin_only, so non-Admin users get progressively smaller caps.
 TIER_BUDGETS: dict[str, dict[str, int]] = {
@@ -216,13 +226,13 @@ def check_user_daily_budget(
     """
     req_limit = daily_user_request_limit()
     tok_limit = daily_user_token_limit()
-    if access_tier and access_tier != "admin_only":
+    if access_tier and access_tier != "admin_only" and enforce_tier_budgets():
         tier_defaults = tier_budget_for_role(user_role)
         if req_limit <= 0:
             req_limit = int(tier_defaults.get("daily_turns", 0))
         if tok_limit <= 0:
             tok_limit = int(tier_defaults.get("daily_tokens", 0))
-    if req_limit <= 0 and tok_limit <= 0 and not increment_request:
+    if req_limit <= 0 and tok_limit <= 0:
         return
 
     uid = _normalized_user_key(user_id)

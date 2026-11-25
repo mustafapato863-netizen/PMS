@@ -43,7 +43,7 @@ class RateLimits:
     heavy_user: int
     write_user: int
     read_user: int
-    ai_chat_user: int = 20
+    ai_chat_user: int = 1000
 
 
 @dataclass(frozen=True)

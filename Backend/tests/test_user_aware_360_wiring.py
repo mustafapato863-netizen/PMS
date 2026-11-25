@@ -275,9 +275,10 @@ def test_memory_extraction_persists_and_escapes_xml():
 def test_tiered_usage_budget_enforces_self_only_cap(monkeypatch):
     monkeypatch.delenv("PMS_AI_DAILY_USER_REQUEST_LIMIT", raising=False)
     monkeypatch.delenv("PMS_AI_DAILY_USER_TOKEN_LIMIT", raising=False)
+    monkeypatch.setenv("PMS_AI_ENFORCE_TIER_BUDGETS", "true")
     uid = f"agent-budget-{uuid.uuid4()}"
 
-    # Under widened tier, Agent gets 20 turns/day cap automatically
+    # When tier budgets are explicitly enabled, Agent gets 20 turns/day cap
     for _ in range(20):
         check_user_daily_budget(uid, "Agent", increment_request=True, access_tier="all_authenticated_users")
 
@@ -286,6 +287,17 @@ def test_tiered_usage_budget_enforces_self_only_cap(monkeypatch):
         assert False, "Expected AiBudgetExceededError on 21st turn"
     except AiBudgetExceededError as exc:
         assert exc.reason == "daily_request_limit"
+
+
+def test_usage_budget_is_unlimited_by_default(monkeypatch):
+    monkeypatch.delenv("PMS_AI_DAILY_USER_REQUEST_LIMIT", raising=False)
+    monkeypatch.delenv("PMS_AI_DAILY_USER_TOKEN_LIMIT", raising=False)
+    monkeypatch.delenv("PMS_AI_ENFORCE_TIER_BUDGETS", raising=False)
+    uid = f"unlimited-user-{uuid.uuid4()}"
+
+    for _ in range(250):
+        check_user_daily_budget(uid, "Admin", increment_request=True, access_tier="all_authenticated_users")
+        check_user_daily_budget(uid, "Agent", increment_request=True, access_tier="all_authenticated_users")
 
 
 def test_pass1_identity_context_injects_passport_and_memory_within_cap():

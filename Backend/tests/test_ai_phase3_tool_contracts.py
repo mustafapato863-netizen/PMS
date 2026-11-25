@@ -337,6 +337,7 @@ def test_tool_catalog_contains_all_authorized_tools():
         "search_pms_guide",
         "query_rankings",
         "discover_pms_catalog",
+        "get_corrective_actions",
     }
     assert expected_tools.issubset(set(tools.keys()))
     for name, schema in tools.items():
@@ -351,10 +352,10 @@ def test_router_tool_schemas_match_registry_schemas():
 
     # In router.py, tool_schemas references DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS
     assert DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS is not None
-    # Eleven model-led tools: the six original read/trend tools, the KPI simulation,
+    # Twelve model-led tools: the six original read/trend tools, the KPI simulation,
     # scoring-explanation and system-guide helpers, the composable query_rankings engine,
-    # and the RBAC-scoped discover_pms_catalog lookup.
-    assert len(DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS) == 11
+    # the RBAC-scoped discover_pms_catalog lookup, and get_corrective_actions.
+    assert len(DeterministicToolRegistry.AUTHORIZED_MODEL_LED_TOOLS) == 12
 
 
 # ---------------------------------------------------------------------------
