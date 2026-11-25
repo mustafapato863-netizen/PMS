@@ -15,7 +15,7 @@ import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceData } from '../../hooks/usePerformanceData';
 import { useAllTeamConfigs } from '../../hooks/useTeamConfig';
-import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
+import { EXECUTIVE_SUMMARY_SECTIONS, useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { fetchFollowUp, mapBackendAction } from '../../hooks/useActionStore';
 import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/access';
 import { canonicalTeamName, type PMSAction } from '../../types';
@@ -236,7 +236,10 @@ export function useExecutiveSummary({
   // Never display a wider cached driver result as if it matches either selection.
   // Range mode hides the Insights drivers: they are defined for one month, not for an average over several.
   const driversEnabled = enabled && !rangeInput && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !branch && !position;
-  const workspace = useInsightsWorkspace(insightFilters, { enabled: driversEnabled });
+  const workspace = useInsightsWorkspace(insightFilters, {
+    enabled: driversEnabled,
+    sections: EXECUTIVE_SUMMARY_SECTIONS,
+  });
 
   const actionsEnabled = enabled && canSeeSummaryActionAnalytics(role);
   const followUp = useQuery({
@@ -269,7 +272,7 @@ export function useExecutiveSummary({
     },
     enabled: actionsEnabled,
     retry: false,
-    staleTime: 60_000,
+    staleTime: 2 * 60_000,
     refetchOnWindowFocus: false,
   });
   const teamFunctions = workspace.data?.options?.team_functions as TeamFunctionMap | undefined;

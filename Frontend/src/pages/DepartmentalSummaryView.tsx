@@ -6,12 +6,17 @@
  * (Executive + Viewer read-only), Manager → Managerial (team-scoped, filters
  * locked), Function Viewer → /function-summary.
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { directorScope } from '../lib/directorScope';
 import { useUserRole } from '../context/RoleContext';
-import { clearCachedExecutiveFilters, readCachedExecutiveFilters, saveCachedExecutiveFilters } from '../features/executive/filterCache';
+import {
+  clearCachedExecutiveFilters,
+  mergeCachedExecutiveSearchParams,
+  readCachedExecutiveFilters,
+  saveCachedExecutiveFilters,
+} from '../features/executive/filterCache';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
@@ -60,11 +65,23 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const assigned = directorScope(role, currentUser);
   const [searchParams, setSearchParams] = useSearchParams();
   const [unavailableTeam, setUnavailableTeam] = useState<string | null>(null);
+  const [initialCachedFilters] = useState(() => readCachedExecutiveFilters());
+  const [userEditedFilters, setUserEditedFilters] = useState(false);
+  const hydratedCacheRef = useRef(false);
+  // Merge sessionStorage filter cache synchronously on initial render so queries do not fire a throwaway unfiltered pass.
+  const { params: effectiveSearchParams, changed: needsCacheSync } = useMemo(
+    () => mergeCachedExecutiveSearchParams(
+      searchParams,
+      userEditedFilters ? null : initialCachedFilters,
+      { regionLocked: assigned.regionLocked, branchLocked: assigned.branchLocked },
+    ),
+    [searchParams, userEditedFilters, initialCachedFilters, assigned.regionLocked, assigned.branchLocked],
+  );
   // A range (from / to) replaces the single month (period) in the URL; an invalid range shows the month.
-  const rangeSelection = readRangeSelection(searchParams);
-  const rangeInvalid = rangeRequestIsInvalid(searchParams);
+  const rangeSelection = readRangeSelection(effectiveSearchParams);
+  const rangeInvalid = rangeRequestIsInvalid(effectiveSearchParams);
   const filters: PageFilters = useMemo(() => {
-    const read = (key: keyof PageFilters) => summaryFilterValue(searchParams.get(PARAM[key]));
+    const read = (key: keyof PageFilters) => summaryFilterValue(effectiveSearchParams.get(PARAM[key]));
     const rawTeam = read('team');
     const legacyFunction = read('teamFunction') === 'Pre-Approvals';
     const approvals = legacyFunction || isPreApprovalsSubTeam(rawTeam);
@@ -73,9 +90,10 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     return view === 'managerial'
       ? { periodKey: read('periodKey'), branch: read('branch'), performanceLevel: read('performanceLevel'), team: read('team') }
       : { periodKey: read('periodKey'), region: assigned.regionLocked ? assigned.region : read('region'), branch: assigned.branchLocked ? assigned.branch : read('branch'), teamFunction: approvals ? 'RCM' : read('teamFunction'), team: approvals ? 'Pre-Approvals' : rawTeam, subTeam: approvals ? selectedSubTeam || (rawTeam !== 'Pre-Approvals' && isPreApprovalsSubTeam(rawTeam) ? rawTeam : undefined) : undefined, performanceLevel: read('performanceLevel') };
-  }, [searchParams, view, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
+  }, [effectiveSearchParams, view, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
 
   const update = useCallback((patch: Partial<PageFilters>) => {
+    setUserEditedFilters(true);
     setUnavailableTeam(null);
     const next = new URLSearchParams(searchParams);
     (Object.keys(patch) as Array<keyof PageFilters>).forEach((key) => {
@@ -86,8 +104,8 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  // This device's action queue, for the Pending Sync count only.
-  const { getAllActions } = useActionStore();
+  // This device's action queue, for the Pending Sync count only (avoid duplicate /api/corrective-actions/ fetch).
+  const { getAllActions } = useActionStore({ skipRemoteFetch: true });
   const queuedActions = useMemo(() => getAllActions(), [getAllActions]);
 
   const { summary, options, isLoading, error, managerTeam, managerTeamOptions } = useExecutiveSummary({
@@ -103,6 +121,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const periodChoices = periodOptionsFor(summary, filters.periodKey);
   const catalogKeys = [...new Set(periodChoices.map((option) => option.value))].sort();
   const writeMonth = useCallback((period: string | undefined) => {
+    setUserEditedFilters(true);
     const next = new URLSearchParams(searchParams);
     next.delete('from');
     next.delete('to');
@@ -111,6 +130,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
   const writeRange = useCallback((selection: RangeSelection) => {
+    setUserEditedFilters(true);
     const next = new URLSearchParams(searchParams);
     next.delete('period');
     next.set('from', selection.from);
@@ -127,38 +147,13 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   }, []);
 
   useEffect(() => {
-    const cached = readCachedExecutiveFilters();
-    if (!cached) return;
-    const next = new URLSearchParams(searchParams);
-    let changed = false;
-    if (!searchParams.get('period') && !searchParams.get('from') && !searchParams.get('to')) {
-      if (cached.from && cached.to) {
-        next.set('from', cached.from);
-        next.set('to', cached.to);
-        changed = true;
-      } else if (cached.period) {
-        next.set('period', cached.period);
-        changed = true;
+    if (!hydratedCacheRef.current) {
+      hydratedCacheRef.current = true;
+      if (needsCacheSync) {
+        setSearchParams(effectiveSearchParams, { replace: true });
+        return;
       }
     }
-    if (!searchParams.get('region') && cached.region && !assigned.regionLocked) {
-      next.set('region', cached.region);
-      changed = true;
-    }
-    if (!searchParams.get('branch') && cached.branch && !assigned.branchLocked) {
-      next.set('branch', cached.branch);
-      changed = true;
-    }
-    if (!searchParams.get('level') && cached.level) {
-      next.set('level', cached.level);
-      changed = true;
-    }
-    if (changed) {
-      setSearchParams(next, { replace: true });
-    }
-  }, []);
-
-  useEffect(() => {
     saveCachedExecutiveFilters({
       period: searchParams.get('period') || undefined,
       from: searchParams.get('from') || undefined,
@@ -167,7 +162,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       branch: searchParams.get('branch') || undefined,
       level: searchParams.get('level') || undefined,
     });
-  }, [searchParams]);
+  }, [effectiveSearchParams, needsCacheSync, searchParams, setSearchParams]);
 
   const clearFilters = useCallback(() => {
     clearCachedExecutiveFilters();

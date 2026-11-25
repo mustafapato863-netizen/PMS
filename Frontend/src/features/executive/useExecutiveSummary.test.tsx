@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   workspaceFilters: [] as unknown[],
   workspaceEnabled: [] as boolean[],
+  workspaceSections: [] as unknown[],
   followUp: vi.fn(),
   agents: [] as unknown[],
   /** Disabled legacy reads must keep one agents array, matching usePerformanceData. */
@@ -36,16 +37,21 @@ vi.mock('../../hooks/usePerformanceData', () => ({
     agents: enabled ? mocks.agents : mocks.emptyAgents, loading: false, dataSource: 'api', errorMessage: null,
   }),
 }));
-vi.mock('../../hooks/api/useInsightsWorkspace', () => ({
-  useInsightsWorkspace: (filters: unknown, options: { enabled?: boolean }) => {
-    mocks.workspaceFilters.push(filters);
-    mocks.workspaceEnabled.push(Boolean(options.enabled));
-    return {
-      data: options.enabled ? mocks.workspaceData ?? undefined : undefined,
-      isLoading: false,
-    };
-  },
-}));
+vi.mock('../../hooks/api/useInsightsWorkspace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../hooks/api/useInsightsWorkspace')>();
+  return {
+    ...actual,
+    useInsightsWorkspace: (filters: unknown, options: { enabled?: boolean; sections?: readonly string[] }) => {
+      mocks.workspaceFilters.push(filters);
+      mocks.workspaceEnabled.push(Boolean(options.enabled));
+      mocks.workspaceSections.push(options.sections);
+      return {
+        data: options.enabled ? mocks.workspaceData ?? undefined : undefined,
+        isLoading: false,
+      };
+    },
+  };
+});
 vi.mock('./compose', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./compose')>();
   return {
@@ -68,6 +74,7 @@ beforeEach(() => {
   mocks.followUp.mockReset();
   mocks.workspaceFilters = [];
   mocks.workspaceEnabled = [];
+  mocks.workspaceSections = [];
   mocks.composeCalls = 0;
   const { drivers, items } = fixtureDrivers();
   mocks.workspaceData = {
@@ -168,8 +175,15 @@ describe('useExecutiveSummary', () => {
     expect(summary.corrective_actions?.summary.due_this_week).toBe(3);
     // The evaluation-basis note comes from the same records, for the effective month.
     expect(summary.basis_context).toMatchObject({ state: expect.any(String) });
-    // Drivers are asked for the effective (fallback) month.
+    // Drivers are asked for the effective (fallback) month with minimal Executive Summary sections.
     expect(mocks.workspaceFilters.at(-1)).toMatchObject({ periodKey: '2026-06' });
+    expect(mocks.workspaceSections.at(-1)).toEqual([
+      'options',
+      'performance_drivers',
+      'team_analyses',
+      'priority_insights',
+      'opportunities',
+    ]);
     expect(result.current.options.regions).toEqual(['EGY', 'UAE']);
   });
 

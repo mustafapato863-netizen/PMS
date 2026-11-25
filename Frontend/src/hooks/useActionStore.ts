@@ -488,11 +488,12 @@ export interface ActionStoreResult {
   synced: boolean;
   message: string;
 }
-export function useActionStore() {
+export function useActionStore(options?: { skipRemoteFetch?: boolean }) {
+  const skipRemoteFetch = options?.skipRemoteFetch ?? false;
   const { role } = useUserRole();
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [actions, setActions] = useState<PMSAction[]>(cachedActions || []);
+  const [actions, setActions] = useState<PMSAction[]>(() => cachedActions || (skipRemoteFetch ? loadLocalActions() : []));
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -501,12 +502,14 @@ export function useActionStore() {
     };
     listeners.add(listener);
 
-    fetchActions(role);
+    if (!skipRemoteFetch) {
+      fetchActions(role);
+    }
 
     return () => {
       listeners.delete(listener);
     };
-  }, [role]);
+  }, [role, skipRemoteFetch]);
 
   const saveAction = useCallback(
     async (input: SaveActionInput): Promise<ActionStoreResult> => {

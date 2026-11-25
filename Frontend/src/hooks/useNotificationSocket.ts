@@ -176,6 +176,7 @@ export function useNotificationSocket(enabled = true) {
       // Invalidate queries to force refresh if data was uploaded
       if (data.type === 'upload') {
         queryClient.invalidateQueries({ queryKey: ['performance'] });
+        queryClient.invalidateQueries({ queryKey: ['insights'] });
         queryClient.invalidateQueries({ queryKey: ['team-configs'] });
         queryClient.invalidateQueries({ queryKey: ['teams'] });
       }
@@ -186,6 +187,7 @@ export function useNotificationSocket(enabled = true) {
         }
         if (data.data.kind === 'pms_upload') {
           queryClient.invalidateQueries({ queryKey: ['performance'] });
+          queryClient.invalidateQueries({ queryKey: ['insights'] });
           queryClient.invalidateQueries({ queryKey: ['teams'] });
         }
       }
@@ -201,6 +203,7 @@ export function useNotificationSocket(enabled = true) {
       });
       // Invalidate queries to force refresh
       queryClient.invalidateQueries({ queryKey: ['performance'] });
+      queryClient.invalidateQueries({ queryKey: ['insights'] });
     };
 
     const handleDataUploaded = (data: DataUploadedPayload) => {
@@ -213,6 +216,7 @@ export function useNotificationSocket(enabled = true) {
       });
       // Invalidate queries to force refresh
       queryClient.invalidateQueries({ queryKey: ['performance'] });
+      queryClient.invalidateQueries({ queryKey: ['insights'] });
       queryClient.invalidateQueries({ queryKey: ['team-configs'] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
     };
@@ -228,10 +232,11 @@ export function useNotificationSocket(enabled = true) {
         timestamp: data.timestamp || new Date().toISOString(),
         link: payload.employee_id ? `/employees/${payload.employee_id}` : undefined,
       });
-      // Invalidate employee query to reload actions list
+      // Invalidate employee and executive corrective-action queries to reload actions list
       if (payload.employee_id) {
         queryClient.invalidateQueries({ queryKey: ['employee', payload.employee_id] });
       }
+      queryClient.invalidateQueries({ queryKey: ['corrective-actions'] });
     };
 
     const handleConnect = () => {

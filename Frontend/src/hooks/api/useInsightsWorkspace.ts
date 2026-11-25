@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { InsightFilters, InsightsWorkspace } from '../../features/insights/types';
 import { apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -30,6 +31,15 @@ export const INSIGHTS_PAGE_SECTIONS: readonly InsightSection[] = [
   'role_summaries',
   'performance_drivers',
   'risks',
+  'opportunities',
+];
+
+/** The minimal Insights sections Executive Summary reads (enables backend period windowing). */
+export const EXECUTIVE_SUMMARY_SECTIONS: readonly InsightSection[] = [
+  'options',
+  'performance_drivers',
+  'team_analyses',
+  'priority_insights',
   'opportunities',
 ];
 
@@ -69,15 +79,16 @@ export function insightsWorkspaceUrl(
   return `/api/insights/workspace${query ? `?${query}` : ''}`;
 }
 
-/** A request for some sections has its own cache entry. Without sections the key is the one it always was. */
+/** A request for some sections has its own cache entry. Session-scoped so user/role switches never leak cached insights. */
 export function insightsWorkspaceQueryKey(
   filters: InsightFilters,
   view: 'full' | 'priority' = 'full',
   sections?: readonly InsightSection[],
 ) {
+  const sessionKey = performanceSessionKey();
   return sections?.length
-    ? (['insights', 'workspace', view, filters, { sections: sections.join(',') }] as const)
-    : (['insights', 'workspace', view, filters] as const);
+    ? (['insights', 'workspace', view, sessionKey, filters, { sections: sections.join(',') }] as const)
+    : (['insights', 'workspace', view, sessionKey, filters] as const);
 }
 
 export function useInsightsWorkspace(

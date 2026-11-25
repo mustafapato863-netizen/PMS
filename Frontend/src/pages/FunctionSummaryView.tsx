@@ -6,12 +6,17 @@
  * an unknown or disallowed slug redirects to the first allowed function. Function Viewer is
  * read-only. The backend must enforce the same scope on its data endpoints.
  */
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { directorScope } from '../lib/directorScope';
 import { useUserRole } from '../context/RoleContext';
-import { clearCachedExecutiveFilters, readCachedExecutiveFilters, saveCachedExecutiveFilters } from '../features/executive/filterCache';
+import {
+  clearCachedExecutiveFilters,
+  mergeCachedExecutiveSearchParams,
+  readCachedExecutiveFilters,
+  saveCachedExecutiveFilters,
+} from '../features/executive/filterCache';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
@@ -45,18 +50,31 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
   const assigned = directorScope(role, currentUser);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [initialCachedFilters] = useState(() => readCachedExecutiveFilters());
+  const [userEditedFilters, setUserEditedFilters] = useState(false);
+  const hydratedCacheRef = useRef(false);
   const readOnly = isFunctionViewerRole(role);
 
+  const { params: effectiveSearchParams, changed: needsCacheSync } = useMemo(
+    () => mergeCachedExecutiveSearchParams(
+      searchParams,
+      userEditedFilters ? null : initialCachedFilters,
+      { regionLocked: assigned.regionLocked, branchLocked: assigned.branchLocked },
+    ),
+    [searchParams, userEditedFilters, initialCachedFilters, assigned.regionLocked, assigned.branchLocked],
+  );
+
   const filters: PageFilters = useMemo(() => {
-    const read = (key: keyof typeof PARAM) => summaryFilterValue(searchParams.get(PARAM[key]));
+    const read = (key: keyof typeof PARAM) => summaryFilterValue(effectiveSearchParams.get(PARAM[key]));
     const rawTeam = read('team');
     const approvals = isPreApprovalsSubTeam(rawTeam);
     const rawSubTeam = read('subTeam');
     const selectedSubTeam = rawSubTeam && rawSubTeam !== 'Pre-Approvals' && isPreApprovalsSubTeam(rawSubTeam) ? rawSubTeam : undefined;
     return { periodKey: read('periodKey'), region: assigned.regionLocked ? assigned.region : read('region'), branch: assigned.branchLocked ? assigned.branch : read('branch'), team: approvals ? 'Pre-Approvals' : rawTeam, subTeam: approvals ? selectedSubTeam || (rawTeam !== 'Pre-Approvals' ? rawTeam : undefined) : undefined, position: read('position'), performanceLevel: read('performanceLevel') };
-  }, [searchParams, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
+  }, [effectiveSearchParams, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
 
   const update = useCallback((patch: Partial<PageFilters>) => {
+    setUserEditedFilters(true);
     const next = new URLSearchParams(searchParams);
     (Object.keys(patch) as Array<keyof typeof PARAM>).forEach((key) => {
       const value = patch[key];
@@ -67,38 +85,13 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
-    const cached = readCachedExecutiveFilters();
-    if (!cached) return;
-    const next = new URLSearchParams(searchParams);
-    let changed = false;
-    if (!searchParams.get('period') && !searchParams.get('from') && !searchParams.get('to')) {
-      if (cached.from && cached.to) {
-        next.set('from', cached.from);
-        next.set('to', cached.to);
-        changed = true;
-      } else if (cached.period) {
-        next.set('period', cached.period);
-        changed = true;
+    if (!hydratedCacheRef.current) {
+      hydratedCacheRef.current = true;
+      if (needsCacheSync) {
+        setSearchParams(effectiveSearchParams, { replace: true });
+        return;
       }
     }
-    if (!searchParams.get('region') && cached.region && !assigned.regionLocked) {
-      next.set('region', cached.region);
-      changed = true;
-    }
-    if (!searchParams.get('branch') && cached.branch && !assigned.branchLocked) {
-      next.set('branch', cached.branch);
-      changed = true;
-    }
-    if (!searchParams.get('level') && cached.level) {
-      next.set('level', cached.level);
-      changed = true;
-    }
-    if (changed) {
-      setSearchParams(next, { replace: true });
-    }
-  }, []);
-
-  useEffect(() => {
     saveCachedExecutiveFilters({
       period: searchParams.get('period') || undefined,
       from: searchParams.get('from') || undefined,
@@ -107,7 +100,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
       branch: searchParams.get('branch') || undefined,
       level: searchParams.get('level') || undefined,
     });
-  }, [searchParams]);
+  }, [effectiveSearchParams, needsCacheSync, searchParams, setSearchParams]);
 
   const switchFunction = useCallback((next: ExecutiveFunction) => {
     const params = new URLSearchParams();

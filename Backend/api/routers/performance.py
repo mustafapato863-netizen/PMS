@@ -41,6 +41,12 @@ from services.dashboard_record_service import DashboardRecordService
 from services.insights_service import InsightsService
 from services.database_record_source import DatabaseRecordSource
 from services.planning_service import PlanningService
+from services.response_cache import (
+    apply_private_cache_headers,
+    build_scoped_response_cache_key,
+    read_cached_response,
+    write_cached_response,
+)
 from services.summary_records_service import (
     SummaryFilters,
     SummaryResult,
@@ -439,6 +445,34 @@ def get_summary_records(
     enforce_user_route_limit(request, SUMMARY_RECORDS_RULE, "GET /api/performance/summary-records")
     scope = require_authenticated_scope(db, request)
     filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team, region=region)
+    cache_key: str | None = None
+    if isinstance(db, Session):
+        cache_key = build_scoped_response_cache_key(
+            db,
+            namespace="summary-records",
+            scope=scope,
+            params={
+                "employee_id": filters.employee_id,
+                "year": filters.year,
+                "month": filters.month_key,
+                "team": filters.team_key,
+                "region": filters.region_key,
+                "limit": limit,
+            },
+        )
+        cached = read_cached_response(cache_key, cache_type="summary_records")
+        if isinstance(cached, dict) and isinstance(cached.get("data"), list):
+            release_read_transaction(db)
+            if response is not None:
+                if cached.get("total") is not None:
+                    response.headers["X-Total-Count"] = str(cached["total"])
+                response.headers["X-Result-Truncated"] = "true" if cached.get("truncated") else "false"
+            apply_private_cache_headers(response, hit=True)
+            return StandardResponse(
+                success=True,
+                message="Authorized summary evidence retrieved",
+                data=cached["data"],
+            )
     record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
     result = None
     if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
@@ -446,11 +480,18 @@ def get_summary_records(
         result = summary_records_indexed(db, record_service, scope, filters, limit)
     if result is None:
         result = _summary_records_legacy(db, record_service, scope, filters, limit)
+    if cache_key is not None:
+        write_cached_response(
+            cache_key,
+            {"data": result.data, "total": result.total, "truncated": result.truncated},
+            cache_type="summary_records",
+        )
     release_read_transaction(db)
     if response is not None:
         if result.total is not None:
             response.headers["X-Total-Count"] = str(result.total)
         response.headers["X-Result-Truncated"] = "true" if result.truncated else "false"
+    apply_private_cache_headers(response, hit=False)
     return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=result.data)
 
 
