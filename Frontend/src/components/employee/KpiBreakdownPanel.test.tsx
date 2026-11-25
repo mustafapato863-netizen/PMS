@@ -169,4 +169,41 @@ describe('KpiBreakdownPanel', () => {
     expect(screen.getByText('Approval Within 1.5 Hours %')).toBeInTheDocument();
     expect(screen.queryByText('combined_acceptance_rate')).not.toBeInTheDocument();
   });
+
+  it('renders clinical effective weights and applied penalty without PerformanceScore card', () => {
+    const erAgent = {
+      ...marketingAgent,
+      identity: { name: 'ER Doctor', employee_id: 'SGHD00201', team: 'ER Dr', month: 'October', year: 2026 },
+      evaluation: { score: 91.88, grade: 'B' },
+      kpi_values: [
+        { kpi_key: 'PerformanceScore', label: 'Performance Score', unit: '%', direction: 'higher_better', actual_value: 0.9188, target_value: 1, achievement_ratio: 0.9188, weight_applied: 1, contribution: 0.9188 },
+        { kpi_key: 'admission_rate', label: 'Admission rate', unit: '%', direction: 'higher_better', actual_value: 0.9, target_value: 1, achievement_ratio: 0.9, weight_applied: 0.5, contribution: 0.45 },
+        { kpi_key: 'valid_complaints', label: 'Valid complaints penalty', unit: '%', direction: 'lower_better', actual_value: 0.05, target_value: 0, achievement_ratio: 0, weight_applied: 0, contribution: -0.05, is_penalty: true },
+      ],
+    } as AgentRecord;
+
+    render(<KpiBreakdownPanel score={91.88} agent={erAgent} teamWeights={{}} />);
+    expect(screen.getByText('Admission rate')).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('Valid complaints penalty')).toBeInTheDocument();
+    expect(screen.getByText('-5.0%')).toBeInTheDocument();
+    expect(screen.getByText('Deduction')).toBeInTheDocument();
+    // Performance Score appears only as the headline label, never as a 100% KPI card
+    expect(screen.getAllByText('Performance Score')).toHaveLength(1);
+  });
+
+  it('shows unavailable state when clinical record lacks source breakdown', () => {
+    const unavailableClinical = {
+      ...marketingAgent,
+      identity: { name: 'ER Doctor Historical', employee_id: 'SGHD00299', team: 'ER Dr', month: 'October', year: 2026 },
+      evaluation: { score: 82.0, grade: 'C' },
+      kpi_values: [
+        { kpi_key: 'PerformanceScore', label: 'Performance Score', unit: '%', direction: 'higher_better', actual_value: 0.82, target_value: 1, achievement_ratio: 0.82, weight_applied: 1, contribution: 0.82 },
+      ],
+    } as AgentRecord;
+
+    render(<KpiBreakdownPanel score={82.0} agent={unavailableClinical} teamWeights={{}} />);
+    expect(screen.getAllByText('82.0%')).toHaveLength(2);
+    expect(screen.getByText(/KPI breakdown unavailable for this period/i)).toBeInTheDocument();
+  });
 });

@@ -256,6 +256,8 @@ export interface ExecutiveKpiRow {
   grade: GradeClass | null;
   target_status: InsightTargetStatus | null;
   teams: string[];
+  is_penalty?: boolean;
+  contribution_points?: number | null;
 }
 
 export interface ExecutiveLevel {

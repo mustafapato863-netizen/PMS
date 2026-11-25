@@ -17,6 +17,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from config.loader import ConfigurationError, load_team_config
+from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.performance_dashboard_read_service import _has_real_activity
 from services.uae_published_scores import uses_published_score
@@ -455,6 +456,7 @@ def get_kpis_for_agent(record: Any) -> list[dict[str, Any]]:
                 nw = (weight_applied / 100.0 if weight_applied > 1 else weight_applied) if weight_applied is not None else 0.0
                 contrib_raw = min(max(ach_ratio, 0.0), 1.0) * max(nw, 0.0)
             w_eff = max(weight_applied or 0.0, 0.0)
+            is_penalty = kpi.get("is_penalty") is True
             out.append({
                 "key": key,
                 "label": label,
@@ -465,8 +467,9 @@ def get_kpis_for_agent(record: Any) -> list[dict[str, Any]]:
                 "achievement": min(max(ach_ratio, 0.0), 1.0) * 100.0,
                 "weight": weight_applied,
                 "viewOnly": kpi.get("view_only") in (True, 1),
-                "contribution": min(max(contrib_raw, 0.0), w_eff) * 100.0,
+                "contribution": contrib_raw * 100.0 if is_penalty else min(max(contrib_raw, 0.0), w_eff) * 100.0,
                 "evaluationPinned": kpi.get("evaluation_pinned") is True,
+                "isPenalty": is_penalty,
             })
         return out
     return []
@@ -1066,6 +1069,11 @@ def _resolve_team_config(
     return _load_config_safe(canonical_team, configs)
 
 
+def _is_stored_employee_scorecard(record: Any) -> bool:
+    team = str(_val(record, "team") or "").strip()
+    return team in CLINICAL_TREND_TEAMS or uses_published_score(_record_raw_data(record))
+
+
 def _record_display_score(record: Any) -> float | None:
     if str(_val(record, "employee_name") or "").strip().lower() == "total":
         return None
@@ -1073,7 +1081,7 @@ def _record_display_score(record: Any) -> float | None:
         return None
     eval_obj = _val(record, "evaluation")
     raw = _val(eval_obj, "score") if eval_obj is not None else _val(record, "score")
-    if uses_published_score(_record_raw_data(record)):
+    if _is_stored_employee_scorecard(record):
         return _finite_float(raw)
     return _normalize_performance_score(raw)
 
@@ -1137,7 +1145,7 @@ def official_team_score(
             sample_size=len(scores),
         )
 
-    if any(uses_published_score(_record_raw_data(record)) for record in deduped):
+    if any(_is_stored_employee_scorecard(record) for record in deduped):
         return OfficialScoreResult(
             entity_type="team",
             entity_name=canonical_team,

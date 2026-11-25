@@ -743,6 +743,27 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         rows = query.with_entities(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
         return [(int(row.year), str(row.month)) for row in rows]
 
+    def has_clinical_records(
+        self,
+        *,
+        year: int,
+        month: str,
+        scope: dict | None = None,
+    ) -> bool:
+        """Return True if any clinical trend record exists in scope for the given period."""
+        query = (
+            self.db.query(PerformanceRecord.id)
+            .join(Team, PerformanceRecord.team_id == Team.id)
+            .join(Employee, PerformanceRecord.employee_id == Employee.id)
+            .filter(
+                Team.team_level == "employee",
+                _team_name_clause({"er dr", "radiologist", "qlty&case-mngt"}),
+                PerformanceRecord.year == year,
+                PerformanceRecord.month == month,
+            )
+        )
+        return self._apply_scope(query, scope).first() is not None
+
     def get_dashboard_record_page(
         self,
         *,

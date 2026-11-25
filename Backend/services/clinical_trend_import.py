@@ -5,6 +5,7 @@ import re
 import pandas as pd
 
 from models.schemas import Employee, EvaluationData, PerformanceRecord
+from services.clinical_scorecards import can_recompute, compute_clinical_score
 from utils.helpers import safe_value
 
 
@@ -129,16 +130,31 @@ def import_clinical_trend(excel_file):
             if pd.notna(row.get("Location")):
                 raw["Branch"] = raw["Location"]
             month = date.strftime("%B")
+
+            # Attempt to recompute score from source KPIs
+            recomputed = compute_clinical_score(team, raw) if can_recompute(team, raw) else None
+            if recomputed is not None:
+                recomputed_score, recomputed_grade, recomputed_kpis = recomputed
+                use_score = recomputed_score
+                use_grade = recomputed_grade
+                kpi_list = recomputed_kpis
+            else:
+                use_score = score
+                use_grade = grade
+                kpi_list = [{
+                    "kpi_key": "PerformanceScore", "label": "Performance Score",
+                    "direction": "higher_better",
+                    "actual_value": score / 100, "target_value": 1,
+                    "achievement_ratio": score / 100,
+                    "weight_applied": 1, "contribution": score / 100,
+                }, *clinical_measurements(team, raw)]
+
             employees.append(Employee(id=eid, name=name, team=team, status=status,
                                       region="UAE", performance_level="Employee", position=position))
             records.append(PerformanceRecord(
                 id=f"{eid}_{date.year}_{month}", employee_id=eid, employee_name=name, team=team,
                 month=month, year=date.year, region="UAE", position=position,
-                evaluation=EvaluationData(score=score, grade=grade), raw_data=raw,
-                kpi_values=[{
-                    "kpi_key": "PerformanceScore", "label": "Performance Score", "direction": "higher_better",
-                    "actual_value": score / 100, "target_value": 1, "achievement_ratio": score / 100,
-                    "weight_applied": 1, "contribution": score / 100,
-                }, *clinical_measurements(team, raw)],
+                evaluation=EvaluationData(score=use_score, grade=use_grade), raw_data=raw,
+                kpi_values=kpi_list,
             ))
     return records, employees

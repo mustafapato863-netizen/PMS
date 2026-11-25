@@ -234,7 +234,8 @@ export function aggregateConfiguredTeamKpis(
       // Marketing keeps a stored KPI the file does not name. A position department does that only when
       // it has no shared root KPI list. Other teams skip unconfigured rows unless the row is pinned.
       const storedPositionKpi = !definition && keepsUnconfiguredPositionKpi(config);
-      const publishedMeasurement = kpi.viewOnly && usesStoredPeriodScore(agent);
+      const publishedMeasurement = usesStoredPeriodScore(agent) && kpi.key !== 'PerformanceScore' && !kpi.isPenalty;
+      if (usesStoredPeriodScore(agent) && (kpi.key === 'PerformanceScore' || kpi.isPenalty)) return;
       if (definitions.length > 0 && !definition && !pinned && !storedPositionKpi && !publishedMeasurement) return;
       const aggregation = definition && normalize(definition.key) === 'other' && isUtilizationKpi(kpi)
         ? { method: 'average' as const }
@@ -650,7 +651,7 @@ export function calculateAggregatedTeamPerformance(
   config: TeamConfig | undefined,
   options: TeamKpiAggregationOptions = {},
 ): AggregatedTeamPerformance | null {
-  if (!config || agents.length === 0 || agents.some(usesPublishedEmployeeScore)) return null;
+  if (!config || agents.length === 0 || agents.some(usesStoredPeriodScore)) return null;
 
   const isPreApprovalsTeam = config.team === 'Pre-Approvals IP'
     || config.team === 'Pre-Approvals IP Offshore'

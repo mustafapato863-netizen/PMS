@@ -24,6 +24,8 @@ from services.cache_invalidation_service import CacheInvalidationService
 from services.cache_service import CacheService
 from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
+from services.clinical_scorecards import can_recompute, compute_clinical_score
+from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS
 from services.scoring_basis_comparison import compare_adjacent_records
 from services.uae_published_scores import uses_published_score
 from utils.branch_scope import record_matches_branch
@@ -157,9 +159,14 @@ def _has_real_activity(record) -> bool:
     return any(_number(value) > 0 for value in (raw_data.values() if isinstance(raw_data, dict) else ()))
 
 
+def _is_stored_employee_score(record) -> bool:
+    team = str(getattr(record, "team", "") or "").strip()
+    return team in CLINICAL_TREND_TEAMS or uses_published_score(getattr(record, "raw_data", None))
+
+
 def _score(record) -> float:
     value = _number(record.evaluation.score)
-    return value if uses_published_score(getattr(record, "raw_data", None)) else score_percent(value)
+    return value if _is_stored_employee_score(record) else score_percent(value)
 
 
 def _stored_score(record) -> float:
@@ -195,12 +202,20 @@ def _summary_record(row: dict[str, Any]) -> SummaryRecord:
 
     score = _number(row.get("score"))
     grade = str(row.get("grade") or "E")
+    team_name = str(row.get("team") or "")
+    raw_data = payload.get("raw_data", {}) if isinstance(payload, dict) and isinstance(payload.get("raw_data"), dict) else {}
+    kpi_values = payload.get("kpi_values", []) if isinstance(payload, dict) and isinstance(payload.get("kpi_values"), list) else []
+    if team_name in CLINICAL_TREND_TEAMS and can_recompute(team_name, raw_data):
+        recomputed = compute_clinical_score(team_name, raw_data)
+        if recomputed is not None:
+            score, grade, kpi_values = recomputed
+
     if rich_record is None:
         rich_record = SummaryRecord(
             id=str(row.get("record_id") or ""),
             employee_id=str(row.get("employee_id") or ""),
             employee_name=str(row.get("employee_name") or ""),
-            team=str(row.get("team") or ""),
+            team=team_name,
             month=str(row.get("month") or ""),
             year=int(row.get("year")) if row.get("year") is not None else None,
             region=str(row.get("region") or "EGY"),
@@ -208,15 +223,15 @@ def _summary_record(row: dict[str, Any]) -> SummaryRecord:
             position=str(row.get("position")) if row.get("position") else None,
             status=str(row.get("status")) if row.get("status") else None,
             evaluation=EvaluationData(score=score, grade=grade),
-            raw_data=payload.get("raw_data", {}) if isinstance(payload, dict) and isinstance(payload.get("raw_data"), dict) else {},
-            kpi_values=payload.get("kpi_values", []) if isinstance(payload, dict) and isinstance(payload.get("kpi_values"), list) else [],
+            raw_data=raw_data,
+            kpi_values=kpi_values,
         )
 
     return rich_record.model_copy(update={
         "id": str(row.get("record_id") or rich_record.id),
         "employee_id": str(row.get("employee_id") or rich_record.employee_id),
         "employee_name": str(row.get("employee_name") or rich_record.employee_name),
-        "team": str(row.get("team") or rich_record.team),
+        "team": team_name or rich_record.team,
         "month": str(row.get("month") or rich_record.month),
         "year": int(row.get("year")) if row.get("year") is not None else rich_record.year,
         "region": row.get("region") or rich_record.region,
@@ -225,6 +240,7 @@ def _summary_record(row: dict[str, Any]) -> SummaryRecord:
         "branch_key": row.get("branch_key") or None,
         "status": row.get("status") or rich_record.status,
         "evaluation": rich_record.evaluation.model_copy(update={"score": score, "grade": grade}),
+        "kpi_values": kpi_values if team_name in CLINICAL_TREND_TEAMS else rich_record.kpi_values,
     })
 
 
@@ -426,19 +442,23 @@ class PerformanceDashboardReadService:
         # One read of every month this scope and filter set has. A month counts only when it
         # holds rows that the activity rule keeps and that match the location. The reported
         # month, the previous month, the trend and the default all use these months.
+        defer_clinical_grade_filter = bool(grade) and (team is None or team in CLINICAL_TREND_TEAMS)
         summary_rows = self.repository.get_dashboard_summary_rows(
             team=team,
             performance_level=performance_level,
             position=position,
             region=region,
             employee_id=employee_id,
-            grade=grade,
+            grade=None if defer_clinical_grade_filter else grade,
             status=status,
             kpi=kpi,
             periods=None,
             scope=self.scope,
         )
         rows = [_summary_record(row) for row in summary_rows]
+        if defer_clinical_grade_filter and grade:
+            wanted_grade = str(grade).strip().casefold()
+            rows = [row for row in rows if _grade(row, _score(row)).casefold() == wanted_grade]
         by_period: dict[str, list] = {}
         for row in rows:
             by_period.setdefault(period_key(int(row.year), str(row.month)), []).append(row)
@@ -632,8 +652,14 @@ class PerformanceDashboardReadService:
 
         # The SQL page covers the default location without a branch filter. A branch filter
         # uses the one branch rule, which reads source text and geo as well as branch_key,
-        # so it runs on the Python path.
-        use_sql_page = str(location or "all").casefold() == "all" and not branch
+        # so it runs on the Python path. Clinical teams also recompute employee scores/grades
+        # from source KPIs, so score/grade predicates or clinical-team pages run on the Python path.
+        clinical_score_sensitive = team in CLINICAL_TREND_TEAMS or (
+            team is None
+            and (grade is not None or score_lt is not None or str(sort or "name").casefold() != "name")
+            and self.repository.has_clinical_records(year=year, month=month, scope=self.scope)
+        )
+        use_sql_page = str(location or "all").casefold() == "all" and not branch and not clinical_score_sensitive
         if use_sql_page:
             # Zero-score rows are the only ones the activity rule can drop; their payloads
             # (calls, geo, raw values) are checked here and excluded inside the query, so
@@ -672,11 +698,14 @@ class PerformanceDashboardReadService:
                 year=year,
                 scope=self.scope,
                 employee_search=employee_search,
-                grade=grade,
+                grade=None if clinical_score_sensitive else grade,
                 status=status,
                 kpi=kpi,
             )
             resolved = _active_records(all_rows, location)
+            if grade and clinical_score_sensitive:
+                wanted_grade = str(grade).strip().casefold()
+                resolved = [row for row in resolved if _grade(row, _score(row)).casefold() == wanted_grade]
             if branch:
                 resolved = [row for row in resolved if record_matches_branch(row, branch)]
             if score_lt is not None:

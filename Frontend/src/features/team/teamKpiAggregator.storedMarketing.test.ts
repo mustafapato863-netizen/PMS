@@ -57,6 +57,26 @@ describe('team KPI aggregation of stored KPIs the config does not know', () => {
     expect(rows).toMatchObject([{ label: 'Audit achievement', actual: 0, weight: 0, viewOnly: true }]);
   });
 
+  it('aggregates recomputed clinical KPIs with effective weights and skips PerformanceScore/penalties', () => {
+    const erDoctor = {
+      ...agent,
+      identity: { ...agent.identity, team: 'ER Dr' },
+      kpi_values: [
+        { kpi_key: 'PerformanceScore', label: 'Performance Score', unit: '%', direction: 'higher_better', actual_value: 0.9, target_value: 1, achievement_ratio: 0.9, weight_applied: 1, contribution: 0.9 },
+        { kpi_key: 'admission_rate', label: 'Admission rate', unit: '%', direction: 'higher_better', actual_value: 0.9, target_value: 1, achievement_ratio: 0.9, weight_applied: 0.5, contribution: 0.45 },
+        { kpi_key: 'valid_complaints', label: 'Valid complaints penalty', unit: '%', direction: 'lower_better', actual_value: 0.05, target_value: 0, achievement_ratio: 0, weight_applied: 0, contribution: -0.05, is_penalty: true },
+      ],
+    } as AgentRecord;
+    const erConfig = {
+      ...marketingConfig,
+      team: 'ER Dr',
+      kpis: [{ key: 'PerformanceScore', label: 'Performance Score', weight: 1.0, direction: 'higher_better', unit: '%' }],
+    } as unknown as TeamConfig;
+    const rows = [...aggregateConfiguredTeamKpis([erDoctor], erConfig).values()];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ label: 'Admission rate', actual: 0.9, weight: 0.5 });
+  });
+
   it('still skips a stored KPI the config does not know for other teams', () => {
     const inboundConfig = { ...marketingConfig, team: 'Inbound' } as unknown as TeamConfig;
     const inboundAgent = {

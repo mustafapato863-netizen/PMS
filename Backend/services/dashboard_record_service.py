@@ -16,6 +16,7 @@ from config.loader import (
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
 from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS, clinical_measurements
+from services.clinical_scorecards import can_recompute, compute_clinical_score
 from services.csr_sharjah_scoring import METHOD_ID as SHARJAH_CSR_METHOD_ID
 from services.uae_published_scores import uses_published_score
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values, normalized_text_memo
@@ -346,6 +347,8 @@ def _relational_kpi(value, config_by_key: dict[str, dict], stored_metadata: dict
         row["evaluation_pinned"] = True
     if definition.get("view_only") is True or definition.get("view_only") == 1:
         row["view_only"] = True
+    if definition.get("is_penalty") is True:
+        row["is_penalty"] = True
     return row
 
 
@@ -401,6 +404,8 @@ def _payload_kpi_metadata(payload) -> dict[str, dict]:
             metadata["evaluation_pinned"] = True
         if value.get("view_only") is True or value.get("view_only") == 1:
             metadata["view_only"] = True
+        if value.get("is_penalty") is True:
+            metadata["is_penalty"] = True
         direction = value.get("direction")
         if isinstance(direction, str) and direction.strip():
             metadata["direction"] = direction.strip()
@@ -577,12 +582,22 @@ class DashboardRecordService:
 
             persisted_directions = _payload_directions(payload)
             scoped_cache: list[list[dict]] = []
+            clinical_recomputed = (
+                compute_clinical_score(team_name, raw_payload)
+                if team_name in CLINICAL_TREND_TEAMS and can_recompute(team_name, raw_payload)
+                else None
+            )
 
             def scoped_relational() -> list[dict]:
                 # The relational KPI values, normalised once and only when used. Elective Dubai keeps its
                 # configured KPIs.
                 if not scoped_cache:
                     if use_stored_score:
+                        if clinical_recomputed is not None:
+                            _, _, recomputed_kpis = clinical_recomputed
+                            stored = [dict(value) for value in recomputed_kpis]
+                            scoped_cache.append(stored)
+                            return stored
                         stored = relational_kpis()
                         for value in stored:
                             key = value["kpi_key"]
@@ -652,6 +667,9 @@ class DashboardRecordService:
                     )
                     reconciled_score = float(item.score)
                     reconciled_grade = item.grade
+                    if clinical_recomputed is not None:
+                        reconciled_score = float(clinical_recomputed[0])
+                        reconciled_grade = clinical_recomputed[1]
                     has_measured_contribution = any(
                         float(value.get("contribution", 0.0) or 0.0) > 0
                         for value in canonical_kpis
@@ -726,7 +744,10 @@ class DashboardRecordService:
                 )
             fallback_score = float(item.score)
             fallback_grade = item.grade
-            if not use_stored_score and fallback_kpis and any(
+            if clinical_recomputed is not None:
+                fallback_score = float(clinical_recomputed[0])
+                fallback_grade = clinical_recomputed[1]
+            elif not use_stored_score and fallback_kpis and any(
                 float(value.get("contribution", 0.0) or 0.0) > 0
                 for value in fallback_kpis
             ):
