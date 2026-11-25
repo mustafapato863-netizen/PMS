@@ -474,3 +474,215 @@ def test_pillar4_outbound_pooled_booking_rate_parity(monkeypatch: pytest.MonkeyP
     # Pooled: (100 + 217) / (200 + 800) = 317 / 1000 = 31.7% (NOT unweighted mean 38.6%)
     assert booking_ev.actual == pytest.approx(31.7, abs=0.1)
     assert booking_ev.achievement_percent == pytest.approx(100.0, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Reply Quality: Employee Corrective Action Lookup & Overall Score Phrasing
+# ---------------------------------------------------------------------------
+
+def test_employee_corrective_action_lookup_saved_and_unsaved(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asking 'what corrective action we did for ammar yasser ?' must check saved corrective actions
+    for Ammar (not return his overall score as 'falling short of 100.0%'), clearly report when none
+    are saved yet alongside his KPI drag, and list saved actions when present."""
+    from models.models import Action, Employee, Team
+
+    db = _build_in_memory_db()
+    team_row = Team(
+        name="Outbound",
+        db_name="Outbound",
+        display_name="Outbound",
+        region="EGY",
+        team_level="employee",
+        is_active=True,
+    )
+    db.add(team_row)
+    db.flush()
+    ammar_emp = Employee(
+        employee_id="SGHD70301",
+        name="Ammar Yasser sayed Ghareb",
+        team_id=team_row.id,
+        region="EGY",
+        performance_level="Employee",
+        is_active=True,
+    )
+    rawan_emp = Employee(
+        employee_id="SGHD70101",
+        name="Rawan Mohamed Salah Elnajjar",
+        team_id=team_row.id,
+        region="EGY",
+        performance_level="Employee",
+        is_active=True,
+    )
+    db.add_all([ammar_emp, rawan_emp])
+    db.flush()
+
+    # Rawan has a saved corrective action; Ammar does NOT
+    db.add(
+        Action(
+            employee_id=rawan_emp.id,
+            team_id=team_row.id,
+            month="October",
+            year=2026,
+            action_type="Coaching",
+            action_text="Address Reachability below target and check disconnected numbers.",
+            status="Open",
+        )
+    )
+    db.commit()
+
+    ammar_rec = _make_outbound_record(
+        emp_id="SGHD70301",
+        name="Ammar Yasser sayed Ghareb",
+        score=69.17,
+        booking_actual=0.145,
+        reachability_actual=0.472,
+        month="October",
+        year=2026,
+    )
+    rawan_rec = _make_outbound_record(
+        emp_id="SGHD70101",
+        name="Rawan Mohamed Salah Elnajjar",
+        score=74.0,
+        booking_actual=0.25,
+        reachability_actual=0.541,
+        month="October",
+        year=2026,
+    )
+    _patch_records(monkeypatch, [ammar_rec, rawan_rec])
+    ai_evidence_cache.clear()
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+
+    page_ctx = PageContextV1(
+        page_id="executive_summary",
+        route_id="/monthly-presentation/call-center/outbound",
+        team_id="Outbound",
+        period="2026-10",
+        month="October",
+        year=2026,
+    )
+
+    # 1. Ammar (0 saved actions) -> explicitly states no saved corrective action yet + KPI context
+    res_ammar = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="what corrective action we did for ammar yasser ?",
+            page_context=page_ctx,
+            session_state=SessionFilterContext(team="Outbound", performance_level="Employee", month="October", year=2026),
+        )
+    )
+    assert res_ammar.outcome == "answer"
+    assert "No saved corrective action" in res_ammar.headline
+    assert "Ammar Yasser sayed Ghareb" in res_ammar.headline
+    assert "100.0%" not in res_ammar.headline
+    bullets_ammar = " ".join(res_ammar.narrative_bullets or [])
+    assert "69.2%" in bullets_ammar
+    assert "Booking Rate" in bullets_ammar
+
+    # 2. Rawan (1 saved action) -> reports her saved action directly
+    res_rawan = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="what corrective action we did for rawan ?",
+            page_context=page_ctx,
+            session_state=SessionFilterContext(team="Outbound", performance_level="Employee", month="October", year=2026),
+        )
+    )
+    assert res_rawan.outcome == "answer"
+    assert "1 saved corrective action" in res_rawan.headline
+    assert "Rawan Mohamed Salah Elnajjar" in res_rawan.headline
+    bullets_rawan = " ".join(res_rawan.narrative_bullets or [])
+    assert "Reachability" in bullets_rawan
+
+
+def test_model_led_overall_score_avoids_100pct_target_and_schema_jargon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Model-led synthesis for an employee Overall Score must not say 'falling short of 100.0%',
+    must strip leaked '(value)' / '(target)' tags, and must drop bullets that parrot the headline."""
+    from services.ai import orchestrator as orch_mod
+    from services.ai import provider_engine as eng_mod
+
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_MODEL_LED_ALL_ROLES_ENABLED", "true")
+
+    db = _build_in_memory_db()
+    ammar_rec = _make_outbound_record(
+        emp_id="SGHD70301",
+        name="Ammar Yasser sayed Ghareb",
+        score=69.17,
+        booking_actual=0.145,
+        reachability_actual=0.472,
+        month="October",
+        year=2026,
+    )
+    _patch_records(monkeypatch, [ammar_rec])
+    ai_evidence_cache.clear()
+
+    call_idx = {"n": 0}
+    captured_synth_prompts: list[str] = []
+
+    class _FakeEngine:
+        def generate(self, req):
+            call_idx["n"] += 1
+            if req.purpose == "model_led_router":
+                return ProviderResponse(
+                    provider="nvidia",
+                    model="nvidia/test",
+                    content=json.dumps(
+                        {
+                            "response_type": "tool_call",
+                            "tool_name": "read_employee_metric",
+                            "tool_arguments": {
+                                "employee_name": "Ammar Yasser sayed Ghareb",
+                                "metric_id": "overall_score",
+                                "team": "Outbound",
+                                "period": "2026-10",
+                            },
+                        }
+                    ),
+                    outcome="success",
+                )
+            captured_synth_prompts.append(req.messages[0].content + "\n" + req.messages[1].content)
+            # Simulate a sloppy LLM that echoes (value) and parrots the headline in bullet 1
+            return ProviderResponse(
+                provider="nvidia",
+                model="nvidia/test",
+                content=json.dumps(
+                    {
+                        "headline": "Ammar Yasser sayed Ghareb scored 69.2% (value) in October 2026.",
+                        "narrative_bullets": [
+                            "Ammar Yasser sayed Ghareb scored 69.2% (value) in October 2026.",
+                            "Key KPI drags: Booking Rate at 14.5% vs 30.0% target.",
+                        ],
+                    }
+                ),
+                outcome="success",
+            )
+
+    monkeypatch.setattr(orch_mod, "get_unified_provider_engine", lambda: _FakeEngine())
+    monkeypatch.setattr(eng_mod, "get_unified_provider_engine", lambda: _FakeEngine())
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "has_unrestricted_team_access": True,
+    }
+    res = PmsAiOrchestrator(db, gm_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="How did Ammar Yasser score in October 2026?",
+            session_state=SessionFilterContext(team="Outbound", performance_level="Employee", month="October", year=2026),
+        )
+    )
+    assert res.outcome == "answer"
+    assert "69.2%" in res.headline
+    assert "(value)" not in res.headline
+    assert "100.0%" not in res.headline
+    assert "falling short" not in res.headline.casefold()
+    # Parroted bullet must be dropped; real KPI drag bullet kept
+    assert all("(value)" not in b and "(target)" not in b for b in res.narrative_bullets)
+    assert len(res.narrative_bullets) <= 1
+    assert captured_synth_prompts and "falling short of the target of 100.0" not in captured_synth_prompts[0]

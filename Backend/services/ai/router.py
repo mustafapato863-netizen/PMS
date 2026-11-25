@@ -3806,7 +3806,21 @@ class HybridQueryRouter:
             not is_proposal_request
             and any(
                 k in lower
-                for k in ("corrective action", "corrective actions", "overdue corrective", "sip/pi")
+                for k in (
+                    "corrective action",
+                    "corrective actions",
+                    "overdue corrective",
+                    "sip/pi",
+                    "action we did",
+                    "actions we did",
+                    "action did we",
+                    "actions did we",
+                    "saved action",
+                    "assigned action",
+                    "إجراء تصحيحي",
+                    "إجراءات تصحيحية",
+                    "الاجراءات التصحيحية",
+                )
             )
         )
         asks_scorecard_structure = bool(
@@ -4686,7 +4700,8 @@ class HybridQueryRouter:
                 "Retain the department in site comparisons. Report a missing figure for its requested month rather than borrowing a nearby month.\n"
                 "4. Use 'search_pms_guide' for general PMS system knowledge questions (what Grades A–E mean, Gap vs Gap Share, Teams at Risk status badges, Balanced Scorecard & performance levels, user roles/RBAC, regions/branches, KPI glossary, or how to find screens/workflows). "
                 "Use 'explain_scoring_rules_and_targets' when asked about live team KPI weights, targets, caps, or scorecard configuration.\n"
-                "5. Use 'simulate_kpi_improvement' for What-If projections.\n"
+                "5. Use 'simulate_kpi_improvement' for What-If projections. "
+                "Use 'get_corrective_actions' whenever asked what corrective action(s) were done, assigned, saved, open, or overdue for an employee or team (pass employee_id/employee_name, team, and period if specified).\n"
                 "6. For persona='self_only', bind first-person questions ('my score', 'how am I doing') to the caller's employee_code.\n"
                 "7. For changes in who or what appears between evaluation periods, use 'compare_evaluation_rosters' "
                 "with entity, baseline_period and target_period. Roster presence is independent of scores. "

@@ -519,6 +519,24 @@ class DeterministicToolRegistry:
             "required": ["kpi_name", "improvement_pct"],
             "additionalProperties": False,
         },
+        "get_corrective_actions": {
+            "type": "object",
+            "description": (
+                "Inspect saved corrective actions and follow-up plans recorded in PMS for a specific employee, team, or function. "
+                "Use whenever the user asks what corrective action was done, assigned, saved, open, or overdue for an employee or team."
+            ),
+            "properties": {
+                "employee_id": {"type": "string", "description": "PMS employee ID when checking one employee's saved actions"},
+                "employee_name": {"type": "string", "description": "Employee full or partial name when checking one employee's saved actions"},
+                "team": {"type": "string", "description": "Team name (e.g., Outbound, Inbound)"},
+                "function": {"type": "string", "description": "Function/department name"},
+                "period": {"type": "string", "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$", "description": "Optional period key like 2026-10"},
+                "state": {"type": "string", "enum": ["open", "overdue", "due_soon", "upcoming", "completed", "closed"]},
+                "open_only": {"type": "boolean"},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
     }
 
     def __init__(self, ctx: ToolExecutionContext) -> None:
@@ -582,6 +600,13 @@ class DeterministicToolRegistry:
                 req_emp = str(tool_arguments.get("employee_id") or "").strip()
                 if req_emp and req_emp.casefold() != caller_emp_id.casefold():
                     raise PermissionError("Self-only scope restriction: cannot simulate another employee's KPIs.")
+                if not caller_emp_id:
+                    raise PermissionError("Your account isn't linked to an employee profile yet. Please contact your manager.")
+                tool_arguments["employee_id"] = caller_emp_id
+            elif tool_name == "get_corrective_actions":
+                req_emp = str(tool_arguments.get("employee_id") or "").strip()
+                if req_emp and req_emp.casefold() != caller_emp_id.casefold():
+                    raise PermissionError("Self-only scope restriction: cannot inspect another employee's corrective actions.")
                 if not caller_emp_id:
                     raise PermissionError("Your account isn't linked to an employee profile yet. Please contact your manager.")
                 tool_arguments["employee_id"] = caller_emp_id
@@ -764,6 +789,18 @@ class DeterministicToolRegistry:
                 year=year_int,
                 performance_level=tool_arguments.get("performance_level"),
                 score_measure=tool_arguments.get("score_measure"),
+            )
+        elif tool_name == "get_corrective_actions":
+            return self.execute_corrective_actions_status(
+                team=tool_arguments.get("team") or self.ctx.session_state.team,
+                function=tool_arguments.get("function") or self.ctx.session_state.function,
+                month=month_str,
+                year=year_int,
+                state=tool_arguments.get("state"),
+                open_only=bool(tool_arguments.get("open_only")),
+                employee_id=tool_arguments.get("employee_id"),
+                employee_name=tool_arguments.get("employee_name"),
+                apply_period_filter=bool(month_str or year_int),
             )
         elif tool_name == "explain_scoring_rules_and_targets":
             from services.ai.identity_service import build_passport
@@ -5318,6 +5355,8 @@ class DeterministicToolRegistry:
         open_only: bool = False,
         today: Any = None,
         apply_period_filter: bool = True,
+        employee_id: str | None = None,
+        employee_name: str | None = None,
     ) -> ToolExecutionResult:
         # Preserve optional period rule: when month and year are not explicitly
         # requested for a guided follow-up read, query across the authorized scope.
@@ -5333,6 +5372,24 @@ class DeterministicToolRegistry:
         effective_month = resolved["month"] if (apply_period_filter and (month or year)) else None
         effective_year = resolved["year"] if (apply_period_filter and (month or year)) else None
         effective_state = (state or "").strip().casefold() or None
+        emp_id_filter = str(employee_id or "").strip() or None
+        emp_name_filter = str(employee_name or "").strip() or None
+
+        def _matches_employee_action(act: dict[str, Any]) -> bool:
+            if not emp_id_filter and not emp_name_filter:
+                return True
+            act_eid = str(act.get("employee_id") or "").strip().casefold()
+            act_ename = str(act.get("employee_name") or "").strip().casefold()
+            if emp_id_filter and act_eid and act_eid == emp_id_filter.casefold():
+                return True
+            if emp_name_filter and act_ename:
+                q_norm = emp_name_filter.casefold()
+                if q_norm in act_ename or act_ename in q_norm:
+                    return True
+                q_tokens = [tok for tok in re.findall(r"[a-z0-9\u0600-\u06FF]+", q_norm) if len(tok) >= 2]
+                if q_tokens and all(tok in act_ename for tok in q_tokens):
+                    return True
+            return False
 
         try:
             ca_service = CorrectiveActionService(self.ctx.db, today=today) if today is not None else CorrectiveActionService(self.ctx.db)
@@ -5352,6 +5409,8 @@ class DeterministicToolRegistry:
                     "month": effective_month,
                     "year": effective_year,
                     "state": effective_state,
+                    "employee_id": emp_id_filter,
+                    "employee_name": emp_name_filter,
                 },
                 records_evaluated=0,
                 digest={
@@ -5364,6 +5423,7 @@ class DeterministicToolRegistry:
                     "scope": resolved["team"] or resolved["function"] or "your authorized scope",
                     "period": f"{effective_month} {effective_year}" if effective_month and effective_year else None,
                     "open_actions_only": open_only,
+                    "employee_filter": emp_name_filter or emp_id_filter,
                 },
                 visual_cards=[],
                 citations=[],
@@ -5387,6 +5447,158 @@ class DeterministicToolRegistry:
                 actions = [
                     a for a in actions if str(a.get("team") or "").casefold() in ("inbound", "outbound", "call center")
                 ]
+        if emp_id_filter or emp_name_filter:
+            actions = [a for a in actions if _matches_employee_action(a)]
+            # Also include active saved individual Action rows without a due_date
+            # (list_follow_up only includes follow-up actions with due_date set).
+            try:
+                from models.models import Action as ActionModel, Employee as EmployeeModel, Team as TeamModel
+                from utils.report_scope import user_can_access_team_level
+
+                seen_ids = {str(a.get("id")) for a in actions if a.get("id") is not None}
+                q_acts = (
+                    self.ctx.db.query(ActionModel, EmployeeModel, TeamModel)
+                    .join(EmployeeModel, ActionModel.employee_id == EmployeeModel.id)
+                    .join(TeamModel, ActionModel.team_id == TeamModel.id)
+                    .filter(ActionModel.is_active.is_(True))
+                )
+                if effective_month:
+                    q_acts = q_acts.filter(ActionModel.month.ilike(effective_month))
+                if effective_year:
+                    q_acts = q_acts.filter(ActionModel.year == int(effective_year))
+                for act_row, emp_row, team_row in q_acts.all():
+                    if str(act_row.id) in seen_ids:
+                        continue
+                    t_name = str(team_row.display_name or team_row.name or "").strip()
+                    if not user_can_access_team_level(self.ctx.scope, t_name, emp_row.performance_level):
+                        continue
+                    if self.ctx.scope.get("role") == "Branch Director":
+                        acc_b = self.ctx.scope.get("accessible_branches") or []
+                        if act_row.branch_key not in acc_b:
+                            continue
+                    if open_only and act_row.status not in OPEN_ACTION_STATUSES:
+                        continue
+                    cand_dict = {
+                        "id": str(act_row.id),
+                        "employee_id": emp_row.employee_id,
+                        "employee_name": emp_row.name,
+                        "team": t_name,
+                        "month": act_row.month,
+                        "year": act_row.year,
+                        "action_type": act_row.action_type,
+                        "action_text": act_row.action_text,
+                        "plan_title": act_row.plan_title,
+                        "status": act_row.status,
+                        "due_date": act_row.due_date.isoformat() if act_row.due_date else None,
+                        "follow_up_state": "open" if act_row.status in OPEN_ACTION_STATUSES else str(act_row.status or "closed").casefold(),
+                    }
+                    if _matches_employee_action(cand_dict):
+                        seen_ids.add(str(act_row.id))
+                        actions.append(cand_dict)
+            except Exception as direct_exc:
+                logger.debug("Direct employee action lookup skipped: %s", direct_exc)
+
+        # When filtering for a specific employee and 0 actions matched the requested month,
+        # also check across all periods so we tell the manager whether any prior saved action exists,
+        # and attach a compact read-only scorecard snapshot (score + biggest KPI drag).
+        other_period_actions: list[dict[str, Any]] = []
+        employee_context: dict[str, Any] | None = None
+        if emp_id_filter or emp_name_filter:
+            if not actions and effective_month:
+                try:
+                    all_follow_up = ca_service.list_follow_up(
+                        self.ctx.scope,
+                        state=effective_state,
+                        team=resolved["team"],
+                        month=None,
+                        region=effective_region,
+                    )
+                    for act in (all_follow_up.get("actions") or []):
+                        if _matches_employee_action(act):
+                            other_period_actions.append(
+                                {
+                                    "month": act.get("month"),
+                                    "year": act.get("year"),
+                                    "status": act.get("status"),
+                                    "action_type": act.get("action_type"),
+                                    "action_text": sanitize_untrusted_text(
+                                        act.get("manager_action") or act.get("action_text") or act.get("plan_title") or "",
+                                        140,
+                                    ),
+                                }
+                            )
+                except Exception:
+                    pass
+            try:
+                scoped_recs = self.ctx.get_scoped_records()
+                matched_recs: list[Any] = []
+                for rec in scoped_recs:
+                    r_eid = str(_record_field(rec, "employee_id", "") or "").strip()
+                    r_ename = str(_record_field(rec, "employee_name", "") or "").strip()
+                    id_ok = bool(emp_id_filter and r_eid.casefold() == emp_id_filter.casefold())
+                    name_ok = False
+                    if emp_name_filter and r_ename:
+                        qn = emp_name_filter.casefold()
+                        rn = r_ename.casefold()
+                        q_toks = [t for t in re.findall(r"[a-z0-9\u0600-\u06FF]+", qn) if len(t) >= 2]
+                        name_ok = qn in rn or rn in qn or (bool(q_toks) and all(t in rn for t in q_toks))
+                    if not (id_ok or name_ok):
+                        continue
+                    if effective_month and str(_record_field(rec, "month", "") or "").strip().casefold() != effective_month.casefold():
+                        continue
+                    if effective_year and int(_record_field(rec, "year", 0) or 0) != int(effective_year):
+                        continue
+                    matched_recs.append(rec)
+                if matched_recs:
+                    matched_recs.sort(
+                        key=lambda r: (
+                            int(_record_field(r, "year", 0) or 0),
+                            MONTH_ORDER.get(str(_record_field(r, "month", "") or "").strip(), 0),
+                        )
+                    )
+                    rec_pick = matched_recs[-1]
+                    sc_val = _record_evaluation_score(rec_pick)
+                    rec_name = str(_record_field(rec_pick, "employee_name", "") or emp_name_filter or "").strip()
+                    rec_id = str(_record_field(rec_pick, "employee_id", "") or emp_id_filter or "").strip()
+                    rec_team = str(_record_field(rec_pick, "team", "") or resolved["team"] or "").strip()
+                    rec_month = str(_record_field(rec_pick, "month", "") or "").strip()
+                    rec_year = int(_record_field(rec_pick, "year", 0) or 0)
+                    ev_obj = getattr(rec_pick, "evaluation", None)
+                    rec_grade = str((ev_obj.get("grade") if isinstance(ev_obj, dict) else getattr(ev_obj, "grade", "")) or "").strip()
+                    drags: list[dict[str, Any]] = []
+                    for kv in (getattr(rec_pick, "kpi_values", None) or []):
+                        kk = str((kv.get("kpi_key") if isinstance(kv, dict) else getattr(kv, "kpi_key", "")) or "")
+                        if kk.casefold() in ("overall_score", "bookings_count", "attended_count"):
+                            continue
+                        kl = str((kv.get("label") if isinstance(kv, dict) else getattr(kv, "label", "")) or kk)
+                        ach_raw = kv.get("achievement_ratio") if isinstance(kv, dict) else getattr(kv, "achievement_ratio", None)
+                        act_raw = kv.get("actual_value") if isinstance(kv, dict) else getattr(kv, "actual_value", None)
+                        tgt_raw = kv.get("target_value") if isinstance(kv, dict) else getattr(kv, "target_value", None)
+                        unit_raw = str((kv.get("unit") if isinstance(kv, dict) else getattr(kv, "unit", "%")) or "%")
+                        if ach_raw is None or act_raw is None:
+                            continue
+                        ach_pct_v = min(100.0, round(float(ach_raw) * 100.0 if float(ach_raw) <= 2.0 else float(ach_raw), 1))
+                        if ach_pct_v >= 95.0:
+                            continue
+                        if unit_raw == "%":
+                            act_d = f"{(float(act_raw) * 100.0 if float(act_raw) <= 1.5 else float(act_raw)):.1f}%"
+                            tgt_d = f"{(float(tgt_raw) * 100.0 if float(tgt_raw) <= 1.5 else float(tgt_raw)):.1f}%" if tgt_raw is not None else None
+                        else:
+                            act_d = f"{float(act_raw):g} {unit_raw}".strip()
+                            tgt_d = f"{float(tgt_raw):g} {unit_raw}".strip() if tgt_raw is not None else None
+                        drags.append({"label": kl, "actual": act_d, "target": tgt_d, "achievement_pct": ach_pct_v})
+                    drags.sort(key=lambda d: d["achievement_pct"])
+                    employee_context = {
+                        "employee_name": rec_name,
+                        "employee_id": rec_id,
+                        "team": rec_team,
+                        "period": f"{rec_month} {rec_year}".strip() if rec_month and rec_year else None,
+                        "score": round(float(sc_val), 1) if sc_val is not None else None,
+                        "grade": rec_grade or None,
+                        "top_drags": drags[:2],
+                    }
+            except Exception:
+                pass
 
         # Count all matching authorized records BEFORE limiting displayed rows.
         total_matching = len(actions)
@@ -5466,6 +5678,11 @@ class DeterministicToolRegistry:
             )
         ]
 
+        emp_filter_display = (
+            (employee_context or {}).get("employee_name")
+            or emp_name_filter
+            or emp_id_filter
+        )
         return ToolExecutionResult(
             tool_name="get_corrective_actions_status",
             arguments={
@@ -5473,6 +5690,8 @@ class DeterministicToolRegistry:
                 "month": effective_month,
                 "year": effective_year,
                 "state": effective_state,
+                "employee_id": emp_id_filter,
+                "employee_name": emp_name_filter,
             },
             records_evaluated=total_matching,
             digest={
@@ -5486,6 +5705,10 @@ class DeterministicToolRegistry:
                 "scope": resolved["team"] or resolved["function"] or "your authorized scope",
                 "period": f"{effective_month} {effective_year}" if effective_month and effective_year else None,
                 "open_actions_only": open_only,
+                "employee_filter": emp_filter_display,
+                "employee_id_filter": (employee_context or {}).get("employee_id") or emp_id_filter,
+                "other_period_actions": other_period_actions[:3],
+                "employee_context": employee_context,
             },
             visual_cards=cards,
             citations=citations,

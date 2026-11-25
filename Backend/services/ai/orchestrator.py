@@ -1980,7 +1980,10 @@ class PmsAiOrchestrator:
             "branch_comparison": "compare_branches",
             "score_drivers": "get_kpi_diagnosis",
             "diagnosis": "get_kpi_diagnosis",
+            "corrective_actions": "get_corrective_actions",
         }.get(single_operation_kind)
+        if routed.plan.intent == "corrective_actions":
+            canonical_tool_for_operation = "get_corrective_actions"
         if tool_name == "query_rankings" and single_operation_kind not in ("compare_branches", "branch_comparison"):
             canonical_tool_for_operation = None
             if (
@@ -2206,6 +2209,19 @@ class PmsAiOrchestrator:
                 if not routed.plan.compare_branch:
                     canonical_args.pop("compare_branch", None)
                 canonical_args["branch"] = branch
+            elif canonical_tool_for_operation == "get_corrective_actions":
+                canonical_args = {
+                    "team": requested_team or team,
+                    "function": requested_function or routed.plan.function,
+                    "period": plan_period,
+                    "state": routed.plan.action_state,
+                    "open_only": bool(re.search(r"\bopen\b", prompt_lower)),
+                }
+                if emp_id:
+                    canonical_args["employee_id"] = emp_id
+                if emp_name:
+                    canonical_args["employee_name"] = emp_name
+                canonical_args = {k: v for k, v in canonical_args.items() if v is not None}
             call_specs = [(canonical_tool_for_operation, canonical_args)]
             tool_args_with_kpi = dict(canonical_args)
             if metric_definition is not None:
@@ -2544,6 +2560,120 @@ class PmsAiOrchestrator:
                     route_used="model_led_pilot",
                     fallback_outcome="restricted_access",
                 ),
+            )
+
+        # 5b. Direct handling for get_corrective_actions (0 saved actions is a valid answer, not missing evaluation data)
+        if tool_name == "get_corrective_actions":
+            from services.ai.providers import DeterministicSynthesisAdapter
+            from services.ai.domain_policies import analyze_prompt_signals
+
+            ca_signals = analyze_prompt_signals(req.prompt, req.session_state)
+            ca_syn = DeterministicSynthesisAdapter().synthesize(
+                prompt=req.prompt,
+                signals=ca_signals,
+                tool_digests=all_tool_digests,
+                typed_evidence=tool_result.typed_evidence,
+                history=req.history,
+                variation_seed=req.variation_seed,
+                session_state=req.session_state,
+            )
+            ca_digest = tool_result.digest if isinstance(tool_result.digest, dict) else {}
+            ca_emp_filter = ca_digest.get("employee_filter")
+            ca_tot = int(ca_digest.get("total_actions") or 0)
+            ca_followups = list(ca_syn.suggested_followups or [])
+            if ca_emp_filter and ca_tot == 0:
+                propose_q = f"Propose a corrective action for {ca_emp_filter}"
+                if propose_q not in ca_followups:
+                    ca_followups.insert(0, propose_q)
+            tot_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            ca_period_key = f"{year_int:04d}-{MONTHS.get(month_str, 9):02d}"
+            ca_ctx = routed.confirmed_context.model_copy(
+                update={
+                    "intent": "corrective_actions",
+                    "team": requested_team or team,
+                    "function": requested_function or routed.confirmed_context.function,
+                    "branch": branch,
+                    "region": current_region,
+                    "periods": [ca_period_key],
+                    "last_subject_employee_id": ca_digest.get("employee_id_filter") or emp_id,
+                    "last_subject_employee_name": ca_emp_filter or (emp_name or None),
+                }
+            )
+            ca_state = req.session_state.model_copy(
+                update={
+                    "function": ca_ctx.function,
+                    "team": ca_ctx.team,
+                    "branch": ca_ctx.branch,
+                    "region": ca_ctx.region,
+                    "employee_id": ca_ctx.last_subject_employee_id,
+                    "month": month_str,
+                    "year": year_int,
+                    "last_confirmed_query": ca_ctx,
+                }
+            )
+            ca_scope_banner, _ = self._resolve_scope_banner_and_function(
+                session_state=ca_state,
+                region=ca_ctx.region,
+                month=month_str,
+                year=year_int,
+            )
+            ca_resp = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=active_conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                outcome="answer",
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=ca_syn.headline,
+                narrative_bullets=ca_syn.narrative_bullets,
+                visual_cards=tool_result.visual_cards,
+                citations=tool_result.citations,
+                deep_links=tool_result.deep_links,
+                primary_source_link=tool_result.deep_links[0] if tool_result.deep_links else None,
+                suggested_followups=ca_followups[:3],
+                resolved_session_state=ca_state,
+                scope_banner=ca_scope_banner,
+                effective_context_label=build_effective_context_label(
+                    page_context=req.page_context,
+                    session_state=ca_state,
+                    selected_metric_display=None,
+                ),
+                clarification=None,
+                structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
+                typed_evidence=tool_result.typed_evidence,
+                domain_guardrail_notes=[],
+                tool_calls=tool_records,
+                provider_used="deterministic",
+                model_used="deterministic-corrective-actions",
+                answer_source="deterministic",
+                latency_ms=max(0, int(round(tot_ms))),
+                timings=AiTurnTimingBreakdown(
+                    total_ms=tot_ms,
+                    tool_execution_ms=t_tool_ms,
+                    provider_ms=routed.provider_metrics.provider_ms,
+                ),
+                provider_usage=_build_aggregated_usage(
+                    router_mode=cfg.router_mode,
+                    route_used="model_led_pilot",
+                    router_metrics=routed.provider_metrics,
+                ),
+            )
+            from services.ai.guided_reads import finalize_deterministic_turn
+
+            return finalize_deterministic_turn(
+                orchestrator=self,
+                req=req,
+                resp=ca_resp,
+                plan_v2=validated_plan_v2,
+                confirmed_ctx=ca_ctx,
+                conv_service=conv_service,
+                active_conversation_id=active_conversation_id,
+                claimed_turn=claimed_turn,
+                claimed_context_version=claimed_context_version,
+                claimed_token=claimed_token,
+                t0=t0,
             )
 
         # 6. Check missing data
@@ -3170,9 +3300,15 @@ class PmsAiOrchestrator:
             )
         else:
             eff_dir = latest_ev.direction or "higher_better"
+            is_overall_score_metric = (
+                str(latest_ev.kpi_key or "").strip().casefold() == "overall_score"
+                or str(kpi_display or "").strip().casefold() in ("overall score", "overall pms score")
+            )
+            if is_overall_score_metric and curr_val is not None:
+                curr_val = round(float(curr_val), 1)
             tgt_clause = ""
             tgt_note = ""
-            if latest_ev.target is not None:
+            if latest_ev.target is not None and not is_overall_score_metric:
                 tgt_val = float(latest_ev.target)
                 c_val = float(curr_val)
                 diff = round(abs(c_val - tgt_val), 2)
@@ -3218,11 +3354,57 @@ class PmsAiOrchestrator:
                     'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
                 )
             else:
-                fallback_headline = (
-                    f"{display_subject}'s {kpi_display} was {curr_val} {unit} in {curr_period_label}"
-                    + (f", {tgt_clause}." if tgt_clause else ".")
+                sp_digest = (
+                    (tool_result.digest or {}).get("agent_spotlight")
+                    or (tool_result.digest or {}).get("spotlight")
+                    or {}
                 )
-                fallback_bullets = [f"Target: {latest_ev.target} {unit}"] if latest_ev.target is not None else []
+                sp_grade = str(sp_digest.get("grade") or "").strip() if isinstance(sp_digest, dict) else ""
+                sp_chg = sp_digest.get("change_vs_prev") if isinstance(sp_digest, dict) else None
+                sp_prev_m = str(sp_digest.get("previous_month_label") or "").strip() if isinstance(sp_digest, dict) else ""
+                sp_drags: list[str] = []
+                if is_overall_score_metric and isinstance(sp_digest, dict) and sp_digest.get("all_kpi_snapshots"):
+                    drag_snaps = [
+                        snap
+                        for snap in (sp_digest.get("all_kpi_snapshots") or [])
+                        if isinstance(snap, dict)
+                        and str(snap.get("kpi_key") or "").casefold() not in ("overall_score", "bookings_count", "attended_count")
+                        and snap.get("achievement_percent") is not None
+                        and float(snap["achievement_percent"]) < 95.0
+                    ]
+                    drag_snaps.sort(key=lambda s: float(s["achievement_percent"]))
+                    for snap in drag_snaps[:2]:
+                        s_lbl = str(snap.get("kpi_label") or snap.get("kpi_key") or "KPI")
+                        s_act = str(snap.get("actual_display") or "")
+                        s_ach = float(snap["achievement_percent"])
+                        s_tgt = snap.get("target_numeric")
+                        s_unit = str(snap.get("unit") or "")
+                        if s_tgt is not None:
+                            t_txt = f"{float(s_tgt):.1f}%" if s_unit == "%" else f"{float(s_tgt):g} {s_unit}".strip()
+                            sp_drags.append(f"{s_lbl} at {s_act} vs {t_txt} target ({s_ach:.1f}% ach)")
+                        else:
+                            sp_drags.append(f"{s_lbl} at {s_act} ({s_ach:.1f}% ach)")
+
+                if is_overall_score_metric:
+                    grade_clause = f" ({sp_grade})" if sp_grade else ""
+                    chg_clause = (
+                        f", moving {float(sp_chg):+.1f} pts vs {sp_prev_m}"
+                        if isinstance(sp_chg, (int, float)) and sp_prev_m
+                        else ""
+                    )
+                    fallback_headline = f"{display_subject} scored {float(curr_val):.1f}%{grade_clause} in {curr_period_label}{chg_clause}."
+                    fallback_bullets = (
+                        ["Key KPI drags: " + " · ".join(sp_drags) + "."]
+                        if sp_drags
+                        else []
+                    )
+                else:
+                    fallback_headline = (
+                        f"{display_subject}'s {kpi_display} was {curr_val} {unit} in {curr_period_label}"
+                        + (f", {tgt_clause}." if tgt_clause else ".")
+                    )
+                    fallback_bullets = [f"Target: {latest_ev.target} {unit}"] if latest_ev.target is not None else []
+
                 facts_payload = {
                     "employee": display_subject,
                     "team": team,
@@ -3231,20 +3413,43 @@ class PmsAiOrchestrator:
                     "period": curr_period_label,
                     "value": curr_val,
                     "unit": unit,
-                    "target": latest_ev.target,
-                    "target_status": tgt_clause,
+                    **(
+                        {"grade": sp_grade} if is_overall_score_metric and sp_grade else {}
+                    ),
+                    **(
+                        {"change_vs_prior_month_pts": round(float(sp_chg), 1), "prior_month": sp_prev_m}
+                        if is_overall_score_metric and isinstance(sp_chg, (int, float)) and sp_prev_m
+                        else {}
+                    ),
+                    **(
+                        {"key_kpi_drags": sp_drags} if sp_drags else {}
+                    ),
+                    **(
+                        {"target": latest_ev.target, "target_status": tgt_clause}
+                        if (latest_ev.target is not None and not is_overall_score_metric)
+                        else {}
+                    ),
                 }
+                overall_score_rule = (
+                    "Overall PMS Score is on a 0-100% scale (90% = Meet Expectations); NEVER describe 100% as a missed target or say 'falling short of 100.0%'. "
+                    "Mention the score with 1 decimal place and grade/MoM change if present, and put key_kpi_drags in narrative_bullets if provided. "
+                    if is_overall_score_metric
+                    else ""
+                )
                 instruction = (
                     f"{self.scope.get('passport_xml', '')}\n"
                     f"{self.scope.get('user_memory_text', '')}\n"
                     f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n\n"
-                    "You are the PMS AI Assistant. State the verified performance answer directly and concisely in 1-2 sentences. "
-                    "Use ONLY the exact employee name, metric name, period, value, and unit in `verified_facts`. "
-                    "For single-period questions, report only the requested period's value and target (if present). "
+                    "You are a Senior Performance Management Analyst for a healthcare PMS dashboard. "
+                    "Answer the user's question directly and naturally in 1-2 crisp sentences. "
+                    "Use ONLY the exact names, metrics, periods, values, and units in `verified_facts`. "
+                    + overall_score_rule
                     + (f"{tgt_note} " if tgt_note else "")
-                    + "Do NOT use temporal change words like 'increased', 'decreased', or 'improved' across time because there is no prior period comparison. "
-                    "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
-                    'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
+                    + "NEVER echo raw JSON field names or parenthetical labels like '(value)', '(target)', or '(actual)'. "
+                    + "NEVER repeat the headline in `narrative_bullets`; each bullet must add a distinct verified fact (such as a KPI drag or MoM change) or omit bullets (`[]`). "
+                    + "Do NOT use temporal change words like 'increased', 'decreased', or 'improved' unless `change_vs_prior_month_pts` or multi-period data is present in `verified_facts`. "
+                    + "Do NOT use causal words like 'because' or 'due to'. Do NOT invent numbers. "
+                    + 'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
                 )
                 compound_plan_ml = plan_compound_parts(
                     req.prompt,
@@ -3458,8 +3663,19 @@ class PmsAiOrchestrator:
             if resp_synth.is_success and resp_synth.content:
                 synth_metrics.provider_calls = 1
                 parsed = json.loads(resp_synth.content)
-                cand_h = str(parsed.get("headline") or "").strip()
-                cand_b = [str(b).strip() for b in (parsed.get("narrative_bullets") or []) if str(b).strip()]
+                cand_h = re.sub(r"\s*\((?:value|target|actual|metric|unit)\)\s*", " ", str(parsed.get("headline") or "").strip(), flags=re.IGNORECASE).strip()
+                raw_cand_b = [
+                    re.sub(r"\s*\((?:value|target|actual|metric|unit)\)\s*", " ", str(b).strip(), flags=re.IGNORECASE).strip()
+                    for b in (parsed.get("narrative_bullets") or [])
+                    if str(b).strip()
+                ]
+                h_tokens = {tok for tok in re.findall(r"[a-z0-9\u0600-\u06FF]+", cand_h.casefold()) if len(tok) >= 2}
+                cand_b = []
+                for b_item in raw_cand_b:
+                    b_tokens = {tok for tok in re.findall(r"[a-z0-9\u0600-\u06FF]+", b_item.casefold()) if len(tok) >= 2}
+                    if b_tokens and h_tokens and (len(b_tokens & h_tokens) / len(b_tokens)) >= 0.85:
+                        continue  # Drop bullets that merely parrot the headline
+                    cand_b.append(b_item)
                 # If model put value into bullets rather than headline, integrate it into headline
                 if tool_name not in ("query_rankings", "rank_employees", "compare_branches"):
                     has_val_in_h = str(curr_val) in cand_h or f"{curr_val:.1f}" in cand_h
@@ -5212,7 +5428,7 @@ class PmsAiOrchestrator:
                     and re.search(r"\b(?:employees|contributors|agents)\b", lower_prompt)
                 ):
                     signals.primary_intents.append("people_contribution")
-            elif routed.plan.intent == "corrective_actions" and asks_open_actions:
+            elif routed.plan.intent == "corrective_actions":
                 signals.primary_intents = ["corrective_actions"]
 
         resolution_ms = round((time.perf_counter() - t_res_start) * 1000.0, 2)
@@ -5662,6 +5878,8 @@ class PmsAiOrchestrator:
                             month=signals.detected_month,
                             year=signals.detected_year,
                             open_only=asks_open_actions,
+                            employee_id=routed.plan.employee_id,
+                            employee_name=routed.plan.employee_name,
                         )
                     )
                 elif intent == "governance_plans":

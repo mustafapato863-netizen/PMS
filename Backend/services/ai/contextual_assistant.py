@@ -740,7 +740,10 @@ def detect_contextual_capability(
 
     if is_ranked_action_request(prompt):
         return "proposal", "local_rules", 0.0
-    if re.search(r"\b(?:summari[sz]e|list|show|count|how many)\b.*\bcorrective\s+actions?\b", lower):
+    if re.search(
+        r"\b(?:summari[sz]e|list|show|count|how many|what|which|any|did we)\b.*\bcorrective\s+actions?\b",
+        lower,
+    ) and not re.search(r"\b(?:should|propose|suggest|recommend|draft|create)\b", lower):
         return "performance_query", "local_rules", 0.0
 
     if _EVALUATION_NAV.search(lower):

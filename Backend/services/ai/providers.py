@@ -1753,18 +1753,62 @@ class DeterministicLocalProviderAdapter:
         elif "total_actions" in merged:
             tot_act = merged.get("total_actions", 0)
             acts = merged.get("actions") or []
-            if merged.get("open_actions_only"):
-                headline = f"{tot_act} open corrective {'action' if tot_act == 1 else 'actions'} for {scope} in {period}."
-            elif variant_idx == 1:
-                headline = f"Governance queue for {scope}: {tot_act} corrective actions require tracking across active follow-up states."
-            elif variant_idx == 2:
-                headline = f"Action posture in {scope}: {tot_act} tracked corrective actions are currently logged for manager follow-up."
+            emp_filter = merged.get("employee_filter")
+            emp_ctx = merged.get("employee_context") or {}
+            other_acts = merged.get("other_period_actions") or []
+            period_clause = f" for {period}" if period and period != "the active period" else ""
+
+            if emp_filter:
+                if tot_act == 0:
+                    headline = f"No saved corrective action has been recorded for {emp_filter}{period_clause} yet."
+                    if other_acts:
+                        prev_list = "; ".join(
+                            f"{a.get('month') or ''} {a.get('year') or ''} ({a.get('status') or 'Open'}: {a.get('action_text') or a.get('action_type') or 'Action'})".strip()
+                            for a in other_acts[:2]
+                        )
+                        bullets.append(f"Prior saved actions found in other periods: {prev_list}.")
+                    else:
+                        bullets.append(
+                            "Any action shown as 'Suggested — not saved' on the review page is a recommendation only and has not been saved to PMS."
+                        )
+                    if emp_ctx.get("score") is not None:
+                        gr_txt = f" ({emp_ctx['grade']})" if emp_ctx.get("grade") else ""
+                        drags = emp_ctx.get("top_drags") or []
+                        drag_txt = (
+                            " · Primary KPI drag: "
+                            + ", ".join(
+                                f"{d['label']} at {d['actual']}" + (f" vs {d['target']} target" if d.get("target") else "")
+                                for d in drags[:2]
+                            )
+                            if drags
+                            else ""
+                        )
+                        bullets.append(
+                            f"Current scorecard context ({emp_ctx.get('period') or period}): {float(emp_ctx['score']):.1f}%{gr_txt}{drag_txt}."
+                        )
+                else:
+                    noun = "saved corrective action" if tot_act == 1 else "saved corrective actions"
+                    headline = f"{tot_act} {noun} recorded for {emp_filter}{period_clause}."
+                    for a in acts[:3]:
+                        due_part = f" · Due {a['due_date']}" if a.get("due_date") else ""
+                        owner_part = f" · Owner: {a['owner']}" if a.get("owner") else ""
+                        txt_part = f" — {a['action_text']}" if a.get("action_text") else ""
+                        bullets.append(
+                            f"{a.get('action_type') or 'Action'} ({a.get('status') or 'Open'}{due_part}{owner_part}){txt_part}"
+                        )
             else:
-                headline = f"{tot_act} corrective actions are currently tracked for {scope}."
-            for a in acts[:3]:
-                bullets.append(
-                    f"{a.get('employee_name')} ({a.get('team')}): {a.get('action_type')} — {a.get('status')} ({a.get('follow_up_state')})."
-                )
+                if merged.get("open_actions_only"):
+                    headline = f"{tot_act} open corrective {'action' if tot_act == 1 else 'actions'} for {scope} in {period}."
+                elif variant_idx == 1:
+                    headline = f"Governance queue for {scope}: {tot_act} corrective actions require tracking across active follow-up states."
+                elif variant_idx == 2:
+                    headline = f"Action posture in {scope}: {tot_act} tracked corrective actions are currently logged for manager follow-up."
+                else:
+                    headline = f"{tot_act} corrective actions are currently tracked for {scope}."
+                for a in acts[:3]:
+                    bullets.append(
+                        f"{a.get('employee_name')} ({a.get('team')}): {a.get('action_type')} — {a.get('status')} ({a.get('follow_up_state')})."
+                    )
 
         # 6. Managerial / Corporate BSC
         elif merged.get("bsc_kpis") or merged.get("guardrail"):
