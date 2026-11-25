@@ -6047,6 +6047,12 @@ class PmsAiOrchestrator:
                                 SourceCitationPill(label=f"Branch · {score_facts_cand.branch}", category="branch"),
                             ]
                             basis_warning = None
+        runtime_cfg = get_ai_runtime_config()
+        allow_turn1_or_variation = bool(
+            (req.variation_seed or 0) >= 1
+            or len(req.history) >= 2
+            or runtime_cfg.pseudonymized_pii_synthesis_enabled
+        )
         if (
             not accepted_local
             and not routed.plan.verified_comparison
@@ -6054,8 +6060,8 @@ class PmsAiOrchestrator:
             and (req.provider_override or "auto") == "auto"
             and capability_mode != "proposal"
             and local_synthesis_enabled()
-            and ((req.variation_seed or 0) >= 1 or len(req.history) >= 2)
-            and get_ai_runtime_config().is_scope_allowed_for_cloud(
+            and allow_turn1_or_variation
+            and runtime_cfg.is_scope_allowed_for_cloud(
                 routed.plan.team or routed.plan.function or req.session_state.team or req.session_state.function
             )
         ):
@@ -6107,7 +6113,8 @@ class PmsAiOrchestrator:
                 )
                 or sanitize_prompt_for_router_training(req.prompt, db=self.db) != req.prompt
             )
-            if not has_employee_pii:
+            allow_pii_via_pseudonym = bool(runtime_cfg.pseudonymized_pii_synthesis_enabled)
+            if not has_employee_pii or allow_pii_via_pseudonym:
                 self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
                 if (
                     live_auth_service.is_plan_and_context_authorized(
@@ -6139,6 +6146,8 @@ class PmsAiOrchestrator:
                         ),
                         user_id=str(self.scope.get("user_id") or "") or None,
                         user_role=role or None,
+                        visible_summary=req.page_context.visible_summary if req.page_context else None,
+                        allow_pseudonymized_pii=allow_pii_via_pseudonym,
                     )
                     self.scope = live_auth_service.validate_live_account_and_scope(self.scope)
                     if var_syn is not None:

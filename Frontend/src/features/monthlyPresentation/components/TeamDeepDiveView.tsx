@@ -111,6 +111,7 @@ export interface TeamDeepDiveViewProps {
   presentationMode?: boolean;
   overviewLabel?: string;
   onSelectEmployee?: (employeeId: string) => void;
+  onSelectKpiMetric?: (kpiLabel: string | null) => void;
 }
 
 /**
@@ -177,6 +178,7 @@ function TeamDeepDiveViewContent({
   presentationMode = false,
   overviewLabel = 'Overview',
   onSelectEmployee,
+  onSelectKpiMetric,
 }: TeamDeepDiveViewProps) {
   const summaryGradeStyle = GRADE_STYLES[data.summary.grade];
   const measuredChange = data.scoreTrend ? data.scoreTrend.changeVsPrevious : data.summary.changeVsPrev;
@@ -478,6 +480,7 @@ function TeamDeepDiveViewContent({
     setSelectedKpiKey(kpiKey);
     const idx = enrichedKpis.findIndex((k) => k.kpiKey === kpiKey);
     if (idx >= 0) {
+      onSelectKpiMetric?.(enrichedKpis[idx].label);
       if (idx < safeCarouselStart) {
         setCarouselStart(idx);
       } else if (idx >= safeCarouselStart + TEAM_KPI_CARDS_PER_ROW) {

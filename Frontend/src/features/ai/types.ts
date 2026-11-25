@@ -76,8 +76,18 @@ export interface PageContextV1 {
   month?: string | null;
   year?: number | null;
   selected_metric_id?: string | null;
+  user_selected_metric?: boolean;
   selected_entity_type?: 'function' | 'team' | 'position' | 'employee' | 'branch' | 'metric' | 'none' | null;
   selected_entity_id?: string | null;
+  visible_summary?: {
+    headline_score?: number | null;
+    score_basis?: string | null;
+    headcount?: number | null;
+    below_90_count?: number | null;
+    top_gap_kpi?: string | null;
+    top_gap_actual?: string | null;
+    top_gap_target?: string | null;
+  } | null;
   is_fallback_data?: boolean;
   ui_capabilities?: string[];
 }

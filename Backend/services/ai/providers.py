@@ -1112,6 +1112,7 @@ class DeterministicLocalProviderAdapter:
                     + "."
                 )
             elif r_dir == "worst" and not signals.detected_employee_query:
+                is_kpi_rank = str(rank_metric_lbl or "").strip().casefold() not in ("overall score", "overall pms score", "")
                 if variant_idx == 1:
                     headline = (
                         f"Coaching priority in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) recorded the lowest {rank_metric_lbl} at {rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
@@ -1119,6 +1120,11 @@ class DeterministicLocalProviderAdapter:
                 elif variant_idx == 2:
                     headline = (
                         f"Bottom-ranked benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) sits at Rank #{rank_num} of {tot_team} by {rank_metric_lbl} with {rank_disp}{tie_txt}{chg_txt}{six_txt}."
+                    )
+                elif is_kpi_rank:
+                    headline = (
+                        f"{e_name} ({e_id}{pos_txt}) has the lowest {rank_metric_lbl} in {e_team} ({branch}) for {period} at "
+                        f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
                 else:
                     headline = (
@@ -1130,7 +1136,32 @@ class DeterministicLocalProviderAdapter:
                     if c_headline:
                         headline = f"{headline} {c_headline}"
                         bullets.extend(b for b in c_bullets if b not in bullets)
+                if not is_kpi_rank and sp.get("all_kpi_snapshots"):
+                    drag_snaps = [
+                        snap
+                        for snap in (sp.get("all_kpi_snapshots") or [])
+                        if isinstance(snap, dict)
+                        and str(snap.get("kpi_key") or "").casefold() not in ("overall_score", "bookings_count", "attended_count")
+                        and snap.get("achievement_percent") is not None
+                        and float(snap["achievement_percent"]) < 95.0
+                    ]
+                    drag_snaps.sort(key=lambda s: float(s["achievement_percent"]))
+                    if drag_snaps:
+                        drag_parts = []
+                        for s in drag_snaps[:2]:
+                            s_lbl = str(s.get("kpi_label") or s.get("kpi_key") or "KPI")
+                            s_act = str(s.get("actual_display") or "")
+                            s_ach = float(s["achievement_percent"])
+                            s_tgt = s.get("target_numeric")
+                            s_unit = str(s.get("unit") or "")
+                            if s_tgt is not None:
+                                tgt_txt = f"{float(s_tgt):.1f}%" if s_unit == "%" else f"{float(s_tgt):g} {s_unit}".strip()
+                                drag_parts.append(f"{s_lbl} at {s_act} vs {tgt_txt} target ({s_ach:.1f}% ach)")
+                            else:
+                                drag_parts.append(f"{s_lbl} at {s_act} ({s_ach:.1f}% ach)")
+                        bullets.append("Key KPI drags: " + " · ".join(drag_parts) + ".")
             elif not signals.detected_employee_query:
+                is_kpi_rank = str(rank_metric_lbl or "").strip().casefold() not in ("overall score", "overall pms score", "")
                 if variant_idx == 1:
                     headline = (
                         f"Leading {e_team} ({branch}) in {period}, {e_name} ({e_id}{pos_txt}) ranks #1 of {tot_team} by {rank_metric_lbl} at {rank_disp}{tie_txt}{chg_txt}{six_txt}."
@@ -1138,6 +1169,11 @@ class DeterministicLocalProviderAdapter:
                 elif variant_idx == 2:
                     headline = (
                         f"Top benchmark in {e_team} ({branch}) for {period}: {e_name} ({e_id}{pos_txt}) holds #1 of {tot_team} on {rank_metric_lbl} with {rank_disp}{tie_txt}{chg_txt}{six_txt}."
+                    )
+                elif is_kpi_rank:
+                    headline = (
+                        f"{e_name} ({e_id}{pos_txt}) leads {e_team} ({branch}) for {period} on {rank_metric_lbl} at "
+                        f"{rank_disp} (Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                     )
                 else:
                     headline = (

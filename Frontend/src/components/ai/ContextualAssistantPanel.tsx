@@ -134,7 +134,7 @@ function buildEffectiveContextLabel(ctx: PageContextV1): string {
   if (ctx.branch && ctx.branch.toLowerCase() !== 'all') {
     parts.push(ctx.branch);
   }
-  if (ctx.selected_metric_id) {
+  if (ctx.selected_metric_id && ctx.user_selected_metric !== false) {
     parts.push(ctx.selected_metric_id);
   }
   return parts.join(' · ');
@@ -160,8 +160,8 @@ function buildStarterPrompts(ctx: PageContextV1, canCreateAction: boolean): stri
   if (ctx.page_id === 'team_dashboard') {
     const prompts = [
       'Explain this page',
+      `Who is the lowest-scoring agent in ${ctx.team_id || 'this team'}?`,
       `Why is ${scope} below target?`,
-      `Who is the top performer in ${ctx.team_id || 'this team'}?`,
     ];
     if (canCreateAction && !ctx.is_fallback_data) {
       prompts.push(`Propose a corrective action for ${metric}`);
@@ -170,6 +170,25 @@ function buildStarterPrompts(ctx: PageContextV1, canCreateAction: boolean): stri
   }
 
   if (ctx.page_id === 'executive_summary') {
+    if (ctx.team_id) {
+      const prompts = [
+        'Explain this page',
+        `Who is the lowest-scoring agent in ${ctx.team_id}?`,
+        `Why is ${ctx.team_id} below target in ${periodLabel}?`,
+      ];
+      if (canCreateAction && !ctx.is_fallback_data && ctx.selected_metric_id) {
+        prompts.push(`Propose a corrective action for ${ctx.selected_metric_id}`);
+      }
+      return prompts;
+    }
+    if (ctx.position_id) {
+      return [
+        'Explain this page',
+        `Who needs coaching most in ${ctx.position_id}?`,
+        `What is driving ${ctx.position_id} performance in ${periodLabel}?`,
+        `Show 6-month trend for ${ctx.position_id}`,
+      ];
+    }
     return [
       'Explain this page',
       `Which team in ${scope} dropped most?`,

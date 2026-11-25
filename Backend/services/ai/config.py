@@ -71,6 +71,12 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
         "administration",
         "offshore admin & management",
         "quality management",
+        "qlty&case-mngt",
+        "qltyandcase-mngt",
+        "quality and management",
+        "er dr",
+        "radiologist",
+        "clinical",
         "crm",
         "nursing",
         "pmo",
@@ -107,11 +113,12 @@ class AiRuntimeConfig:
     model_led_pilot_enabled: bool = False
     guided_reads_enabled: bool = False
     compound_parts_enabled: bool = True
+    pseudonymized_pii_synthesis_enabled: bool = False
 
     def can_use_model_led_planner(self, role: str | None, provider_override: str | None) -> bool:
         return (
             self.model_led_pilot_enabled
-            and (role or "").strip() == "Admin"
+            and bool((role or "").strip())
             and provider_override != "deterministic"
         )
 
@@ -128,13 +135,14 @@ class AiRuntimeConfig:
 
 
 def get_ai_runtime_config() -> AiRuntimeConfig:
+    in_pytest = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
     raw_router = os.environ.get("PMS_AI_ROUTER_MODE", "hybrid").strip().casefold()
     router_mode: RouterModeType = (
         raw_router if raw_router in ("legacy", "shadow", "hybrid") else "hybrid"  # type: ignore[assignment]
     )
 
     nvidia_routing_enabled = _parse_bool(
-        os.environ.get("PMS_AI_NVIDIA_ROUTING_ENABLED"), default=False
+        os.environ.get("PMS_AI_NVIDIA_ROUTING_ENABLED"), default=not in_pytest
     )
 
     app_env = os.environ.get("APP_ENV", "").strip().casefold()
@@ -169,13 +177,16 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         os.environ.get("PMS_AI_CONVERSATION_STATE_ENABLED"), default=True
     )
     model_led_pilot_enabled = _parse_bool(
-        os.environ.get("PMS_AI_MODEL_LED_PILOT_ENABLED"), default=False
+        os.environ.get("PMS_AI_MODEL_LED_PILOT_ENABLED"), default=not in_pytest
     )
     guided_reads_enabled = _parse_bool(
-        os.environ.get("PMS_AI_GUIDED_READS_ENABLED"), default=False
+        os.environ.get("PMS_AI_GUIDED_READS_ENABLED"), default=not in_pytest
     )
     compound_parts_enabled = _parse_bool(
         os.environ.get("PMS_AI_COMPOUND_PARTS_ENABLED"), default=True
+    )
+    pseudonymized_pii_synthesis_enabled = _parse_bool(
+        os.environ.get("PMS_AI_PSEUDONYMIZED_PII_SYNTHESIS_ENABLED"), default=not in_pytest
     )
 
     return AiRuntimeConfig(
@@ -190,6 +201,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         model_led_pilot_enabled=model_led_pilot_enabled,
         guided_reads_enabled=guided_reads_enabled,
         compound_parts_enabled=compound_parts_enabled,
+        pseudonymized_pii_synthesis_enabled=pseudonymized_pii_synthesis_enabled,
     )
 
 

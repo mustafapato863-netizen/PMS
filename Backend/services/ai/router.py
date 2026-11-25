@@ -3340,6 +3340,29 @@ class HybridQueryRouter:
                     "led performance",
                     "rank ",
                     "who leads",
+                    "who needs coaching",
+                    "needs coaching most",
+                    "who needs help",
+                    "who is struggling",
+                    "most at risk",
+                    "meen aswa",
+                    "min aswa",
+                    "meen a7san",
+                    "min a7san",
+                    "meen a7sn",
+                    "مين أسوأ",
+                    "مين اسوأ",
+                    "مين اسوا",
+                    "أقل موظف",
+                    "اقل موظف",
+                    "مين أقل",
+                    "مين اقل",
+                    "مين أحسن",
+                    "مين احسن",
+                    "أفضل موظف",
+                    "افضل موظف",
+                    "أعلى موظف",
+                    "اعلى موظف",
                     "role of the top",
                     "position of the top",
                 )
@@ -3356,7 +3379,24 @@ class HybridQueryRouter:
 
         asks_worst = any(
             w in lower
-            for w in ("lowest", "worst", "weakest", "bottom", "negative contributors", "caused")
+            for w in (
+                "lowest",
+                "worst",
+                "weakest",
+                "bottom",
+                "negative contributors",
+                "caused",
+                "needs coaching",
+                "needs help",
+                "struggling",
+                "at risk",
+                "aswa",
+                "أسوأ",
+                "اسوأ",
+                "اسوا",
+                "أقل",
+                "اقل",
+            )
         )
         if inherited_ranking_followup and prior and not re.search(
             r"\b(?:lowest|worst|weakest|bottom|highest|best|top)\b", lower
@@ -3438,6 +3478,29 @@ class HybridQueryRouter:
                         "has the highest",
                         "led performance",
                         "who leads",
+                        "who needs coaching",
+                        "needs coaching most",
+                        "who needs help",
+                        "who is struggling",
+                        "most at risk",
+                        "meen aswa",
+                        "min aswa",
+                        "meen a7san",
+                        "min a7san",
+                        "meen a7sn",
+                        "مين أسوأ",
+                        "مين اسوأ",
+                        "مين اسوا",
+                        "أقل موظف",
+                        "اقل موظف",
+                        "مين أقل",
+                        "مين اقل",
+                        "مين أحسن",
+                        "مين احسن",
+                        "أفضل موظف",
+                        "افضل موظف",
+                        "أعلى موظف",
+                        "اعلى موظف",
                         "role of the top",
                         "position of the top",
                     )
@@ -3940,9 +4003,55 @@ class HybridQueryRouter:
                 or (
                     (
                         (session_state.team and session_state.team.strip().casefold() not in ("all", ""))
+                        or (session_state.function and session_state.function.strip().casefold() not in ("all", ""))
                         or eff_region is not None
                     )
-                    and any(w in lower for w in ("score", "scores", "performance", "summary", "overview", "status", "result", "results", "analyze", "review"))
+                    and any(
+                        w in lower
+                        for w in (
+                            "score",
+                            "scores",
+                            "performance",
+                            "summary",
+                            "summarize",
+                            "overview",
+                            "status",
+                            "result",
+                            "results",
+                            "analyze",
+                            "analysis",
+                            "review",
+                            "wrong",
+                            "issue",
+                            "issues",
+                            "problem",
+                            "problems",
+                            "gap",
+                            "gaps",
+                            "drag",
+                            "dragging",
+                            "coach",
+                            "coaching",
+                            "focus",
+                            "priority",
+                            "priorities",
+                            "insight",
+                            "insights",
+                            "weak",
+                            "weakest",
+                            "diagnose",
+                            "diagnosis",
+                            "brief",
+                            "doing",
+                            "looking",
+                            "happening",
+                            "ملخص",
+                            "مشاكل",
+                            "تحليل",
+                            "أداء",
+                            "اداء",
+                        )
+                    )
                 )
                 or (
                     is_short_followup

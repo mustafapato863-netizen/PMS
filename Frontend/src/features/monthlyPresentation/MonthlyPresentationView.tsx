@@ -1756,6 +1756,9 @@ function MonthlyPresentationScreen({
           presentationMode={isInline || presentationMode}
           overviewLabel="Executive Summary"
           onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
+          onSelectKpiMetric={(label) =>
+            setClickedKpiState(label ? { scopeKey: currentAiScopeKey, label } : null)
+          }
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} />}
         </>
@@ -1785,6 +1788,9 @@ function MonthlyPresentationScreen({
           presentationMode={isInline || presentationMode}
           overviewLabel="Executive Summary"
           onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
+          onSelectKpiMetric={(label) =>
+            setClickedKpiState(label ? { scopeKey: currentAiScopeKey, label } : null)
+          }
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} overallOnly />}
         </>
@@ -2027,8 +2033,19 @@ function MonthlyPresentationScreen({
     storedActions,
   ]);
 
+  const [clickedKpiState, setClickedKpiState] = useState<{ scopeKey: string; label: string } | null>(null);
+  const currentAiScopeKey = `${activeRegion}|${functionSlug || ''}|${activeTeamSlug || ''}|${activeRoleSlug || ''}|${selectedPeriodKey}`;
+  const clickedKpiLabel =
+    clickedKpiState && clickedKpiState.scopeKey === currentAiScopeKey
+      ? clickedKpiState.label
+      : null;
+
   const monthlyPageContext = useMemo<PageContextV1>(() => {
-    const primaryDriverMetric = resolvedTeamData?.kpis?.[0]?.label ?? null;
+    const primaryDriverMetric =
+      clickedKpiLabel ??
+      resolvedTeamData?.kpis?.[0]?.label ??
+      resolvedRoleData?.kpis?.[0]?.name ??
+      null;
     const isFallbackData =
       !summaryRecordsQuery.isLoading &&
       !explicitPreview &&
@@ -2040,6 +2057,38 @@ function MonthlyPresentationScreen({
       ''
     ).split(' ');
     const parsedYear = Number(monthParts[1]);
+    const topTeamGap = resolvedTeamData?.kpis?.[0];
+    const topRoleGap = resolvedRoleData?.kpis?.[0];
+    const topOverviewGap = overviewData.drivers?.negative?.[0];
+    const visibleSummary = resolvedTeamData
+      ? {
+          headline_score: resolvedTeamData.summary.score,
+          score_basis: resolvedTeamData.summary.scoreLabel ?? null,
+          headcount: resolvedTeamData.summary.headcount,
+          below_90_count: resolvedTeamData.agentsAverageOrBelow.length,
+          top_gap_kpi: topTeamGap?.label ?? null,
+          top_gap_actual: topTeamGap?.actualFormatted ?? null,
+          top_gap_target: topTeamGap?.targetFormatted ?? null,
+        }
+      : resolvedRoleData
+        ? {
+            headline_score: resolvedRoleData.score,
+            score_basis: 'Role average',
+            headcount: resolvedRoleData.headcount,
+            below_90_count: resolvedRoleData.below90Count,
+            top_gap_kpi: topRoleGap?.name ?? null,
+            top_gap_actual: topRoleGap?.actualDisplay ?? null,
+            top_gap_target: topRoleGap?.targetDisplay ?? null,
+          }
+        : {
+            headline_score: overviewData.companyPerformance?.overallScore ?? null,
+            score_basis: 'Executive summary',
+            headcount: overviewData.companyPerformance?.evaluatedEmployees ?? null,
+            below_90_count: null,
+            top_gap_kpi: topOverviewGap?.kpiName ?? null,
+            top_gap_actual: topOverviewGap?.actualFormatted ?? null,
+            top_gap_target: topOverviewGap?.targetFormatted ?? null,
+          };
     return {
       page_id: 'executive_summary',
       route_id: `${location.pathname}${location.search}`,
@@ -2053,23 +2102,26 @@ function MonthlyPresentationScreen({
       team_id: resolvedTeamData?.canonicalTeam ?? resolvedTeamData?.teamDisplayName ?? null,
       position_id: resolvedRoleData?.roleTitle ?? null,
       selected_metric_id: primaryDriverMetric,
+      user_selected_metric: Boolean(clickedKpiLabel),
+      visible_summary: isFallbackData ? null : visibleSummary,
       is_fallback_data: isFallbackData,
     };
   }, [
     activeBranch,
     activeRegion,
     authorizedRecords.length,
+    clickedKpiLabel,
     explicitPreview,
     location.pathname,
     location.search,
+    overviewData.companyPerformance?.evaluatedEmployees,
+    overviewData.companyPerformance?.overallScore,
+    overviewData.drivers?.negative,
     overviewData.monthLabel,
     resolvedFunctionData?.functionName,
     resolvedFunctionData?.monthLabel,
-    resolvedRoleData?.roleTitle,
-    resolvedTeamData?.canonicalTeam,
-    resolvedTeamData?.kpis,
-    resolvedTeamData?.monthLabel,
-    resolvedTeamData?.teamDisplayName,
+    resolvedRoleData,
+    resolvedTeamData,
     selectedEmployee?.employeeId,
     selectedPeriodKey,
     summaryRecordsQuery.isLoading,

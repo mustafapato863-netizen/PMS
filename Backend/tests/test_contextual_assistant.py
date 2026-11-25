@@ -724,3 +724,97 @@ def test_uppercase_all_region_and_overview_metric_do_not_break_team_ranking(
     assert "September 2026" in res.effective_context_label
     assert "Admission Rate Score" not in res.effective_context_label
 
+
+def test_passive_page_metric_does_not_hijack_overall_worst_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: asking 'who is worst' on Outbound with passive selected_metric_id='Reachability'
+    must rank by Overall PMS Score (not Reachability), while explicit KPI questions still rank by Reachability."""
+    from models.ai_schemas import SessionFilterContext
+
+    db = _build_in_memory_db()
+
+    # Rawan has the lowest Overall Score (81.0%), higher Reachability (54.1%)
+    rawan = _make_inbound_record("SGHD70101", "Rawan Mohamed Salah Elnajjar", 81.0, booking_actual=0.23, booking_target=0.30)
+    rawan.team = "Outbound"
+    rawan.id = "Outbound_SGHD70101_2026_Sep"
+    rawan.kpi_values = [
+        *(rawan.kpi_values or []),
+        {
+            "kpi_key": "Other",
+            "label": "Reachability",
+            "actual_value": 0.541,
+            "target_value": 0.75,
+            "achievement_ratio": 0.721,
+            "weight_applied": 0.10,
+            "contribution": 0.0721,
+            "direction": "higher_better",
+            "unit": "%",
+        },
+    ]
+
+    # Ahmed has a higher Overall Score (84.5%), but lower Reachability (46.9%)
+    ahmed = _make_inbound_record("SGHD70184", "Ahmed Mohamed Abdelrashed", 84.5, booking_actual=0.295, booking_target=0.30)
+    ahmed.team = "Outbound"
+    ahmed.id = "Outbound_SGHD70184_2026_Sep"
+    ahmed.kpi_values = [
+        *(ahmed.kpi_values or []),
+        {
+            "kpi_key": "Other",
+            "label": "Reachability",
+            "actual_value": 0.469,
+            "target_value": 0.75,
+            "achievement_ratio": 0.625,
+            "weight_applied": 0.10,
+            "contribution": 0.0625,
+            "direction": "higher_better",
+            "unit": "%",
+        },
+    ]
+
+    _patch_records(monkeypatch, [rawan, ahmed])
+    ai_evidence_cache.clear()
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+
+    page_ctx = PageContextV1(
+        page_id="executive_summary",
+        route_id="/monthly-presentation/call-center/outbound",
+        team_id="Outbound",
+        period="2026-09",
+        month="September",
+        year=2026,
+        selected_metric_id="Reachability",
+    )
+
+    # 1. Generic "who is worst" -> ranks by Overall Score (Rawan 81.0%), NOT Reachability (Ahmed 84.5%)
+    res_overall = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="who is worst",
+            page_context=page_ctx,
+            session_state=SessionFilterContext(team="Outbound", performance_level="Employee", month="September", year=2026),
+        )
+    )
+    assert res_overall.outcome == "answer"
+    assert "Rawan" in res_overall.headline
+    assert "Reachability" not in (res_overall.effective_context_label or "")
+
+    # 2. Explicit KPI ranking "who is worst on reachability" -> ranks by Reachability (Ahmed 46.9%) with accurate wording
+    res_kpi = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="who is worst on reachability",
+            page_context=page_ctx,
+            session_state=SessionFilterContext(team="Outbound", performance_level="Employee", month="September", year=2026),
+        )
+    )
+    assert res_kpi.outcome == "answer"
+    assert "Ahmed" in res_kpi.headline
+    assert "has the lowest Reachability" in res_kpi.headline
+    assert "lowest-scoring agent" not in res_kpi.headline
+
+

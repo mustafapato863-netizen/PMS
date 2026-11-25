@@ -1187,6 +1187,22 @@ def has_pms_performance_signal(prompt: str) -> bool:
         re.I,
     ):
         return True
+    if any(
+        cue in lower
+        for cue in (
+            "who needs coaching",
+            "needs coaching",
+            "who needs help",
+            "who is struggling",
+            "most at risk",
+            "meen aswa",
+            "min aswa",
+            "meen a7san",
+            "min a7san",
+            "meen a7sn",
+        )
+    ):
+        return True
     if is_arabic_text(text):
         from services.ai.compound_parts_planner import normalize_bilingual_text
         norm_ar = normalize_bilingual_text(text)

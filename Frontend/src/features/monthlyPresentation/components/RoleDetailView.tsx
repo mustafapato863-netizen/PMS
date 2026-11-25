@@ -98,6 +98,7 @@ export interface RoleDetailViewProps {
   presentationMode?: boolean;
   overviewLabel?: string;
   onSelectEmployee?: (employeeId: string) => void;
+  onSelectKpiMetric?: (kpiLabel: string | null) => void;
 }
 
 const fieldClass =
@@ -114,6 +115,7 @@ export default function RoleDetailView({
   presentationMode = false,
   overviewLabel = 'Overview',
   onSelectEmployee,
+  onSelectKpiMetric,
 }: RoleDetailViewProps) {
   const [selectedId, setSelectedId] = useState(data.kpis[0]?.id ?? '');
   const [carouselStart, setCarouselStart] = useState(0);
@@ -996,6 +998,7 @@ export default function RoleDetailView({
     setSelectedId(kpiId);
     const idx = data.kpis.findIndex((k) => k.id === kpiId);
     if (idx >= 0) {
+      onSelectKpiMetric?.(data.kpis[idx].name);
       if (idx < safeCarouselStart) {
         setCarouselStart(idx);
       } else if (idx >= safeCarouselStart + KPI_CARDS_PER_ROW) {

@@ -1859,6 +1859,16 @@ class DeterministicToolRegistry:
             performance_level=resolved["performance_level"],
         )
 
+        pooled_cc_vols: dict[str, Any] | None = None
+        if (resolved["team"] or "").strip().casefold() in ("inbound", "outbound") and not resolved["branch"]:
+            pooled_cc_vols = self._compute_operational_volumes(
+                month=res_month,
+                year=res_year,
+                team=resolved["team"],
+                function=resolved["function"],
+                branch=None,
+            )
+
         for row in raw_diag:
             row_team = resolved["team"] or (str(row.teams[0]) if getattr(row, "teams", None) else scope_label)
             clean_label = disambiguate_call_center_kpi_label(row_team, row.key, row.label)
@@ -1870,6 +1880,37 @@ class DeterministicToolRegistry:
             unit = row.unit or (cat_def.unit if cat_def else "%")
             actual_val = row.actual
             target_val = row.target
+            pooled_override_ratio: float | None = None
+            if pooled_cc_vols is not None:
+                row_key_cf = str(row.key or "").strip().casefold()
+                team_cf = str(resolved["team"] or "").strip().casefold()
+                if row_key_cf in ("booking", "booking_rate", "bookingrate") and pooled_cc_vols.get("booking_complete"):
+                    denom = (
+                        pooled_cc_vols.get("total_inbound_calls") or pooled_cc_vols.get("total_calls_handled")
+                        if team_cf == "inbound"
+                        else pooled_cc_vols.get("total_calls_handled")
+                    )
+                    if pooled_cc_vols.get("total_bookings") is not None and denom and float(denom) > 0:
+                        pooled_override_ratio = float(pooled_cc_vols["total_bookings"]) / float(denom)
+                elif row_key_cf in ("attendance", "attendance_rate", "attendancerate") and pooled_cc_vols.get("attendance_complete"):
+                    b_tot = pooled_cc_vols.get("total_bookings")
+                    a_tot = pooled_cc_vols.get("total_attended")
+                    if a_tot is not None and b_tot and float(b_tot) > 0:
+                        pooled_override_ratio = float(a_tot) / float(b_tot)
+                elif (
+                    "abandon" in clean_label.casefold()
+                    and pooled_cc_vols.get("total_abandoned") is not None
+                    and pooled_cc_vols.get("total_calls_handled")
+                    and float(pooled_cc_vols["total_calls_handled"]) > 0
+                ):
+                    pooled_override_ratio = float(pooled_cc_vols["total_abandoned"]) / float(pooled_cc_vols["total_calls_handled"])
+
+            if pooled_override_ratio is not None and unit == "%":
+                if target_val is not None and target_val > 1.5:
+                    actual_val = round(pooled_override_ratio * 100.0, 4)
+                else:
+                    actual_val = round(pooled_override_ratio, 6)
+
             if unit == "%" and actual_val is not None and actual_val <= 1.5 and (target_val is None or target_val <= 1.5):
                 act_str = f"{actual_val * 100:.1f}%"
                 tgt_str = f"{(target_val or 0.0) * 100:.1f}%" if target_val is not None else "—"
@@ -1886,7 +1927,13 @@ class DeterministicToolRegistry:
                 norm_actual = round(float(actual_val), 2) if actual_val is not None else None
                 norm_target = round(float(target_val), 2) if target_val is not None else None
 
-            ach_pct = min(100.0, round(float(row.achievement_percent or 0.0), 1)) if row.achievement_percent is not None else 0.0
+            if pooled_override_ratio is not None and norm_actual is not None and norm_target is not None and norm_target > 0:
+                if str(row.direction or "higher_better").casefold().startswith("lower"):
+                    ach_pct = 100.0 if norm_actual <= 0 else min(100.0, round((norm_target / norm_actual) * 100.0, 1))
+                else:
+                    ach_pct = min(100.0, round((norm_actual / norm_target) * 100.0, 1))
+            else:
+                ach_pct = min(100.0, round(float(row.achievement_percent or 0.0), 1)) if row.achievement_percent is not None else 0.0
             weight_pct = round(float((row.weight or 0.0) * 100 if (row.weight or 0.0) <= 1.0 else (row.weight or 0.0)), 1)
             contributes = bool(weight_pct > 0.0 and (cat_def.contributes_to_score if cat_def else True))
             tracking_note = cat_def.tracking_only_note if (cat_def and not contributes) else None
@@ -6044,6 +6091,8 @@ class DeterministicToolRegistry:
         total_bookings = 0.0
         total_attended = 0.0
         total_calls = 0.0
+        total_inbound_calls = 0.0
+        total_abandoned = 0.0
 
         # Scope-aware period publication: only set True if a record matches scope (team/function & period)
         has_period_records = False
@@ -6053,6 +6102,8 @@ class DeterministicToolRegistry:
         attended_present_count = 0
         attended_missing_count = 0
         calls_present_count = 0
+        inbound_calls_present_count = 0
+        abandoned_present_count = 0
 
         def _extract_metric_val(container: Any, field_name: str) -> Any:
             if container is None:
@@ -6073,7 +6124,7 @@ class DeterministicToolRegistry:
             # 2. Team & function check (publication is scope-aware)
             emp = getattr(rec, "employee", None)
             r_team = str(getattr(emp, "team", "") or getattr(rec, "team", "") or "").strip()
-            if requested_region and _shared_record_region(rec, r_team).casefold() != requested_region:
+            if requested_region and requested_region != "all" and _shared_record_region(rec, r_team).casefold() != requested_region:
                 continue
             if team and r_team.casefold() != team.casefold():
                 continue
@@ -6193,6 +6244,20 @@ class DeterministicToolRegistry:
                         calls_present_count += 1
                     except (ValueError, TypeError):
                         pass
+                val_inb = _extract_metric_val(calls, "inbound")
+                if val_inb is not None:
+                    try:
+                        total_inbound_calls += float(val_inb)
+                        inbound_calls_present_count += 1
+                    except (ValueError, TypeError):
+                        pass
+                val_ab = _extract_metric_val(calls, "abandoned")
+                if val_ab is not None:
+                    try:
+                        total_abandoned += float(val_ab)
+                        abandoned_present_count += 1
+                    except (ValueError, TypeError):
+                        pass
 
         booking_present = bookings_present_count > 0
         attended_present = attended_present_count > 0
@@ -6204,6 +6269,8 @@ class DeterministicToolRegistry:
             "total_bookings": round(total_bookings, 1) if booking_present else None,
             "total_attended": round(total_attended, 1) if attended_present and attended_missing_count == 0 else None,
             "total_calls_handled": round(total_calls, 1) if calls_present else None,
+            "total_inbound_calls": round(total_inbound_calls, 1) if inbound_calls_present_count > 0 else None,
+            "total_abandoned": round(total_abandoned, 1) if abandoned_present_count > 0 else None,
             "booking_present": booking_present,
             "booking_complete": booking_complete,
             "has_partial_evidence": has_partial_evidence,

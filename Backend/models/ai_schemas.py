@@ -298,7 +298,9 @@ class PageContextV1(BaseModel):
     selected_entity_type: Literal["team", "employee", "metric", "branch", "position"] | None = None
     selected_entity_id: str | None = Field(default=None, max_length=120)
     selected_metric_id: str | None = Field(default=None, max_length=120)
+    user_selected_metric: bool = False
     selected_visual_id: str | None = Field(default=None, max_length=120)
+    visible_summary: dict[str, Any] | None = None
     is_fallback_data: bool = False
     client_context_version: int = Field(default=0, ge=0)
 

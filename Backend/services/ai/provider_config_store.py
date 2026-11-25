@@ -29,10 +29,10 @@ KEY_SLOTS: tuple[str, ...] = ("primary", "alternate")
 CACHE_TTL_SECONDS = 5.0
 DB_FAILURE_BACKOFF_SECONDS = 30.0
 
-DEFAULT_CLOUDFLARE_MODEL = "@cf/ibm-granite/granite-4.0-h-micro"
-DEFAULT_CLOUDFLARE_ALTER_MODEL = "@cf/zai-org/glm-4.7-flash"
+DEFAULT_CLOUDFLARE_MODEL = "@cf/zai-org/glm-4.7-flash"
+DEFAULT_CLOUDFLARE_ALTER_MODEL = "@cf/ibm-granite/granite-4.0-h-micro"
 DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
-DEFAULT_NVIDIA_DAILY_LIMIT = 50
+DEFAULT_NVIDIA_DAILY_LIMIT = 500
 
 
 def _env(*names: str) -> str:

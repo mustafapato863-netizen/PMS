@@ -2059,6 +2059,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       team_id: effectiveTeamName,
       performance_level: performanceLevel === 'All' ? null : performanceLevel,
       selected_metric_id: primaryDriverKpi,
+      user_selected_metric: false,
       employee_id: modalEmployee?.id ?? null,
       is_fallback_data: String(dataSource) === 'sample' || String(dataSource) === 'fallback',
     };

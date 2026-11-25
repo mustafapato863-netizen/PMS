@@ -42,7 +42,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from services.ai.config import redact_secrets
-from services.ai.provider_config_store import DEFAULT_NVIDIA_MODEL
+from services.ai.provider_config_store import (
+    DEFAULT_CLOUDFLARE_ALTER_MODEL,
+    DEFAULT_CLOUDFLARE_MODEL,
+    DEFAULT_NVIDIA_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -390,8 +394,8 @@ class UnifiedProviderConfig:
     fallback_enabled: bool = True
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
-    cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
-    cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
+    cloudflare_model: str = DEFAULT_CLOUDFLARE_MODEL
+    cloudflare_alter_model: str = DEFAULT_CLOUDFLARE_ALTER_MODEL
     nvidia_model: str = DEFAULT_NVIDIA_MODEL
     timeout_seconds: float = 18.0
     max_retries: int = 1

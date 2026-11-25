@@ -374,6 +374,18 @@ _VARIATION_ANGLE_CUES: dict[int, str] = {
 }
 
 
+_ARABIC_SCRIPT_RE = re.compile(r"[\u0600-\u06FF]")
+_FRANCO_ARABIC_RE = re.compile(
+    r"\b(?:meen|min|a7san|a7sn|aswa2|aswa|leeh|leh|eih|fain|fein|tab|ya3ni|y3ni|3amel|3amla|el\s+team|el\s+score)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_arabic_reply(question: str) -> bool:
+    text = str(question or "")
+    return bool(_ARABIC_SCRIPT_RE.search(text) or _FRANCO_ARABIC_RE.search(text))
+
+
 def synthesize_validated_executive_variation(
     *,
     question: str,
@@ -382,12 +394,15 @@ def synthesize_validated_executive_variation(
     variant_idx: int = 0,
     user_id: str | None = None,
     user_role: str | None = None,
+    visible_summary: dict[str, Any] | None = None,
+    allow_pseudonymized_pii: bool = True,
 ) -> NarrativeSynthesisResult | None:
-    """Synthesize a grounded, multi-angle executive summary via UnifiedProviderEngine.
+    """Synthesize a grounded, executive-grade response via UnifiedProviderEngine.
 
-    Strictly restricted to non-PII aggregate turns (caller must enforce scope & non-person checks).
-    Returns None cleanly if synthesis is disabled, ledger is empty, provider fails, or claim
-    validation rejects the generated phrasing, allowing deterministic fallback.
+    When employee names or IDs appear in the evidence, they are deterministically
+    pseudonymized (``EMP_01``, ``ID_01``) before leaving the server and restored
+    before ``validate_claims`` runs, guaranteeing zero PII leakage and zero
+    hallucinated numbers.
     """
     if not local_synthesis_enabled():
         return None
@@ -398,20 +413,33 @@ def synthesize_validated_executive_variation(
     if not claim_ledger:
         return None
 
+    from services.ai.pii_tokenizer import PiiPseudonymizer
+
+    pii = PiiPseudonymizer()
+    pii.register_from_evidence_and_digests(typed_evidence=typed_evidence, digests=digests)
+    if pii.has_mappings and not allow_pseudonymized_pii:
+        return None
+
     fact_rows = [
         {
             "fact_id": f.fact_id,
             "part": f.part,
-            "subject": f.subject,
+            "subject": pii.tokenize_text(str(f.subject)),
             **({"team": f.team} if f.team else {}),
             **({"branch": f.branch} if f.branch else {}),
             **({"period": f.period} if f.period else {}),
-            "display": f.display,
+            "display": pii.tokenize_text(str(f.display)),
             **({"unit": f.unit} if f.unit else {}),
         }
         for f in claim_ledger
     ]
     angle_cue = _VARIATION_ANGLE_CUES.get(int(variant_idx) % 3, _VARIATION_ANGLE_CUES[0])
+    wants_arabic = _wants_arabic_reply(question)
+    lang_rule = (
+        "Respond in clear, concise business Arabic while keeping official English KPI names (e.g. Reachability, Booking Rate, AHT), placeholders (EMP_01), and exact numeric values unchanged."
+        if wants_arabic
+        else "Respond in crisp, direct executive English."
+    )
     schema = {
         "type": "object",
         "properties": {
@@ -423,29 +451,37 @@ def synthesize_validated_executive_variation(
     }
     instruction = (
         f"[PromptVersion: {EXECUTIVE_VARIATION_PROMPT_VERSION}]\n"
-        "You are an executive performance analyst. Write a concise grounded response using ONLY "
-        "the exact numbers, subjects, branches, and periods in `verified_facts`. "
-        f"Framing angle: {angle_cue} "
-        "Rules: `headline` MUST be 1 or 2 sentences separated by '. ' (never 3+ sentences). "
-        "`narrative_bullets` MUST contain 1 to 3 concise factual bullets using exact verified values. "
-        "NEVER invent numbers, dates, names, percentages, or causal explanations like 'because' or 'due to'. "
-        "Return JSON matching the schema with keys `headline` and `narrative_bullets` only."
+        "# Role\n"
+        "You are a Senior Performance Management Analyst for a healthcare PMS dashboard.\n"
+        "# Framing\n"
+        f"{angle_cue} {lang_rule}\n"
+        "# Non-Negotiable Grounding Rules\n"
+        "- Use ONLY the exact numbers, placeholders (e.g. EMP_01), teams, branches, and periods present in `verified_facts`.\n"
+        "- `headline`: 1–2 crisp sentences answering the user's question directly with the exact verified value.\n"
+        "- `narrative_bullets`: 1–3 concise factual bullets surfacing the biggest KPI gap/driver and concrete focus priority.\n"
+        "- NEVER invent numbers, dates, names, percentages, or unverified external causes.\n"
+        "- Keep employee placeholders (e.g. EMP_01) verbatim so the server can restore verified names.\n"
+        "- Return strict JSON matching the schema with keys `headline` and `narrative_bullets` only."
     )
-    user_payload = json.dumps(
-        {
-            "question": str(question or "")[:300],
-            "verified_facts": fact_rows,
-        },
-        ensure_ascii=False,
-    )
+    sanitized_question = pii.tokenize_text(str(question or "")[:300])
+    payload_dict: dict[str, Any] = {
+        "question": sanitized_question,
+        "verified_facts": fact_rows,
+    }
+    if isinstance(visible_summary, dict) and visible_summary:
+        payload_dict["screen_context"] = pii.tokenize_obj(visible_summary)
+    user_payload = json.dumps(payload_dict, ensure_ascii=False)
+    if pii.has_unmasked_pii(user_payload):
+        record_fallback_reason("pii_mask_guard_triggered")
+        return None
     try:
         req = ProviderRequest(
             messages=[ProviderMessage(role="user", content=user_payload)],
             system_instruction=instruction,
             response_format="json",
             json_schema=schema,
-            temperature=0.35,
-            max_tokens=260,
+            temperature=0.25,
+            max_tokens=320,
             timeout_seconds=synthesis_timeout_seconds(),
             purpose="synthesis",
             user_id=user_id,
@@ -466,11 +502,11 @@ def synthesize_validated_executive_variation(
     if not isinstance(parsed, dict):
         return None
 
-    headline = str(parsed.get("headline") or "").strip()
+    headline = pii.detokenize_text(str(parsed.get("headline") or "").strip())
     raw_bullets = parsed.get("narrative_bullets")
     if not headline or not isinstance(raw_bullets, list):
         return None
-    bullets = [str(b).strip() for b in raw_bullets if str(b or "").strip()][:4]
+    bullets = [pii.detokenize_text(str(b).strip()) for b in raw_bullets if str(b or "").strip()][:4]
 
     sentences = [s for s in headline.split(". ") if s.strip()]
     if not (1 <= len(sentences) <= 2):

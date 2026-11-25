@@ -308,13 +308,10 @@ def build_effective_context_label(
         else None
     )
 
-    if team_switched_from_page:
-        if lcq_metric_display:
-            parts.append(lcq_metric_display)
-    elif selected_metric_display:
+    if lcq_metric_display:
+        parts.append(lcq_metric_display)
+    elif not team_switched_from_page and selected_metric_display:
         parts.append(selected_metric_display)
-    elif page_context and page_context.selected_metric_id:
-        parts.append(page_context.selected_metric_id)
 
     if page_context and page_context.is_fallback_data:
         parts.append("Sample Preview Data")
@@ -339,6 +336,22 @@ def can_user_write_corrective_action(
     if not team:
         return True
     return bool(user_can_access_team_level(scope, team, performance_level or "Employee"))
+
+
+_PAGE_METRIC_REF_RE = re.compile(
+    r"(?:"
+    r"\b(?:this|that|the\s+selected|selected|current)\s+(?:metric|kpi|driver|indicator|card|chart)\b"
+    r"|\b(?:below|off|under|miss(?:ed|ing)?)\s+target\b"
+    r"|\b(?:why\s+is\s+(?:it|this)|what\s+drives\s+(?:it|this)|improve\s+(?:it|this)|fix\s+(?:it|this))\b"
+    r"|\b(?:corrective\s+action|action\s+plan|propose|recommend\s+(?:an?\s+)?action)\b"
+    r"|المؤشر\s*(?:ده|دا|هذا|المحدد)|تحت\s+التارجت|خطة\s+تصحيحية"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _prompt_references_page_metric(prompt: str) -> bool:
+    return bool(_PAGE_METRIC_REF_RE.search(prompt or ""))
 
 
 def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, str | None]:
@@ -436,8 +449,19 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
     if p_year:
         ss.year = p_year
 
-    # Resolve selected_metric_id from PageContextV1 if present
-    raw_metric = pc.selected_metric_id or (pc.selected_entity_id if pc.selected_entity_type == "metric" else None)
+    # Resolve selected_metric_id from PageContextV1 only when the user explicitly
+    # selected a metric entity or referenced the page's highlighted metric/KPI in their prompt.
+    # Passive page defaults (e.g., top driver KPI) must not hijack general prompts like "who is worst".
+    should_bind_page_metric = (
+        pc.selected_entity_type == "metric"
+        or bool(pc.user_selected_metric)
+        or _prompt_references_page_metric(req.prompt)
+    )
+    raw_metric = (
+        (pc.selected_metric_id or (pc.selected_entity_id if pc.selected_entity_type == "metric" else None))
+        if should_bind_page_metric
+        else None
+    )
     resolved_metric_id: str | None = None
     resolved_metric_display: str | None = None
     if raw_metric and raw_metric.strip():
@@ -1731,9 +1755,40 @@ def build_page_help_payload(
         and help_region_cf in ("", "uae")
     )
 
+    vis = (req.page_context.visible_summary if req.page_context else None) or {}
+    vis_score = vis.get("headline_score")
+    vis_headcount = vis.get("headcount")
+    vis_below90 = vis.get("below_90_count")
+    vis_top_kpi = vis.get("top_gap_kpi")
+    vis_top_actual = vis.get("top_gap_actual")
+    vis_top_target = vis.get("top_gap_target")
+    vis_basis = vis.get("score_basis")
+
+    live_snapshot_summary: str | None = None
+    live_snapshot_gap_bullet: str | None = None
+    if isinstance(vis_score, (int, float)) and not is_fallback:
+        basis_txt = f" ({vis_basis})" if vis_basis else ""
+        cohort_txt = (
+            f", with {int(vis_below90)} of {int(vis_headcount)} people below 90% requiring focus"
+            if isinstance(vis_below90, (int, float)) and isinstance(vis_headcount, (int, float)) and int(vis_headcount) > 0
+            else ""
+        )
+        live_snapshot_summary = f"{scope_label} stands at {float(vis_score):.1f}%{basis_txt} in {period_label}{cohort_txt}."
+        if vis_top_kpi and vis_top_actual and vis_top_target:
+            live_snapshot_gap_bullet = (
+                f"Primary KPI drag on screen: {vis_top_kpi} ({vis_top_actual} vs {vis_top_target} target)."
+            )
+
     if page_id == "monthly_presentation":
         page_title = "Monthly Presentation"
-        if is_uae_cc_help:
+        if live_snapshot_summary:
+            summary = live_snapshot_summary
+            key_elements = [
+                *( [live_snapshot_gap_bullet] if live_snapshot_gap_bullet else [] ),
+                "Executive KPI Summary Cards: Shows weighted achievement, actual vs. target values, and month-over-month movement.",
+                "Contributor & Root-Cause Breakdown: Highlights which KPIs and records drove the monthly team score.",
+            ]
+        elif is_uae_cc_help:
             summary = (
                 f"Monthly Presentation summarizes {scope_label} KPI achievement against target, UAE 4-branch conversion, "
                 f"and top/bottom score contributors for {period_label}."
@@ -1823,11 +1878,15 @@ def build_page_help_payload(
             followups = [followups[2], followups[0], followups[1]]
     elif page_id == "executive_summary":
         page_title = "Executive Summary & Balanced Scorecard"
-        summary = (
-            f"Executive Summary consolidates organization-wide performance scores, branch benchmarks, and Managerial/Corporate "
-            f"Balanced Scorecard achievement for {scope_label} in {period_label}."
-        )
+        if live_snapshot_summary:
+            summary = live_snapshot_summary
+        else:
+            summary = (
+                f"Executive Summary consolidates organization-wide performance scores, branch benchmarks, and Managerial/Corporate "
+                f"Balanced Scorecard achievement for {scope_label} in {period_label}."
+            )
         key_elements = [
+            *( [live_snapshot_gap_bullet] if live_snapshot_gap_bullet else [] ),
             "Executive KPI Overview: Overall weighted score, month-over-month delta, and department/team leaderboard.",
             "Balanced Scorecard Matrix: Managerial and Corporate KPI weights, targets, and threshold bands.",
             "Risk & Governance Signals: Highlights underperforming teams, branch gaps, and open corrective actions.",
@@ -1836,18 +1895,25 @@ def build_page_help_payload(
             "Switch between Managerial and Corporate performance levels or filter by branch and period.",
             "Drill down into any team dashboard or ask which KPIs dropped most versus target.",
         ]
-        followups = [
-            f"Which team in {scope_label} dropped most in {period_label}?",
-            f"Compare branches in {scope_label} for {period_label}",
-            f"Show KPI achievement vs target for {scope_label}",
-        ]
-        if variant_idx == 1:
+        if session_state.team:
+            followups = [
+                f"Who is the lowest-scoring agent in {session_state.team} in {period_label}?",
+                f"Why is {session_state.team} below target in {period_label}?",
+                f"Show 6-month performance trend for {session_state.team}",
+            ]
+        else:
+            followups = [
+                f"Which team in {scope_label} dropped most in {period_label}?",
+                f"Compare branches in {scope_label} for {period_label}",
+                f"Show KPI achievement vs target for {scope_label}",
+            ]
+        if variant_idx == 1 and not (isinstance(vis_score, (int, float)) and not is_fallback):
             summary = (
                 f"Use Executive Summary to pinpoint which teams and KPIs dragged down {scope_label} achievement "
                 f"and where branch performance diverged in {period_label}."
             )
             followups = [followups[2], followups[0], followups[1]]
-        elif variant_idx == 2:
+        elif variant_idx == 2 and not (isinstance(vis_score, (int, float)) and not is_fallback):
             summary = (
                 f"Executive Summary aligns Managerial and Corporate KPI weights with branch conversion benchmarks for "
                 f"{scope_label} during {period_label}."
