@@ -651,11 +651,9 @@ function MonthlyPresentationScreen({
   // Fetch tracked follow-up actions so the overview Corrective Actions card matches
   // Executive Summary (including tracked plan/team actions and Executive-role scope).
   const [followUpActions, setFollowUpActions] = useState<FollowUpAction[]>([]);
+  const shouldLoadFollowUpActions = !isInline && !explicitPreview && canReadInlineActions;
   useEffect(() => {
-    if (isInline || explicitPreview || !canReadInlineActions) {
-      setFollowUpActions([]);
-      return;
-    }
+    if (!shouldLoadFollowUpActions) return;
     let cancelled = false;
     apiFetch<{ success?: boolean; data?: { actions?: RawFollowUpActionItem[] } }>(
       '/api/corrective-actions/follow-up',
@@ -670,7 +668,7 @@ function MonthlyPresentationScreen({
     return () => {
       cancelled = true;
     };
-  }, [canReadInlineActions, explicitPreview, isInline]);
+  }, [shouldLoadFollowUpActions]);
 
   const actionRecordIndex = useMemo(() => {
     const byEmployee = new Map<string, ExecRecord[]>();
@@ -736,17 +734,19 @@ function MonthlyPresentationScreen({
       const mapped = pmsActionToFollowUp(action);
       merged.set(String(mapped.id), mapped);
     }
-    for (const action of followUpActions) {
-      const key = String(action.id);
-      const existing = merged.get(key);
-      merged.set(key, {
-        ...existing,
-        ...action,
-        root_cause_note: action.root_cause_note || existing?.root_cause_note || '',
-        linked_kpi_key: action.linked_kpi_key || existing?.linked_kpi_key || null,
-        created_at: action.created_at || existing?.created_at || '',
-        month: action.month || existing?.month || '',
-      });
+    if (shouldLoadFollowUpActions) {
+      for (const action of followUpActions) {
+        const key = String(action.id);
+        const existing = merged.get(key);
+        merged.set(key, {
+          ...existing,
+          ...action,
+          root_cause_note: action.root_cause_note || existing?.root_cause_note || '',
+          linked_kpi_key: action.linked_kpi_key || existing?.linked_kpi_key || null,
+          created_at: action.created_at || existing?.created_at || '',
+          month: action.month || existing?.month || '',
+        });
+      }
     }
     const scopedSynced = [...merged.values()].filter(scopeOverviewAction);
     const scopedPending = storedActions
@@ -760,6 +760,7 @@ function MonthlyPresentationScreen({
     followUpActions,
     scopeOverviewAction,
     selectedExecPeriod,
+    shouldLoadFollowUpActions,
     storedActions,
   ]);
 

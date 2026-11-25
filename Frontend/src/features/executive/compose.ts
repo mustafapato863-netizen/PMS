@@ -10,7 +10,7 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, usesPublishedEmployeeScore, usesStoredPeriodScore, type AgentRecord } from '../../types';
+import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, usesStoredPeriodScore, type AgentRecord } from '../../types';
 import { canonicalEgyptResubmissionTeam, dedupeEgyptResubmissionRecords, isEgyptResubmissionTeam } from '../team/countryTeamIdentity';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import {

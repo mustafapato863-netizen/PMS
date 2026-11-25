@@ -106,15 +106,15 @@ export function projectAgentForBranch(
 
   const nextRawData = agent.raw_data ? { ...agent.raw_data } : undefined;
   if (nextRawData) {
-    if ('A.Attend%' in nextRawData) nextRawData['A.Attend%'] = newActual;
-    if ('PerformanceScore' in nextRawData) nextRawData['PerformanceScore'] = newScorePct;
+    if ('A.Attend%' in nextRawData) nextRawData['A.Attend%'] = String(newActual);
+    if ('PerformanceScore' in nextRawData) nextRawData['PerformanceScore'] = String(newScorePct);
   }
 
   return {
     ...agent,
     branch_key: wanted,
     actual: agent.actual
-      ? { ...agent.actual, attendance_rate: newActual }
+      ? { ...agent.actual, attend_rate: newActual }
       : agent.actual,
     evaluation: agent.evaluation
       ? { ...agent.evaluation, score: projectedEvalScore }

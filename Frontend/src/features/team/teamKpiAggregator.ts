@@ -1,6 +1,6 @@
 import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord, KPIConfig, LocationKey } from '../../types';
-import { getKPIsForAgent, inboundCallCount, isHossamRecord, usesPublishedEmployeeScore, usesStoredPeriodScore } from '../../types';
+import { getKPIsForAgent, inboundCallCount, isHossamRecord, usesStoredPeriodScore } from '../../types';
 import { getWeightForLabel } from '../../utils/kpiScore';
 
 export interface AggregatedTeamKpi {

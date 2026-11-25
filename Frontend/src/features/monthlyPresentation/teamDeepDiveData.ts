@@ -1,4 +1,4 @@
-import { isHossamRecord, usesPublishedEmployeeScore, usesStoredPeriodScore, type AgentRecord, type PMSAction } from '../../types';
+import { isHossamRecord, usesStoredPeriodScore, type AgentRecord, type PMSAction } from '../../types';
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import type { ObservationStatus } from '../ai/types';
