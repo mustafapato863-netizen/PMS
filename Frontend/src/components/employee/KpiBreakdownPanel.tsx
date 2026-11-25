@@ -226,11 +226,27 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
 
       <div className="border-t border-[var(--border-light)] pt-4 space-y-4">
         {kpis.map((kpi) => {
-          const viewOnly = kpi.viewOnly === true || (kpi as { view_only?: boolean; viewOnly?: boolean }).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined));
-          const w = viewOnly
+          const isPenaltyEntry = kpi.isPenalty === true;
+          const viewOnly = !isPenaltyEntry && (kpi.viewOnly === true || (kpi as { view_only?: boolean; viewOnly?: boolean }).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined)));
+          const w = viewOnly || isPenaltyEntry
             ? undefined
             : (kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month));
-          return (
+          return isPenaltyEntry ? (
+            <div key={kpi.label} className="rounded-xl border border-red-500/15 bg-red-500/5 p-3">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-red-600 dark:text-red-400">
+                  <TrendingDown size={12} />
+                  {kpi.label}
+                </div>
+                <div className="text-right">
+                  <span className="block font-extrabold text-sm text-red-600 dark:text-red-400">
+                    {kpi.contribution !== undefined ? `${kpi.contribution.toFixed(1)}%` : '—'}
+                  </span>
+                  <span className="text-xs text-[var(--text-muted)] font-semibold">Deduction</span>
+                </div>
+              </div>
+            </div>
+          ) : (
             <KpiBar
               key={kpi.label}
               label={kpi.label}

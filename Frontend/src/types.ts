@@ -32,6 +32,8 @@ export interface AgentRecord {
     cap_achievement?: boolean;
     /** Sheet weight was "view": show the KPI and keep it out of the score. */
     view_only?: boolean | number;
+    /** Negative penalty KPI subtracted from total score. */
+    is_penalty?: boolean;
     /** True when this row is the applied monthly evaluation basis, not the file template. */
     evaluation_pinned?: boolean;
   }>;
@@ -823,6 +825,8 @@ export interface KPIConfig {
   evaluationPinned?: boolean;
   /** Visible KPI that does not carry a weight or a score contribution. */
   viewOnly?: boolean;
+  /** Penalty deduction entry (negative contribution, displayed separately). */
+  isPenalty?: boolean;
   actualVolume?: number;
   targetVolume?: number;
   volumeUnit?: string;
@@ -1312,9 +1316,12 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
       achievement: Math.min(Math.max(kpi.achievement_ratio, 0), 1) * 100,
       weight: kpi.weight_applied,
       viewOnly: kpi.view_only === true || kpi.view_only === 1,
-      contribution: usesStoredPeriodScore(agent) && kpi.kpi_key === 'Complaints'
+      isPenalty: kpi.is_penalty === true,
+      contribution: kpi.is_penalty === true
         ? kpi.contribution * 100
-        : Math.min(Math.max(kpi.contribution, 0), Math.max(kpi.weight_applied, 0)) * 100,
+        : usesStoredPeriodScore(agent) && kpi.kpi_key === 'Complaints'
+          ? kpi.contribution * 100
+          : Math.min(Math.max(kpi.contribution, 0), Math.max(kpi.weight_applied, 0)) * 100,
       evaluationPinned: kpi.evaluation_pinned === true,
     }));
   }
