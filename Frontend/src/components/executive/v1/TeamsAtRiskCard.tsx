@@ -41,7 +41,7 @@ function bottleneckLabel(team: ExecutiveTeam): string {
   return team.score !== null && team.score >= 90 ? 'On track (≥90%)' : '—';
 }
 
-export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam }: { teams: ExecutiveTeam[]; rangeLabel?: string | null; onSelectTeam?: (team: string) => void }) {
+export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam, onReviewTeam }: { teams: ExecutiveTeam[]; rangeLabel?: string | null; onSelectTeam?: (team: string) => void; onReviewTeam?: (team: ExecutiveTeam) => void }) {
   const [showAllTeams, setShowAllTeams] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -123,6 +123,9 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
               const lead = !showAllTeams && index === 0;
               const displayName = executiveTeamDisplayName(team.team, searchParams.get('region'));
               const href = teamHref(team);
+              const review = onReviewTeam
+                ? () => onReviewTeam(team)
+                : onSelectTeam ? () => onSelectTeam(team.team) : null;
               const primaryFlag = FLAG_ORDER.find((flag) => team.flags.includes(flag));
               const statusLabel = statusBadgeLabel(team, primaryFlag);
               const scopeMeta = [
@@ -146,12 +149,12 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                 >
                   {/* Col 1: Team & Scope */}
                   <div role="cell" className="flex min-w-0 flex-col gap-[2px]">
-                    {onSelectTeam ? (
+                    {review ? (
                       <button
                         type="button"
                         title={`Review ${displayName} on this page`}
                         className="truncate text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400"
-                        onClick={() => onSelectTeam(team.team)}
+                        onClick={review}
                       >
                         {displayName}
                       </button>
@@ -208,7 +211,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                   <div role="cell" className="flex items-center md:justify-end">
                     <button
                       type="button"
-                      onClick={() => (onSelectTeam ? onSelectTeam(team.team) : navigate(href))}
+                      onClick={review ?? (() => navigate(href))}
                       className="inline-flex items-center gap-[4px] whitespace-nowrap text-[12.5px] font-bold text-[var(--insights-accent-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
                     >
                       Review Team

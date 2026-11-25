@@ -1459,6 +1459,7 @@ export function buildRoleDetail(
   roleSlug: string,
   actions: PMSAction[] = [],
   records: ExecRecord[] = [],
+  roleActions: PMSAction[] = actions,
 ): RoleDetailData {
   const slug = slugifyIdentifier(roleSlug) || roleSlug;
   const cards = resolveRoleCards(data, records);
@@ -1765,6 +1766,6 @@ export function buildRoleDetail(
     kpis,
     kpiScope,
     individualActionPlans,
-    actions: actionsForRole(data, resolvedCard, actions, kpis),
+    actions: actionsForRole(data, resolvedCard, roleActions, kpis),
   };
 }

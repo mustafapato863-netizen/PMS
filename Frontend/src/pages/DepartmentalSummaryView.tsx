@@ -6,7 +6,7 @@
  * (Executive + Viewer read-only), Manager → Managerial (team-scoped, filters
  * locked), Function Viewer → /function-summary.
  */
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { directorScope } from '../lib/directorScope';
@@ -37,6 +37,12 @@ import { useActionStore } from '../hooks/useActionStore';
 import PeriodRangeControl, { type PeriodMode } from '../components/executive/v1/PeriodRangeControl';
 import { rangeLabel, rangeMonthKeys, rangePeriods, rangeRequestIsInvalid, readRangeSelection, type RangeSelection } from '../features/executive/rangeParams';
 import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
+import { executiveReviewParams } from '../features/executive/executiveReviewParams';
+import type { ExecutiveTeam } from '../features/executive/types';
+import { parseTeamCountry } from '../features/team/countryTeamIdentity';
+
+const ExecutiveInlineAnalysis = lazy(() => import('../features/executive/ExecutiveInlineAnalysis'));
+
 
 type PageFilters = ExecutiveFilterState & { subTeam?: string };
 const PARAM: Record<keyof PageFilters, string> = {
@@ -51,6 +57,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const { currentUser } = useAuth();
   const assigned = directorScope(role, currentUser);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [unavailableTeam, setUnavailableTeam] = useState<string | null>(null);
   // A range (from / to) replaces the single month (period) in the URL; an invalid range shows the month.
   const rangeSelection = readRangeSelection(searchParams);
   const rangeInvalid = rangeRequestIsInvalid(searchParams);
@@ -67,6 +74,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   }, [searchParams, view, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
 
   const update = useCallback((patch: Partial<PageFilters>) => {
+    setUnavailableTeam(null);
     const next = new URLSearchParams(searchParams);
     (Object.keys(patch) as Array<keyof PageFilters>).forEach((key) => {
       const value = patch[key];
@@ -248,6 +256,19 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     canCreateActions: canEditActionFollowUp(role),
   }), [role]);
 
+  const reviewParams = (fn: string, team?: ExecutiveTeam) => {
+    if (!summary) return null;
+    const period = rangeSelection?.to ?? summary.period.effective?.key;
+    if (!period) return null;
+    const region = team?.regions.length === 1 ? parseTeamCountry(team.regions[0]) : null;
+    return executiveReviewParams(searchParams, summary.scope, {
+      fn, period,
+      team: team?.source_team ?? team?.team,
+      role: team?.position ?? undefined,
+      region: region ?? undefined,
+    });
+  };
+
   let body: ReactNode;
   if (isLoading && !summary) body = <ExecutiveViewSkeleton />;
   else if (error && !summary?.data_status.has_data) {
@@ -264,7 +285,26 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       />
     );
   } else {
-    body = <ExecutiveDashboard summary={summary} permissions={dashboardPermissions} />;
+    body = (
+      <ExecutiveDashboard
+        summary={summary}
+        permissions={dashboardPermissions}
+        functionReviewHref={(fn) => {
+          const target = reviewParams(fn);
+          return target ? `/executive?${target}` : undefined;
+        }}
+        onReviewTeam={(team) => {
+          const fn = team.function ?? executiveFunctionForTeam(team.source_team ?? team.team, options.team_functions);
+          const target = fn ? reviewParams(fn, team) : null;
+          if (!target) {
+            setUnavailableTeam(team.team);
+            return;
+          }
+          setSearchParams(target);
+          window.scrollTo({ top: 0 });
+        }}
+      />
+    );
   }
 
   return (
@@ -275,6 +315,9 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
           The range needs a From month on or before To. Showing the selected month instead.
         </p>
       )}
+      {unavailableTeam && <p role="status" className="rounded-lg border border-[var(--exec-card-border)] p-3 text-sm">
+        Monthly analysis is unavailable for {unavailableTeam} in this scope.
+      </p>}
       {body}
       <ContextualAssistantPanel
         pageContext={{
@@ -295,6 +338,10 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
 const DepartmentalSummaryView = () => {
   const { role } = useUserRole();
   const view = executiveViewForRole(role);
+  const [params] = useSearchParams();
+  if (params.has('review_deepDive')) {
+    return <Suspense fallback={<ExecutiveViewSkeleton />}><ExecutiveInlineAnalysis /></Suspense>;
+  }
   if (view === 'function') return <Navigate to="/function-summary" replace />;
   return <DepartmentalSummaryPage view={view} />;
 };

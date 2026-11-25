@@ -3,7 +3,7 @@
  * managerial). The Function Summary (PR B) reuses the same sections.
  */
 import { memo, type ReactNode } from 'react';
-import type { ExecutiveSummary } from '../../../features/executive/types';
+import type { ExecutiveSummary, ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { ExecCard } from './ExecPrimitives';
@@ -36,11 +36,15 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
   permissions,
   functionBreakdownSlot = null,
   hideRegionSplit = false,
+  functionReviewHref,
+  onReviewTeam,
 }: {
   summary: ExecutiveSummary;
   permissions: ExecutiveDashboardPermissions;
   functionBreakdownSlot?: ReactNode;
   hideRegionSplit?: boolean;
+  functionReviewHref?: (fn: string) => string | undefined;
+  onReviewTeam?: (team: ExecutiveTeam) => void;
 }) {
   const { period, scope } = summary;
   const previous = period.previous;
@@ -57,6 +61,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
     const fn = scope.function;
     const comparisonKnown = !summary.meta.unavailable.includes('function_average');
     const team = scope.team;
+    const teamRow = summary.teams.find((row) => (row.source_team ?? row.team) === team && row.function);
     return (
       <div className="flex flex-col gap-[16px]" data-testid="executive-managerial">
         <ScopeBanner>
@@ -66,6 +71,11 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
         </ScopeBanner>
         {notices}
         <ExecutiveHero summary={summary} />
+        {onReviewTeam && teamRow && (
+          <button type="button" className="self-start rounded-lg border px-3 py-2 text-sm font-semibold" onClick={() => onReviewTeam(teamRow)}>
+            Review Team
+          </button>
+        )}
         <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? teamPath(team) : null} />
         <EmployeesBelowTargetCard summary={summary} />
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)] xl:items-start">
@@ -119,7 +129,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
       {notices}
       <ExecutiveHero summary={summary} includeDecision={false} />
       {summary.functions.length > 0 && (
-        <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} classic />
+        <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} functionReviewHref={functionReviewHref} classic />
       )}
       {/* Figma Row 4: Left = What Moved the Score | Right = Unified Region Comparison + Grade Mix */}
       <div className={`grid gap-[16px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] ${showRegionSplit ? '' : 'xl:items-start'}`}>
@@ -135,7 +145,7 @@ const ExecutiveDashboard = memo(function ExecutiveDashboard({
       </div>
       {/* Figma Row 5: Full-Width Priority Teams Needing Attention */}
       <div id="exec-risk-section" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 380px' }}>
-        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
+        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} onReviewTeam={onReviewTeam} />
       </div>
       {/* Figma Row 6: Full-Width Corrective Actions & Coaching Pulse */}
       {permissions.canSeeActions && (

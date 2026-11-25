@@ -108,6 +108,8 @@ export interface TeamDeepDiveViewProps {
   onRestoreTeamActions?: (cardIds: string[]) => Promise<void> | void;
   toolbar?: ReactNode;
   presentationMode?: boolean;
+  overviewLabel?: string;
+  onSelectEmployee?: (employeeId: string) => void;
 }
 
 /**
@@ -172,6 +174,8 @@ function TeamDeepDiveViewContent({
   onRestoreTeamActions,
   toolbar,
   presentationMode = false,
+  overviewLabel = 'Overview',
+  onSelectEmployee,
 }: TeamDeepDiveViewProps) {
   const summaryGradeStyle = GRADE_STYLES[data.summary.grade];
   const measuredChange = data.scoreTrend ? data.scoreTrend.changeVsPrevious : data.summary.changeVsPrev;
@@ -1200,7 +1204,7 @@ function TeamDeepDiveViewContent({
               onClick={onNavigateToOverview}
               className="rounded-lg px-2 py-1 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600"
             >
-              Overview
+              {overviewLabel}
             </button>
             <ChevronRight className="size-3.5 text-slate-400" />
             <button
@@ -1658,7 +1662,11 @@ function TeamDeepDiveViewContent({
                       className="transition-colors hover:bg-slate-50/80"
                     >
                       <td className="py-3.5 pr-4">
-                        <div className="font-bold text-slate-900">{agent.agentName}</div>
+                        {onSelectEmployee ? (
+                          <button type="button" onClick={() => onSelectEmployee(agent.employeeId)} className="text-left font-bold text-blue-700 hover:underline">
+                            {agent.agentName}
+                          </button>
+                        ) : <div className="font-bold text-slate-900">{agent.agentName}</div>}
                         <div className="mt-0.5 text-xs text-slate-500">{agent.mainIssue}</div>
                       </td>
 

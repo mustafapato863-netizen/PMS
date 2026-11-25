@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { User } from '../types';
+import type { AgentRecord, PMSAction, User } from '../types';
+import type { UnifiedTeamAction } from '../hooks/useActionStore';
 import type { ExecutiveSummary } from '../features/executive/types';
 import { composeExecutiveSummary, monthsBetween, periodOf, previousRangeOf, toExecRecords, type ComposeInput } from '../features/executive/compose';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from '../features/executive/executive.fixture';
@@ -17,6 +18,9 @@ const state = vi.hoisted(() => ({
   summary: null as ExecutiveSummary | null,
   loading: false,
   lastArgs: null as UseExecutiveSummaryArgs | null,
+  reviewRecords: [] as AgentRecord[],
+  individualActions: [] as PMSAction[],
+  teamActions: [] as UnifiedTeamAction[],
 }));
 
 vi.mock('../context/RoleContext', () => ({ useUserRole: () => ({ role: state.role }) }));
@@ -42,11 +46,45 @@ vi.mock('../features/executive/useExecutiveSummary', () => ({
   },
 }));
 vi.mock('../lib/apiClient', () => ({
-  apiFetch: vi.fn().mockResolvedValue({
-    success: true,
-    data: { items: [], page_size: 8, next_cursor: null, has_more: false, total: 0 },
+  apiFetch: vi.fn(async (path: string) => {
+    if (path.startsWith('/api/team-actions/plan-items?')) {
+      const query = new URLSearchParams(path.split('?')[1]);
+      return {
+        success: true,
+        data: state.teamActions.filter((item) => item.kind === 'cohort_plan' &&
+          item.team === query.get('team') && item.region === query.get('region') && item.month === query.get('month')),
+      };
+    }
+    return { success: true, data: { items: [], page_size: 8, next_cursor: null, has_more: false, total: 0 } };
   }),
 }));
+vi.mock('../features/executive/useSummaryRecords', () => ({
+  useSummaryRecords: () => ({ data: state.reviewRecords, isLoading: false, isError: false }),
+}));
+vi.mock('../hooks/api/usePerformanceCatalog', () => {
+  const catalog = {
+    data: {
+      teams: [
+        { team: 'Coding EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+        { team: 'Coding', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
+        { team: 'Sales', region: 'UAE', functions: ['Sales'], performance_levels: ['Employee'] },
+      ],
+      authorized_functions: ['RCM'],
+    },
+    isLoading: false, isError: false,
+  };
+  return { usePerformanceCatalog: () => catalog };
+});
+vi.mock('../hooks/useTeamConfig', () => ({ useTeamConfig: () => ({ data: undefined }) }));
+vi.mock('../hooks/useActionStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/useActionStore')>();
+  return {
+    ...actual,
+    useActionStore: () => ({ getAllActions: () => state.individualActions }),
+    useAllTeamActions: (enabled: boolean) => ({ data: enabled ? state.teamActions : [], isSuccess: enabled }),
+  };
+});
+
 
 const TODAY = new Date(2026, 6, 6);
 const records = toExecRecords(fixtureAgentRecords());
@@ -55,11 +93,23 @@ const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
   drivers: fixtureDrivers(), actions: fixtureActions(TODAY), comparisonRecords: records, today: TODAY, ...patch,
 });
 
+function ReviewLocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="review-location">{location.pathname}{location.search}</output>
+      <button type="button" onClick={() => navigate(-1)}>Browser back</button>
+    </>
+  );
+}
+
 function renderAt(path = '/executive') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
+        <ReviewLocationProbe />
         <Routes>
           <Route path="/executive" element={<DepartmentalSummaryView />} />
           <Route path="/function-summary" element={<div>Function Summary page</div>} />
@@ -78,6 +128,11 @@ beforeEach(() => {
   state.summary = build();
   state.loading = false;
   state.lastArgs = null;
+  state.reviewRecords = [];
+  state.teamActions = [];
+  state.individualActions = [];
+  localStorage.clear();
+  window.scrollTo = vi.fn();
 });
 
 describe('DepartmentalSummaryView role routing', () => {
@@ -249,7 +304,7 @@ describe('Corporate sections', () => {
     expect(screen.queryByText('Start here')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('function-trend-chart').length).toBeGreaterThan(0);
     expect(screen.queryByText('Healthy benchmark')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
+    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', expect.stringContaining('/executive?review_deepDive=RCM'));
     expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
     const callCenter = screen.getByRole('article', { name: 'Call Center function' });
     expect(callCenter).toHaveTextContent('Inbound');
@@ -304,7 +359,7 @@ describe('Corporate sections', () => {
     expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(
       [...(state.summary?.functions ?? [])].sort((a, b) => (a.score ?? 999) - (b.score ?? 999)).map((card) => `${card.function} function`),
     );
-    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
+    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', expect.stringContaining('/executive?review_deepDive=RCM'));
     expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
     expect(screen.getByTestId('region-grade-unified-card')).toBeInTheDocument();
@@ -338,10 +393,10 @@ describe('Corporate sections', () => {
     expect(negatives.every((row) => !/\b(?:pp|pts)\b/.test(row.textContent ?? ''))).toBe(true);
   });
 
-  it('hides function links and the Insights link for Executive (no Function Summary / Insights access)', () => {
+  it('gives Executives inline review links while keeping Insights scoped', () => {
     state.role = 'Executive';
     renderAt();
-    expect(screen.queryByRole('link', { name: /View .* function/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', expect.stringContaining('/executive?review_deepDive=RCM'));
     expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'View all drivers' })).not.toBeInTheDocument();
@@ -417,3 +472,113 @@ describe('fallback and empty states', () => {
   });
 });
 
+
+describe('Executive Summary inline analysis', () => {
+  const period = '2026-09';
+  const kpis: NonNullable<AgentRecord['kpi_values']> = [
+    { kpi_key: 'quality_errors_rate', label: 'Quality Errors Rate', actual_value: 0.08, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 0.62, contribution: 0.31 },
+    { kpi_key: 'tat', label: 'TAT Compliance', actual_value: 0.8, target_value: 0.9, unit: '%', direction: 'higher_better', weight_applied: 0.5, achievement_ratio: 0.89, contribution: 0.44 },
+  ];
+  beforeEach(() => {
+    const base = fixtureAgentRecords()[0];
+    state.reviewRecords = [
+      { ...base, identity: { employee_id: 'E1', name: 'Egypt Coder', team: 'Coding EGY', month: 'September' },
+        year: 2026, region: 'EGY', performance_level: 'Employee', evaluation: { ...base.evaluation, score: 0.62 }, kpi_values: kpis },
+      { ...base, identity: { employee_id: 'U1', name: 'UAE Coder', team: 'Coding', month: 'September' },
+        year: 2026, region: 'UAE', performance_level: 'Employee', evaluation: { ...base.evaluation, score: 0.72 }, kpi_values: kpis },
+    ];
+    state.teamActions = [
+      { id: 'plan-e', card_id: 'plan-e', team: 'Coding EGY', region: 'EGY', kind: 'cohort_plan', title: 'Egypt review cadence', status: 'In Progress' },
+      { id: 'plan-u', card_id: 'plan-u', team: 'Coding', region: 'UAE', kind: 'cohort_plan', title: 'UAE review cadence', status: 'Open' },
+      { id: 'plan-f', team: 'RCM', region: 'EGY', kind: 'overall_action', title: 'Publish RCM audit protocol', status: 'Completed' },
+    ].map((item) => ({
+      ...item, month: 'September', year: 2026, target_kpi: 'Quality', owner: 'Lead',
+      scope_description: '', expected_team_impact: '',
+    })) as UnifiedTeamAction[];
+    state.individualActions = [
+      { id: 'a-egy', employee_id: 'E1', employee_name: 'Egypt Coder', team: 'Coding EGY', action_text: 'Coach Egypt coder', year: 2026, synced: true },
+      { id: 'a-uae', employee_id: 'U1', employee_name: 'UAE Coder', team: 'Coding', action_text: 'Coach UAE coder', year: 2026, synced: true },
+      { id: 'a-old', employee_id: 'E1', employee_name: 'Egypt Coder', team: 'Coding EGY', action_text: 'Last year decision', year: 2025, synced: true },
+      { id: 'a-local', employee_id: 'E1', employee_name: 'Egypt Coder', team: 'Coding EGY', action_text: 'Unsaved local decision', year: 2026, synced: false },
+    ].map((item) => ({ ...item, month: 'September', action_type: 'Coaching', status: 'Open', root_cause_note: '' })) as PMSAction[];
+    state.summary = build({ records: toExecRecords(state.reviewRecords), requestedPeriodKey: period, comparisonRecords: null });
+  });
+
+  it('opens RCM, Coding Egypt and its employee in the executive route and restores the range on return', async () => {
+    renderAt('/executive?from=2026-08&to=2026-09&level=Employee');
+    fireEvent.click(screen.getByRole('link', { name: 'View RCM function' }));
+    const priority = await screen.findByRole('region', { name: 'Priority teams and roles' }, { timeout: 8000 });
+    expect(within(priority).getByRole('button', { name: 'Coding · EGY' })).toBeInTheDocument();
+    expect(within(priority).getByRole('button', { name: 'Coding · UAE' })).toBeInTheDocument();
+    expect(screen.getByText('Publish RCM audit protocol')).toBeInTheDocument();
+    expect(screen.getByText('1 team · 1 individual · In Progress 1 · Open 1')).toBeInTheDocument();
+
+    fireEvent.click(within(priority).getByRole('button', { name: 'Coding · EGY' }));
+    expect(await screen.findByTestId('team-deep-dive-breadcrumb')).toHaveTextContent('Executive Summary');
+    expect(await screen.findByText('Egypt review cadence')).toBeInTheDocument();
+    expect(screen.queryByText('UAE review cadence')).not.toBeInTheDocument();
+    const trend = screen.getByRole('tablist', { name: 'Switch KPI for 6-month trend' });
+    fireEvent.click(within(trend).getByRole('tab', { name: /TAT Compliance/i }));
+    expect(within(trend).getByRole('tab', { name: /TAT Compliance/i })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.change(screen.getByLabelText('Review employee'), { target: { value: 'E1' } });
+    expect(screen.getByRole('heading', { name: 'Egypt Coder' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Individual decisions' })).getByText('Coach Egypt coder')).toBeInTheDocument();
+    expect(screen.queryByText('Last year decision')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unsaved local decision')).not.toBeInTheDocument();
+    expect(screen.queryByText('Coach UAE coder')).not.toBeInTheDocument();
+    expect(screen.getByTestId('review-location')).toHaveTextContent(/^\/executive\?/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+    expect(screen.getByLabelText('Review employee')).toBeInTheDocument();
+    expect(within(screen.getByRole('tablist', { name: 'Switch KPI for 6-month trend' })).getByRole('tab', { name: /TAT Compliance/i })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(within(screen.getByTestId('team-deep-dive-breadcrumb')).getByRole('button', { name: 'Executive Summary' }));
+    expect(await screen.findByTestId('executive-corporate')).toBeInTheDocument();
+    expect(screen.getByTestId('review-location')).toHaveTextContent('/executive?from=2026-08&to=2026-09&level=Employee');
+  });
+
+  it('opens Review Team directly and keeps UAE decisions separate from Egypt', async () => {
+    renderAt('/executive?period=2026-09&region=UAE');
+    const row = screen.getAllByTestId('risk-row').find((element) => element.textContent?.includes('RCM · UAE'));
+    expect(row).toBeDefined();
+    fireEvent.click(within(row!).getByRole('button', { name: 'Review Team' }));
+    expect(await screen.findByText('UAE review cadence')).toBeInTheDocument();
+    expect(screen.queryByText('Egypt review cadence')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Review employee')).toHaveTextContent('UAE Coder');
+    expect(screen.getByLabelText('Review employee')).not.toHaveTextContent('Egypt Coder');
+    await waitFor(() => expect(screen.getByTestId('review-location')).toHaveTextContent(/^\/executive\?/));
+  });
+  it('keeps individual and whole-team decisions out of a Viewer drill-down', async () => {
+    state.role = 'Viewer';
+    renderAt('/executive?review_deepDive=RCM&review_period=2026-09&review_region=EGY');
+    const priority = await screen.findByRole('region', { name: 'Priority teams and roles' });
+    expect(screen.queryByRole('region', { name: 'Function action plan' })).not.toBeInTheDocument();
+    fireEvent.click(within(priority).getByRole('button', { name: 'Coding · EGY' }));
+    fireEvent.change(screen.getByLabelText('Review employee'), { target: { value: 'E1' } });
+    expect(screen.getByRole('heading', { name: 'Egypt Coder' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Individual decisions' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Egypt review cadence')).not.toBeInTheDocument();
+  });
+
+  it('uses the Monthly Review role hierarchy and preserves its saved intervention', async () => {
+    const agent = {
+      ...state.reviewRecords[1],
+      identity: { employee_id: 'S1', name: 'Sales Analyst', team: 'Sales', month: 'September' },
+      position: 'Sales Analyst',
+      raw_data: { Location: 'Dubai' },
+    } as AgentRecord;
+    state.reviewRecords = [agent];
+    state.individualActions = [{
+      ...state.individualActions[0], id: 'role-plan', team: 'Sales', employee_id: 'S1', employee_name: 'Sales Analyst',
+      action_text: 'Schedule a role-wide pipeline review',
+      root_cause_note: 'Owner: Sales Lead. Status: Open. Expected impact: Improve follow-up.',
+    }];
+    renderAt('/executive?review_deepDive=Sales&review_period=2026-09&review_region=UAE');
+    const priority = await screen.findByRole('region', { name: 'Priority teams and roles' });
+    fireEvent.click(within(priority).getByRole('button', { name: /Sales Analyst/ }));
+    expect(await screen.findByText('Schedule a role-wide pipeline review')).toBeInTheDocument();
+    expect(screen.getByLabelText('Review employee')).toHaveTextContent('Sales Analyst');
+    expect(screen.getByTestId('review-location')).toHaveTextContent('review_role=');
+  });
+
+});

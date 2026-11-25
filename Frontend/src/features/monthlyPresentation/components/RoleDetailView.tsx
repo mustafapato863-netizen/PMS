@@ -95,6 +95,8 @@ export interface RoleDetailViewProps {
   onDeleteAction?: (action: RoleAssignedAction) => Promise<void> | void;
   toolbar?: ReactNode;
   presentationMode?: boolean;
+  overviewLabel?: string;
+  onSelectEmployee?: (employeeId: string) => void;
 }
 
 const fieldClass =
@@ -109,6 +111,8 @@ export default function RoleDetailView({
   onDeleteAction,
   toolbar,
   presentationMode = false,
+  overviewLabel = 'Overview',
+  onSelectEmployee,
 }: RoleDetailViewProps) {
   const [selectedId, setSelectedId] = useState(data.kpis[0]?.id ?? '');
   const [carouselStart, setCarouselStart] = useState(0);
@@ -1077,7 +1081,7 @@ export default function RoleDetailView({
               onClick={onNavigateToOverview}
               className="rounded-md px-2 py-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              Overview
+              {overviewLabel}
             </button>
             <ChevronRight className="size-3.5 text-slate-300" aria-hidden />
             <button
@@ -1563,7 +1567,11 @@ export default function RoleDetailView({
                     >
                       {/* Employee Name + Root-Cause Main Issue */}
                       <td className="py-3.5 pr-4">
-                        <div className="font-bold text-slate-900">{member.personName}</div>
+                        {onSelectEmployee ? (
+                          <button type="button" onClick={() => onSelectEmployee(member.employeeId)} className="text-left font-bold text-blue-700 hover:underline">
+                            {member.personName}
+                          </button>
+                        ) : <div className="font-bold text-slate-900">{member.personName}</div>}
                         <div className="mt-0.5 max-w-md text-xs text-slate-500">
                           {member.signal}
                         </div>

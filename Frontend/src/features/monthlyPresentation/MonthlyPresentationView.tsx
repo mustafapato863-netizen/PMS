@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './macCursor.css';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams, type SetURLSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
-import { isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
+import { canSeeSummaryActionAnalytics, isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import {
   SUMMARY_BRANCHES,
@@ -78,6 +78,8 @@ import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistan
 import { isHiddenTeam } from '../../components/common/sidebarTeamItems';
 import { CALL_CENTER_TEAM } from '../../types';
 import type { PageContextV1 } from '../ai/types';
+import { ExecutiveEmployeeReview, ExecutiveFunctionReview, ExecutiveTeamDecisions, reviewButtonClass } from '../executive/ExecutiveReviewDetails';
+import { actionMatchesRecord, isSavedRoleIntervention, type ReviewUnit } from '../executive/executiveReviewModel';
 
 const TEAM_ACTION_PLANS_STORAGE_KEY = 'pms_team_action_plans_v1';
 const ACTION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -191,6 +193,7 @@ export interface MonthlyPresentationViewProps {
   /** Optional handler invoked when a Function card is clicked */
   onSelectFunction?: (fn: FunctionOverviewItem) => void;
   today?: Date;
+  inlineAnalysis?: { searchParams: URLSearchParams; setSearchParams: SetURLSearchParams };
 }
 
 function TeamsWithoutMonthlyData({
@@ -260,18 +263,24 @@ function MonthlyPresentationScreen({
   teamDeepDiveData,
   onSelectFunction,
   today,
+  inlineAnalysis,
 }: MonthlyPresentationViewProps) {
+  const isInline = Boolean(inlineAnalysis);
   useEffect(() => {
+    if (isInline) return;
     document.body.classList.add('mp-mac-cursor');
     return () => {
       document.body.classList.remove('mp-mac-cursor');
     };
-  }, []);
+  }, [isInline]);
 
   const { role } = useUserRole();
   const { currentUser } = useAuth();
   const assigned = directorScope(role, currentUser);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [routeSearchParams, setRouteSearchParams] = useSearchParams();
+  const searchParams = inlineAnalysis?.searchParams ?? routeSearchParams;
+  const setSearchParams = inlineAnalysis?.setSearchParams ?? setRouteSearchParams;
+  const canReadInlineActions = canSeeSummaryActionAnalytics(role);
   const params = useParams<{ functionSlug?: string; teamSlug?: string }>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -318,9 +327,15 @@ function MonthlyPresentationScreen({
     return regions.size === 2 ? (['ALL', ...ordered] as MonthlyRegionFilter[]) : ordered;
   }, [explicitPreview, serverTeams]);
   const { getAllActions, saveAction, updateAction, deleteAction } = useActionStore();
-  const storedActions = useMemo(() => getAllActions(), [getAllActions]);
+  const storedActions = useMemo(
+    () => isInline ? (canReadInlineActions ? getAllActions().filter((action) => action.synced) : []) : getAllActions(),
+    [canReadInlineActions, getAllActions, isInline],
+  );
 
-  const rawRegion = searchParams.get('region');
+  const regionParam = searchParams.get('teamRegion') || searchParams.get('region');
+  const rawRegion = isInline && regionParam?.toLowerCase() === 'all' && availableRegions.length === 1
+    ? availableRegions[0] : regionParam;
+  const level = isInline ? searchParams.get('level')?.toLowerCase() : undefined;
   const normalizedUrlRegion = normalizeRegion(rawRegion);
   const rawBranch = (searchParams.get('branch') || '').trim().toLowerCase();
   const periodParam = searchParams.get('period') || searchParams.get('month') || undefined;
@@ -357,28 +372,32 @@ function MonthlyPresentationScreen({
     );
   }, [activeBranch, availableBranches]);
 
+  const previewRegion = data?.regionCode;
   const activeRegion: MonthlyRegionFilter = useMemo(() => {
     const validRegions: MonthlyRegionFilter[] = availableRegions.length ? availableRegions : ['EGY'];
     // The combined view is never the default: it is only chosen explicitly
     // (?region=all). The default stays the assigned / URL / preview region,
     // then the first single region.
     const defaultRegion = validRegions.find((region) => region !== 'ALL') ?? validRegions[0];
+    const assignedRegion = normalizeRegion(assigned.region);
+    const validAssignedRegion = (assignedRegion === 'UAE' || assignedRegion === 'EGY') && validRegions.includes(assignedRegion)
+      ? assignedRegion : null;
+    if (isInline && assigned.regionLocked && validAssignedRegion) return validAssignedRegion;
     if (
       (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'ALL') &&
       validRegions.includes(normalizedUrlRegion)
     ) return normalizedUrlRegion;
-    const assignedRegion = normalizeRegion(assigned.region);
-    if ((assignedRegion === 'UAE' || assignedRegion === 'EGY') && validRegions.includes(assignedRegion)) {
-      return assignedRegion;
-    }
-    if (explicitPreview && data?.regionCode && validRegions.includes(data.regionCode)) {
-      return data.regionCode;
+    if (validAssignedRegion) return validAssignedRegion;
+    if (explicitPreview && previewRegion && validRegions.includes(previewRegion)) {
+      return previewRegion;
     }
     return defaultRegion;
   }, [
     assigned.region,
-    data?.regionCode,
+    assigned.regionLocked,
+    previewRegion,
     explicitPreview,
+    isInline,
     normalizedUrlRegion,
     availableRegions,
   ]);
@@ -425,6 +444,7 @@ function MonthlyPresentationScreen({
     return execRecords.filter((record) => {
       const recordRegion = normalizeRegion(record.region);
       const recordLevel = String(record.level || 'Employee').trim().toLowerCase();
+      if (level && level !== 'all' && recordLevel !== level) return false;
       return serverTeams.some((team) => recordMatchesCatalogTeam({
         recordTeam: record.team,
         recordRegion,
@@ -434,7 +454,7 @@ function MonthlyPresentationScreen({
         levels: team.performance_levels,
       }));
     });
-  }, [execRecords, explicitPreview, serverTeams]);
+  }, [execRecords, explicitPreview, level, serverTeams]);
 
   const branchScopedRecords = useMemo(() => {
     if (!activeBranch) return authorizedRecords;
@@ -521,13 +541,14 @@ function MonthlyPresentationScreen({
   const rawDeepDive = (searchParams.get('deepDive') || params.functionSlug || '').trim();
   const functionSlug = rawDeepDive ? normalizeFunctionSlug(rawDeepDive) : '';
   const rawTeamParam = (searchParams.get('team') || params.teamSlug || '').trim();
-  const rawTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
-  const legacyTeam = rawTeamSlug ? legacySharedTeamRedirect(rawTeamSlug) : null;
-  const activeTeamSlug = legacyTeam && (!rawRegion || activeRegion === legacyTeam.region)
-    ? legacyTeam.routeId
-    : rawTeamSlug;
+  const activeTeamSlug = useMemo(() => {
+    const rawTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
+    const legacyTeam = legacySharedTeamRedirect(rawTeamSlug);
+    return legacyTeam && (!rawRegion || activeRegion === legacyTeam.region) ? legacyTeam.routeId : rawTeamSlug;
+  }, [activeRegion, rawRegion, rawTeamParam]);
   const rawRoleParam = (searchParams.get('role') || '').trim();
   const activeRoleSlug = rawRoleParam ? slugifyIdentifier(rawRoleParam) : '';
+  const activeEmployeeId = isInline ? searchParams.get('employee') : null;
 
   const allowedFunctions = functionScopeRestricted ? authorizedFunctionNames : null;
 
@@ -623,6 +644,7 @@ function MonthlyPresentationScreen({
     if ((normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'ALL') && availableRegions.includes(normalizedUrlRegion)) return;
     const next = new URLSearchParams(searchParams);
     next.delete('region');
+    next.delete('teamRegion');
     next.delete('deepDive');
     next.delete('team');
     next.delete('role');
@@ -760,7 +782,8 @@ function MonthlyPresentationScreen({
         ? normalizeFunctionSlug(functionName)
         : functionSlug || 'call-center';
       next.set('deepDive', targetFunction);
-      next.set('team', businessTeamName(teamSlug) === teamSlug ? slugifyIdentifier(teamSlug) : slugifyIdentifier(businessTeamName(teamSlug)));
+      next.set('team', slugifyIdentifier(businessTeamName(teamSlug)));
+      next.delete('employee');
       next.delete('role');
       setSearchParams(next);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -785,10 +808,33 @@ function MonthlyPresentationScreen({
     const next = new URLSearchParams(searchParams);
     if (functionSlug) next.set('deepDive', functionSlug);
     next.delete('team');
+    next.delete('teamRegion');
+    next.delete('employee');
     next.delete('role');
     setSearchParams(next);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [functionSlug, searchParams, setSearchParams]);
+
+  const selectEmployee = (employeeId: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (employeeId) next.set('employee', employeeId);
+    else next.delete('employee');
+    setSearchParams(next);
+    window.scrollTo({ top: 0 });
+  };
+
+  const selectReviewUnit = (unit: ReviewUnit) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('employee');
+    next.delete('team');
+    next.delete('role');
+    next.delete('teamRegion');
+    if (unit.region) next.set('teamRegion', unit.region);
+    if (unit.role) next.set('role', unit.role);
+    else if (unit.team) next.set('team', slugifyIdentifier(businessTeamName(unit.team)));
+    setSearchParams(next);
+    window.scrollTo({ top: 0 });
+  };
 
   const resolvedFunctionData: CallCenterDeepDiveData | null = useMemo(() => {
     if (!functionSlug || !isFunctionAuthorized(functionSlug)) return null;
@@ -836,20 +882,75 @@ function MonthlyPresentationScreen({
     if (explicitPreview && !activeBranch && teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
       return teamDeepDiveData;
     }
+    const teamActions = isInline
+      ? storedActions.filter((action) => !isSavedRoleIntervention(action) && currentTeamRecords.some((record) => actionMatchesRecord(action, record)))
+      : storedActions;
     return buildTeamDeepDiveFromRecords(
       activeTeamSlug,
       branchScopedRecords,
-      storedActions,
+      teamActions,
       activeRegion,
       selectedPeriodKey,
     );
-  }, [activeBranch, activeRegion, activeRoleSlug, activeTeamSlug, branchScopedRecords, currentTeamRecords.length, explicitPreview, functionSlug, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
+  }, [activeBranch, activeRegion, activeRoleSlug, activeTeamSlug, branchScopedRecords, currentTeamRecords, explicitPreview, functionSlug, isInline, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
 
   const resolvedRoleData = useMemo(() => {
     if (!activeRoleSlug || !resolvedFunctionData) return null;
     if (!hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, branchScopedRecords)) return null;
-    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, branchScopedRecords);
-  }, [activeRoleSlug, branchScopedRecords, resolvedFunctionData, storedActions]);
+    if (!isInline) return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, branchScopedRecords);
+    const scopedActions = storedActions.filter((action) => currentRoleRecords.some((record) => actionMatchesRecord(action, record)));
+    return buildRoleDetail(
+      resolvedFunctionData, activeRoleSlug,
+      scopedActions.filter((action) => !isSavedRoleIntervention(action)),
+      branchScopedRecords,
+      scopedActions.filter(isSavedRoleIntervention),
+    );
+  }, [activeRoleSlug, branchScopedRecords, currentRoleRecords, isInline, resolvedFunctionData, storedActions]);
+
+  const reviewUnits = useMemo<ReviewUnit[]>(() => {
+    if (!isInline || !resolvedFunctionData || activeTeamSlug || activeRoleSlug) return [];
+    if (isRoleBasedFunction(functionSlug)) return roleCards.map((card) => ({
+      id: card.roleSlug, name: card.branchLabel ? `${card.roleTitle} · ${card.branchLabel}` : card.roleTitle,
+      score: card.score, people: card.headcount, role: card.roleSlug, bottleneck: card.signal,
+    }));
+    const regions = activeRegion === 'ALL' ? ['EGY', 'UAE'] as const : [activeRegion];
+    return regions.flatMap((region) => {
+      const detail = activeRegion === region
+        ? resolvedFunctionData
+        : buildFunctionDeepDiveFromRecords(functionSlug, branchScopedRecords, [], region, selectedPeriodKey, { allowSnapshotFallback: false });
+      return detail.agentTeams.filter((team) => team.headcount > 0).map((team) => ({
+        id: `${region}:${team.teamSlug}`, name: presentationTeamName(team.teamName), score: team.score,
+        people: team.headcount, team: team.canonicalTeam, region, bottleneck: team.keyStrengthOrDrag,
+      }));
+    });
+  }, [activeRegion, activeRoleSlug, activeTeamSlug, branchScopedRecords, functionSlug, isInline, resolvedFunctionData, roleCards, selectedPeriodKey]);
+
+  const inlineMembers = useMemo(() => {
+    if (!isInline) return [];
+    if (resolvedTeamData) return currentTeamRecords;
+    if (!resolvedRoleData) return [];
+    const memberIds = new Set(resolvedRoleData.members.map((member) => member.employeeId.toLowerCase()));
+    return currentFunctionRecords.filter((record) => memberIds.has(record.employeeId.toLowerCase()));
+  }, [currentFunctionRecords, currentTeamRecords, isInline, resolvedRoleData, resolvedTeamData]);
+  const teamCountries = useMemo(() => [...new Set(currentTeamRecords.flatMap((record) => {
+    const country = parseTeamCountry(record.region);
+    return country ? [country] : [];
+  }))].sort(), [currentTeamRecords]);
+  const chooseTeamCountry = isInline && activeRegion === 'ALL' && Boolean(activeTeamSlug) && teamCountries.length > 1;
+  const selectedEmployee = inlineMembers.find((record) => record.employeeId === activeEmployeeId);
+  const teamLabel = resolvedRoleData?.roleTitle ?? resolvedTeamData?.teamDisplayName ?? '';
+  const employeePicker = isInline && inlineMembers.length > 0 ? (
+    <label className="inline-flex flex-wrap items-center gap-2 text-sm font-medium">
+      Employee
+      <select aria-label="Review employee" className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900"
+        value="" onChange={(event) => selectEmployee(event.target.value)}>
+        <option value="">Select employee</option>
+        {[...new Map(inlineMembers.map((record) => [record.employeeId, record])).values()]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((record) => <option key={record.employeeId} value={record.employeeId}>{record.name}</option>)}
+      </select>
+    </label>
+  ) : undefined;
 
   // The combined view dedupes each country's catalog separately, so a shared
   // business team present in both regions lists once per region.
@@ -892,14 +993,14 @@ function MonthlyPresentationScreen({
   // keeps the scope of the team's own region so its saved plans still load.
   const canonicalTeamRegion = useMemo(() => {
     if (!canonicalTeam) return null;
-    const match = serverTeams.find((team) =>
-      slugifyIdentifier(team.team) === slugifyIdentifier(canonicalTeam)
-      || sameMergedTeam(team.team, canonicalTeam)
-      || businessTeamName(team.team) === businessTeamName(canonicalTeam),
-    );
+    if (activeRegion !== 'ALL') return activeRegion;
+    const countries = new Set(currentTeamRecords.map((record) => parseTeamCountry(record.region)));
+    if (countries.size === 1) return [...countries][0];
+    const match = serverTeams.find((team) => slugifyIdentifier(team.team) === slugifyIdentifier(canonicalTeam));
+
     const normalized = normalizeRegion(match?.region);
     return normalized === 'EGY' || normalized === 'UAE' ? normalized : null;
-  }, [canonicalTeam, serverTeams]);
+  }, [activeRegion, canonicalTeam, currentTeamRecords, serverTeams]);
 
   const activeTeamPlanScope = useMemo(() => {
     if (!canonicalTeam) return null;
@@ -922,9 +1023,9 @@ function MonthlyPresentationScreen({
   >({});
 
   useEffect(() => {
-    if (!activeTeamPlanScope || explicitPreview) return;
+    if (!activeTeamPlanScope || explicitPreview || chooseTeamCountry || (isInline && !canReadInlineActions)) return;
     const { team, region, month, year, scopeKey } = activeTeamPlanScope;
-    const localItems = readStoredTeamPlans(scopeKey);
+    const localItems = isInline ? [] : readStoredTeamPlans(scopeKey);
 
     let cancelled = false;
     const params = new URLSearchParams({
@@ -950,7 +1051,7 @@ function MonthlyPresentationScreen({
           isDeleted: Boolean(row.is_deleted),
         }));
         const merged = mergeTeamPlanItems(localItems, remoteItems);
-        writeStoredTeamPlans(scopeKey, merged);
+        if (!isInline) writeStoredTeamPlans(scopeKey, merged);
         setTeamPlanItemsByScope((prev) => ({
           ...prev,
           [scopeKey]: merged,
@@ -963,12 +1064,12 @@ function MonthlyPresentationScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeTeamPlanScope, explicitPreview]);
+  }, [activeTeamPlanScope, canReadInlineActions, chooseTeamCountry, explicitPreview, isInline]);
 
   const savedTeamActionsForActiveScope = useMemo(() => {
-    if (!activeTeamPlanScope) return undefined;
-    return teamPlanItemsByScope[activeTeamPlanScope.scopeKey] ?? readStoredTeamPlans(activeTeamPlanScope.scopeKey);
-  }, [activeTeamPlanScope, teamPlanItemsByScope]);
+    if (!activeTeamPlanScope || (isInline && !canReadInlineActions)) return undefined;
+    return teamPlanItemsByScope[activeTeamPlanScope.scopeKey] ?? (isInline ? undefined : readStoredTeamPlans(activeTeamPlanScope.scopeKey));
+  }, [activeTeamPlanScope, canReadInlineActions, isInline, teamPlanItemsByScope]);
 
   const handleSaveTeamAction = useCallback(
     async (card: TeamLevelActionPlanCard) => {
@@ -1363,26 +1464,60 @@ function MonthlyPresentationScreen({
       return null;
     }
 
+    if (chooseTeamCountry) return (
+      <section aria-label="Choose team country" className="mx-auto w-full max-w-7xl space-y-3 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-5">
+        <button type="button" className={reviewButtonClass} onClick={handleBackToOverview}>Executive Summary</button>
+        <h1 className="text-xl font-bold">{resolvedTeamData?.teamDisplayName ?? businessTeamName(rawTeamParam)}</h1>
+        <p>Select a country to review this team.</p>
+        <div className="flex gap-2">
+          {teamCountries.map((country) => (
+            <button key={country} type="button" className={reviewButtonClass} onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.set('teamRegion', country);
+              next.delete('employee');
+              setSearchParams(next);
+            }}>{country === 'EGY' ? 'Egypt' : 'UAE'}</button>
+          ))}
+        </div>
+      </section>
+    );
+
     if (activeRoleSlug && resolvedRoleData) {
+      const roleDetail = isInline ? {
+        ...resolvedRoleData,
+        actions: resolvedRoleData.actions.filter((action) => !action.suggested),
+        individualActionPlans: resolvedRoleData.individualActionPlans.filter((action) => !action.suggested),
+      } : resolvedRoleData;
       return (
+        <>
         <RoleDetailView
           key={resolvedRoleData.roleSlug}
-          data={resolvedRoleData}
+          data={roleDetail}
           onNavigateToOverview={handleBackToOverview}
           onNavigateToFunction={handleBackToFunction}
           onSaveAction={handleSaveRoleAction}
           onDeleteAction={handleDeleteRoleAction}
           onDeleteIndividualAction={handleDeleteIndividualAction}
-          toolbar={headerToolbar}
-          presentationMode={presentationMode}
+          toolbar={isInline ? employeePicker : headerToolbar}
+          presentationMode={isInline || presentationMode}
+          overviewLabel={isInline ? 'Executive Summary' : undefined}
+          onSelectEmployee={isInline ? selectEmployee : undefined}
         />
+        {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} />}
+        </>
       );
     }
 
     if (activeTeamSlug && resolvedTeamData) {
+      const teamDetail = isInline ? {
+        ...resolvedTeamData,
+        individualActionPlans: resolvedTeamData.individualActionPlans.filter((action) => action.isSavedToStore),
+        teamActionPlans: [],
+      } : resolvedTeamData;
       return (
+        <>
         <TeamDeepDiveView
-          data={resolvedTeamData}
+          data={teamDetail}
           onNavigateToOverview={handleBackToOverview}
           onNavigateToCallCenter={handleBackToFunction}
           onSwitchTeam={handleSelectAgentTeam}
@@ -1392,13 +1527,23 @@ function MonthlyPresentationScreen({
           onSaveTeamAction={handleSaveTeamAction}
           onDeleteTeamAction={handleDeleteTeamAction}
           onRestoreTeamActions={handleRestoreTeamActions}
-          toolbar={headerToolbar}
-          presentationMode={presentationMode}
+          toolbar={isInline ? employeePicker : headerToolbar}
+          presentationMode={isInline || presentationMode}
+          overviewLabel={isInline ? 'Executive Summary' : undefined}
+          onSelectEmployee={isInline ? selectEmployee : undefined}
         />
+        {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} overallOnly />}
+        </>
       );
     }
 
     if (functionSlug && resolvedFunctionData) {
+      if (isInline) return (
+        <ExecutiveFunctionReview name={resolvedFunctionData.functionName} month={resolvedFunctionData.monthLabel}
+          score={resolvedFunctionData.headline.score} records={currentFunctionRecords} units={reviewUnits} actions={storedActions}
+          canSeeActions={canReadInlineActions} onOverview={handleBackToOverview} onSelectUnit={selectReviewUnit}
+        />
+      );
       if (isRoleBasedFunction(resolvedFunctionData.functionSlug)) {
         return (
           <div className="mx-auto max-w-7xl space-y-6">
@@ -1510,6 +1655,7 @@ function MonthlyPresentationScreen({
   };
 
   const agendaTimeline = useMemo<AgendaTimelineFunction[]>(() => {
+    if (isInline) return [];
     const sorted = [...overviewData.functions].sort((a, b) => a.score - b.score);
     return sorted.map((fn) => {
       const fnDeepDive =
@@ -1582,6 +1728,7 @@ function MonthlyPresentationScreen({
     branchScopedRecords,
     callCenterDeepDiveData,
     explicitPreview,
+    isInline,
     overviewData.functions,
     selectedPeriodKey,
     storedActions,
@@ -1614,10 +1761,11 @@ function MonthlyPresentationScreen({
     ).split(' ');
     const parsedYear = Number(monthParts[1]);
     return {
-      page_id: 'monthly_presentation',
+      page_id: isInline ? 'executive_summary' : 'monthly_presentation',
       route_id: `${location.pathname}${location.search}`,
       region: activeRegion,
       branch: activeBranch || null,
+      employee_id: selectedEmployee?.employeeId ?? null,
       period: selectedPeriodKey,
       month: monthParts[0] || null,
       year: Number.isFinite(parsedYear) && parsedYear >= 2000 ? parsedYear : null,
@@ -1632,11 +1780,11 @@ function MonthlyPresentationScreen({
     activeRegion,
     authorizedRecords.length,
     explicitPreview,
+    isInline,
     location.pathname,
     location.search,
     overviewData.drivers?.negative,
     overviewData.monthLabel,
-    overviewData.title,
     resolvedFunctionData?.functionName,
     resolvedFunctionData?.monthLabel,
     resolvedRoleData?.roleTitle,
@@ -1644,6 +1792,7 @@ function MonthlyPresentationScreen({
     resolvedTeamData?.kpis,
     resolvedTeamData?.monthLabel,
     resolvedTeamData?.teamDisplayName,
+    selectedEmployee?.employeeId,
     selectedPeriodKey,
     summaryRecordsQuery.isLoading,
   ]);
@@ -1723,7 +1872,8 @@ function MonthlyPresentationScreen({
 
     return (
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
-        {headerToolbar && <div className="flex flex-wrap items-center gap-3">{headerToolbar}</div>}
+        {isInline && <button type="button" className={reviewButtonClass} onClick={handleBackToOverview}>Back to Executive Summary</button>}
+        {!isInline && headerToolbar && <div className="flex flex-wrap items-center gap-3">{headerToolbar}</div>}
         <section
           data-testid={hasNoAssignments ? 'monthly-assignment-message' : noDataForSelection ? 'monthly-no-data' : pageHasError ? 'monthly-data-error' : 'monthly-scope-restricted'}
           role={pageHasError || invalidScopeRequest ? 'alert' : 'status'}
@@ -1792,6 +1942,26 @@ function MonthlyPresentationScreen({
       </main>
     );
   }
+
+  if (isInline) return (
+    <>
+      {activeEmployeeId && !selectedEmployee && <p role="status" className="px-4 py-2 text-sm">This employee is outside the selected analysis.</p>}
+      <div hidden={Boolean(selectedEmployee)}>{renderActiveView()}</div>
+      {selectedEmployee && (
+        <ExecutiveEmployeeReview
+          record={selectedEmployee}
+          team={teamLabel}
+          functionName={resolvedFunctionData?.functionName ?? functionSlug}
+          actions={storedActions.filter((action) => !isSavedRoleIntervention(action) && actionMatchesRecord(action, selectedEmployee))}
+          canSeeActions={canReadInlineActions}
+          onOverview={handleBackToOverview}
+          onFunction={handleBackToFunction}
+          onTeam={() => selectEmployee('')}
+        />
+      )}
+      <ContextualAssistantPanel pageContext={monthlyPageContext} />
+    </>
+  );
 
   return (
     <>

@@ -46,9 +46,11 @@ export function FunctionIcon({ fn, size = 28 }: { fn: ExecutiveFunction; size?: 
 function FunctionLink({
   cardFunction,
   style,
+  reviewHref,
 }: {
   cardFunction: ExecutiveFunction;
   style: (typeof FUNCTION_STYLE)[ExecutiveFunction];
+  reviewHref?: string;
 }) {
   const [searchParams] = useSearchParams();
   const next = new URLSearchParams();
@@ -61,7 +63,7 @@ function FunctionLink({
 
   return (
     <Link
-      to={functionHref}
+      to={reviewHref ?? functionHref}
       aria-label={`View ${cardFunction} function`}
       className="group/btn inline-flex min-h-[28px] shrink-0 items-center justify-center gap-[4px] rounded-[9px] border px-[10px] py-[4px] text-[11.5px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
       style={{
@@ -139,6 +141,7 @@ const FunctionCard = memo(function FunctionCard({
   classic,
   onSelectFunction,
   onSelectTeam,
+  functionReviewHref,
 }: {
   card: ExecutiveFunctionCard;
   previous: ExecutivePeriod | null;
@@ -151,7 +154,9 @@ const FunctionCard = memo(function FunctionCard({
   classic: boolean;
   onSelectFunction?: (fn: ExecutiveFunction) => void;
   onSelectTeam?: (team: string, fn: ExecutiveFunction) => void;
+  functionReviewHref?: (fn: ExecutiveFunction) => string | undefined;
 }) {
+  const reviewHref = functionReviewHref?.(card.function);
   const tone = getGradeTone(card.score);
   const style = FUNCTION_STYLE[card.function];
   const changeTone = scoreTone(card.change);
@@ -192,7 +197,7 @@ const FunctionCard = memo(function FunctionCard({
               </button>
             ) : (
               <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
-                {card.function}
+                {reviewHref ? <Link to={reviewHref} className="hover:underline">{card.function}</Link> : card.function}
               </h3>
             )}
           </div>
@@ -300,7 +305,7 @@ const FunctionCard = memo(function FunctionCard({
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
 
       {/* Zone 5: Uniform Bottom-Aligned Footer (Figma split: teams/status on left, Open → pill on right) */}
-      {showTeamButtons || showTeamDump || (linkable && !onSelectFunction) ? (
+      {showTeamButtons || showTeamDump || ((linkable || reviewHref) && !onSelectFunction) ? (
         <div className="mt-auto flex flex-col gap-[7px] border-t border-[var(--insights-row-border)] pt-[9px]">
           {showTeamButtons && onSelectTeam ? (
             <div className="flex flex-wrap gap-[5px]">
@@ -327,8 +332,8 @@ const FunctionCard = memo(function FunctionCard({
               ) : (
                 <span className="min-w-0 flex-1" />
               )}
-              {linkable && !onSelectFunction && (
-                <FunctionLink cardFunction={card.function} style={style} />
+              {(linkable || reviewHref) && !onSelectFunction && (
+                <FunctionLink cardFunction={card.function} style={style} reviewHref={reviewHref} />
               )}
             </div>
           )}
@@ -354,6 +359,7 @@ export default function FunctionCards({
   count,
   onSelectFunction,
   onSelectTeam,
+  functionReviewHref,
 }: {
   cards: ExecutiveFunctionCard[];
   previous: ExecutivePeriod | null;
@@ -371,6 +377,7 @@ export default function FunctionCards({
   /** Stay on the current page: open this function instead of Function Summary. */
   onSelectFunction?: (fn: ExecutiveFunction) => void;
   onSelectTeam?: (team: string, fn: ExecutiveFunction) => void;
+  functionReviewHref?: (fn: ExecutiveFunction) => string | undefined;
 }) {
   const [sortMode, setSortMode] = useState<FunctionSortMode>('lowest');
   const [filterMode, setFilterMode] = useState<FunctionFilterMode>('all');
@@ -534,6 +541,7 @@ export default function FunctionCards({
             showCohorts={showCohorts}
             classic={classic}
             onSelectFunction={onSelectFunction}
+            functionReviewHref={functionReviewHref}
             onSelectTeam={onSelectTeam}
           />
         ))}
