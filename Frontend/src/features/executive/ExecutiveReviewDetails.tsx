@@ -463,13 +463,26 @@ export function ExecutiveEmployeeReview({
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-[var(--insights-heading)]">{kpi.kpi_label}</span>
-                  <DirectionTag direction={kpi.kpi_direction} />
+                  {!kpi.is_penalty && <DirectionTag direction={kpi.kpi_direction} />}
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="text-xs font-medium tabular-nums text-[var(--text-secondary)]">
-                    {formatMeasurement(kpi.actual, kpi.unit)} actual · {formatMeasurement(kpi.target, kpi.unit)} target
-                  </span>
-                  {kpi.achievement_percent !== null && <GradePill score={kpi.achievement_percent} />}
+                  {kpi.is_penalty ? (
+                    <>
+                      <span className="text-xs font-medium tabular-nums text-[var(--text-secondary)]">
+                        {formatMeasurement(kpi.actual, kpi.unit)} observed
+                      </span>
+                      <StatusPill tone="danger">
+                        Deduction {kpi.contribution_points != null ? `${kpi.contribution_points.toFixed(1)}%` : '—'}
+                      </StatusPill>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs font-medium tabular-nums text-[var(--text-secondary)]">
+                        {formatMeasurement(kpi.actual, kpi.unit)} actual · {formatMeasurement(kpi.target, kpi.unit)} target
+                      </span>
+                      {kpi.achievement_percent !== null && <GradePill score={kpi.achievement_percent} />}
+                    </>
+                  )}
                 </div>
               </li>
             ))}

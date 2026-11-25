@@ -57,6 +57,27 @@ it.each(['Sales', 'ER Dr', 'Radiologist', 'Qlty&Case-Mngt'])('keeps %s published
   expect(monthlyKpiRows(month, [])).toMatchObject([{ actual: 0, target: 100, weight: 0 }]);
 });
 
+it('shows contributing clinical KPIs and applied penalties without PerformanceScore card', () => {
+  const erDoctor = {
+    identity: { employee_id: 'SGHD00201', name: 'ER Doc', team: 'ER Dr', month: 'October' },
+    year: 2026,
+    region: 'UAE',
+    evaluation: { score: 91.88, grade: 'B' },
+    raw_data: { Location: 'Dubai' },
+    kpi_values: [
+      { kpi_key: 'PerformanceScore', label: 'Performance Score', unit: '%', direction: 'higher_better', actual_value: 0.9188, target_value: 1, achievement_ratio: 0.9188, weight_applied: 1, contribution: 0.9188 },
+      { kpi_key: 'admission_rate', label: 'Admission rate', unit: '%', direction: 'higher_better', actual_value: 0.9, target_value: 1, achievement_ratio: 0.9, weight_applied: 0.5, contribution: 0.45 },
+      { kpi_key: 'valid_complaints', label: 'Valid complaints penalty', unit: '%', direction: 'lower_better', actual_value: 0.05, target_value: 0, achievement_ratio: 0, weight_applied: 0, contribution: -0.05, is_penalty: true },
+    ],
+  } as unknown as AgentRecord;
+  const exec = toExecRecords([erDoctor]);
+  expect(exec[0].score).toBe(91.88);
+  expect(exec[0].kpis.map((k) => k.kpi_key)).toEqual(['admission_rate']);
+  const rows = monthlyKpiRows(exec, []);
+  expect(rows.map((r) => r.kpi_key)).toEqual(['admission_rate', 'valid_complaints']);
+  expect(rows[1]).toMatchObject({ is_penalty: true, contribution_points: -5.0 });
+});
+
 describe('executive function membership (disjoint, Executive cards only)', () => {
   it('splits by performance level and lists every below-90 employee in the filtered branch', () => {
     const evidence = [

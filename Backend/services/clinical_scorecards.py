@@ -341,9 +341,19 @@ _RAD_COMPLAINT_COLUMNS: list[str] = [
 ]
 
 
+def _has_raw_key(raw: Mapping[str, Any], candidates: list[str]) -> bool:
+    """Return True if any candidate column name exists in raw (even when value is None)."""
+    clean_raw = {re.sub(r"[\s_.]+", "", str(k).lower()) for k in raw.keys()}
+    for key in candidates:
+        if key in raw:
+            return True
+        if re.sub(r"[\s_.]+", "", key.lower()) in clean_raw:
+            return True
+    return False
+
+
 def _is_rad_na(raw: Mapping[str, Any], key: str) -> bool:
-    """Check if a Radiologist KPI is marked NA in the workbook."""
-    # If a numeric achievement score is explicitly present, the KPI is applicable.
+    """Check if a Radiologist KPI is marked NA (or pandas-converted None) in the workbook."""
     ach_columns = _RAD_ACHIEVEMENT_COLUMNS.get(key, [])
     for col in ach_columns:
         val = _raw_lookup(raw, [col])
@@ -351,7 +361,7 @@ def _is_rad_na(raw: Mapping[str, Any], key: str) -> bool:
             continue
         if _number(val) is not None:
             return False
-        if str(val).strip().lower() in ("na", "n/a", "not applicable"):
+        if str(val).strip().lower() in ("na", "n/a", "not applicable", "-", ""):
             return True
 
     columns = _RAD_NA_COLUMNS.get(key, [])
@@ -359,9 +369,14 @@ def _is_rad_na(raw: Mapping[str, Any], key: str) -> bool:
         val = _raw_lookup(raw, [col])
         if val is None:
             continue
-        text = str(val).strip().lower()
-        if text in ("na", "n/a", "not applicable"):
+        if str(val).strip().lower() in ("na", "n/a", "not applicable"):
             return True
+
+    # pandas.read_excel converts "NA" cells into NaN -> safe_value -> None.
+    # If the column exists in raw_data with None (and no numeric achievement was found),
+    # treat it as NA rather than a 0% achievement score.
+    if _has_raw_key(raw, ach_columns) or _has_raw_key(raw, columns):
+        return True
     return False
 
 

@@ -129,7 +129,7 @@ function aboveZero(value: unknown): boolean {
  */
 export function hasRealActivity(agent: AgentRecord): boolean {
   if ((agent.identity?.name ?? '').trim().toLowerCase() === 'total') return false;
-  if (aboveZero(agent.evaluation?.score) || usesPublishedEmployeeScore(agent)) return true;
+  if (aboveZero(agent.evaluation?.score) || usesStoredPeriodScore(agent)) return true;
   if ((agent.kpi_values ?? []).some((kpi) => aboveZero(kpi?.contribution))) return true;
   const calls = agent.calls;
   if ([calls?.inbound, calls?.outbound, calls?.total_handled, calls?.abandoned].some(aboveZero)) return true;
@@ -156,9 +156,13 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       level: agent.performance_level || 'Employee',
       branches: SUMMARY_BRANCHES.filter((branch) => agentMatchesLocation(agent, branch.value as Parameters<typeof agentMatchesLocation>[1])).map((branch) => branch.value),
       period: periodOf(agent.year || fallbackYear, month),
-      score: usesPublishedEmployeeScore(agent) ? raw : normalizePerformanceScore(raw),
-      // Departmental lists show only KPIs that count in the score (stored weight above 0).
-      kpis: (agent.kpi_values || []).filter((kpi) => kpiCountsInScore(kpi.weight_applied)),
+      score: usesStoredPeriodScore(agent) ? raw : normalizePerformanceScore(raw),
+      // Departmental lists show only KPIs that count in the score (stored weight above 0),
+      // excluding the synthetic PerformanceScore placeholder on stored-period clinical scorecards.
+      kpis: (agent.kpi_values || []).filter((kpi) =>
+        kpiCountsInScore(kpi.weight_applied)
+        && !(usesStoredPeriodScore(agent) && kpi.kpi_key === 'PerformanceScore'),
+      ),
       rawAgent: agent,
     }];
   });
@@ -431,7 +435,7 @@ export function monthlyKpiRows(current: ExecRecord[], previous: ExecRecord[]): E
 }
 
 export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?: { range?: boolean; includePublishedMeasurements?: boolean }): ExecutiveKpiRow[] {
-  type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; teams: Set<string> };
+  type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; contributionPoints: number[]; isPenalty: boolean; teams: Set<string> };
   const collect = (records: ExecRecord[]) => {
     const buckets = new Map<string, Bucket>();
     for (const record of records) {
@@ -439,10 +443,12 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?:
       const measurements = published ? record.rawAgent?.kpi_values ?? record.kpis : record.kpis;
       for (const kpi of measurements) {
         if (!kpi?.kpi_key) continue;
-        if (!kpiCountsInScore(kpi.weight_applied) && !(published && kpi.view_only && kpi.weight_applied === 0 && Number.isFinite(kpi.actual_value))) continue;
+        if (published && kpi.kpi_key === 'PerformanceScore') continue;
+        const isPenalty = Boolean((kpi as { is_penalty?: boolean }).is_penalty);
+        if (!kpiCountsInScore(kpi.weight_applied) && !(published && isPenalty) && !(published && kpi.view_only && kpi.weight_applied === 0 && Number.isFinite(kpi.actual_value))) continue;
         const bucket = buckets.get(kpi.kpi_key) ?? {
           label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
-          actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
+          actual: [], target: [], weight: [], achievement: [], contributionPoints: [], isPenalty, teams: new Set<string>(),
         };
         const storedTarget = Number.isFinite(kpi.target_value) ? Number(kpi.target_value) : null;
         if (Number.isFinite(kpi.actual_value)) {
@@ -451,6 +457,7 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?:
         if (storedTarget !== null) bucket.target.push(executivePercentValue(storedTarget, kpi.unit, storedTarget));
         if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
         if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Math.min(Math.max(Number(kpi.achievement_ratio), 0), 1) * 100);
+        if (Number.isFinite(kpi.contribution)) bucket.contributionPoints.push(Number(kpi.contribution) * 100);
         bucket.teams.add(record.team);
         buckets.set(kpi.kpi_key, bucket);
       }
@@ -476,7 +483,8 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?:
     const rawChange = actual !== null && previousActual !== null ? actual - previousActual : null;
     const gapValue = rawGap === null || !known ? null : (lower ? -rawGap : rawGap);
     const changeValue = rawChange === null || !known ? null : (lower ? -rawChange : rawChange);
-    const achievement = mean(bucket.achievement);
+    const achievement = bucket.isPenalty ? null : mean(bucket.achievement);
+    const contributionPoints = mean(bucket.contributionPoints);
     rows.push({
       kpi_key: key,
       kpi_label: bucket.label,
@@ -493,12 +501,16 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?:
       weight: mean(bucket.weight),
       achievement_percent: r1(achievement),
       grade: getGradeClassOrNull(achievement),
-      target_status: gapValue === null ? null : (gapValue >= -TOLERANCE ? 'met' : 'missed'),
+      target_status: bucket.isPenalty ? 'missed' : (gapValue === null ? null : (gapValue >= -TOLERANCE ? 'met' : 'missed')),
       teams: [...bucket.teams].sort(),
+      ...(bucket.isPenalty ? { is_penalty: true, contribution_points: r1(contributionPoints) } : {}),
       ...(options?.range ? { target_varies: targetVaries } : {}),
     });
   });
-  return rows.sort((left, right) => (left.achievement_percent ?? 101) - (right.achievement_percent ?? 101) || left.kpi_label.localeCompare(right.kpi_label));
+  return rows.sort((left, right) => {
+    if (Boolean(left.is_penalty) !== Boolean(right.is_penalty)) return left.is_penalty ? 1 : -1;
+    return (left.achievement_percent ?? 101) - (right.achievement_percent ?? 101) || left.kpi_label.localeCompare(right.kpi_label);
+  });
 }
 
 function levels(current: ExecRecord[], previous: ExecRecord[]): ExecutiveLevel[] {

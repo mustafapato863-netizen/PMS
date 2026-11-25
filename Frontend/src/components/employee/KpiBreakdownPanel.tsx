@@ -1,6 +1,6 @@
 import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type { AgentRecord } from '../../types';
-import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../../types';
+import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream, usesStoredPeriodScore } from '../../types';
 import { getProgressColor, getProgressFill } from '../../utils/progressColor';
 import { getWeightForLabel, resolveDisplayScore } from '../../utils/kpiScore';
 import { getGradeTone } from '../../constants/grades';
@@ -150,7 +150,10 @@ const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, ach
 };
 
 const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdownPanelProps) => {
-  const kpis = getKPIsForAgent(agent);
+  const rawKpis = getKPIsForAgent(agent);
+  const kpis = usesStoredPeriodScore(agent)
+    ? rawKpis.filter((kpi) => kpi.key !== 'PerformanceScore')
+    : rawKpis;
 
   const calculatedScore = resolveDisplayScore(agent, teamWeights);
   const isScopedPreApprovalsTeam = isPreApprovalsIpElectiveTeam(agent.identity.team);
@@ -163,7 +166,7 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
     new Set(
       kpis
         .filter((kpi) => {
-          if (kpi.viewOnly) return false;
+          if (kpi.viewOnly || kpi.isPenalty) return false;
           const weight = kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month);
           if (weight === 0) return false;
           if (kpi.target === 0) return true;
@@ -217,7 +220,9 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
         <div>
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Performance Score</div>
           <div className="text-2xl font-extrabold" style={{ color: scoreTone.text }}>{displayScore.toFixed(1)}%</div>
-          {issues.length === 0
+          {kpis.length === 0 ? (
+            <div className="text-xs text-[var(--text-muted)] font-semibold mt-1">Source KPI breakdown unavailable</div>
+          ) : issues.length === 0
             ? <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1"><Minus size={10} /> All KPIs on target</div>
             : <div className="text-xs text-red-500 dark:text-red-400 font-semibold mt-1">⚠ {issues.join(' · ')}</div>
           }
@@ -225,7 +230,11 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
       </div>
 
       <div className="border-t border-[var(--border-light)] pt-4 space-y-4">
-        {kpis.map((kpi) => {
+        {kpis.length === 0 ? (
+          <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3.5 py-4 text-xs font-medium text-[var(--text-muted)]">
+            KPI breakdown unavailable for this period — source KPI inputs are insufficient.
+          </div>
+        ) : kpis.map((kpi) => {
           const isPenaltyEntry = kpi.isPenalty === true;
           const viewOnly = !isPenaltyEntry && (kpi.viewOnly === true || (kpi as { view_only?: boolean; viewOnly?: boolean }).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined)));
           const w = viewOnly || isPenaltyEntry

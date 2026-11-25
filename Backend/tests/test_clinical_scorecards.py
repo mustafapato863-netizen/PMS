@@ -12,6 +12,8 @@ import pytest
 from services.clinical_scorecards import (
     can_recompute,
     compute_clinical_score,
+    er_lama_status,
+    reconcile_clinical_records_in_db,
     score_er_dr,
     score_qlty_case_mngt,
     score_radiologist,
@@ -52,11 +54,15 @@ class TestErDr:
         assert "lama_retention" in kpi_keys
         assert len(kpi_keys) == 6
 
-        # Verify weighted sum / 0.90
+        # Verify weighted sum / 0.90 and effective weights
         weighted = (0.90 * 0.40 + 0.85 * 0.10 + 0.80 * 0.15 +
                     0.92 * 0.15 + 0.88 * 0.10 + 0.75 * 0.10)
-        expected = (weighted / 0.90) * 100
-        assert abs(score - expected) < 0.1
+        expected = round((weighted / 0.90) * 100, 2)
+        assert abs(score - expected) < 0.05
+        by_key = {k["kpi_key"]: k for k in kpis}
+        assert abs(by_key["admission_rate"]["weight_applied"] - (0.40 / 0.90)) < 1e-6
+        assert abs(by_key["lama_retention"]["weight_applied"] - (0.10 / 0.90)) < 1e-6
+        assert er_lama_status(raw) == "positive"
 
     def test_lama_zero_excludes_lama_retention(self):
         """When Total LAMA == 0, exclude LAMA Retention with denominator 0.80."""
@@ -68,14 +74,17 @@ class TestErDr:
         assert "lama_retention" not in kpi_keys
         assert len(kpi_keys) == 5
 
-        # Verify weighted sum / 0.80
+        # Verify weighted sum / 0.80 and effective weights
         weighted = (0.90 * 0.40 + 0.85 * 0.10 + 0.80 * 0.15 +
                     0.92 * 0.15 + 0.88 * 0.10)
-        expected = (weighted / 0.80) * 100
-        assert abs(score - expected) < 0.1
+        expected = round((weighted / 0.80) * 100, 2)
+        assert abs(score - expected) < 0.05
+        by_key = {k["kpi_key"]: k for k in kpis}
+        assert abs(by_key["admission_rate"]["weight_applied"] - (0.40 / 0.80)) < 1e-6
+        assert er_lama_status(raw) == "measured_zero"
 
     def test_lama_blank_excludes_lama_retention(self):
-        """When Total LAMA is blank/absent, exclude LAMA Retention with denominator 0.80."""
+        """When Total LAMA is blank/absent with no positive retained count, exclude LAMA Retention."""
         raw = self._full_er_raw()
         del raw["Total LAMA"]
         result = score_er_dr(raw)
@@ -84,6 +93,24 @@ class TestErDr:
         kpi_keys = [k["kpi_key"] for k in kpis if not k.get("is_penalty")]
         assert "lama_retention" not in kpi_keys
         assert len(kpi_keys) == 5
+        assert er_lama_status(raw) == "blank_no_lama"
+
+    def test_lama_blank_with_zero_retained_treated_as_no_lama(self):
+        """Blank Total LAMA with explicit 0 retained patients treats LAMA as no LAMA."""
+        raw = self._full_er_raw(**{"Retained": 0})
+        del raw["Total LAMA"]
+        assert er_lama_status(raw) == "blank_no_lama"
+        result = score_er_dr(raw)
+        assert result is not None
+        assert "lama_retention" not in [k["kpi_key"] for k in result[2]]
+
+    def test_lama_blank_with_positive_retained_is_ambiguous(self):
+        """Blank Total LAMA with positive retained patients is ambiguous and preserved as unavailable."""
+        raw = self._full_er_raw(**{"Retained": 2})
+        del raw["Total LAMA"]
+        assert er_lama_status(raw) == "ambiguous_blank"
+        assert can_recompute("ER Dr", raw) is False
+        assert score_er_dr(raw) is None
 
     def test_lama_blank_na(self):
         """When Total LAMA is 'NA', treat as blank and exclude."""
@@ -189,22 +216,39 @@ class TestRadiologist:
         assert "patient_waiting_time" in kpi_keys
 
     def test_critical_findings_na(self):
-        """Exclude Critical Findings when NA."""
+        """Exclude Critical Findings when NA and reweight remaining 0.85."""
         raw = self._full_rad_raw(**{"Ach.Critical Findings %": "NA"})
         result = score_radiologist(raw)
         assert result is not None
-        kpi_keys = [k["kpi_key"] for k in result[2] if not k.get("is_penalty")]
+        kpis = result[2]
+        kpi_keys = [k["kpi_key"] for k in kpis if not k.get("is_penalty")]
         assert "critical_findings" not in kpi_keys
         assert len(kpi_keys) == 5
+        by_key = {k["kpi_key"]: k for k in kpis}
+        assert abs(by_key["tat"]["weight_applied"] - (0.20 / 0.85)) < 1e-6
+        assert abs(sum(k["weight_applied"] for k in kpis) - 1.0) < 1e-6
 
     def test_patient_waiting_time_na(self):
-        """Exclude Patient Waiting Time when NA."""
+        """Exclude Patient Waiting Time when NA and reweight remaining 0.90."""
         raw = self._full_rad_raw(**{"Ach.Patient Waiting Time %": "N/A"})
         result = score_radiologist(raw)
         assert result is not None
-        kpi_keys = [k["kpi_key"] for k in result[2] if not k.get("is_penalty")]
+        kpis = result[2]
+        kpi_keys = [k["kpi_key"] for k in kpis if not k.get("is_penalty")]
         assert "patient_waiting_time" not in kpi_keys
         assert len(kpi_keys) == 5
+        assert abs(sum(k["weight_applied"] for k in kpis) - 1.0) < 1e-6
+
+    def test_excludes_modality_view_metrics(self):
+        """Modality-level view metrics must not enter Radiologist breakdown."""
+        raw = self._full_rad_raw(**{"CT Count": 120, "MRI Count": 45, "X-Ray View": 300})
+        result = score_radiologist(raw)
+        assert result is not None
+        kpi_keys = {k["kpi_key"] for k in result[2]}
+        assert kpi_keys == {
+            "tat", "productivity", "report_quality", "imaging_protocol",
+            "critical_findings", "patient_waiting_time",
+        }
 
     def test_both_na_excluded(self):
         """Both Critical Findings and Patient Waiting Time NA."""
@@ -434,3 +478,144 @@ class TestComputeClinicalScore:
 
     def test_unknown_team_returns_none(self):
         assert compute_clinical_score("Inbound", {}) is None
+
+    def test_qlty_rejection_direction_is_higher_better(self):
+        raw = {
+            "Audit Compliance Rate % (IP, OP, Re-Submission)": 0.85,
+            "Rejection Rate": 0.75,
+            "Case Management Rate": 0.0,
+        }
+        result = score_qlty_case_mngt(raw)
+        assert result is not None
+        by_key = {k["kpi_key"]: k for k in result[2]}
+        assert by_key["rejection"]["direction"] == "higher_better"
+
+
+class TestClinicalDbParityAndReadPaths:
+    """Verify DB import parity, existing-row reconciliation, sorting, filters, grade counts, and team aggregation."""
+
+    def test_import_and_existing_db_rows_reconcile_consistently(self):
+        import io
+        import uuid
+        import pandas as pd
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        from config.database import Base
+        from models.models import KPIValue, PerformanceRecord
+        from services.dashboard_record_service import DashboardRecordService
+        from services.performance_dashboard_read_service import PerformanceDashboardReadService
+        from services.scoring.monthly_official_scores import official_team_score
+        from services.seeding_service import DatabaseSeeder
+
+        october = pd.Timestamp("2026-10-01")
+        blob = io.BytesIO()
+        with pd.ExcelWriter(blob, engine="openpyxl") as writer:
+            er = writer.book.create_sheet("ER Dr")
+            er.append(["Date", "HR ID", "Performance Score", "Performance Grade", "A.No Re-visit within 72 hours"])
+            er.append([
+                None, None, None, None, None, None,
+                "Report Month", "Location", "EmpID", "Emp Name",
+                "Admission Rate %", "Re-visit Rate  %", "Avg Time to Initial Patient Assessment 10%",
+                "Satisfaction Score", "Documentation%", "Total LAMA", "LAMA Retention %",
+                "Valid Complains", "Medical Error Rate ",
+                "Performance Score", "Performance Grade",
+            ])
+            # Wait: check _clinical_frame column expectations (required: EmpID, Emp Name, Performance Score, Location)
+            # Row 1: Total LAMA == 0 -> / 0.80, Valid Complains 0.05 -> (0.9*0.4+0.8*0.1+0.8*0.15+0.9*0.15+0.8*0.1)/0.80 - 0.05
+            # = (0.36+0.08+0.12+0.135+0.08)/0.80 - 0.05 = 0.775/0.80 - 0.05 = 0.96875 - 0.05 = 91.88 (B)
+            er.append([
+                None, None, None, None, None, None,
+                october, "Dubai", "SGHD00201", "ER Doc One",
+                0.90, 0.80, 0.80, 0.90, 0.80, 0, 0.50, 0.05, 0.0,
+                0.80, "Average",  # deliberately stale workbook score/grade
+            ])
+            # Row 2: Total LAMA == 2 -> / 0.90, LAMA Retention 0.90 included, no deductions
+            # = (0.90*0.4+0.80*0.1+0.80*0.15+0.90*0.15+0.80*0.1+0.90*0.1)/0.90 = 0.865/0.90 = 96.11 (A)
+            er.append([
+                None, None, None, None, None, None,
+                october, "Dubai", "SGHD00202", "ER Doc Two",
+                0.90, 0.80, 0.80, 0.90, 0.80, 2, 0.90, 0.0, 0.0,
+                0.75, "Below average",  # deliberately stale workbook score/grade
+            ])
+
+            rad_cols = [
+                "Date", "HR ID", "Employee Name", "Branch",
+                "Ach.TAT %", "Ach.Productivity %", "Ach.Report Quality %",
+                "Ach.Imaging Protocol %", "Ach.Critical Findings %", "Ach.Patient Waiting Time %",
+                "Complaints", "Performance Score", "Performance Grade",
+            ]
+            pd.DataFrame([
+                # Both optional NA -> denominator 0.75: (0.9*0.2+0.8*0.35+0.9*0.1+0.9*0.1)/0.75 = 0.64/0.75 = 85.33 - 10 = 75.33 (D)
+                [october, "SGHD00203", "Rad Doc One", "Dubai", 0.90, 0.80, 0.90, 0.90, "NA", "NA", 1, 0.92, "Meet Expectations"],
+            ], columns=rad_cols).to_excel(writer, sheet_name="Radiologist", index=False)
+
+            qlty_cols = [
+                "Date", "HR ID", "Employee Name", "Branch",
+                "Audit Compliance Rate % (IP, OP, Re-Submission)", "Rejection Rate",
+                "Case Management Rate", "Revenue Impact",
+                "Performance Score", "Performance Grade",
+            ]
+            pd.DataFrame([
+                # Path 1: blank AF, numeric AG, blank AE -> 0.80*0.30 + 0.90*0.70 = 87.0 (C)
+                [october, "SGHD00204", "CM One", "Dubai", 0.80, None, None, 0.90, 0.60, "Unsatisfactory"],
+            ], columns=qlty_cols).to_excel(writer, sheet_name="Qlty&Case-Mngt", index=False)
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            result = DatabaseSeeder().process_uploaded_file("PMS.xlsx", blob.getvalue(), db_session=db)
+            assert result["records_imported"] == 4
+
+            records = DashboardRecordService(db).list_records()
+            by_id = {r.employee_id: r for r in records}
+            assert by_id["SGHD00201"].evaluation.score == 91.88
+            assert by_id["SGHD00201"].evaluation.grade == "B"
+            assert "PerformanceScore" not in [k["kpi_key"] for k in by_id["SGHD00201"].kpi_values]
+            assert "lama_retention" not in [k["kpi_key"] for k in by_id["SGHD00201"].kpi_values]
+            assert any(k.get("is_penalty") and k["kpi_key"] == "valid_complaints" for k in by_id["SGHD00201"].kpi_values)
+
+            assert by_id["SGHD00202"].evaluation.score == 96.11
+            assert by_id["SGHD00202"].evaluation.grade == "A"
+            assert "lama_retention" in [k["kpi_key"] for k in by_id["SGHD00202"].kpi_values]
+
+            assert by_id["SGHD00203"].evaluation.score == 75.33
+            assert by_id["SGHD00203"].evaluation.grade == "D"
+            assert by_id["SGHD00204"].evaluation.score == 87.0
+            assert by_id["SGHD00204"].evaluation.grade == "C"
+
+            # Team official score averages employees without re-applying weights/penalties
+            er_team = official_team_score([by_id["SGHD00201"], by_id["SGHD00202"]], "ER Dr")
+            assert er_team.score == round((91.88 + 96.11) / 2, 1)
+
+            # Simulate pre-fix stale persisted DB values (old scores/grades and PerformanceScore KPI)
+            for row in db.query(PerformanceRecord).all():
+                row.score = 55.0
+                row.grade = "E"
+            db.query(KPIValue).delete()
+            db.commit()
+
+            scope = {"user_id": str(uuid.uuid4()), "role": "Admin"}
+            read_svc = PerformanceDashboardReadService(db, scope)
+            summary = read_svc.summary(period="2026-10")
+            assert summary["current"]["grade_counts"] == {"A": 1, "B": 1, "C": 1, "D": 1, "E": 0}
+
+            page_desc = read_svc.records_page(period="2026-10", sort="score_desc", include_total=True)
+            assert [item["employee_id"] for item in page_desc["items"]] == [
+                "SGHD00202", "SGHD00201", "SGHD00204", "SGHD00203",
+            ]
+            assert read_svc.records_page(period="2026-10", grade="A")["items"][0]["employee_id"] == "SGHD00202"
+            assert read_svc.records_page(period="2026-10", score_lt=80)["items"][0]["employee_id"] == "SGHD00203"
+
+            # Reconcile persisted DB rows in-place and confirm SQL values match
+            updated = reconcile_clinical_records_in_db(db)
+            assert updated == 4
+            db.commit()
+            db_by_id = {
+                r.employee.employee_id: (float(r.score), r.grade)
+                for r in db.query(PerformanceRecord).all()
+            }
+            assert db_by_id["SGHD00201"] == (91.88, "B")
+            assert db_by_id["SGHD00202"] == (96.11, "A")
+            assert db_by_id["SGHD00203"] == (75.33, "D")
+            assert db_by_id["SGHD00204"] == (87.0, "C")
+        engine.dispose()

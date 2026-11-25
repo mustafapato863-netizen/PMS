@@ -1,4 +1,4 @@
-import { isHossamRecord, usesPublishedEmployeeScore, type AgentRecord, type PMSAction } from '../../types';
+import { isHossamRecord, usesPublishedEmployeeScore, usesStoredPeriodScore, type AgentRecord, type PMSAction } from '../../types';
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import type { ObservationStatus } from '../ai/types';
@@ -376,7 +376,7 @@ export function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: str
   if (leader !== null) return round1(leader);
   const agents = records.map((record) => record.rawAgent).filter((agent): agent is AgentRecord => Boolean(agent));
   const average = mean(records.map((record) => record.score));
-  if (average !== null && agents.some(usesPublishedEmployeeScore)) return round1(average);
+  if (average !== null && agents.some(usesStoredPeriodScore)) return round1(average);
   const resolvedTeamConfig = teamConfig ?? defaultResubmissionConfig(records);
   const config = resolvedTeamConfig ?? (canonicalTeam === 'Inbound'
     ? INBOUND_TEAM_CONFIG
@@ -883,13 +883,36 @@ export function deriveAgentTrendContext(
       resolvedCurrent.rawAgent?.kpi_values && resolvedCurrent.rawAgent.kpi_values.length > 0
         ? resolvedCurrent.rawAgent.kpi_values
         : resolvedCurrent.kpis;
+    const filteredKpis =
+      resolvedCurrent.rawAgent && usesStoredPeriodScore(resolvedCurrent.rawAgent)
+        ? rawKpis.filter((item) => item.kpi_key !== 'PerformanceScore')
+        : rawKpis;
     const rawData = resolvedCurrent.rawAgent?.raw_data as Record<string, unknown> | undefined;
-    const totalWeight = rawKpis.reduce((sum, item) => {
+    const totalWeight = filteredKpis.reduce((sum, item) => {
       if (!kpiCountsInScore(item.weight_applied)) return sum;
       return sum + Number(item.weight_applied);
     }, 0);
 
-    for (const rawKpi of rawKpis) {
+    for (const rawKpi of filteredKpis) {
+      if ((rawKpi as { is_penalty?: boolean }).is_penalty === true) {
+        const penaltyPts = round1((Number(rawKpi.contribution) || 0) * 100);
+        allKpiEvidence.push({
+          kpiKey: rawKpi.kpi_key,
+          label: rawKpi.label || rawKpi.kpi_key,
+          actual: penaltyPts,
+          target: 0,
+          unit: '%',
+          actualFormatted: `${penaltyPts.toFixed(1)}%`,
+          targetFormatted: '0.0%',
+          achievementPct: null,
+          metTarget: false,
+          weight: 0,
+          contributesToScore: true,
+          observationStatus: 'verified',
+          projectedAgentScoreLift: null,
+        });
+        continue;
+      }
       const unit = resolveKpiDisplayUnit(rawKpi.unit, resolvedCurrent.region, {
         kpiKey: rawKpi.kpi_key,
         label: rawKpi.label,

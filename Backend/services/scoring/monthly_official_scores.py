@@ -1069,6 +1069,11 @@ def _resolve_team_config(
     return _load_config_safe(canonical_team, configs)
 
 
+def _is_stored_employee_scorecard(record: Any) -> bool:
+    team = str(_val(record, "team") or "").strip()
+    return team in CLINICAL_TREND_TEAMS or uses_published_score(_record_raw_data(record))
+
+
 def _record_display_score(record: Any) -> float | None:
     if str(_val(record, "employee_name") or "").strip().lower() == "total":
         return None
@@ -1076,7 +1081,7 @@ def _record_display_score(record: Any) -> float | None:
         return None
     eval_obj = _val(record, "evaluation")
     raw = _val(eval_obj, "score") if eval_obj is not None else _val(record, "score")
-    if uses_published_score(_record_raw_data(record)):
+    if _is_stored_employee_scorecard(record):
         return _finite_float(raw)
     return _normalize_performance_score(raw)
 
@@ -1140,7 +1145,7 @@ def official_team_score(
             sample_size=len(scores),
         )
 
-    if any(uses_published_score(_record_raw_data(record)) for record in deduped):
+    if any(_is_stored_employee_scorecard(record) for record in deduped):
         return OfficialScoreResult(
             entity_type="team",
             entity_name=canonical_team,

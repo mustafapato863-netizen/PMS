@@ -956,7 +956,32 @@ const EmployeeProfileView = () => {
               )}
 
               <div className="space-y-3 text-sm">
-                {getKPIsForAgent(profileAgent || employee.raw).map((kpi) => {
+                {(() => {
+                  const activeProfileAgent = profileAgent || employee.raw;
+                  const summaryKpis = activeProfileAgent.identity?.team && ['er dr', 'radiologist', 'qlty&case-mngt'].includes(activeProfileAgent.identity.team.trim().toLowerCase())
+                    ? getKPIsForAgent(activeProfileAgent).filter((kpi) => kpi.key !== 'PerformanceScore')
+                    : getKPIsForAgent(activeProfileAgent);
+                  if (summaryKpis.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3.5 py-3 text-xs font-medium text-[var(--text-muted)]">
+                        KPI breakdown unavailable for this period.
+                      </div>
+                    );
+                  }
+                  return summaryKpis.map((kpi) => {
+                    if (kpi.isPenalty) {
+                      return (
+                        <div key={kpi.label} className="flex items-center justify-between py-1.5 border-b border-[var(--border-light)] last:border-none">
+                          <div className="flex flex-col">
+                            <span className="text-red-600 dark:text-red-400 font-semibold">{kpi.label}</span>
+                            <span className="text-xs text-[var(--text-faint)] font-medium">Deduction</span>
+                          </div>
+                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                            {kpi.contribution !== undefined ? `${kpi.contribution.toFixed(1)}%` : '—'}
+                          </span>
+                        </div>
+                      );
+                    }
                   const isPrescription = kpi.label.toLowerCase().includes('prescription');
                   const targetRequiresReview = !isPrescription && kpi.target === 0;
                   const isMet = !targetRequiresReview && (kpi.isLowerBetter ? kpi.actual <= kpi.target : (isPrescription ? (kpi.achievement ?? kpi.actual) >= 85 : kpi.actual >= kpi.target));
@@ -1059,7 +1084,8 @@ const EmployeeProfileView = () => {
                       </div>
                     </div>
                   );
-                })}
+                  });
+                })()}
               </div>
 
               {/* Sales Totals & Team */}
