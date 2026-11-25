@@ -488,7 +488,7 @@ function DriverRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-slate-900 text-sm">{item.kpiName}</span>
-          <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+          <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-600">
             {betterText}
           </span>
         </div>
@@ -498,6 +498,12 @@ function DriverRow({
           <span>{item.team}</span>
           <span>·</span>
           <span>Actual: {item.actualValue}</span>
+          {item.movementLabel && (
+            <>
+              <span>·</span>
+              <span className="font-medium text-slate-600">{item.movementLabel}</span>
+            </>
+          )}
         </div>
       </div>
 

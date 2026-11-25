@@ -12,6 +12,7 @@ import {
   normalizeRegion,
   toExecRecords,
 } from '../executive/compose';
+import type { TeamFunctionMap } from '../insights/filterCascade';
 import { apiFetch } from '../../lib/apiClient';
 import {
   businessTeamName,
@@ -465,6 +466,16 @@ function MonthlyPresentationScreen({
       .map((record) => ({ ...record, branches: [activeBranch] }));
   }, [activeBranch, authorizedRecords]);
 
+  const catalogTeamFunctions = useMemo<TeamFunctionMap>(() => {
+    const map: TeamFunctionMap = {};
+    for (const item of serverTeams) {
+      if (item.team && item.functions?.length) {
+        map[item.team] = item.functions;
+      }
+    }
+    return map;
+  }, [serverTeams]);
+
   const overviewData: MonthlyOverviewData = useMemo(() => {
     const base =
       explicitPreview && data && data.regionCode === activeRegion && !activeBranch
@@ -479,6 +490,8 @@ function MonthlyPresentationScreen({
                 region: activeRegion === 'ALL' ? undefined : activeRegion,
                 branch: activeBranch || undefined,
               },
+              teamFunctions: catalogTeamFunctions,
+              deriveScopedDrivers: true,
               today: clock,
               requestedPeriodKey,
             }),
@@ -491,8 +504,14 @@ function MonthlyPresentationScreen({
         .flatMap((team) => team.functions))
         .map(normalizeFunctionSlug),
     );
+    const driverAllowed = (functionName: string) =>
+      !functionScopeRestricted || authorizedFunctionSlugs.has(normalizeFunctionSlug(functionName));
     return {
       ...base,
+      drivers: {
+        negative: base.drivers.negative.filter((d) => driverAllowed(d.functionName)),
+        positive: base.drivers.positive.filter((d) => driverAllowed(d.functionName)),
+      },
       functions: base.functions.filter((fn) =>
         regionFunctionSlugs.has(fn.slug) &&
         (!functionScopeRestricted || authorizedFunctionSlugs.has(fn.slug)),
@@ -504,6 +523,7 @@ function MonthlyPresentationScreen({
     authorizedFunctionNames,
     authorizedFunctionSlugs,
     branchScopedRecords,
+    catalogTeamFunctions,
     clock,
     data,
     explicitPreview,

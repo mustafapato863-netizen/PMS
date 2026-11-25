@@ -1776,4 +1776,86 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(branchSelect).toBeDisabled();
     expect(branchSelect.value).toBe('dubai');
   });
+
+  it('populates Key Movers (What Moved the Score) from live summary records and updates across regions', () => {
+    monthlyTestState.catalog!.data.periods = [
+      { year: 2026, month: 'September', key: '2026-09' },
+      { year: 2026, month: 'August', key: '2026-08' },
+    ];
+    monthlyTestState.catalog!.data.months = ['September', 'August'];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'E-INB-1', name: 'Sara', team: 'Inbound', month: 'August' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.72, grade: 'D' },
+          kpi_values: [
+            { kpi_key: 'Attendance', label: 'Attendance Rate', actual_value: 0.60, target_value: 0.75, unit: '%', direction: 'higher_better', weight_applied: 0.7, achievement_ratio: 0.80, contribution: 0.56 },
+            { kpi_key: 'Booking', label: 'Booking Rate', actual_value: 0.52, target_value: 0.65, unit: '%', direction: 'higher_better', weight_applied: 0.3, achievement_ratio: 0.80, contribution: 0.24 },
+          ],
+        },
+        {
+          identity: { employee_id: 'E-INB-1', name: 'Sara', team: 'Inbound', month: 'September' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.80, grade: 'C' },
+          kpi_values: [
+            { kpi_key: 'Attendance', label: 'Attendance Rate', actual_value: 0.69, target_value: 0.75, unit: '%', direction: 'higher_better', weight_applied: 0.7, achievement_ratio: 0.92, contribution: 0.644 },
+            { kpi_key: 'Booking', label: 'Booking Rate', actual_value: 0.455, target_value: 0.65, unit: '%', direction: 'higher_better', weight_applied: 0.3, achievement_ratio: 0.70, contribution: 0.21 },
+          ],
+        },
+        {
+          identity: { employee_id: 'U-CSR-1', name: 'Noor', team: 'CSR', month: 'August' },
+          region: 'UAE',
+          branch_key: 'dubai',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.82, grade: 'C' },
+          kpi_values: [
+            { kpi_key: 'CSRRejection', label: 'CSR Rejection %', actual_value: 0.012, target_value: 0.005, unit: '%', direction: 'lower_better', weight_applied: 1.0, achievement_ratio: 0.42, contribution: 0.42 },
+          ],
+        },
+        {
+          identity: { employee_id: 'U-CSR-1', name: 'Noor', team: 'CSR', month: 'September' },
+          region: 'UAE',
+          branch_key: 'dubai',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.90, grade: 'B' },
+          kpi_values: [
+            { kpi_key: 'CSRRejection', label: 'CSR Rejection %', actual_value: 0.006, target_value: 0.005, unit: '%', direction: 'lower_better', weight_applied: 1.0, achievement_ratio: 0.83, contribution: 0.83 },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&period=2026-09']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    const driversSection = document.getElementById('presentation-section-drivers')!;
+    expect(driversSection).not.toBeNull();
+    expect(within(driversSection).getByRole('heading', { name: 'What Moved the Score vs August' })).toBeInTheDocument();
+    expect(within(driversSection).queryByText('No negative drivers in this region.')).not.toBeInTheDocument();
+    expect(within(driversSection).queryByText('No positive drivers in this region.')).not.toBeInTheDocument();
+    expect(within(driversSection).getAllByText('Attendance Rate').length).toBeGreaterThan(0);
+    expect(within(driversSection).getByText('Booking Rate')).toBeInTheDocument();
+
+    // Switching to UAE updates Key Movers dynamically to UAE CSR drivers.
+    fireEvent.click(screen.getByTestId('region-uae'));
+    expect(within(driversSection).getAllByText('CSR Rejection %').length).toBeGreaterThan(0);
+    expect(within(driversSection).queryByText('Booking Rate')).not.toBeInTheDocument();
+  });
 });

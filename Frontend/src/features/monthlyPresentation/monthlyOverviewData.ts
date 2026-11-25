@@ -1,5 +1,6 @@
 import type { ExecutiveSummary } from '../executive/types';
 import { functionSlug } from '../executive/functions';
+import { presentationTeamName } from '../team/countryTeamIdentity';
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -573,16 +574,25 @@ export function adaptSummaryToMonthlyOverview(
         ? fallback.gradeDistribution.rows
         : [];
 
+  const formatUnitSuffix = (unit: string | null | undefined) =>
+    unit === '%' ? '%' : unit ? ` ${unit}` : '';
+  const formatMovement = (rawChange: number | null | undefined, unit: string | null | undefined) => {
+    if (rawChange == null || !Number.isFinite(rawChange) || Math.abs(rawChange) < 0.05) return undefined;
+    const arrow = rawChange > 0 ? '↑ +' : '↓ ';
+    return `${arrow}${rawChange.toFixed(1)}${formatUnitSuffix(unit)}`;
+  };
+
   const negativeDrivers: ScoreDriverItem[] =
     summary.drivers.negative.length > 0
       ? summary.drivers.negative.slice(0, 4).map((d, idx) => ({
           id: `neg-${idx}`,
           kpiName: d.kpi_label,
-          team: d.team ?? monthlyRegionName(region),
+          team: d.team ? presentationTeamName(d.team) : monthlyRegionName(region),
           functionName: d.function ?? 'Operations',
           impactPct: d.weighted_gap_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
+          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${formatUnitSuffix(d.unit)}`,
+          movementLabel: formatMovement(d.raw_change, d.unit),
         }))
       : !allowSnapshotFallback || region !== 'EGY'
         ? []
@@ -593,11 +603,12 @@ export function adaptSummaryToMonthlyOverview(
       ? summary.drivers.positive.slice(0, 4).map((d, idx) => ({
           id: `pos-${idx}`,
           kpiName: d.kpi_label,
-          team: d.team ?? monthlyRegionName(region),
+          team: d.team ? presentationTeamName(d.team) : monthlyRegionName(region),
           functionName: d.function ?? 'Operations',
           impactPct: d.impact_change_points ?? d.impact_points ?? 0,
           betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
+          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${formatUnitSuffix(d.unit)}`,
+          movementLabel: formatMovement(d.raw_change, d.unit),
         }))
       : !allowSnapshotFallback || region !== 'EGY'
         ? []
