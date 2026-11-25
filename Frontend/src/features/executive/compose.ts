@@ -25,7 +25,7 @@ import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from '../monthlyPresentatio
 import { normalizePerformanceScore } from '../../utils/kpiScore';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
-import { agentMatchesLocation } from '../../utils/branchScope';
+import { agentMatchesLocation, isBranchKey, projectAgentForBranch } from '../../utils/branchScope';
 import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
 import type { TeamFunctionMap } from '../insights/filterCascade';
@@ -1146,6 +1146,45 @@ export interface ComposeInput {
   today: Date;
 }
 
+/**
+ * Projects an `ExecRecord` onto a specific branch (`dubai`, `sharjah`, `ajman`,
+ * `clinics`). Multi-branch Call Center records recalculate Attendance Rate and
+ * overall score from that branch's geo bookings/attended; other records keep
+ * their score and KPIs untouched while narrowing `branches` to the active branch.
+ */
+export function projectExecRecordForBranch(
+  record: ExecRecord,
+  branch: string | null | undefined,
+): ExecRecord {
+  const wanted = String(branch ?? '').trim().toLowerCase();
+  if (!isBranchKey(wanted)) return record;
+  if (!record.rawAgent) {
+    return { ...record, branches: [wanted] };
+  }
+  const projectedAgent = projectAgentForBranch(record.rawAgent, wanted);
+  if (projectedAgent === record.rawAgent) {
+    return { ...record, branches: [wanted] };
+  }
+  const rawScore = Number(projectedAgent.evaluation?.score);
+  const projectedScore = Number.isFinite(rawScore)
+    ? usesStoredPeriodScore(projectedAgent)
+      ? rawScore
+      : normalizePerformanceScore(rawScore)
+    : record.score;
+  const projectedKpis = (projectedAgent.kpi_values || []).filter(
+    (kpi) =>
+      kpiCountsInScore(kpi.weight_applied) &&
+      !(usesStoredPeriodScore(projectedAgent) && kpi.kpi_key === 'PerformanceScore'),
+  );
+  return {
+    ...record,
+    branches: [wanted],
+    score: projectedScore,
+    kpis: projectedKpis,
+    rawAgent: projectedAgent,
+  };
+}
+
 function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?: TeamFunctionMap) {
   const { region, branch, teamFunction, team, position, performanceLevel } = input.filters;
   const filtered = records.filter((record) => (
@@ -1159,7 +1198,8 @@ function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?
     && (!team || summaryTeamMatches(record.team, team))
     && (!input.teamScope || input.teamScope.some((allowed) => summaryTeamMatches(record.team, allowed)))
   ));
-  return dedupeEgyptResubmissionRecords(filtered, (record) => ({
+  const projected = branch ? filtered.map((record) => projectExecRecordForBranch(record, branch)) : filtered;
+  return dedupeEgyptResubmissionRecords(projected, (record) => ({
     team: record.team,
     employeeId: record.employeeId,
     periodKey: record.period.key,

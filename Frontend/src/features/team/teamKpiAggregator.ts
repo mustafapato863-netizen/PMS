@@ -330,17 +330,23 @@ export function aggregateConfiguredTeamKpis(
       }
 
       if (aggregation.method === 'ratio') {
-        const numerator = sourceValue(agent, aggregation.numerator_col, location);
-        // Inbound Booking CR is bookings / inbound calls. A stored config that
-        // still points at total handled calls must not bring the old total back.
         const denominatorSource = normalize(config?.team) === 'inbound' && normalize(definition?.key) === 'booking'
           ? '$calls.inbound'
           : aggregation.denominator_col;
-        const denominator = sourceValue(agent, denominatorSource, location);
-        if (numerator !== undefined && denominator !== undefined) {
-          bucket.hasRatioCounters = true;
-          bucket.numerator += numerator;
-          bucket.denominator += denominator;
+        // Call totals ($calls.*) are not branch-partitioned; when projecting to a single branch,
+        // keep the agent's stored Booking Rate rather than dividing one branch's bookings by all calls.
+        const crossBranchCallRatio =
+          location !== 'all' &&
+          aggregation.numerator_col === '$geo.bookings' &&
+          Boolean(denominatorSource?.startsWith('$calls.'));
+        if (!crossBranchCallRatio) {
+          const numerator = sourceValue(agent, aggregation.numerator_col, location);
+          const denominator = sourceValue(agent, denominatorSource, location);
+          if (numerator !== undefined && denominator !== undefined) {
+            bucket.hasRatioCounters = true;
+            bucket.numerator += numerator;
+            bucket.denominator += denominator;
+          }
         }
       } else if (aggregation.method === 'weighted_average') {
         const weight = sourceValue(agent, aggregation.weight_col, location) ?? 0;
@@ -594,8 +600,18 @@ export function channelBoardScore(input: {
   preferConfiguredWeights?: boolean;
 }): number | null {
   if (input.agents.length === 0) return null;
+  let effectiveLocation = input.location;
+  if (!effectiveLocation || effectiveLocation === 'all') {
+    const firstKey = input.agents[0]?.branch_key?.trim().toLowerCase();
+    if (
+      (firstKey === 'dubai' || firstKey === 'sharjah' || firstKey === 'ajman' || firstKey === 'clinics') &&
+      input.agents.every((agent) => agent.branch_key?.trim().toLowerCase() === firstKey)
+    ) {
+      effectiveLocation = firstKey;
+    }
+  }
   const pooledScore = calculateAggregatedTeamPerformance(input.agents, input.config, {
-    location: input.location,
+    location: effectiveLocation,
     preferConfiguredWeights: input.preferConfiguredWeights,
   })?.score ?? null;
   return headlineTeamScore({
