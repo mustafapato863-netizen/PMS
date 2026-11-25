@@ -170,17 +170,7 @@ export function resolveAutoRootCause(
   return 'All metrics good';
 }
 
-// Module-level shared cache and listeners for Backend API data
-const STALE_TIME_MS = 10 * 60 * 1000;
-let cachedData: AgentRecord[] | null = null;
-let cachedDataSession = '';
-let lastFetchTime = 0;
-const listeners = new Set<(data: AgentRecord[]) => void>();
-let isFetching = false;
-let fetchingSession = '';
-let performanceFetchGeneration = 0;
-let lastDataSource: 'api' | 'empty' = 'empty';
-let lastErrorMessage: string | null = null;
+// Module-level refresh signal shared by every usePerformanceData consumer
 let scopedRefreshVersion = 0;
 const scopedRefreshListeners = new Set<() => void>();
 
@@ -374,10 +364,13 @@ async function fetchScopedPerformanceData(
   location: LocationKey,
   team?: string,
   signal?: AbortSignal,
+  allPeriods = false,
 ): Promise<AgentRecord[]> {
   const catalog = await getScopedCatalog();
   if (signal?.aborted) throw new DOMException('The performance records read was cancelled.', 'AbortError');
-  const periods = periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
+  const periods = allPeriods
+    ? (catalog.periods || []).slice().sort((left, right) => right.key.localeCompare(left.key))
+    : periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
 
   // Periods are independent. Keep pagination sequential within one period,
   // but fetch the requested periods together so a six-month view does not
@@ -422,81 +415,15 @@ async function fetchScopedPerformanceData(
   return recordsByPeriod.flat();
 }
 
-function forgetLegacyPerformanceCache() {
-  cachedData = null;
-  cachedDataSession = '';
-  lastFetchTime = 0;
-  lastDataSource = 'empty';
-  lastErrorMessage = null;
-}
-
-async function fetchPerformanceData(force = false) {
-  const session = performanceSessionKey();
-  if (!force && isFetching && fetchingSession === session) return;
-  if (!force && cachedDataSession === session && cachedData && lastDataSource === 'api' && Date.now() - lastFetchTime < STALE_TIME_MS) {
-    lastDataSource = 'api';
-    lastErrorMessage = null;
-    listeners.forEach((listener) => listener(cachedData!));
-    return;
-  }
-  const generation = ++performanceFetchGeneration;
-  isFetching = true;
-  fetchingSession = session;
-  try {
-    const result = await apiFetch<{ success: boolean; data: AgentRecord[]; message?: string }>('/api/performance');
-    if (generation !== performanceFetchGeneration) return;
-    if (performanceSessionKey() !== session) {
-      if (cachedDataSession === session) forgetLegacyPerformanceCache();
-      return;
-    }
-    if (result && result.success && Array.isArray(result.data)) {
-      cachedData = result.data.map((record) => applyInboundBookingDisplay(record));
-      cachedDataSession = session;
-      lastFetchTime = Date.now();
-      lastDataSource = 'api';
-      lastErrorMessage = null;
-    } else {
-      throw new Error(result?.message || 'Invalid API response structure');
-    }
-    listeners.forEach((listener) => listener(cachedData!));
-  } catch (error) {
-    if (generation !== performanceFetchGeneration) return;
-    if (performanceSessionKey() !== session) {
-      if (cachedDataSession === session) forgetLegacyPerformanceCache();
-      return;
-    }
-    console.warn('Failed to fetch performance data from the Backend API.');
-    cachedData = [];
-    cachedDataSession = session;
-    lastFetchTime = Date.now();
-    lastDataSource = 'empty';
-    lastErrorMessage = error instanceof Error ? error.message : 'Failed to fetch performance data';
-    listeners.forEach((listener) => listener(cachedData!));
-  } finally {
-    if (generation === performanceFetchGeneration) isFetching = false;
-  }
-}
-
-/** Drop the module cache and ignore any legacy read that started earlier. */
-export function discardPerformanceCache() {
-  performanceFetchGeneration += 1;
-  isFetching = false;
-  fetchingSession = '';
-  forgetLegacyPerformanceCache();
-}
+/** Kept for session boundaries. Reads live in the query cache, which the session boundary clears. */
+export function discardPerformanceCache() {}
 
 /** Force a re-fetch from the backend API (e.g. after a new file upload). */
 export function refreshPerformanceData() {
-  if (scopedPerformanceApiEnabled) {
-    scopedCatalog = null;
-    scopedCatalogFetchedAt = 0;
-    scopedRefreshVersion += 1;
-    scopedRefreshListeners.forEach((listener) => listener());
-    discardPerformanceCache();
-    return;
-  }
-  discardPerformanceCache();
-  fetchPerformanceData(true);
+  scopedCatalog = null;
+  scopedCatalogFetchedAt = 0;
+  scopedRefreshVersion += 1;
+  scopedRefreshListeners.forEach((listener) => listener());
 }
 
 /* ── Helpers ── */
@@ -669,30 +596,34 @@ export function usePerformanceData(
   scopedTeam?: string,
 ) {
   const session = performanceSessionKey();
-  const cacheMatches = cachedDataSession === session;
-  const [dataState, setDataState] = useState(() => ({
-    session, data: scopedPerformanceApiEnabled || !cacheMatches ? [] : cachedData || [],
-  }));
-  const [legacyLoading, setLoading] = useState(enabled && (!cacheMatches || !cachedData));
-  const [legacyDataSource, setDataSource] = useState<'api' | 'empty'>(lastDataSource);
-  const [legacyErrorMessage, setErrorMessage] = useState<string | null>(lastErrorMessage);
   const [refreshVersion, setRefreshVersion] = useState(scopedRefreshVersion);
+  // The bounded, cursor-paginated read is the only dashboard read path. With the
+  // scoped dashboard flag off it also loads the older months in the background
+  // (below) so trend and growth charts keep their full history without the old
+  // single unbounded GET /api/performance request.
   const scopedQuery = useQuery({
     queryKey: ['performance', 'bounded-records', session, month, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
     // Reuse the bounded in-flight read across consumers/remounts, then cache it
     // for warm navigation. Session boundaries cancel/clear this query cache.
     queryFn: ({ signal }) => fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam, signal),
-    enabled: enabled && scopedPerformanceApiEnabled,
+    enabled,
     staleTime: 2 * 60_000,
     retry: false,
   });
-  const allData = useMemo(() => scopedPerformanceApiEnabled
-    ? (enabled ? scopedQuery.data ?? [] : [])
-    : dataState.session === session ? dataState.data : [], [dataState, enabled, scopedQuery.data, session]);
-  const loading = scopedPerformanceApiEnabled ? enabled && scopedQuery.isLoading : legacyLoading;
-  const dataSource = scopedPerformanceApiEnabled ? (scopedQuery.isSuccess ? 'api' : 'empty') : legacyDataSource;
-  const errorMessage = scopedPerformanceApiEnabled
-    ? (enabled && scopedQuery.isError ? scopedQuery.error.message : null) : legacyErrorMessage;
+  const historyQuery = useQuery({
+    queryKey: ['performance', 'bounded-history', session, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
+    queryFn: ({ signal }) => fetchScopedPerformanceData('All', region, performanceLevel, location, scopedTeam, signal, true),
+    enabled: enabled && !scopedPerformanceApiEnabled && scopedQuery.isSuccess,
+    staleTime: 2 * 60_000,
+    retry: false,
+  });
+  const allData = useMemo(
+    () => (enabled ? (historyQuery.data ?? scopedQuery.data ?? []) : []),
+    [enabled, historyQuery.data, scopedQuery.data],
+  );
+  const loading = enabled && scopedQuery.isLoading;
+  const dataSource = scopedQuery.isSuccess ? 'api' : 'empty';
+  const errorMessage = enabled && scopedQuery.isError ? scopedQuery.error.message : null;
 
   useEffect(() => {
     const listener = () => setRefreshVersion(scopedRefreshVersion);
@@ -701,29 +632,6 @@ export function usePerformanceData(
       scopedRefreshListeners.delete(listener);
     };
   }, []);
-
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    if (scopedPerformanceApiEnabled) return;
-
-    const listener = (newData: AgentRecord[]) => {
-      if (performanceSessionKey() !== session) return;
-      setDataState({ session, data: newData });
-      setLoading(false);
-      setDataSource(lastDataSource);
-      setErrorMessage(lastErrorMessage);
-    };
-    listeners.add(listener);
-
-    void fetchPerformanceData();
-
-    return () => {
-      listeners.delete(listener);
-    };
-  }, [enabled, location, month, performanceLevel, refreshVersion, region, scopedTeam, session]);
 
   return useMemo(() => {
     const rawLevelData = performanceLevel === 'All'
@@ -1055,11 +963,11 @@ export function usePerformanceData(
       avgAHTSeconds,
       kpiVsTarget,
       outliers,
-      loading: enabled ? loading || (!scopedPerformanceApiEnabled && dataState.session !== session) : false,
-      dataSource: scopedPerformanceApiEnabled || dataState.session === session ? dataSource : 'empty' as const,
-      errorMessage: scopedPerformanceApiEnabled || dataState.session === session ? errorMessage : null,
+      loading: enabled ? loading : false,
+      dataSource,
+      errorMessage,
     };
-  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage, enabled, dataState.session, session]);
+  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage, enabled]);
 }
 
 export function useCRMData(month: MonthKey, location: LocationKey, performanceLevel: PerformanceLevelFilter = 'All') {

@@ -7,7 +7,7 @@ import { useExecutiveSummary } from '../../features/executive/useExecutiveSummar
 import { useSummaryRecords } from '../../features/executive/useSummaryRecords';
 import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { useReportsCenter } from '../../hooks/api/useReports';
-import { discardPerformanceCache, mapScopedPerformanceRecord, refreshPerformanceData, usePerformanceData } from '../../hooks/usePerformanceData';
+import { discardPerformanceCache, refreshPerformanceData, usePerformanceData } from '../../hooks/usePerformanceData';
 import { apiFetch } from '../../lib/apiClient';
 import { queryClient as appQueryClient } from '../../lib/queryClient';
 import { invalidateCommittedEvidence } from './monthlyCorrection';
@@ -17,8 +17,8 @@ vi.mock('../../hooks/api/usePerformanceDashboard', () => ({ scopedPerformanceApi
 
 const selection = { scopeId: 'scope-1', year: 2026, month: 8 };
 
-function agent(score: number, target: number, weight: number) {
-  return mapScopedPerformanceRecord({
+function rawAgent(score: number, target: number, weight: number) {
+  return {
     employee_id: 'E1',
     employee_name: 'Outbound agent',
     team: 'Outbound',
@@ -30,7 +30,7 @@ function agent(score: number, target: number, weight: number) {
     raw_data: { 'T.Attend%': 0.65 },
     kpi_values: [{ kpi_key: 'Attendance', label: 'Attendance', target_value: target, weight_applied: weight, actual_value: 0.46, direction: 'higher_better' }],
     evaluation: { score, grade: 'C', manager_notes: 'keep the human note' },
-  });
+  };
 }
 
 function clientFor() {
@@ -55,7 +55,7 @@ afterEach(() => {
   localStorage.removeItem('pms_session_v1');
 });
 
-describe('committed evidence cache, legacy mode', () => {
+describe('committed evidence cache, bounded default mode', () => {
   let score = 79.82;
   let target = 0.65;
   let weight = 0.6;
@@ -68,7 +68,8 @@ describe('committed evidence cache, legacy mode', () => {
     vi.mocked(apiFetch).mockReset();
     vi.mocked(apiFetch).mockImplementation(async (url: string) => {
       const href = String(url);
-      if (href === '/api/performance') return { success: true, data: [agent(score, target, weight)] };
+      if (href === '/api/performance/catalog') return { success: true, data: { periods: [{ key: '2026-08', year: 2026, month: 'August' }] } };
+      if (href.startsWith('/api/performance/records')) return { success: true, data: { items: [rawAgent(score, target, weight)], has_more: false } };
       if (href.startsWith('/api/performance/summary-records')) {
         return { success: true, data: [{ employee_id: 'E1', employee_name: 'Outbound agent', team: 'Outbound', month: 'August', year: 2026, score, raw_data: { 'T.Attend%': 0.65 }, kpi_values: [{ kpi_key: 'Attendance', target_value: target, weight_applied: weight }] }] };
       }
@@ -140,33 +141,5 @@ describe('committed evidence cache, legacy mode', () => {
     expect(calls('/api/performance/summary-records').length).toBeGreaterThan(warmed.summary);
     expect(calls('/api/reports/center').length).toBeGreaterThan(warmed.center);
     expect(calls('/api/insights/workspace').length).toBeGreaterThan(warmed.insights);
-  });
-
-  it('does not let an older legacy response replace a newer committed read or a logged-out session', async () => {
-    const pending: Array<(value: { success: boolean; data: ReturnType<typeof agent>[] }) => void> = [];
-    vi.mocked(apiFetch).mockImplementation((url: string) => {
-      if (String(url) !== '/api/performance') return Promise.resolve({ success: true, data: [] });
-      return new Promise((resolve) => { pending.push(resolve); });
-    });
-    const client = clientFor();
-    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-    const hook = renderHook(() => usePerformanceData('August', 'all'), { wrapper });
-    await waitFor(() => expect(pending).toHaveLength(1));
-    act(() => refreshPerformanceData());
-    await waitFor(() => expect(pending).toHaveLength(2));
-    await act(async () => { pending[1]({ success: true, data: [agent(79.93, 0.7, 0.5)] }); });
-    await waitFor(() => expect(hook.result.current.agents[0]?.evaluation.score).toBe(79.93));
-    await act(async () => { pending[0]({ success: true, data: [agent(79.82, 0.65, 0.6)] }); });
-    expect(hook.result.current.agents[0]?.evaluation.score).toBe(79.93);
-
-    const late: Array<(value: { success: boolean; data: ReturnType<typeof agent>[] }) => void> = [];
-    vi.mocked(apiFetch).mockImplementation(() => new Promise((resolve) => { late.push(resolve); }));
-    act(() => refreshPerformanceData());
-    await waitFor(() => expect(late).toHaveLength(1));
-    localStorage.setItem('pms_session_v1', JSON.stringify({ id: 'other-user', role: 'Viewer' }));
-    await act(async () => { late[0]({ success: true, data: [agent(79.82, 0.65, 0.6)] }); });
-    hook.unmount();
-    const next = renderHook(() => usePerformanceData('August', 'all'), { wrapper });
-    expect(next.result.current.agents).toEqual([]);
   });
 });
