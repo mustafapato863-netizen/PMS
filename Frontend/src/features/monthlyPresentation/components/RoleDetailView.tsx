@@ -38,7 +38,7 @@ import {
   UserCheck,
   Users,
 } from 'lucide-react';
-import { ProfileKpiSixMonthTrend } from '../../../components/employee/ScoreTrendChart';
+import ScoreTrendChart, { ProfileKpiSixMonthTrend } from '../../../components/employee/ScoreTrendChart';
 import { GRADE_STYLES } from '../monthlyOverviewData';
 import { IMPACT_LEVEL_STYLES } from '../callCenterDeepDiveData';
 import type {
@@ -1113,9 +1113,9 @@ export default function RoleDetailView({
           </div>
         </div>
 
-        {/* Main Header Content: Role Title, Person/Count Underneath, Score & Diagnosis */}
-        <div className="mt-6 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-          <div className="max-w-2xl">
+        {/* Main Header Content: Role Title, Person/Count Underneath, Diagnosis */}
+        <div className="mt-6 space-y-5">
+          <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="font-medium">
                 {data.regionName} · {data.monthLabel}
@@ -1163,72 +1163,140 @@ export default function RoleDetailView({
             </p>
           </div>
 
-          {/* Right Metric Cluster: Dominant Score, Full-Word Grade, Movement & Gap */}
-          <div className="flex shrink-0 flex-wrap items-center gap-5 rounded-2xl border border-slate-200/80 bg-slate-50/60 px-5 py-4 sm:px-6 sm:py-5">
-            <div>
-              <div className="text-xs font-bold tracking-wider text-slate-400 uppercase">
-                {data.headcount > 1 ? 'Combined Score' : 'Role Score'}
+          {/* Performance Summary Grid: Score Card + 6-Month Score Trend */}
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
+            {/* Score Card */}
+            <div
+              className={`flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 ${
+                data.scoreTrend ? 'lg:col-span-5' : 'lg:col-span-12 max-w-xl'
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+                  {data.headcount > 1 ? 'Combined Score' : 'Role Score'}
+                </div>
+                <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                  <p
+                    data-testid="role-detail-score"
+                    className={`text-4xl font-extrabold tracking-tight tabular-nums sm:text-5xl ${
+                      isProblemRole ? 'text-rose-600' : gradeStyle.scoreText
+                    }`}
+                  >
+                    {data.score.toFixed(1)}%
+                  </p>
+                  <FullWordGradeBadge
+                    grade={data.grade}
+                    gradeFullLabel={data.gradeFullLabel}
+                    size="lg"
+                  />
+                </div>
               </div>
-              <div className="mt-1 flex items-baseline gap-3">
-                <p
-                  data-testid="role-detail-score"
-                  className={`text-4xl font-extrabold tracking-tight tabular-nums sm:text-5xl ${
-                    isProblemRole ? 'text-rose-600' : gradeStyle.scoreText
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200/60 pt-3 text-xs">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-semibold tabular-nums ${
+                    isProblemRole
+                      ? 'border-rose-200/80 bg-rose-50/70 text-rose-700'
+                      : 'border-slate-200 bg-white text-slate-700'
                   }`}
                 >
-                  {data.score.toFixed(1)}%
-                </p>
-                <FullWordGradeBadge
-                  grade={data.grade}
-                  gradeFullLabel={data.gradeFullLabel}
-                  size="lg"
-                />
+                  <Target
+                    className={`size-3.5 ${
+                      isProblemRole ? 'text-rose-500' : 'text-slate-400'
+                    }`}
+                    aria-hidden
+                  />
+                  Gap {data.gap.toFixed(1)}%
+                </span>
+
+                <span
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-semibold tabular-nums ${
+                    data.changeVsPrev === null
+                      ? 'border-slate-200 bg-white text-slate-400'
+                      : up
+                      ? 'border-emerald-200/80 bg-emerald-50/70 text-emerald-700'
+                      : 'border-rose-200/80 bg-rose-50/70 text-rose-700'
+                  }`}
+                >
+                  {data.changeVsPrev === null ? (
+                    <span title="No previous-month data">— No previous-month data</span>
+                  ) : (
+                    <>
+                      {up ? (
+                        <ArrowUpRight className="size-3.5" aria-hidden />
+                      ) : (
+                        <ArrowDownRight className="size-3.5" aria-hidden />
+                      )}
+                      {up ? '+' : ''}
+                      {data.changeVsPrev.toFixed(1)}% vs {data.previousMonthLabel}
+                    </>
+                  )}
+                </span>
               </div>
             </div>
 
-            <div className="hidden h-12 w-px bg-slate-200/80 sm:block" />
-
-            <div className="flex flex-col gap-1.5 text-xs">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-semibold tabular-nums ${
-                  isProblemRole
-                    ? 'border-rose-200/80 bg-rose-50/70 text-rose-700'
-                    : 'border-slate-200 bg-white text-slate-700'
-                }`}
-              >
-                <Target
-                  className={`size-3.5 ${
-                    isProblemRole ? 'text-rose-500' : 'text-slate-400'
-                  }`}
-                  aria-hidden
-                />
-                Gap {data.gap.toFixed(1)}%
-              </span>
-
-              <span
-                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-semibold tabular-nums ${
-                  data.changeVsPrev === null
-                    ? 'border-slate-200 bg-white text-slate-400'
-                    : up
-                    ? 'border-emerald-200/80 bg-emerald-50/70 text-emerald-700'
-                    : 'border-rose-200/80 bg-rose-50/70 text-rose-700'
-                }`}
-              >
-                {data.changeVsPrev === null ? (
-                  <span title="No previous-month data">— No previous-month data</span>
-                ) : (
-                  <>
-                    {up ? (
-                      <ArrowUpRight className="size-3.5" aria-hidden />
-                    ) : (
-                      <ArrowDownRight className="size-3.5" aria-hidden />
-                    )}
-                    {up ? '+' : ''}
-                    {data.changeVsPrev.toFixed(1)}% vs {data.previousMonthLabel}
-                  </>
-                )}
-              </span>
-            </div>
+            {/* 6-Month Score Trend */}
+            {data.scoreTrend && (() => {
+              const trendPoints = data.scoreTrend.points;
+              const selectedIdx = trendPoints.findIndex((p) => p.selected);
+              const activeIdx = selectedIdx >= 0 ? selectedIdx : trendPoints.length - 1;
+              const currPt = activeIdx >= 0 ? trendPoints[activeIdx] : null;
+              const prevPt = activeIdx > 0 ? trendPoints[activeIdx - 1] : null;
+              const headerMom =
+                currPt?.score != null && prevPt?.score != null
+                  ? Number((currPt.score - prevPt.score).toFixed(1))
+                  : null;
+              return (
+                <section
+                  aria-label={`${data.roleTitle} score trend`}
+                  data-testid="role-score-trend"
+                  className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs lg:col-span-7"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                          {data.headcount > 1 ? '6-month team score' : '6-month role score'}
+                        </div>
+                        {headerMom !== null && (
+                          <span
+                            data-testid="role-score-trend-mom"
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
+                              headerMom > 0.05
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : headerMom < -0.05
+                                  ? 'bg-rose-50 text-rose-700'
+                                  : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {headerMom > 0.05 ? '↑ ' : headerMom < -0.05 ? '↓ ' : ''}
+                            {headerMom > 0 ? '+' : ''}
+                            {headerMom.toFixed(1)} pts MoM{prevPt ? ` vs ${prevPt.month}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-medium text-slate-400">
+                        Target: 100%
+                      </span>
+                    </div>
+                    <ScoreTrendChart
+                      data={trendPoints.map((point) => ({
+                        month: point.month,
+                        score: point.score,
+                        periodKey: point.periodKey,
+                        selected: point.selected,
+                      }))}
+                      targetScore={100}
+                      targetLabel="100% target"
+                      targetLabelPosition="insideTopRight"
+                      height={140}
+                      animate={false}
+                      caption={`${data.roleTitle}${data.branchLabel ? ` ${data.branchLabel}` : ''} ${data.regionName} score, selected month and five preceding months`}
+                    />
+                  </div>
+                </section>
+              );
+            })()}
           </div>
         </div>
       </header>

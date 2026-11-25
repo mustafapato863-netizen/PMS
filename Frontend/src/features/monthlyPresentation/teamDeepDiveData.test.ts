@@ -1109,4 +1109,60 @@ describe('multi-month agent trend context and individual action metadata codec',
     expect(quality?.observationStatus).toBe('missing');
     expect(card?.mainIssue).not.toContain('Quality Score at 0.0%');
   });
+
+  it('keeps the 6-month trend populated for multi-region shared teams in All regions and resolves merged UAE Pre-Approvals sources', () => {
+    const codingAllRecords: ExecRecord[] = [
+      {
+        employeeId: 'EGY-1', name: 'Mona', team: 'Coding EGY', region: 'EGY',
+        position: 'Coder', level: 'Employee', branches: [],
+        period: { year: 2026, month: 'August', key: '2026-08' }, score: 60, kpis: [],
+      },
+      {
+        employeeId: 'UAE-1', name: 'Noor', team: 'Coding', region: 'UAE',
+        position: 'Coder', level: 'Employee', branches: ['dubai'],
+        period: { year: 2026, month: 'August', key: '2026-08' }, score: 80, kpis: [],
+      },
+      {
+        employeeId: 'EGY-1', name: 'Mona', team: 'Coding EGY', region: 'EGY',
+        position: 'Coder', level: 'Employee', branches: [],
+        period: { year: 2026, month: 'September', key: '2026-09' }, score: 50, kpis: [],
+      },
+      {
+        employeeId: 'UAE-1', name: 'Noor', team: 'Coding', region: 'UAE',
+        position: 'Coder', level: 'Employee', branches: ['dubai'],
+        period: { year: 2026, month: 'September', key: '2026-09' }, score: 80, kpis: [],
+      },
+    ];
+
+    const codingAll = buildTeamDeepDiveFromRecords('coding', codingAllRecords, [], 'ALL', '2026-09');
+    expect(codingAll.scoreTrend?.points.slice(-2).map((pt) => pt.score)).toEqual([70, 65]);
+    expect(codingAll.scoreTrend?.changeVsPrevious).toBe(-5);
+
+    const renderedAll = unavailableTeamTrend(codingAll);
+    expect(renderedAll.summary.scoreLabel).toBe('Employee average · All regions');
+    expect(renderedAll.scoreTrend?.points.slice(-2).map((pt) => pt.score)).toEqual([70, 65]);
+    expect(renderedAll.scoreTrend?.changeVsPrevious).toBe(-5);
+
+    // Merged UAE Pre-Approvals teams resolve to one canonical config source so useTeamConfig loads the merged config.
+    const mergedUaePreApprovals: ExecRecord[] = [
+      {
+        employeeId: 'UAE-OP-1', name: 'Lina', team: 'Pre-Approvals OP Dubai', region: 'UAE',
+        position: 'Initial Submission', level: 'Employee', branches: ['dubai'],
+        period: { year: 2026, month: 'September', key: '2026-09' }, score: 88, kpis: [],
+      },
+      {
+        employeeId: 'UAE-OP-2', name: 'Rami', team: 'Pre-Approvals OP Final SHJAJM', region: 'UAE',
+        position: 'Initial Submission', level: 'Employee', branches: ['sharjah'],
+        period: { year: 2026, month: 'September', key: '2026-09' }, score: 92, kpis: [],
+      },
+    ];
+    const uaePreApprovalsDive = buildTeamDeepDiveFromRecords(
+      'pre-approvals-op-final',
+      mergedUaePreApprovals,
+      [],
+      'UAE',
+      '2026-09',
+    );
+    expect(selectedTeamConfigSource(uaePreApprovalsDive)).toBe('Pre-Approvals OP Final');
+  });
 });

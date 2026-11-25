@@ -142,4 +142,49 @@ describe('roleDetailData - Support position and role matching', () => {
     expect(detail.members[0].personName).toBe('Hagar Ahmed Amin Diab');
     expect(detail.members[0].employeeId).toBe('SGHD70117');
   });
+
+  it('builds a 6-month scoreTrend for UAE role-based teams', () => {
+    const uaeCsrRecords: ExecRecord[] = [
+      {
+        employeeId: 'UAE-CSR-1',
+        name: 'Amina',
+        team: 'CSR',
+        region: 'UAE',
+        position: 'CSR',
+        level: 'Employee',
+        branches: ['dubai'],
+        period: { year: 2026, month: 'August', key: '2026-08' },
+        score: 78.0,
+        kpis: [],
+      },
+      {
+        employeeId: 'UAE-CSR-1',
+        name: 'Amina',
+        team: 'CSR',
+        region: 'UAE',
+        position: 'CSR',
+        level: 'Employee',
+        branches: ['dubai'],
+        period: { year: 2026, month: 'September', key: '2026-09' },
+        score: 86.5,
+        kpis: [],
+      },
+    ];
+    const csrDive = {
+      ...CALL_CENTER_DEEP_DIVE_SEP_2026,
+      functionSlug: 'csr',
+      functionName: 'CSR',
+      regionCode: 'UAE' as const,
+      regionName: 'UAE Region',
+      periodKey: '2026-09',
+      monthLabel: 'September 2026',
+      previousMonthLabel: 'August',
+      supportPositions: [],
+      agentTeams: [],
+    };
+    const detail = buildRoleDetail(csrDive, 'csr-dubai', [], uaeCsrRecords);
+    expect(detail.scoreTrend?.points).toHaveLength(6);
+    expect(detail.scoreTrend?.points.slice(-2).map((pt) => pt.score)).toEqual([78.0, 86.5]);
+    expect(detail.scoreTrend?.changeVsPrevious).toBe(8.5);
+  });
 });

@@ -167,6 +167,19 @@ export interface RoleAssignedAction {
   suggested?: boolean;
 }
 
+export interface RoleScoreTrendPoint {
+  month: string;
+  periodKey: string;
+  score: number | null;
+  selected: boolean;
+}
+
+export interface RoleScoreTrend {
+  points: RoleScoreTrendPoint[];
+  changeVsPrevious: number | null;
+  previousMonthLabel: string | null;
+}
+
 export interface RoleDetailData {
   roleSlug: string;
   roleTitle: string;
@@ -188,6 +201,7 @@ export interface RoleDetailData {
   gradeFullLabel: FullGradeLabel;
   gap: number;
   changeVsPrev: number | null;
+  scoreTrend?: RoleScoreTrend;
   diagnosis: string;
   impactLevel: SupportImpactLevel;
   impactDiagnosis: string;
@@ -1461,6 +1475,56 @@ function buildRoleExecutiveDiagnosis(
   return `Delivering ${card.score.toFixed(1)}% (${card.gradeFullLabel}) benchmark execution — ${card.signal}.`;
 }
 
+function buildRoleScoreTrend(
+  data: CallCenterDeepDiveData,
+  card: FunctionRoleCard,
+  records: ExecRecord[],
+  selectedScore: number,
+): RoleScoreTrend | undefined {
+  const effective = periodFromKey(data.periodKey);
+  if (!effective) return undefined;
+  const periods = trailingPeriods(effective, 6);
+  const regionRecords =
+    data.regionCode === 'ALL'
+      ? records
+      : records.filter((record) => normalizeRegion(record.region) === data.regionCode);
+  const roleRecords = regionRecords.filter((record) => recordMatchesRole(record, card.roleSlug, data));
+  const personHistory = historyForPerson(regionRecords, card, effective.key);
+
+  const points: RoleScoreTrendPoint[] = periods.map((period) => {
+    if (period.key === effective.key) {
+      return {
+        month: period.month.slice(0, 3),
+        periodKey: period.key,
+        score: selectedScore,
+        selected: true,
+      };
+    }
+    const matchedRole = roleRecords.filter((record) => record.period.key === period.key);
+    const matched = matchedRole.length > 0
+      ? matchedRole
+      : personHistory.filter((record) => record.period.key === period.key);
+    const monthScore = matched.length > 0
+      ? round1(matched.reduce((sum, record) => sum + record.score, 0) / matched.length)
+      : null;
+    return {
+      month: period.month.slice(0, 3),
+      periodKey: period.key,
+      score: monthScore,
+      selected: false,
+    };
+  });
+
+  const previous = periods[periods.length - 2];
+  const prevScore = points[points.length - 2]?.score ?? null;
+  const currScore = points[points.length - 1]?.score ?? null;
+  return {
+    points,
+    changeVsPrevious: currScore !== null && prevScore !== null ? round1(currScore - prevScore) : null,
+    previousMonthLabel: previous?.month ?? null,
+  };
+}
+
 export function buildRoleDetail(
   data: CallCenterDeepDiveData,
   roleSlug: string,
@@ -1739,6 +1803,9 @@ export function buildRoleDetail(
     support?.explanation,
   );
 
+  const scoreTrend = buildRoleScoreTrend(data, resolvedCard, records, score);
+  const changeVsPrev = resolvedCard.changeVsPrev ?? scoreTrend?.changeVsPrevious ?? null;
+
   return {
     roleSlug: resolvedCard.roleSlug,
     roleTitle,
@@ -1752,13 +1819,14 @@ export function buildRoleDetail(
     regionName: data.regionName,
     branchLabel: resolvedCard.branchLabel,
     monthLabel: data.monthLabel,
-    previousMonthLabel: data.previousMonthLabel,
+    previousMonthLabel: scoreTrend?.previousMonthLabel ?? data.previousMonthLabel,
     periodKey: data.periodKey,
     score,
     grade,
     gradeFullLabel: fullGradeLabel(grade),
     gap: round1(score - 100),
-    changeVsPrev: resolvedCard.changeVsPrev,
+    changeVsPrev,
+    scoreTrend,
     diagnosis,
     impactLevel,
     impactDiagnosis: support?.evidenceStat || card?.signal || diagnosis,

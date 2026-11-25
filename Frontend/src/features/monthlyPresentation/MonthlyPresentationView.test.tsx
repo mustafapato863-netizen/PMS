@@ -2061,4 +2061,74 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByTestId('monthly-teams-without-data')).not.toBeInTheDocument();
     expect(screen.queryByTestId('corrective-action-insights')).not.toBeInTheDocument();
   });
+
+  it('renders a 6-month trend card for UAE role-based teams (CSR) and populated trend for Coding in All regions', () => {
+    monthlyTestState.catalog!.data.periods = [
+      { year: 2026, month: 'August', key: '2026-08' },
+      { year: 2026, month: 'September', key: '2026-09' },
+    ];
+    monthlyTestState.catalog!.data.months = ['August', 'September'];
+    monthlyTestState.catalog!.data.teams = [
+      { team: 'Coding EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'Coding', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+    ];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'EGY-C1', name: 'Mona', team: 'Coding EGY', month: 'August' },
+          region: 'EGY', year: 2026, performance_level: 'Employee', raw_data: {},
+          evaluation: { score: 0.60, grade: 'E' }, kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'UAE-C1', name: 'Omar', team: 'Coding', month: 'August' },
+          region: 'UAE', branch_key: 'dubai', year: 2026, performance_level: 'Employee', raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.80, grade: 'C' }, kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'EGY-C1', name: 'Mona', team: 'Coding EGY', month: 'September' },
+          region: 'EGY', year: 2026, performance_level: 'Employee', raw_data: {},
+          evaluation: { score: 0.50, grade: 'E' }, kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'UAE-C1', name: 'Omar', team: 'Coding', month: 'September' },
+          region: 'UAE', branch_key: 'dubai', year: 2026, performance_level: 'Employee', raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.80, grade: 'C' }, kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'UAE-CSR-1', name: 'Noor', team: 'CSR', month: 'August', position: 'CSR' },
+          region: 'UAE', branch_key: 'dubai', year: 2026, performance_level: 'Employee', raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.80, grade: 'C' }, kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'UAE-CSR-1', name: 'Noor', team: 'CSR', month: 'September', position: 'CSR' },
+          region: 'UAE', branch_key: 'dubai', year: 2026, performance_level: 'Employee', raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.88, grade: 'B' }, kpi_values: [],
+        },
+      ],
+    };
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=all&period=2026-09&deepDive=rcm&team=coding']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    const codingTrend = screen.getByTestId('team-score-trend');
+    expect(within(codingTrend).getByTestId('team-score-trend-mom')).toHaveTextContent('-5.0 pts MoM vs Aug');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('65.0%');
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=uae&period=2026-09&deepDive=csr&role=csr-dubai']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    const uaeRoleTrend = screen.getByTestId('role-score-trend');
+    expect(within(uaeRoleTrend).getByTestId('role-score-trend-mom')).toHaveTextContent('+8.0 pts MoM vs Aug');
+  });
 });

@@ -17,8 +17,10 @@ import {
   canonicalEgyptResubmissionTeam,
   dedupeEgyptResubmissionRecords,
   isEgyptResubmissionTeam,
+  mergedTeamName,
   parseTeamCountry,
   sameCountryBusinessTeam,
+  sameMergedTeam,
   sourceNamesFor,
   type TeamCountry,
 } from '../team/countryTeamIdentity';
@@ -400,7 +402,7 @@ function singleSourceTeam(records: ExecRecord[]): string | null {
   for (const record of records) {
     const rawName = record.team.trim();
     if (!rawName) return null;
-    const name = canonicalEgyptResubmissionTeam(rawName);
+    const name = mergedTeamName(canonicalEgyptResubmissionTeam(rawName));
     names.set(name.toLowerCase(), name);
   }
   return names.size === 1 ? [...names.values()][0] : null;
@@ -411,10 +413,11 @@ export function selectedTeamConfigSource(data: TeamDeepDiveData): string {
 }
 
 function configMatchesSource(config: TeamConfig, source: string): boolean {
-  const key = source.trim().toLowerCase();
+  const normalizedSource = mergedTeamName(source);
+  const key = normalizedSource.trim().toLowerCase();
   const candidates = [config.team, config.db_name, ...(config.aliases ?? [])]
     .filter((name): name is string => Boolean(name))
-    .map((name) => name.trim().toLowerCase());
+    .flatMap((name) => [name.trim().toLowerCase(), mergedTeamName(name).trim().toLowerCase()]);
   if (isEgyptResubmissionTeam(source)) {
     return candidates.some((name) => isEgyptResubmissionTeam(name));
   }
@@ -424,15 +427,30 @@ function configMatchesSource(config: TeamConfig, source: string): boolean {
   return candidates.includes(key);
 }
 
-function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, canonicalTeam: string, teamConfig?: TeamConfig): TeamScoreTrend {
+function buildTeamScoreTrend(
+  records: ExecRecord[],
+  effective: ExecutivePeriod,
+  canonicalTeam: string,
+  teamConfig?: TeamConfig,
+  regionCode?: MonthlyRegion,
+): TeamScoreTrend {
   const periods = trailingPeriods(effective, 6);
+  const isAllRegions = regionCode === 'ALL';
   const points = periods.map((period) => {
     const monthRecords = records.filter((record) => record.period.key === period.key);
     const source = singleSourceTeam(monthRecords);
     const resolvedConfig = teamConfig ?? defaultResubmissionConfig(monthRecords);
     const sourceSupported = !resolvedConfig ? source !== null : (source !== null && configMatchesSource(resolvedConfig, source));
     const leader = sourceSupported ? preApprovalsLeaderTeamTotal(monthRecords) : null;
-    const score = sourceSupported ? officialTeamMonthScore(monthRecords, canonicalTeam, resolvedConfig) : null;
+    const officialScore = sourceSupported ? officialTeamMonthScore(monthRecords, canonicalTeam, resolvedConfig) : null;
+    const multiRegionAverage =
+      isAllRegions && monthRecords.length > 0 && officialScore === null
+        ? (() => {
+            const avg = mean(monthRecords.map((record) => record.score));
+            return avg === null ? null : round1(avg);
+          })()
+        : null;
+    const score = officialScore ?? multiRegionAverage;
     const allPinned = monthRecords.length > 0 && monthRecords.every((record) => {
       const rows = record.rawAgent?.kpi_values?.filter((row) => (row.weight_applied ?? 0) > 0) ?? [];
       return rows.length > 0 && rows.every((row) => row.evaluation_pinned === true);
@@ -447,13 +465,17 @@ function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, 
       selected: period.key === effective.key,
       basisDetail: monthRecords.length === 0 ? undefined
         : score === null ? 'Scoring basis unavailable'
-          : leader === null && resolvedConfig
-            ? allPinned
-              ? 'Available weighted KPIs use saved targets and weights; current pooling rules.'
-              : anyPinned
-                ? 'Some weighted KPIs use saved settings; the remaining historical settings are not verified. Current pooling rules apply.'
-                : 'Historical settings are not verified. The score may use stored or workbook values and current pooling rules.'
-            : undefined,
+          : multiRegionAverage !== null
+            ? source === null
+              ? 'Combined multi-region employee average across measured people.'
+              : 'Employee average across measured people in this month.'
+            : leader === null && resolvedConfig
+              ? allPinned
+                ? 'Available weighted KPIs use saved targets and weights; current pooling rules.'
+                : anyPinned
+                  ? 'Some weighted KPIs use saved settings; the remaining historical settings are not verified. Current pooling rules apply.'
+                  : 'Historical settings are not verified. The score may use stored or workbook values and current pooling rules.'
+              : undefined,
     };
   });
   const previous = periods[periods.length - 2];
@@ -505,19 +527,49 @@ function withSelectedTeamScore(trend: TeamScoreTrend, score: number): TeamScoreT
 export function applyTeamTrendConfig(data: TeamDeepDiveData, config: TeamConfig): TeamDeepDiveData {
   const period = periodFromKey(data.periodKey);
   if (!period || !data.scoringRecords?.length) return data;
-  const scoreTrend = buildTeamScoreTrend(data.scoringRecords, period, data.canonicalTeam, config);
+  const scoreTrend = buildTeamScoreTrend(data.scoringRecords, period, data.canonicalTeam, config, data.regionCode);
   const score = scoreTrend.points.find((point) => point.selected)?.score;
   if (score == null) return { ...data, scoreTrend, summary: { ...data.summary, scoreLabel: data.scoringRecords.some((record) => record.period.key === period.key) ? 'Employee average (team score unavailable)' : 'Unmeasured team score' } };
   const grade = gradeForScore(score);
+  const selectedBasis = scoreTrend.points.find((point) => point.selected)?.basisDetail;
+  const scoreLabel = selectedBasis?.includes('multi-region')
+    ? 'Employee average · All regions'
+    : selectedBasis
+      ? 'Team score · current pooling rules'
+      : data.summary.scoreLabel;
   return {
     ...data,
     scoreTrend,
-    summary: { ...data.summary, score, grade, gradeFullLabel: fullGradeLabel(grade), gap: round1(score - data.summary.target), changeVsPrev: scoreTrend.changeVsPrevious, scoreLabel: scoreTrend.points.find((point) => point.selected)?.basisDetail ? 'Team score · current pooling rules' : data.summary.scoreLabel, diagnosis: `${data.teamDisplayName} scored ${score.toFixed(1)}% across ${data.summary.headcount} measured people.` },
+    summary: { ...data.summary, score, grade, gradeFullLabel: fullGradeLabel(grade), gap: round1(score - data.summary.target), changeVsPrev: scoreTrend.changeVsPrevious, scoreLabel, diagnosis: `${data.teamDisplayName} scored ${score.toFixed(1)}% across ${data.summary.headcount} measured people.` },
   };
 }
 
 export function unavailableTeamTrend(data: TeamDeepDiveData): TeamDeepDiveData {
   if (!data.scoringRecords?.length || !data.scoreTrend) return data;
+  if (data.regionCode === 'ALL') {
+    const period = periodFromKey(data.periodKey);
+    if (period) {
+      const scoreTrend = buildTeamScoreTrend(data.scoringRecords, period, data.canonicalTeam, undefined, 'ALL');
+      const selected = scoreTrend.points.find((point) => point.selected)?.score ?? null;
+      if (selected !== null) {
+        const grade = gradeForScore(selected);
+        return {
+          ...data,
+          scoreTrend,
+          summary: {
+            ...data.summary,
+            score: selected,
+            grade,
+            gradeFullLabel: fullGradeLabel(grade),
+            gap: round1(selected - data.summary.target),
+            changeVsPrev: scoreTrend.changeVsPrevious,
+            scoreLabel: 'Employee average · All regions',
+            diagnosis: `${data.teamDisplayName} scored ${selected.toFixed(1)}% across ${data.summary.headcount} measured people.`,
+          },
+        };
+      }
+    }
+  }
   const points = data.scoreTrend.points.map((point) => {
     const records = data.scoringRecords!.filter((record) => record.period.key === point.periodKey);
     const score = singleSourceTeam(records) ? preApprovalsLeaderTeamTotal(records) : null;
@@ -2008,7 +2060,9 @@ function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTea
     }
     return (
       slugifyIdentifier(record.team) === teamSlug
+      || slugifyIdentifier(mergedTeamName(record.team)) === teamSlug
       || record.team.toLowerCase() === canonicalTeam.toLowerCase()
+      || sameMergedTeam(record.team, canonicalTeam)
       || sameCountryBusinessTeam(record.team, teamSlug, country)
       || sameCountryBusinessTeam(record.team, canonicalTeam, country)
     );
@@ -2097,8 +2151,8 @@ function buildGenericTeamDeepDive(
   const measuredScore = officialTeamMonthScore(current, canonicalTeam);
   const score = measuredScore ?? 0;
   const scoreTrend = measuredScore === null
-    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
-    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
+    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam, undefined, region)
+    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam, undefined, region), measuredScore);
   // Null when the immediately preceding calendar month has no measured
   // score — "no previous-month data", never a displayed 0.0%.
   const changeVsPrev = scoreTrend.changeVsPrevious;
@@ -2421,8 +2475,8 @@ export function buildTeamDeepDiveFromRecords(
     : officialTeamMonthScore(current, canonicalTeam);
   const score = measuredScore ?? fallback.summary.score;
   const scoreTrend = measuredScore === null
-    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
-    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
+    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam, undefined, region)
+    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam, undefined, region), measuredScore);
   // Null when the immediately preceding calendar month has no measured
   // score — "no previous-month data", never a displayed 0.0%.
   const changeVsPrev = scoreTrend.changeVsPrevious;
