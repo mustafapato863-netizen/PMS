@@ -283,7 +283,35 @@ def build_effective_context_label(
     else:
         parts.append("Latest Period")
 
-    if selected_metric_display:
+    pc_team_norm = (
+        normalize_team_name(
+            page_context.selected_entity_id
+            if page_context.selected_entity_type == "team" and page_context.selected_entity_id
+            else page_context.team_id,
+            region=page_context.region,
+        )
+        if page_context
+        else None
+    )
+    resolved_team_norm = (
+        session_state.team.strip()
+        if session_state.team and session_state.team.strip().casefold() not in {"all", ""}
+        else None
+    )
+    team_switched_from_page = bool(
+        resolved_team_norm
+        and (pc_team_norm is None or resolved_team_norm.casefold() != pc_team_norm.casefold())
+    )
+    lcq_metric_display = (
+        session_state.last_confirmed_query.metric_display_name
+        if session_state.last_confirmed_query
+        else None
+    )
+
+    if team_switched_from_page:
+        if lcq_metric_display:
+            parts.append(lcq_metric_display)
+    elif selected_metric_display:
         parts.append(selected_metric_display)
     elif page_context and page_context.selected_metric_id:
         parts.append(page_context.selected_metric_id)
@@ -328,13 +356,18 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
     explicit_egy_in_prompt = bool(re.search(r"\b(?:egy|egypt)\b", lower_prompt))
     explicit_uae_in_prompt = bool(re.search(r"\buae\b", lower_prompt))
     if pc is None:
-        if explicit_egy_in_prompt or explicit_uae_in_prompt:
+        has_all_region = bool(
+            req.session_state.region and req.session_state.region.strip().casefold() in {"all", ""}
+        )
+        if explicit_egy_in_prompt or explicit_uae_in_prompt or has_all_region:
             ss_no_pc = req.session_state.model_copy(deep=True)
             if explicit_egy_in_prompt:
                 ss_no_pc.region = "EGY"
                 ss_no_pc.branch = None
             elif explicit_uae_in_prompt:
                 ss_no_pc.region = "UAE"
+            elif has_all_region:
+                ss_no_pc.region = None
             return req.model_copy(update={"session_state": ss_no_pc}), None
         return req, None
 
@@ -393,6 +426,11 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
         ss.region = "UAE"
     elif norm_region:
         ss.region = norm_region
+    elif (
+        (pc.region and pc.region.strip().casefold() in {"all", ""})
+        or (ss.region and ss.region.strip().casefold() in {"all", ""})
+    ):
+        ss.region = None
     if p_month:
         ss.month = p_month
     if p_year:
@@ -434,6 +472,15 @@ def apply_page_context_to_request(req: AiChatRequest) -> tuple[AiChatRequest, st
             lcq.metric_display_name = resolved_metric_display
         if norm_team and norm_region:
             lcq.region = norm_region
+        elif lcq.region and lcq.region.strip().casefold() in {"all", ""}:
+            lcq.region = None
+        elif (
+            pc.region
+            and pc.region.strip().casefold() == "all"
+            and not explicit_egy_in_prompt
+            and not explicit_uae_in_prompt
+        ):
+            lcq.region = None
         if norm_fn and lcq.function and lcq.function.casefold() != norm_fn.casefold():
             lcq.function = norm_fn
         if norm_branch != lcq.branch:

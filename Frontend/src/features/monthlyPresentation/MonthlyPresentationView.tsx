@@ -2025,10 +2025,7 @@ function MonthlyPresentationScreen({
   ]);
 
   const monthlyPageContext = useMemo<PageContextV1>(() => {
-    const primaryDriverMetric =
-      resolvedTeamData?.kpis?.[0]?.label ??
-      overviewData.drivers?.negative?.[0]?.kpiName ??
-      null;
+    const primaryDriverMetric = resolvedTeamData?.kpis?.[0]?.label ?? null;
     const isFallbackData =
       !summaryRecordsQuery.isLoading &&
       !explicitPreview &&
@@ -2043,7 +2040,7 @@ function MonthlyPresentationScreen({
     return {
       page_id: 'executive_summary',
       route_id: `${location.pathname}${location.search}`,
-      region: activeRegion,
+      region: activeRegion === 'ALL' ? null : activeRegion,
       branch: activeBranch || null,
       employee_id: selectedEmployee?.employeeId ?? null,
       period: selectedPeriodKey,
@@ -2062,7 +2059,6 @@ function MonthlyPresentationScreen({
     explicitPreview,
     location.pathname,
     location.search,
-    overviewData.drivers?.negative,
     overviewData.monthLabel,
     resolvedFunctionData?.functionName,
     resolvedFunctionData?.monthLabel,

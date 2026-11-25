@@ -320,7 +320,9 @@ class ToolExecutionContext:
             "month": eff_month,
             "year": eff_year,
             "region": None if eff_branch else (
-                self.session_state.region if self.session_state.region not in (None, "", "All") else None
+                self.session_state.region
+                if self.session_state.region and self.session_state.region.strip().casefold() not in ("all", "")
+                else None
             ),
         }
 

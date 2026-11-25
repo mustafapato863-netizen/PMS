@@ -1707,7 +1707,7 @@ class HybridQueryRouter:
             and
             allow_session_scope_fallback
             and session_state.region
-            and session_state.region not in ("All", "all", "")
+            and session_state.region.strip().casefold() not in ("all", "")
             and not explicit_branches
         ):
             eff_region = session_state.region.strip().upper()
@@ -1752,7 +1752,7 @@ class HybridQueryRouter:
                 and explicit_fn_from_prompt is None
                 and allow_session_scope_fallback
                 and session_state.team
-                and session_state.team not in ("All", "all")
+                and session_state.team.strip().casefold() not in ("all", "")
             ):
                 eff_team = session_state.team
 
@@ -1768,7 +1768,7 @@ class HybridQueryRouter:
             elif (
                 allow_session_scope_fallback
                 and session_state.position
-                and session_state.position not in ("All", "all", "")
+                and session_state.position.strip().casefold() not in ("all", "")
                 and (not explicit_team or explicit_team in (session_state.team, "Support Positions", "Call Center"))
             ):
                 eff_pos = session_state.position
@@ -3701,7 +3701,7 @@ class HybridQueryRouter:
         )
 
         has_prior_team_ctx = bool(
-            (session_state.team and session_state.team not in ("All", "all"))
+            (session_state.team and session_state.team.strip().casefold() not in ("all", ""))
             or (prior and prior.team)
         )
         if (
@@ -3939,7 +3939,7 @@ class HybridQueryRouter:
                 or has_pms_performance_signal(text)
                 or (
                     (
-                        (session_state.team and session_state.team not in ("All", "all"))
+                        (session_state.team and session_state.team.strip().casefold() not in ("all", ""))
                         or eff_region is not None
                     )
                     and any(w in lower for w in ("score", "scores", "performance", "summary", "overview", "status", "result", "results", "analyze", "review"))

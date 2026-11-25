@@ -95,6 +95,14 @@ const FEEDBACK_CATEGORIES: Array<{ key: FeedbackCategoryType; label: string }> =
   { key: 'poor_suggestion', label: 'Poor suggestion' },
 ];
 
+function normalizeRegionValue(region?: string | null): string | null {
+  const trimmed = (region || '').trim();
+  if (!trimmed || trimmed.toLowerCase() === 'all') {
+    return null;
+  }
+  return trimmed;
+}
+
 function buildEffectiveContextLabel(ctx: PageContextV1): string {
   const pageTitle =
     ctx.page_id === 'monthly_presentation'
@@ -112,7 +120,12 @@ function buildEffectiveContextLabel(ctx: PageContextV1): string {
                 : ctx.page_id === 'corrective_actions'
                   ? 'Corrective Actions'
                   : 'PMS View';
-  const scopePart = ctx.team_id || ctx.function_id || ctx.region || 'All Authorized Scope';
+  const normalizedRegion = normalizeRegionValue(ctx.region);
+  const scopePart =
+    ctx.team_id ||
+    ctx.function_id ||
+    normalizedRegion ||
+    (ctx.region && ctx.region.trim().toLowerCase() === 'all' ? 'All Regions' : 'All Authorized Scope');
   const periodPart =
     ctx.month && ctx.year
       ? `${ctx.month} ${ctx.year}`
@@ -512,7 +525,10 @@ export function ContextualAssistantPanel({
               conversation_id: conversationId,
               client_request_id: turnId,
               answer_detail: 'brief',
-              page_context: pageContext,
+              page_context: {
+                ...pageContext,
+                region: normalizeRegionValue(pageContext.region),
+              },
               history: historyPayload,
               ...(typeof opts?.variationSeed === 'number' && opts.variationSeed > 0
                 ? { variation_seed: opts.variationSeed }
@@ -522,7 +538,7 @@ export function ContextualAssistantPanel({
                 team: pageContext.team_id ?? null,
                 position: pageContext.position_id ?? null,
                 branch: pageContext.branch ?? null,
-                region: pageContext.region ?? null,
+                region: normalizeRegionValue(pageContext.region),
                 performance_level: pageContext.performance_level ?? 'Employee',
                 month: pageContext.month ?? null,
                 year: pageContext.year ?? null,

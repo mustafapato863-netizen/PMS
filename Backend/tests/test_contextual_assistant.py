@@ -666,3 +666,61 @@ def test_intent_json_schema_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     assert schema["schema"]["additionalProperties"] is False
     assert set(schema["schema"]["properties"]["intent"]["enum"]) == ALLOWED_INTENTS
     assert {"page_help", "navigation", "proposal"}.issubset(ALLOWED_INTENTS)
+
+
+def test_uppercase_all_region_and_overview_metric_do_not_break_team_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: Executive Summary with region='ALL' and a driver metric must not
+    filter records by region=='ALL' or leak the overview metric into an Outbound query."""
+    from models.ai_schemas import SessionFilterContext
+
+    db = _build_in_memory_db()
+    low_out = _make_inbound_record("EMP301", "Nadia Hassan", 64.5, booking_actual=0.18, booking_target=0.30)
+    low_out.team = "Outbound"
+    low_out.id = "Outbound_EMP301_2026_Sep"
+    high_out = _make_inbound_record("EMP302", "Tariq Salem", 92.0, booking_actual=0.35, booking_target=0.30)
+    high_out.team = "Outbound"
+    high_out.id = "Outbound_EMP302_2026_Sep"
+    _patch_records(monkeypatch, [low_out, high_out])
+    ai_evidence_cache.clear()
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+
+    res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="who is lowest agent in outbound for sep",
+            page_context=PageContextV1(
+                page_id="executive_summary",
+                route_id="/executive-summary",
+                region="ALL",
+                period="2026-10",
+                month="October",
+                year=2026,
+                selected_metric_id="Admission Rate Score",
+            ),
+            session_state=SessionFilterContext(
+                region="ALL",
+                performance_level="Employee",
+                month="October",
+                year=2026,
+            ),
+        )
+    )
+
+    assert res.outcome == "answer"
+    assert "Nadia Hassan" in res.headline
+    assert "No performance records matched" not in res.headline
+    assert res.resolved_session_state.team == "Outbound"
+    assert res.resolved_session_state.month == "September"
+    assert res.resolved_session_state.region is None
+    assert res.effective_context_label is not None
+    assert "Outbound" in res.effective_context_label
+    assert "September 2026" in res.effective_context_label
+    assert "Admission Rate Score" not in res.effective_context_label
+

@@ -142,10 +142,12 @@ def _parse_roster_scope(
         entity=entity,
         periods=tuple(periods),
         target_index=target_index,
-        region=explicit_region or (state.region if state.region not in ("All", "all") else None),
-        team=team if team not in ("All", "all") else None,
-        function=function if function not in ("All", "all") else None,
-        branch=branch if branch not in ("All", "all") else None,
+        region=explicit_region or (
+            state.region if state.region and state.region.strip().casefold() not in ("all", "") else None
+        ),
+        team=team if team and team.strip().casefold() not in ("all", "") else None,
+        function=function if function and function.strip().casefold() not in ("all", "") else None,
+        branch=branch if branch and branch.strip().casefold() not in ("all", "") else None,
     )
 
 

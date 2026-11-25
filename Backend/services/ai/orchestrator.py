@@ -6637,7 +6637,7 @@ class PmsAiOrchestrator:
                 or ksa_region_hint_from_prompt(req.prompt)
                 or routed.confirmed_context.region == "KSA"
             )
-            and routed.confirmed_context.region != "All"
+            and (routed.confirmed_context.region or "").strip().casefold() != "all"
         ):
             avail = check_scope_data_availability(
                 ctx.get_scoped_records(),
