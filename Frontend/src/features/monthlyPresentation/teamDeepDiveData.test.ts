@@ -1181,22 +1181,22 @@ describe('multi-month agent trend context and individual action metadata codec',
       const score = Number(((attendAch * 70) + (bookingAch * 10) + 10 + 10).toFixed(1));
       const rawAgent: AgentRecord = {
         id: `outbound-${id}-sep`,
+        year: 2026,
         identity: {
           employee_id: id,
           name,
           team: 'Outbound',
           month: 'September',
-          year: 2026,
           region: 'EGY',
         },
         score,
-        evaluation: { score, grade: 'C', grade_class: 'C' },
+        evaluation: { score, grade: 'C' },
         calls: {
           total_handled: totalCalls,
           inbound: 0,
           outbound: totalCalls,
           abandoned: 0,
-          aht_seconds: 120,
+          aht_raw: '00:02:00',
         },
         geo: {
           bookings: { dubai: bookings, sharjah: 0, ajman: 0, clinics: 0 },
