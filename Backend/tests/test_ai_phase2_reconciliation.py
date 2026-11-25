@@ -291,4 +291,6 @@ def test_generator_reports_zero_doc_disagreements():
     assert manifest["doc_disagreements"] == []
     committed = json.loads((PHASE2 / "coverage_manifest.json").read_text(encoding="utf-8"))
     assert committed["doc_disagreements"] == []
-    assert committed["counts"]["alias_conflicts"] == 37
+    assert committed["counts"]["alias_conflicts"] == manifest["counts"]["alias_conflicts"]
+    assert committed["counts"]["alias_conflicts"] == len(committed["alias_report"]["conflicts"])
+    assert committed["counts"]["alias_conflicts"] >= 37

@@ -51,6 +51,7 @@ To guarantee CI stays **100% green** and never repeats past failures, ALWAYS fol
   ```powershell
   python evaluation/pms-ai/phase2/generate_coverage_manifest.py
   python -m pytest -q evaluation/pms-ai/phase2/tests/test_coverage_manifest.py
+  cd Backend; python -m pytest tests/test_ai_phase2_reconciliation.py -q
   ```
   Stage the updated `evaluation/pms-ai/phase2/coverage_manifest.json`, `coverage_matrix.csv`, and `coverage_report.md` in the same commit.
 
