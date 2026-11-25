@@ -40,6 +40,7 @@ const monthlyTestState = vi.hoisted(() => ({
     isError: boolean;
     refetch: () => void;
   },
+  actions: [] as unknown[],
 }));
 
 vi.mock('../../context/auth', () => ({
@@ -68,9 +69,9 @@ const mockSaveAction = vi.fn().mockResolvedValue({
 
 vi.mock('../../hooks/useActionStore', () => ({
   useActionStore: () => ({
-    actions: [],
+    actions: monthlyTestState.actions,
     saveAction: mockSaveAction,
-    getAllActions: () => [],
+    getAllActions: () => monthlyTestState.actions,
   }),
 }));
 
@@ -120,6 +121,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       refetch: vi.fn(),
     };
     monthlyTestState.summary = { data: [], isLoading: false, isError: false, refetch: vi.fn() };
+    monthlyTestState.actions = [];
     window.scrollTo = vi.fn();
     localStorage.clear();
   });
@@ -257,22 +259,11 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByText('Offshore Egypt · September 2026')).toBeInTheDocument();
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('Offshore Egypt');
     expect(screen.getByTestId('header-page-indicator')).toHaveTextContent('Page 1 of 6');
-
-    const rail = screen.getByRole('navigation', { name: 'Page sections' });
-    const scoreDot = within(rail).getByRole('button', { name: 'Score' });
-    expect(scoreDot).toHaveAttribute('aria-current', 'true');
-    expect(scoreDot).toHaveClass('cursor-pointer');
     expect(document.body).toHaveClass('mp-mac-cursor');
-    expect(scoreDot.querySelector('[data-section-tip="Score"]')).toHaveTextContent('Score');
-    const functions = document.getElementById('presentation-section-functions');
-    const scroll = vi.fn();
-    if (functions) functions.scrollIntoView = scroll;
-    fireEvent.click(within(rail).getByRole('button', { name: 'Functions' }));
-    expect(within(rail).getByRole('button', { name: 'Functions' })).toHaveAttribute('aria-current', 'true');
-    expect(scroll).toHaveBeenCalled();
+    expect(screen.queryByRole('navigation', { name: 'Page sections' })).not.toBeInTheDocument();
   });
 
-  it('renders Overall Company Performance with 86.6%, Grade C, 13.4% below target, +0.5% vs August, Current/Target/Gap, and evaluation note', () => {
+  it('renders Overall Company Performance with 86.6%, Grade C, 13.4% below target, +0.5% vs August, Current/Gap (without Target tile), and evaluation note', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
         <MonthlyPreview />
@@ -293,6 +284,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(
       within(overallSection).getByTestId('overall-movement-badge'),
     ).toHaveTextContent('+0.5% vs August');
+    expect(within(overallSection).getByText('Current')).toBeInTheDocument();
+    expect(within(overallSection).getByText('Gap')).toBeInTheDocument();
+    expect(within(overallSection).queryByText('Target')).not.toBeInTheDocument();
   });
 
   it('renders all 7 Functions Overview cards and navigates on RCM click', () => {
@@ -334,9 +328,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     fireEvent.click(screen.getByTestId('function-card-call-center'));
 
     expect(screen.getByTestId('call-center-deep-dive-page')).toBeInTheDocument();
-    const deepDiveRail = screen.getByRole('navigation', { name: 'Page sections' });
-    expect(within(deepDiveRail).getByRole('button', { name: 'Support' })).toBeInTheDocument();
-    expect(within(deepDiveRail).queryByRole('button', { name: 'Grades' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Page sections' })).not.toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
     ).toBeInTheDocument();
@@ -847,10 +839,12 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     );
 
     const trendCard = screen.getByTestId('six-month-score-trend');
-    const chart = within(trendCard).getByRole('img', { name: /trend/i });
+    expect(within(trendCard).getByRole('heading', { name: 'Company Score Trend' })).toBeInTheDocument();
+    expect(within(trendCard).getByText('6-month trajectory against 100% target and 90% healthy threshold')).toBeInTheDocument();
+    const chart = within(trendCard).getByTestId('executive-trend-chart');
     expect(chart.querySelector('path')).toBeTruthy();
     expect(chart.querySelector('line')).toBeTruthy();
-    expect(chart.textContent).toMatch(/Target\s+100/);
+    expect(chart.textContent).toMatch(/Target\s+100%/);
     expect(chart.textContent).toMatch(/100%/);
     expect(chart.textContent).not.toMatch(/10[1-9]%/);
     for (const point of OFFSHORE_EGYPT_SEP_2026_DATA.trend) {
@@ -861,8 +855,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       expect(label.includes(score) || label.includes(score.replace('.', ','))).toBe(true);
     }
     const lastTrend = OFFSHORE_EGYPT_SEP_2026_DATA.trend.at(-1);
-    expect(trendCard.textContent).toContain(`${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].month} ${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].score.toFixed(1)}%`);
-    expect(trendCard.textContent).toContain(`${lastTrend?.month} ${lastTrend?.score.toFixed(1)}%`);
+    expect(trendCard.textContent).toContain(`${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].month} ·${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].score.toFixed(1)}%`);
+    expect(trendCard.textContent).toContain(`${lastTrend?.month} ·${lastTrend?.score.toFixed(1)}%`);
 
     const expectDrillLink = (label: string) => {
       const links = screen.getAllByText(label);
@@ -1179,11 +1173,17 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       </MemoryRouter>,
     );
 
-    // The default is still the first single region (EGY), not All.
-    expect(screen.getByTestId('region-egy')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('region-all')).toBeInTheDocument();
+    // Default selection is All regions when both regions are present, showing both regions and Region Performance Share.
+    expect(screen.getByTestId('region-all')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('header-region-badge')).toHaveTextContent('All regions');
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
-    expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
+    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+
+    const regionShare = screen.getByTestId('monthly-region-performance-share');
+    expect(within(regionShare).getByRole('heading', { name: 'Region Performance Share' })).toBeInTheDocument();
+    expect(within(regionShare).getByTestId('monthly-region-share-card-egy')).toBeInTheDocument();
+    expect(within(regionShare).getByTestId('monthly-region-share-card-uae')).toBeInTheDocument();
+    expect(within(regionShare).getByText(/gap share:/i)).toBeInTheDocument();
 
     // The filter trigger is docked inside the bottom control bar, not in the top header or floating.
     const header = screen.getByRole('banner', { name: 'Monthly Presentation Header' });
@@ -1193,12 +1193,20 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(document.querySelector('.responsive-filter-docked--in-bar')).not.toBeNull();
     expect(document.querySelector('.responsive-filter-launcher')).toBeNull();
 
-    // Switch to the combined view from the tab.
+    // Clicking a Region Performance Share card focuses that region and hides the multi-region split.
+    fireEvent.click(within(regionShare).getByTestId('monthly-region-share-card-egy'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('region=egy');
+    expect(screen.getByTestId('header-region-badge')).toHaveTextContent('Offshore Egypt');
+    expect(screen.queryByTestId('monthly-region-performance-share')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
+
+    // Switch back to All regions from the tab.
     fireEvent.click(screen.getByTestId('region-all'));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('region=all');
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('All regions');
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
     expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+    expect(screen.getByTestId('monthly-region-performance-share')).toBeInTheDocument();
 
     // The docked panel opens from the bottom bar and offers Region, Reporting month, and Function.
     fireEvent.click(within(bar).getByRole('button', { name: /Monthly filters/ }));
@@ -1857,5 +1865,190 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     fireEvent.click(screen.getByTestId('region-uae'));
     expect(within(driversSection).getAllByText('CSR Rejection %').length).toBeGreaterThan(0);
     expect(within(driversSection).queryByText('Booking Rate')).not.toBeInTheDocument();
+  });
+
+  it('recalculates Call Center Outbound Attendance Rate and score when switching branches in Monthly Report', () => {
+    monthlyTestState.catalog!.data.teams = [
+      { team: 'Outbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+      { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+    ];
+    monthlyTestState.catalog!.data.periods = [{ year: 2026, month: 'October', key: '2026-10' }];
+    monthlyTestState.catalog!.data.months = ['October'];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'OB-1', name: 'Abdelrahman', team: 'Outbound', month: 'October' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          calls: { total_handled: 100, inbound: 0, outbound: 100, abandoned: 0 },
+          geo: {
+            bookings: { dubai: 100, sharjah: 25, ajman: 0, clinics: 0 },
+            attended: { dubai: 40, sharjah: 20, ajman: 0, clinics: 0 },
+          },
+          raw_data: { 'A.Attend%': 0.48, 'T.Attend%': 0.65, 'A.Booking%': 0.3, 'T.Booking%': 0.3 },
+          evaluation: { score: 0.78, grade: 'D' },
+          kpi_values: [
+            { kpi_key: 'Attendance', label: 'Attendance Rate', actual_value: 0.48, target_value: 0.65, unit: '%', direction: 'higher_better', weight_applied: 0.7, achievement_ratio: 0.48 / 0.65, contribution: (0.48 / 0.65) * 0.7 },
+            { kpi_key: 'Booking', label: 'Booking Rate', actual_value: 0.30, target_value: 0.30, unit: '%', direction: 'higher_better', weight_applied: 0.3, achievement_ratio: 1.0, contribution: 0.30 },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=all&period=2026-10&deepDive=call-center&team=outbound']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    const allScore = screen.getByTestId('team-deep-dive-score').textContent;
+    expect(screen.getAllByText('48.0%').length).toBeGreaterThan(0);
+
+    // Open Monthly filters and choose Sharjah (20 / 25 = 80.0% Attendance -> higher score).
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    fireEvent.change(within(dialog).getByLabelText('Branch'), { target: { value: 'sharjah' } });
+    const sharjahScore = screen.getByTestId('team-deep-dive-score').textContent;
+    expect(screen.getAllByText('80.0%').length).toBeGreaterThan(0);
+    expect(sharjahScore).not.toBe(allScore);
+
+    // Switch to Dubai (40 / 100 = 40.0% Attendance -> lower score than Sharjah and All).
+    fireEvent.change(within(dialog).getByLabelText('Branch'), { target: { value: 'dubai' } });
+    const dubaiScore = screen.getByTestId('team-deep-dive-score').textContent;
+    expect(screen.getAllByText('40.0%').length).toBeGreaterThan(0);
+    expect(dubaiScore).not.toBe(sharjahScore);
+  });
+
+  it('shows Corrective actions on the Monthly Review main page only instead of Teams without data', () => {
+    monthlyTestState.role = 'Admin';
+    monthlyTestState.catalog!.data.periods = [{ year: 2026, month: 'September', key: '2026-09' }];
+    monthlyTestState.catalog!.data.months = ['September'];
+    monthlyTestState.catalog!.data.teams = [
+      { team: 'Pre-Approvals IP', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'Coding EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+    ];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'E-PA-1', name: 'Mona', team: 'Pre-Approvals IP', month: 'September' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.81, grade: 'C' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'U-CSR-1', name: 'Noor', team: 'CSR', month: 'September' },
+          region: 'UAE',
+          branch_key: 'dubai',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.88, grade: 'B' },
+          kpi_values: [],
+        },
+      ],
+    };
+    monthlyTestState.actions = [
+      {
+        id: 'act-1',
+        employee_id: 'E-PA-1',
+        employee_name: 'Mona',
+        team: 'Pre-Approvals IP',
+        month: 'September',
+        action_type: 'Coaching',
+        action_text: 'Coach on initial error rate',
+        root_cause_note: 'High Initial Error Rate',
+        created_by: 'Admin',
+        created_at: '2026-09-18T10:00:00Z',
+        synced: true,
+        status: 'Open',
+      },
+      {
+        id: 'act-2',
+        employee_id: 'U-CSR-1',
+        employee_name: 'Noor',
+        team: 'CSR',
+        month: 'September',
+        action_type: 'PIP',
+        action_text: 'Reduce booking drop',
+        root_cause_note: 'Low Booking Rate',
+        created_by: 'Admin',
+        created_at: '2026-09-20T10:00:00Z',
+        synced: true,
+        status: 'Open',
+      },
+    ];
+    const apiSpy = vi.spyOn(apiClientModule, 'apiFetch').mockResolvedValue({ success: true, data: { actions: [] } });
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?period=2026-09']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    // Coding EGY has no September records, yet the main page hides Teams without data and renders Corrective actions.
+    expect(screen.queryByTestId('monthly-teams-without-data')).not.toBeInTheDocument();
+    const card = screen.getByTestId('corrective-action-insights');
+    expect(within(card).getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
+    expect(within(card).getByText('Company-wide · September 2026 · Decision patterns')).toBeInTheDocument();
+    expect(within(card).getByText('Actions this month').parentElement).toHaveTextContent('2');
+    expect(within(card).getByText('Employees actioned').parentElement).toHaveTextContent('2');
+    expect(within(card).getByText('Teams with actions').parentElement).toHaveTextContent('2');
+    expect(within(card).getByRole('link', { name: 'Open Corrective Actions' })).toHaveAttribute('href', '/corrective-actions?month=September');
+
+    // Narrowing to Offshore Egypt scopes the card to EGY actions only.
+    fireEvent.click(screen.getByTestId('region-egy'));
+    expect(within(card).getByText('Offshore Egypt · September 2026 · Decision patterns')).toBeInTheDocument();
+    expect(within(card).getByText('Actions this month').parentElement).toHaveTextContent('1');
+    const teamRanks = within(card).getAllByTestId('action-team-rank');
+    expect(teamRanks).toHaveLength(1);
+    expect(teamRanks[0]).toHaveTextContent('Pre-Approvals IP');
+    expect(teamRanks[0]).not.toHaveTextContent('CSR');
+
+    // Navigating into Function Deep Dive does NOT render the overview Corrective actions card.
+    fireEvent.click(screen.getByTestId('function-card-rcm'));
+    expect(screen.queryByTestId('corrective-action-insights')).not.toBeInTheDocument();
+    apiSpy.mockRestore();
+  });
+
+  it('hides Corrective actions on Monthly Review main page for Viewer role', () => {
+    monthlyTestState.role = 'Viewer';
+    monthlyTestState.catalog!.data.periods = [{ year: 2026, month: 'September', key: '2026-09' }];
+    monthlyTestState.catalog!.data.months = ['September'];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'E-PA-1', name: 'Mona', team: 'Pre-Approvals IP', month: 'September' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.81, grade: 'C' },
+          kpi_values: [],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?period=2026-09']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('monthly-teams-without-data')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('corrective-action-insights')).not.toBeInTheDocument();
   });
 });

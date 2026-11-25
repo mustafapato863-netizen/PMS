@@ -10,7 +10,12 @@ import {
   SUMMARY_BRANCHES,
   composeExecutiveSummary,
   normalizeRegion,
+  periodFromKey as execPeriodFromKey,
+  projectExecRecordForBranch,
+  summarizeActions,
   toExecRecords,
+  type ExecRecord,
+  type FollowUpAction,
 } from '../executive/compose';
 import type { TeamFunctionMap } from '../insights/filterCascade';
 import { apiFetch } from '../../lib/apiClient';
@@ -60,6 +65,7 @@ import {
   GradeDistributionSection,
   MonthlyOverviewHeader,
   OverallCompanyPerformanceCard,
+  RegionPerformanceShareSection,
   ScoreDriversSection,
   SixMonthTrendCard,
   TeamsAtRiskSection,
@@ -70,14 +76,14 @@ import {
   PresentationControlBar,
   type AgendaTimelineFunction,
 } from './components/PresentationControlBar';
-import { PresentationSectionFrame } from './components/SectionRail';
 import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
 import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
 import { isHiddenTeam } from '../../components/common/sidebarTeamItems';
-import { CALL_CENTER_TEAM } from '../../types';
+import { CALL_CENTER_TEAM, canonicalTeamName, type PMSAction } from '../../types';
+import CorrectiveActionInsightsCard from '../../components/executive/v1/CorrectiveActionInsightsCard';
 import type { PageContextV1 } from '../ai/types';
 import { ExecutiveEmployeeReview, ExecutiveFunctionReview, ExecutiveTeamDecisions, reviewButtonClass } from '../executive/ExecutiveReviewDetails';
 import { actionMatchesRecord, isSavedRoleIntervention, type ReviewUnit } from '../executive/executiveReviewModel';
@@ -224,6 +230,87 @@ function TeamsWithoutMonthlyData({
       </ul>
     </section>
   );
+}
+
+interface RawFollowUpActionItem {
+  id?: string;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  team?: string | null;
+  region?: string | null;
+  month?: string;
+  manager_action?: string;
+  manager_notes?: string;
+  timestamp?: string;
+  status?: string;
+  due_date?: string | null;
+  owner?: { id: string; name: string } | null;
+  linked_kpi_key?: string | null;
+  completed_at?: string | null;
+  follow_up_state?: string | null;
+}
+
+const KNOWN_ACTION_TYPES = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'] as const;
+const LEGACY_PIP_TYPES = new Set(['SIP', 'PI', 'Suspension', 'Warning']);
+
+function rawFollowUpToFollowUpAction(item: RawFollowUpActionItem): FollowUpAction {
+  let actionType = 'Coaching';
+  let actionText = item.manager_action || '';
+  const sepIdx = actionText.indexOf(': ');
+  if (sepIdx > 0) {
+    const typeStr = actionText.substring(0, sepIdx);
+    const rest = actionText.substring(sepIdx + 2);
+    if (KNOWN_ACTION_TYPES.includes(typeStr as (typeof KNOWN_ACTION_TYPES)[number])) {
+      actionType = typeStr;
+      actionText = rest;
+    } else if (LEGACY_PIP_TYPES.has(typeStr)) {
+      actionType = 'PIP';
+      actionText = rest;
+    } else if (typeStr === 'SOP Review') {
+      actionType = 'Training';
+      actionText = rest;
+    }
+  }
+  return {
+    id: item.id || `${item.employee_id || 'plan'}_${item.month || ''}_${item.timestamp || ''}`,
+    title: actionText || actionType,
+    action_type: actionType,
+    action_text: actionText,
+    team: item.team || null,
+    region: item.region || null,
+    employee_name: item.employee_name || null,
+    owner: item.owner ?? null,
+    due_date: item.due_date ?? null,
+    status: item.status ?? 'Open',
+    follow_up_state: item.follow_up_state ?? null,
+    completed_at: item.completed_at ?? null,
+    employee_id: item.employee_id || null,
+    month: item.month,
+    created_at: item.timestamp || '',
+    root_cause_note: item.manager_notes || '',
+    linked_kpi_key: item.linked_kpi_key ?? null,
+  };
+}
+
+function pmsActionToFollowUp(action: PMSAction): FollowUpAction {
+  return {
+    id: action.id,
+    title: action.action_text || action.action_type,
+    action_type: action.action_type,
+    action_text: action.action_text,
+    team: action.team || null,
+    employee_name: action.employee_name || null,
+    owner: action.owner ?? null,
+    due_date: action.due_date ?? null,
+    status: action.status ?? 'Open',
+    follow_up_state: action.follow_up_state ?? null,
+    completed_at: action.completed_at ?? null,
+    employee_id: action.employee_id || null,
+    month: action.month,
+    created_at: action.created_at,
+    root_cause_note: action.root_cause_note,
+    linked_kpi_key: action.linked_kpi_key ?? null,
+  };
 }
 
 function EgyptFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: string }) {
@@ -376,10 +463,9 @@ function MonthlyPresentationScreen({
   const previewRegion = data?.regionCode;
   const activeRegion: MonthlyRegionFilter = useMemo(() => {
     const validRegions: MonthlyRegionFilter[] = availableRegions.length ? availableRegions : ['EGY'];
-    // The combined view is never the default: it is only chosen explicitly
-    // (?region=all). The default stays the assigned / URL / preview region,
-    // then the first single region.
-    const defaultRegion = validRegions.find((region) => region !== 'ALL') ?? validRegions[0];
+    // Default to All when both regions are present; otherwise fall back to the
+    // available single region. URL, assigned-region, and preview scopes still apply.
+    const defaultRegion = validRegions.includes('ALL') ? 'ALL' : validRegions[0];
     const assignedRegion = normalizeRegion(assigned.region);
     const validAssignedRegion = (assignedRegion === 'UAE' || assignedRegion === 'EGY') && validRegions.includes(assignedRegion)
       ? assignedRegion : null;
@@ -463,7 +549,7 @@ function MonthlyPresentationScreen({
       .filter((record) =>
         (record.branches ?? []).some((branch) => branch.trim().toLowerCase() === activeBranch),
       )
-      .map((record) => ({ ...record, branches: [activeBranch] }));
+      .map((record) => projectExecRecordForBranch(record, activeBranch));
   }, [activeBranch, authorizedRecords]);
 
   const catalogTeamFunctions = useMemo<TeamFunctionMap>(() => {
@@ -557,6 +643,130 @@ function MonthlyPresentationScreen({
     [activeRegion, clock, displayedPeriodKey, periodOptionSource],
   );
   const selectedPeriodKey = displayedPeriodKey;
+  const selectedExecPeriod = useMemo(
+    () => execPeriodFromKey(selectedPeriodKey),
+    [selectedPeriodKey],
+  );
+
+  // Fetch tracked follow-up actions so the overview Corrective Actions card matches
+  // Executive Summary (including tracked plan/team actions and Executive-role scope).
+  const [followUpActions, setFollowUpActions] = useState<FollowUpAction[]>([]);
+  useEffect(() => {
+    if (isInline || explicitPreview || !canReadInlineActions) {
+      setFollowUpActions([]);
+      return;
+    }
+    let cancelled = false;
+    apiFetch<{ success?: boolean; data?: { actions?: RawFollowUpActionItem[] } }>(
+      '/api/corrective-actions/follow-up',
+    )
+      .then((res) => {
+        if (cancelled || !res?.success || !Array.isArray(res.data?.actions)) return;
+        setFollowUpActions(res.data.actions.map(rawFollowUpToFollowUpAction));
+      })
+      .catch(() => {
+        // Fall back gracefully to synced actions already loaded in useActionStore.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canReadInlineActions, explicitPreview, isInline]);
+
+  const actionRecordIndex = useMemo(() => {
+    const byEmployee = new Map<string, ExecRecord[]>();
+    const byTeam = new Map<string, ExecRecord[]>();
+    for (const record of authorizedRecords) {
+      if (record.employeeId) {
+        const list = byEmployee.get(record.employeeId);
+        if (list) list.push(record);
+        else byEmployee.set(record.employeeId, [record]);
+      }
+      const canonical = canonicalTeamName(record.team);
+      if (canonical) {
+        const list = byTeam.get(canonical);
+        if (list) list.push(record);
+        else byTeam.set(canonical, [record]);
+      }
+    }
+    return { byEmployee, byTeam };
+  }, [authorizedRecords]);
+
+  const scopeOverviewAction = useCallback((action: FollowUpAction) => {
+    const actionTeam = canonicalTeamName(action.team);
+    if (functionScopeRestricted) {
+      const fns =
+        catalogTeamFunctions[actionTeam] ??
+        serverTeams.find((team) => canonicalTeamName(team.team) === actionTeam)?.functions ??
+        [];
+      if (fns.length > 0 && !fns.some((fn) => authorizedFunctionSlugs.has(normalizeFunctionSlug(fn)))) {
+        return false;
+      }
+    }
+    if (activeRegion !== 'ALL' || activeBranch) {
+      const matches = action.employee_id
+        ? (actionRecordIndex.byEmployee.get(action.employee_id) ?? [])
+        : (actionRecordIndex.byTeam.get(actionTeam) ?? []);
+      if (matches.length === 0) {
+        if (!activeBranch && action.region) {
+          return normalizeRegion(action.region) === activeRegion;
+        }
+        return false;
+      }
+      return matches.some((record) =>
+        (activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion) &&
+        (!activeBranch || (record.branches ?? []).some((branch) => branch.trim().toLowerCase() === activeBranch)),
+      );
+    }
+    return true;
+  }, [
+    actionRecordIndex,
+    activeBranch,
+    activeRegion,
+    authorizedFunctionSlugs,
+    catalogTeamFunctions,
+    functionScopeRestricted,
+    serverTeams,
+  ]);
+
+  const overviewCorrectiveActions = useMemo(() => {
+    if (!canReadInlineActions) return null;
+    const merged = new Map<string, FollowUpAction>();
+    for (const action of storedActions) {
+      if (action.synced === false) continue;
+      const mapped = pmsActionToFollowUp(action);
+      merged.set(String(mapped.id), mapped);
+    }
+    for (const action of followUpActions) {
+      const key = String(action.id);
+      const existing = merged.get(key);
+      merged.set(key, {
+        ...existing,
+        ...action,
+        root_cause_note: action.root_cause_note || existing?.root_cause_note || '',
+        linked_kpi_key: action.linked_kpi_key || existing?.linked_kpi_key || null,
+        created_at: action.created_at || existing?.created_at || '',
+        month: action.month || existing?.month || '',
+      });
+    }
+    const scopedSynced = [...merged.values()].filter(scopeOverviewAction);
+    const scopedPending = storedActions
+      .filter((action) => action.synced === false)
+      .map(pmsActionToFollowUp)
+      .filter(scopeOverviewAction);
+    return summarizeActions(scopedSynced, clock, selectedExecPeriod, scopedPending);
+  }, [
+    canReadInlineActions,
+    clock,
+    followUpActions,
+    scopeOverviewAction,
+    selectedExecPeriod,
+    storedActions,
+  ]);
+
+  const overviewActionsScopeLabel = useMemo(() => {
+    const regionPart = activeRegion === 'ALL' ? 'Company-wide' : overviewData.regionName;
+    return activeBranchLabel ? `${regionPart} · ${activeBranchLabel} branch` : regionPart;
+  }, [activeBranchLabel, activeRegion, overviewData.regionName]);
 
   const rawDeepDive = (searchParams.get('deepDive') || params.functionSlug || '').trim();
   const functionSlug = rawDeepDive ? normalizeFunctionSlug(rawDeepDive) : '';
@@ -1657,18 +1867,30 @@ function MonthlyPresentationScreen({
           toolbar={headerToolbar}
         />
 
-        {/* 2. Overall Company Performance & 3. 6-Month Score Trend */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-7">
+        {/* 2. Overall Company Performance & 3. Company Score Trend */}
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
+          <div className="flex lg:col-span-6">
             <OverallCompanyPerformanceCard
               overall={overviewData.overall}
               previousMonthLabel={overviewData.previousMonthLabel}
             />
           </div>
-          <div className="lg:col-span-5">
-            <SixMonthTrendCard trend={overviewData.trend} />
+          <div className="flex lg:col-span-6">
+            <SixMonthTrendCard
+              trend={overviewData.trend}
+              executiveTrend={overviewData.executiveTrend}
+            />
           </div>
         </div>
+
+        {/* 3b. Region Performance Share (All regions view, matching Executive Summary) */}
+        {overviewData.regionCode === 'ALL' && (overviewData.regions?.length ?? 0) > 1 && (
+          <RegionPerformanceShareSection
+            regions={overviewData.regions ?? []}
+            previousMonthLabel={overviewData.previousMonthLabel}
+            onSelectRegion={(region) => handleRegionChange(region)}
+          />
+        )}
 
         {/* 4. Grade Distribution */}
         <GradeDistributionSection
@@ -1700,11 +1922,21 @@ function MonthlyPresentationScreen({
             handleSelectAgentTeam(businessTeamName(row.team), match?.slug || row.functionName);
           }}
         />
-        {selectedPeriodRecords.length > 0 && (
-          <TeamsWithoutMonthlyData
-            teams={teamsWithoutData.map(({ team, region }) => ({ team, region }))}
-            periodLabel={periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey}
-          />
+
+        {/* 8. Corrective Actions (Monthly Review main page only) */}
+        {canReadInlineActions && (
+          <div
+            id="presentation-section-actions"
+            data-section-label="Actions"
+            className="scroll-mt-24"
+          >
+            <CorrectiveActionInsightsCard
+              data={overviewCorrectiveActions}
+              effective={selectedExecPeriod}
+              scopeLabel={overviewActionsScopeLabel}
+              workspaceHref="/corrective-actions"
+            />
+          </div>
         )}
       </div>
     );
@@ -1789,16 +2021,6 @@ function MonthlyPresentationScreen({
     selectedPeriodKey,
     storedActions,
   ]);
-
-  const sectionViewKey = [
-    activeRegion,
-    activeBranch,
-    selectedPeriodKey,
-    functionSlug,
-    activeTeamSlug,
-    activeRoleSlug,
-    presentationMode ? 'present' : 'edit',
-  ].join('|');
 
   const monthlyPageContext = useMemo<PageContextV1>(() => {
     const primaryDriverMetric =
@@ -2041,9 +2263,7 @@ function MonthlyPresentationScreen({
 
   return (
     <>
-      <PresentationSectionFrame viewKey={sectionViewKey}>
-        <div className="pb-28">{renderActiveView()}</div>
-      </PresentationSectionFrame>
+      <div className="pb-28">{renderActiveView()}</div>
       <PresentationControlBar
         region={activeRegion}
         availableRegions={availableRegions}

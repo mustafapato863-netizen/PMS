@@ -1,4 +1,4 @@
-import type { ExecutiveSummary } from '../executive/types';
+import type { ExecutiveRegion, ExecutiveSummary, ExecutiveTrendPoint } from '../executive/types';
 import { fmtKpiDelta, fmtKpiValue } from '../executive/format';
 import { functionSlug } from '../executive/functions';
 import { presentationTeamName } from '../team/countryTeamIdentity';
@@ -82,6 +82,8 @@ export interface MonthlyOverviewData {
     evaluationNote: string;
   };
   trend: TrendPoint[];
+  executiveTrend?: ExecutiveTrendPoint[];
+  regions?: ExecutiveRegion[];
   gradeDistribution: {
     totalEmployees: number;
     rows: GradeDistributionRow[];
@@ -705,6 +707,12 @@ export function adaptSummaryToMonthlyOverview(
       evaluationNote: summary.basis_context?.message || fallback.overall.evaluationNote,
     },
     trend,
+    executiveTrend: summary.trend.length >= 2
+      ? summary.trend.slice(-6)
+      : allowSnapshotFallback
+        ? undefined
+        : summary.trend,
+    regions: summary.regions ?? [],
     gradeDistribution: {
       totalEmployees: distribution?.total || fallback.gradeDistribution.totalEmployees,
       rows: gradeRows,
@@ -750,6 +758,8 @@ function emptyMonthlyOverview(
       evaluationNote: 'No measured results are available for this scope and period.',
     },
     trend: [],
+    executiveTrend: [],
+    regions: [],
     gradeDistribution: { totalEmployees: 0, rows: [], takeaway: '' },
     drivers: { negative: [], positive: [] },
     functions: [],

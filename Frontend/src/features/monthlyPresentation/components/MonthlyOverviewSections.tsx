@@ -4,13 +4,22 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Globe,
   Info,
   Sparkles,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import type { ExecutiveRegion, ExecutiveTrendPoint } from '../../executive/types';
+import { periodFromKey as execPeriodFromKey } from '../../executive/compose';
+import { getGradeTone, gradeTokenVar } from '../../../constants/grades';
+import { ScoreBar } from '../../../components/executive/v1/ExecPrimitives';
+import { formatShare } from '../../../components/executive/v1/execModel';
+import { gradeGradientVar } from '../../../components/executive/v1/gradeGradient';
+import ScoreTrendChart from '../../../components/executive/v1/ScoreTrendChart';
 import {
   GRADE_STYLES,
+  gradeForScore,
   type FunctionOverviewItem,
   type GradeDistributionRow,
   type GradeLetter,
@@ -20,7 +29,6 @@ import {
   type TrendPoint,
 } from '../monthlyOverviewData';
 import { slugifyIdentifier } from '../callCenterDeepDiveData';
-import { LineChart } from '../../../components/balanced-scorecard/LineChart';
 
 /* -------------------------------------------------------------------------- */
 /*  Shared Grade Badge                                                        */
@@ -35,7 +43,6 @@ export function GradePill({
   size?: 'sm' | 'md' | 'lg';
   prefixGrade?: boolean;
 }) {
-  const style = GRADE_STYLES[grade];
   const sizeClasses =
     size === 'lg'
       ? 'px-3.5 py-1 text-sm font-bold rounded-xl'
@@ -45,7 +52,13 @@ export function GradePill({
 
   return (
     <span
-      className={`inline-flex items-center justify-center border ${style.badgeBg} ${style.badgeText} ${style.badgeBorder} ${sizeClasses}`}
+      data-grade={grade}
+      className={`inline-flex items-center justify-center border ${sizeClasses}`}
+      style={{
+        background: gradeTokenVar(grade, 'badge-bg'),
+        color: gradeTokenVar(grade, 'badge-text'),
+        borderColor: gradeTokenVar(grade, 'border'),
+      }}
     >
       {prefixGrade ? `Grade ${grade}` : grade}
     </span>
@@ -163,7 +176,7 @@ export function OverallCompanyPerformanceCard({
       id="presentation-section-score"
       data-section-label="Score"
       aria-labelledby="overall-performance-heading"
-      className="relative flex scroll-mt-24 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_10px_32px_-18px_rgba(15,23,42,0.28)] transition-shadow duration-300 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.34)] motion-reduce:transition-none"
+      className="relative flex h-full w-full scroll-mt-24 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_10px_32px_-18px_rgba(15,23,42,0.28)] transition-shadow duration-300 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.34)] motion-reduce:transition-none"
     >
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -226,19 +239,12 @@ export function OverallCompanyPerformanceCard({
           </div>
         </div>
 
-        {/* Three Small Metrics: Current / Target / Gap */}
-        <div className="mt-6 grid grid-cols-3 gap-3">
+        {/* Two Small Metrics: Current / Gap */}
+        <div className="mt-6 grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3">
             <div className="text-xs font-medium text-slate-500">Current</div>
             <div className="mt-1 text-xl font-bold text-slate-900">
               {overall.score.toFixed(1)}%
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-            <div className="text-xs font-medium text-slate-500">Target</div>
-            <div className="mt-1 text-xl font-bold text-slate-900">
-              {overall.target.toFixed(1)}%
             </div>
           </div>
 
@@ -264,63 +270,204 @@ export function OverallCompanyPerformanceCard({
 
 export interface SixMonthTrendCardProps {
   trend: TrendPoint[];
+  executiveTrend?: ExecutiveTrendPoint[];
 }
 
-export function SixMonthTrendCard({ trend }: SixMonthTrendCardProps) {
-  const firstScore = trend[0]?.score ?? 0;
-  const lastPoint = trend[trend.length - 1];
-  const lastScore = lastPoint?.score ?? 0;
-  const sixMonthDelta = Number((lastScore - firstScore).toFixed(1));
-  const target = trend.find((point) => Number.isFinite(point.target))?.target ?? lastPoint?.target ?? 100;
-  const history = trend.map((point) => {
-    const keyed = /^(\d{4})-(\d{2})$/.exec(point.key);
+function toExecutiveTrendPoints(trend: TrendPoint[]): ExecutiveTrendPoint[] {
+  return trend.map((point) => {
+    const parsed = execPeriodFromKey(point.key);
     return {
-      // Numeric month keeps the chart's UTC label on the bound period. A name like "Apr"
-      // is parsed as local midnight and can shift a month in positive offsets.
-      month: keyed ? String(Number(keyed[2])) : point.month,
-      year: keyed ? Number(keyed[1]) : Number(point.key.slice(0, 4)) || 0,
-      score: point.score,
+      period: parsed ?? {
+        year: Number(point.key.slice(0, 4)) || new Date().getFullYear(),
+        month: point.month,
+        key: point.key || point.month,
+      },
+      score: Number.isFinite(point.score) ? point.score : null,
+      target: Number.isFinite(point.target) ? point.target : 100,
+      comparison_score: null,
     };
   });
-  const targetLabel = Number.isInteger(target) ? target.toFixed(0) : target.toFixed(1);
+}
+
+export function SixMonthTrendCard({ trend, executiveTrend }: SixMonthTrendCardProps) {
+  const points = executiveTrend ?? toExecutiveTrendPoints(trend);
+
+  return (
+    <div
+      id="presentation-section-trend"
+      data-section-label="Trend"
+      data-testid="six-month-score-trend"
+      className="flex h-full w-full scroll-mt-24 [&>section]:h-full [&>section]:w-full"
+    >
+      <ScoreTrendChart
+        points={points}
+        title="Company Score Trend"
+        subtitle="6-month trajectory against 100% target and 90% healthy threshold"
+      />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  3b. Region Performance Share Section                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface RegionPerformanceShareSectionProps {
+  regions: ExecutiveRegion[];
+  previousMonthLabel: string;
+  onSelectRegion?: (region: 'EGY' | 'UAE') => void;
+}
+
+export function RegionPerformanceShareSection({
+  regions,
+  previousMonthLabel,
+  onSelectRegion,
+}: RegionPerformanceShareSectionProps) {
+  if (regions.length <= 1) return null;
+
+  const topGapRegion = [...regions]
+    .filter((region) => region.gap_share_percent !== null)
+    .sort((left, right) => (right.gap_share_percent ?? 0) - (left.gap_share_percent ?? 0))[0];
 
   return (
     <section
-      id="presentation-section-trend"
-      data-section-label="Trend"
-      aria-labelledby="six-month-trend-heading"
-      data-testid="six-month-score-trend"
-      className="flex scroll-mt-24 flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      id="presentation-section-regions"
+      data-section-label="Regions"
+      aria-labelledby="region-performance-share-heading"
+      data-testid="monthly-region-performance-share"
+      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-            Trajectory
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-blue-200/80 bg-blue-50 text-blue-700"
+          >
+            <Globe className="size-4" />
           </span>
-          <h2 id="six-month-trend-heading" className="mt-0.5 text-lg font-bold text-slate-900">
-            6-Month Score Trend
-          </h2>
+          <div>
+            <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+              Regional Comparison
+            </span>
+            <h2
+              id="region-performance-share-heading"
+              className="mt-0.5 text-lg font-bold text-slate-900"
+            >
+              Region Performance Share
+            </h2>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs font-medium text-slate-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-4 border-t-2 border-dashed border-emerald-600" />
-            Target {targetLabel}%
-          </span>
-          <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
-            {sixMonthDelta >= 0 ? `+${sixMonthDelta}%` : `${sixMonthDelta}%`} since{' '}
-            {trend[0]?.month}
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+          {regions.map((region) => region.region).join(' vs ')} · ranked by share of the gap
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {regions.map((region) => {
+          const score = region.score ?? 0;
+          const grade = (region.grade as GradeLetter) || gradeForScore(score);
+          const gradeStyle = GRADE_STYLES[grade];
+          const gap = region.gap;
+          const change = region.change;
+          const clickable = onSelectRegion && (region.region === 'EGY' || region.region === 'UAE');
+
+          const content = (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-bold ${
+                      region.region === 'EGY'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-blue-50 text-blue-700'
+                    }`}
+                  >
+                    {region.region}
+                  </span>
+                  <span className="truncate text-sm font-bold text-slate-900">
+                    {region.label}
+                  </span>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className={`text-xl font-extrabold tabular-nums ${gradeStyle.scoreText}`}>
+                    {region.score !== null ? `${region.score.toFixed(1)}%` : '—'}
+                  </span>
+                  <GradePill grade={grade} size="sm" prefixGrade />
+                </div>
+              </div>
+
+              <div aria-hidden="true" className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, score))}%`,
+                    background: gradeGradientVar(region.score),
+                  }}
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-xs">
+                <span className="font-medium text-slate-600">
+                  {region.employees} {region.employees === 1 ? 'person' : 'people'} · {region.teams_count}{' '}
+                  {region.teams_count === 1 ? 'team' : 'teams'}
+                  {region.gap_share_percent != null ? ` · ${formatShare(region.gap_share_percent)}% of the gap` : ''}
+                  {region.headcount_share_percent != null ? ` · ${Math.round(region.headcount_share_percent)}% of people` : ''}
+                </span>
+
+                <div className="flex shrink-0 items-center gap-2.5 font-semibold tabular-nums">
+                  {gap !== null && (
+                    <span className={gap < 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                      {gap >= 0 ? `+${gap.toFixed(1)}%` : `${gap.toFixed(1)}%`} vs 100
+                    </span>
+                  )}
+                  {change !== null && (
+                    <span className={change >= 0 ? 'text-emerald-700' : 'text-red-600'}>
+                      {change >= 0 ? `↑ +${change.toFixed(1)}%` : `↓ ${change.toFixed(1)}%`} vs {previousMonthLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </>
+          );
+
+          if (clickable) {
+            return (
+              <button
+                key={region.region}
+                type="button"
+                data-testid={`monthly-region-share-card-${region.region.toLowerCase()}`}
+                onClick={() => onSelectRegion(region.region as 'EGY' | 'UAE')}
+                className="group flex w-full flex-col rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 text-left transition-all hover:border-blue-300 hover:bg-white hover:shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <div
+              key={region.region}
+              data-testid={`monthly-region-share-card-${region.region.toLowerCase()}`}
+              className="flex flex-col rounded-xl border border-slate-200/80 bg-slate-50/60 p-4"
+            >
+              {content}
+            </div>
+          );
+        })}
+      </div>
+
+      {topGapRegion && topGapRegion.headcount_share_percent !== null && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
+          <Info className="mt-0.5 size-4 shrink-0 text-slate-400" />
+          <span>
+            <strong className="font-semibold text-slate-800">{topGapRegion.region} gap share:</strong>{' '}
+            {Math.round(topGapRegion.gap_share_percent ?? 0)}% of the company gap from{' '}
+            {Math.round(topGapRegion.headcount_share_percent)}% of evaluated headcount.
           </span>
         </div>
-      </div>
-
-      <div className="mt-4" data-testid="overview-trend-chart">
-        <LineChart history={history} targetValue={target} height={176} showTarget />
-      </div>
-
-      <p className="mt-3 text-xs text-slate-500">
-        {trend[0]?.month} {firstScore.toFixed(1)}% to {lastPoint?.month} {lastScore.toFixed(1)}%.
-      </p>
+      )}
     </section>
   );
 }
@@ -604,33 +751,33 @@ export function FunctionsOverviewSection({
       id="presentation-section-functions"
       data-section-label="Functions"
       aria-labelledby="functions-overview-heading"
-      className="scroll-mt-24 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+          <span className="text-xs font-semibold tracking-wider text-[var(--text-muted)] uppercase">
             Functional Breakdown
           </span>
           <div className="mt-0.5 flex items-center gap-2.5">
             <h2
               id="functions-overview-heading"
-              className="text-lg font-bold text-slate-900"
+              className="text-lg font-bold text-[var(--insights-heading)]"
             >
               Functions Overview
             </h2>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+            <span className="rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">
               {sortedFunctions.length} functions
             </span>
           </div>
         </div>
-        <p className="text-xs font-medium text-slate-500">
+        <p className="text-xs font-medium text-[var(--text-muted)]">
           Click any function card to open its deep-dive presentation page
         </p>
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {sortedFunctions.map((fn) => {
-          const style = GRADE_STYLES[fn.grade];
+          const tone = getGradeTone(fn.score);
           const formattedGap = `${fn.gap > 0 ? '+' : ''}${fn.gap.toFixed(1)}%`;
           const hasChange = fn.change !== null && fn.change !== undefined;
           const isPositiveChange = (fn.change ?? 0) >= 0;
@@ -640,71 +787,97 @@ export function FunctionsOverviewSection({
               key={fn.functionName}
               type="button"
               data-testid={`function-card-${fn.slug}`}
+              data-grade={fn.grade}
               onClick={() => onSelectFunction(fn)}
-              className={`group flex flex-col justify-between rounded-2xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                fn.hasMajorIssue
-                  ? 'border-orange-300 bg-orange-50/25 ring-2 ring-orange-200/80'
-                  : 'border-slate-200/90 bg-white hover:border-slate-300'
-              }`}
+              className="pms-glass-surface pms-glass-surface--interactive group relative flex flex-col justify-between overflow-hidden rounded-[18px] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
+              style={{
+                backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} ${fn.hasMajorIssue ? 18 : 14}%, transparent) 0%, transparent 66%), var(--pms-glass-card-bg)`,
+                borderColor: `color-mix(in srgb, ${tone.gauge} ${fn.hasMajorIssue ? 42 : 22}%, var(--pms-glass-card-border))`,
+                boxShadow: fn.hasMajorIssue
+                  ? `0 0 0 1px color-mix(in srgb, ${tone.gauge} 24%, transparent), var(--pms-glass-card-shadow)`
+                  : undefined,
+              }}
             >
-              <div>
+              {/* Smooth Linear-Gradient Top Grade Accent Strip */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
+                style={{ background: gradeGradientVar(fn.score) }}
+              />
+
+              <div className="w-full">
                 {/* Highlight Badge for Major Issues */}
                 {fn.hasMajorIssue && (
                   <div className="mb-3">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-100/90 px-2.5 py-0.5 text-[11px] font-bold text-orange-800">
-                      <AlertTriangle className="size-3 shrink-0" />
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold"
+                      style={{
+                        background: tone.badgeBg,
+                        color: tone.badgeText,
+                        borderColor: tone.border,
+                      }}
+                    >
+                      <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
                       {fn.highlightBadge ?? 'Major issue — deep dive next'}
                     </span>
                   </div>
                 )}
 
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600">
+                  <h3 className="text-base font-bold text-[var(--insights-heading)] transition-colors group-hover:text-[var(--insights-accent-text)]">
                     {fn.functionName}
                   </h3>
                   <GradePill grade={fn.grade} size="sm" />
                 </div>
 
-                <div className={`mt-3 text-3xl font-extrabold tracking-tight ${style.scoreText}`}>
-                  {fn.score.toFixed(1)}%
-                </div>
-
-                <div className="mt-3 space-y-1 border-t border-slate-100 pt-2.5 text-xs">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>Gap to target</span>
-                    <span className="font-semibold text-slate-800">{formattedGap}</span>
+                {/* Frosted Metric Stage matching Executive Summary Function Cards */}
+                <div className="pms-glass-stage mt-3 space-y-2.5 rounded-[12px] px-3 py-2.5">
+                  <div
+                    className="text-3xl font-extrabold leading-none tracking-tight tabular-nums"
+                    style={{ color: tone.text }}
+                  >
+                    {fn.score.toFixed(1)}%
                   </div>
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>vs {previousMonthLabel}</span>
-                    {hasChange ? (
-                      <span
-                        className={`font-semibold ${
-                          isPositiveChange ? 'text-emerald-700' : 'text-red-700'
-                        }`}
-                      >
-                        {isPositiveChange ? '+' : ''}
-                        {fn.change!.toFixed(1)}%
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">No prior baseline</span>
-                    )}
+
+                  <ScoreBar score={fn.score} color={tone.gauge} showThreshold90 />
+
+                  <div className="space-y-1 border-t border-[var(--pms-glass-stage-border)] pt-2 text-xs">
+                    <div className="flex items-center justify-between text-[var(--text-secondary)]">
+                      <span>Gap to target</span>
+                      <span className="font-semibold tabular-nums text-[var(--insights-heading)]">{formattedGap}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[var(--text-secondary)]">
+                      <span>vs {previousMonthLabel}</span>
+                      {hasChange ? (
+                        <span
+                          className={`font-semibold tabular-nums ${
+                            isPositiveChange ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-rose-400'
+                          }`}
+                        >
+                          {isPositiveChange ? '+' : ''}
+                          {fn.change!.toFixed(1)}%
+                        </span>
+                      ) : (
+                        <span className="text-[var(--text-muted)]">No prior baseline</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {fn.teamsList && (
-                  <p className="mt-2.5 line-clamp-1 text-[11px] text-slate-400" title={fn.teamsList}>
+                  <p className="mt-2.5 line-clamp-1 text-[11px] text-[var(--text-muted)]" title={fn.teamsList}>
                     {fn.teamsList}
                   </p>
                 )}
               </div>
 
-              <div className="mt-3.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] font-medium text-slate-500">
+              <div className="mt-3.5 flex w-full items-center justify-between border-t border-[var(--pms-glass-stage-border)] pt-2.5 text-[11px] font-medium text-[var(--text-muted)]">
                 <span>
                   {fn.teamsCount} {fn.teamsCount === 1 ? 'team' : 'teams'} · {fn.headcount} HC
                 </span>
-                <span className="inline-flex items-center gap-0.5 font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--insights-accent-text)] transition-transform group-hover:translate-x-0.5">
                   Deep dive
-                  <ArrowRight className="size-3" />
+                  <ArrowRight className="size-3" aria-hidden="true" />
                 </span>
               </div>
             </button>
