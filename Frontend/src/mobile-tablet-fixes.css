@@ -122,3 +122,13 @@ body nav.navigation-dock .navigation-dock-label {
     bottom: calc(84px + env(safe-area-inset-bottom));
   }
 }
+
+/* ── Only one bottom bar at a time ───────────────────────────────────────── */
+/* Pages that mount their own fixed bottom control bar (monthly presentation)
+   mark <body>; the navigation dock is hidden there. Navigation stays
+   reachable through the header menu button. */
+@media (max-width: 1279px) {
+  body.has-page-control-bar nav.navigation-dock {
+    display: none !important;
+  }
+}
