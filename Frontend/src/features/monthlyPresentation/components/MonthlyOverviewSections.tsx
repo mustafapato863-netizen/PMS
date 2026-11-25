@@ -43,6 +43,19 @@ import { slugifyIdentifier } from '../callCenterDeepDiveData';
 /*  Shared Grade Badge                                                        */
 /* -------------------------------------------------------------------------- */
 
+const GRADE_B_BLUE = {
+  text: '#1D4ED8',
+  badgeBg: '#EFF6FF',
+  badgeText: '#1D4ED8',
+  border: '#BFDBFE',
+  gauge: '#2563EB',
+  gradient: 'linear-gradient(90deg, #93C5FD 0%, #2563EB 100%)',
+} as const;
+
+function monthlyGradeGradient(grade: GradeLetter): string {
+  return grade === 'B' ? GRADE_B_BLUE.gradient : `var(--pms-grad-grade-${grade.toLowerCase()})`;
+}
+
 export function GradePill({
   grade,
   size = 'md',
@@ -59,15 +72,23 @@ export function GradePill({
       ? 'px-2 py-0.5 text-xs font-bold rounded-md'
       : 'px-2.5 py-0.5 text-xs font-bold rounded-lg';
 
+  const isBlueB = grade === 'B';
+
   return (
     <span
       data-grade={grade}
-      className={`inline-flex items-center justify-center border ${sizeClasses}`}
-      style={{
-        background: gradeTokenVar(grade, 'badge-bg'),
-        color: gradeTokenVar(grade, 'badge-text'),
-        borderColor: gradeTokenVar(grade, 'border'),
-      }}
+      className={`inline-flex items-center justify-center border ${sizeClasses}${
+        isBlueB ? ' border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/45 dark:bg-blue-500/20 dark:text-blue-300' : ''
+      }`}
+      style={
+        isBlueB
+          ? undefined
+          : {
+              background: gradeTokenVar(grade, 'badge-bg'),
+              color: gradeTokenVar(grade, 'badge-text'),
+              borderColor: gradeTokenVar(grade, 'border'),
+            }
+      }
     >
       {prefixGrade ? `Grade ${grade}` : grade}
     </span>
@@ -438,7 +459,7 @@ export function RegionPerformanceShareSection({
                   className="h-full rounded-full transition-all duration-300"
                   style={{
                     width: `${Math.min(100, Math.max(0, score))}%`,
-                    background: gradeGradientVar(region.score),
+                    background: monthlyGradeGradient(grade),
                   }}
                 />
               </div>
@@ -587,7 +608,7 @@ export function GradeDistributionSection({
                     data-testid={`grade-bar-${row.grade}`}
                     style={{
                       width: `${Math.max(row.percentage, 3)}%`,
-                      background: `var(--pms-grad-grade-${row.grade.toLowerCase()})`,
+                      background: monthlyGradeGradient(row.grade),
                     }}
                     className="h-full rounded-full transition-all duration-300"
                   />
@@ -836,6 +857,9 @@ export function FunctionsOverviewSection({
       <div className="mt-4 grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4">
         {sortedFunctions.map((fn) => {
           const tone = getGradeTone(fn.score);
+          const isBlueB = fn.grade === 'B';
+          const accentGauge = isBlueB ? GRADE_B_BLUE.gauge : tone.gauge;
+          const accentGradient = isBlueB ? GRADE_B_BLUE.gradient : gradeGradientVar(fn.score);
           const fnStyle =
             FUNCTION_STYLE[fn.functionName as ExecutiveFunction] ?? FALLBACK_FUNCTION_STYLE;
           const Icon = fnStyle.icon;
@@ -856,15 +880,15 @@ export function FunctionsOverviewSection({
               onClick={() => onSelectFunction(fn)}
               className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[18px] p-[15px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
               style={{
-                backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
-                borderColor: `color-mix(in srgb, ${tone.gauge} 20%, var(--pms-glass-card-border))`,
+                backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${accentGauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
+                borderColor: `color-mix(in srgb, ${accentGauge} 20%, var(--pms-glass-card-border))`,
               }}
             >
               {/* Smooth Linear-Gradient Top Grade Accent Strip */}
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
-                style={{ background: gradeGradientVar(fn.score) }}
+                style={{ background: accentGradient }}
               />
 
               {/* Zone 1: Function Icon + Title + Soft Grade Pill + Metadata Subtitle */}
@@ -888,7 +912,16 @@ export function FunctionsOverviewSection({
                       {fn.functionName}
                     </h3>
                   </div>
-                  <ExecGradePill score={fn.score} className="!px-[8px] !py-[2px] !text-[11px]" />
+                  {isBlueB ? (
+                    <span
+                      data-grade="B"
+                      className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-[8px] py-[2px] text-[11px] font-semibold leading-normal text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                    >
+                      Grade B
+                    </span>
+                  ) : (
+                    <ExecGradePill score={fn.score} className="!px-[8px] !py-[2px] !text-[11px]" />
+                  )}
                 </div>
 
                 <p className="truncate text-[12px] leading-[1.35] text-[var(--text-muted)]">
@@ -901,12 +934,18 @@ export function FunctionsOverviewSection({
               {/* Zone 2: Frosted Metric Stage (Score + Gap | vs Prev + ScoreBar w/ 90% Marker) */}
               <div className="pms-glass-stage w-full space-y-2 rounded-[12px] px-3 py-2.5">
                 <div className="flex items-center justify-between gap-1.5">
-                  <ScoreText
-                    score={fn.score}
-                    className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums"
-                  >
-                    {fmtScore(fn.score)}
-                  </ScoreText>
+                  {isBlueB ? (
+                    <span className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums text-blue-700 dark:text-blue-400">
+                      {fmtScore(fn.score)}
+                    </span>
+                  ) : (
+                    <ScoreText
+                      score={fn.score}
+                      className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums"
+                    >
+                      {fmtScore(fn.score)}
+                    </ScoreText>
+                  )}
 
                   <div className="flex items-center gap-2.5">
                     <div className="flex flex-col items-end">
@@ -931,7 +970,23 @@ export function FunctionsOverviewSection({
                   </div>
                 </div>
 
-                <ScoreBar score={fn.score} color={tone.gauge} showThreshold90 />
+                {isBlueB ? (
+                  <div aria-hidden="true" className="relative h-[8px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, fn.score))}%`,
+                        background: GRADE_B_BLUE.gradient,
+                      }}
+                    />
+                    <span
+                      className="pointer-events-none absolute top-0 bottom-0 w-[2px] bg-[var(--insights-heading)]/30"
+                      style={{ left: '90%' }}
+                    />
+                  </div>
+                ) : (
+                  <ScoreBar score={fn.score} color={tone.gauge} showThreshold90 />
+                )}
               </div>
 
               {/* Zone 3: Momentum & Lowest Team Highlight */}

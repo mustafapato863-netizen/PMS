@@ -578,15 +578,23 @@ export function adaptSummaryToMonthlyOverview(
           }));
 
   // Compose stores the mix as counts, percents, and movement. There is no `.grades` list.
+  const gradeRowDefaults: Record<GradeLetter, { label: string; thresholdLabel: string }> = {
+    A: { label: 'Excellent', thresholdLabel: '≥95%' },
+    B: { label: 'Meet Expectations', thresholdLabel: '90–94%' },
+    C: { label: 'Average', thresholdLabel: '80–89%' },
+    D: { label: 'Below Average', thresholdLabel: '70–79%' },
+    E: { label: 'Unsatisfactory', thresholdLabel: '<70%' },
+  };
   const distribution = summary.grade_distribution;
   const gradeRows: GradeDistributionRow[] =
     distribution && distribution.total > 0
       ? (['A', 'B', 'C', 'D', 'E'] as GradeLetter[]).map((g) => {
           const fb = fallback.gradeDistribution.rows.find((item) => item.grade === g);
+          const defaults = gradeRowDefaults[g];
           return {
             grade: g,
-            label: fb?.label ?? g,
-            thresholdLabel: fb?.thresholdLabel ?? '',
+            label: fb?.label ?? defaults.label,
+            thresholdLabel: fb?.thresholdLabel ?? defaults.thresholdLabel,
             count: distribution.counts?.[g] ?? 0,
             percentage: distribution.percents?.[g] ?? 0,
             change: distribution.movement?.[g] ?? 0,
