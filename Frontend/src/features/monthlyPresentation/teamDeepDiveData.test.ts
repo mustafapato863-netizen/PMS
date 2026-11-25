@@ -1180,7 +1180,6 @@ describe('multi-month agent trend context and individual action metadata codec',
       const attendAch = Math.min(1, attendRatio / 0.65);
       const score = Number(((attendAch * 70) + (bookingAch * 10) + 10 + 10).toFixed(1));
       const rawAgent: AgentRecord = {
-        id: `outbound-${id}-sep`,
         year: 2026,
         identity: {
           employee_id: id,
