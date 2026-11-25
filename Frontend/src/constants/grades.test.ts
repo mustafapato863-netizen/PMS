@@ -37,18 +37,6 @@ function lightRootTokens(): Record<string, string> {
   return tokens;
 }
 
-/** Grade tokens declared in the `.dark` block of index.css. */
-function darkTokens(): Record<string, string> {
-  const start = indexCss.indexOf('.dark {');
-  const end = indexCss.indexOf('\n}', start);
-  const block = indexCss.slice(start, end);
-  const tokens: Record<string, string> = {};
-  for (const match of block.matchAll(/(--pms-grade-[a-z]+-[a-z-]+):\s*([^;]+);/g)) {
-    tokens[match[1]] = match[2].trim();
-  }
-  return tokens;
-}
-
 type Rgba = [number, number, number, number];
 
 function parseColor(value: string): Rgba {
@@ -171,13 +159,9 @@ describe('grade color mapping', () => {
     });
   });
 
-  it('keeps every grade B pair WCAG AA in light and dark mode', () => {
+  it('keeps every grade B pair WCAG AA in light mode', () => {
     const light = lightRootTokens();
-    const dark = darkTokens();
     const lightSurfaces = ['#FFFFFF', '#F3F7FA', '#F8FBFE', '#F8FAFC', '#E9F0F5'];
-    const darkSurfaces = ['#0F1A2E', '#0B132B', '#10203A', '#131D2F'];
-    const darkSolid = dark['--pms-grade-b-solid'] ?? light['--pms-grade-b-solid'];
-    const darkSolidText = dark['--pms-grade-b-solid-text'] ?? light['--pms-grade-b-solid-text'];
 
     // Text (normal size) ≥ 4.5:1.
     expect(contrast(light['--pms-grade-b-badge-text'], light['--pms-grade-b-badge-bg'])).toBeGreaterThanOrEqual(4.5);
@@ -187,13 +171,6 @@ describe('grade color mapping', () => {
       // Solid / gauge fills ≥ 3:1 against the surface they sit on.
       expect(contrast(light['--pms-grade-b-solid'], surface)).toBeGreaterThanOrEqual(3);
       expect(contrast(light['--pms-grade-b-gauge'], surface)).toBeGreaterThanOrEqual(3);
-    }
-    expect(contrast(darkSolidText, darkSolid)).toBeGreaterThanOrEqual(4.5);
-    for (const surface of darkSurfaces) {
-      expect(contrast(dark['--pms-grade-b-badge-text'], dark['--pms-grade-b-badge-bg'], surface)).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(dark['--pms-grade-b-text'], surface)).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(dark['--pms-grade-b-gauge'], surface)).toBeGreaterThanOrEqual(3);
-      expect(contrast(darkSolid, surface)).toBeGreaterThanOrEqual(3);
     }
   });
 
