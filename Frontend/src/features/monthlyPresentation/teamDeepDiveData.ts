@@ -27,6 +27,14 @@ import {
 import { compareScoringBasis } from '../evaluation/scoringBasisComparison';
 import { calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import {
+  buildPooledKpiMap,
+  computeRatioAchievementPct,
+  matchPooledKpi,
+  normalizeWeightPct,
+  pooledKpiDisplayNumbers,
+  resolveTeamConfigForRecords,
+} from './pooledTeamKpi';
+import {
   EGYPT_RESUBMISSION_TEAM_CONFIG,
   INBOUND_TEAM_CONFIG,
   OUTBOUND_TEAM_CONFIG,
@@ -70,6 +78,8 @@ export interface TeamKpiItem {
   actualFormatted: string;
   targetFormatted: string;
   achievementPct: number;
+  weightPct?: number;
+  contributionPct?: number;
   movementFormatted: string;
   movementTone: 'positive' | 'warning' | 'negative';
   agentsMeetingTarget: number;
@@ -2083,6 +2093,7 @@ function buildGenericTeamDeepDive(
   actions: PMSAction[],
   region: MonthlyRegion,
   requestedPeriodKey?: string,
+  teamConfigs?: TeamConfig[],
 ): TeamDeepDiveData {
   // In the All view a shared team may be sourced from either country.
   const sourceName = region === 'ALL'
@@ -2171,8 +2182,23 @@ function buildGenericTeamDeepDive(
       slug: isEgyptResubmissionTeam(name) ? 're-submission' : slugifyIdentifier(name),
       label: isEgyptResubmissionTeam(name) ? 'Re-Submission' : name,
     }));
-  const currentKpis = monthlyKpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
+  const kpiCurrentRecords = recordsForTeamKpis(current);
+  const kpiBeforeRecords = recordsForTeamKpis(before);
+  const resolvedTeamConfig = resolveTeamConfigForRecords(canonicalTeam, kpiCurrentRecords, teamConfigs);
+  const currentPooled = buildPooledKpiMap(kpiCurrentRecords, resolvedTeamConfig);
+  const prevPooled = buildPooledKpiMap(kpiBeforeRecords, resolvedTeamConfig);
+  const currentKpis = monthlyKpiRows(kpiCurrentRecords, kpiBeforeRecords).slice(0, 4);
   const sixPeriods = trailingPeriods(effective, 6);
+  const monthPooledCache = new Map<string, ReturnType<typeof buildPooledKpiMap>>();
+  const getMonthPooled = (periodKey: string, monthRecords: ExecRecord[]) => {
+    if (!monthPooledCache.has(periodKey)) {
+      monthPooledCache.set(
+        periodKey,
+        buildPooledKpiMap(recordsForTeamKpis(monthRecords), resolvedTeamConfig),
+      );
+    }
+    return monthPooledCache.get(periodKey) ?? null;
+  };
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
     const unit = resolveKpiDisplayUnit(row.unit, current[0]?.region ?? region, {
       kpiKey: row.kpi_key,
@@ -2181,11 +2207,44 @@ function buildGenericTeamDeepDive(
       target: row.target,
     });
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
+    const currAgg = matchPooledKpi(currentPooled, row.kpi_key, row.kpi_label);
+    const prevAgg = matchPooledKpi(prevPooled, row.kpi_key, row.kpi_label);
+    const currNums = currAgg ? pooledKpiDisplayNumbers(currAgg, unit, row.actual, row.target) : null;
+    const prevNums = prevAgg ? pooledKpiDisplayNumbers(prevAgg, unit, row.previous_actual, row.target) : null;
+    const displayActual = currNums ? currNums.actual : row.actual;
+    const displayTarget = currNums && currNums.target !== null ? currNums.target : row.target;
+    const displayAch = currNums
+      ? currNums.achievementPct
+      : computeRatioAchievementPct(
+          displayActual,
+          displayTarget,
+          lowerBetter,
+          row.achievement_percent ?? 0,
+          kpiCurrentRecords.length,
+          row.is_penalty,
+        );
+    const displayWeightPct = currNums?.weightPct ?? normalizeWeightPct(row.weight);
+    const displayContributionPct = currNums?.contributionPct ?? undefined;
+    const displayMet = currNums
+      ? currNums.metTarget === true
+      : displayActual !== null && displayTarget !== null
+        ? lowerBetter
+          ? displayActual <= displayTarget + 1e-6
+          : displayActual >= displayTarget - 1e-6
+        : row.target_status === 'met';
+    const rawChange =
+      currNums && prevNums
+        ? round1(currNums.actual - prevNums.actual)
+        : row.raw_change;
+
     const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((period) => {
       const monthRecords = teamRecords.filter((record) => record.period.key === period.key);
+      const mPooled = getMonthPooled(period.key, monthRecords);
+      const mAgg = matchPooledKpi(mPooled, row.kpi_key, row.kpi_label);
       const match = monthlyKpiRows(recordsForTeamKpis(monthRecords), []).find((item) => item.kpi_key === row.kpi_key);
-      const actual = match?.actual ?? null;
-      const target = match?.target ?? null;
+      const mNums = mAgg ? pooledKpiDisplayNumbers(mAgg, unit, match?.actual ?? null, match?.target ?? displayTarget) : null;
+      const actual = mNums ? mNums.actual : (match?.actual ?? null);
+      const target = mNums ? (mNums.target ?? displayTarget) : (match?.target ?? null);
       return {
         month: period.month.slice(0, 3),
         periodKey: period.key,
@@ -2213,17 +2272,19 @@ function buildGenericTeamDeepDive(
       shortLabel: row.kpi_label,
       unit,
       betterDirection: lowerBetter ? 'lower' : 'higher',
-      actual: row.actual,
-      target: row.target,
-      actualFormatted: formatKpiValue(row.actual, unit),
-      targetFormatted: formatKpiValue(row.target, unit),
-      achievementPct: row.achievement_percent ?? 0,
-      movementFormatted: row.raw_change !== null ? formatKpiValue(row.raw_change, unit) : '—',
-      movementTone: row.target_status === 'met' ? 'positive' : 'warning',
+      actual: displayActual,
+      target: displayTarget,
+      actualFormatted: formatKpiValue(displayActual, unit),
+      targetFormatted: formatKpiValue(displayTarget, unit),
+      achievementPct: displayAch,
+      weightPct: displayWeightPct,
+      contributionPct: displayContributionPct,
+      movementFormatted: rawChange !== null ? formatKpiValue(rawChange, unit) : '—',
+      movementTone: displayMet ? 'positive' : 'warning',
       agentsMeetingTarget,
       totalAgents: headcount,
-      verdictBadge: row.target_status === 'met' ? 'Target Met' : 'Execution Issue',
-      explorerDiagnosis: `${row.kpi_label} is ${formatKpiValue(row.actual, unit)} against ${formatKpiValue(row.target, unit)}.`,
+      verdictBadge: displayMet ? 'Target Met' : 'Execution Issue',
+      explorerDiagnosis: `${row.kpi_label} is ${formatKpiValue(displayActual, unit)} against ${formatKpiValue(displayTarget, unit)}.`,
       trend6Mo,
     };
   });
@@ -2275,7 +2336,11 @@ function buildGenericTeamDeepDive(
             : match
               ? formatKpiValue(match.actual, match.unit ?? kpi.unit)
               : '—',
-          targetFormatted: kpi.targetFormatted,
+          targetFormatted: ev
+            ? ev.targetFormatted
+            : match && match.target !== null
+              ? formatKpiValue(match.target, match.unit ?? kpi.unit)
+              : kpi.targetFormatted,
           achievementPct: match?.achievement_percent ?? 0,
           metTarget: match?.target_status === 'met',
         };
@@ -2407,11 +2472,19 @@ export function buildTeamDeepDiveFromRecords(
   actions: PMSAction[] = [],
   region: MonthlyRegion = 'EGY',
   requestedPeriodKey?: string,
+  teamConfigs?: TeamConfig[],
 ): TeamDeepDiveData {
   const scopedRecords = scopeRecordsToRegion(allRecords, region);
   const normalizedSlug = slugifyIdentifier(teamSlug);
   if (normalizedSlug !== 'inbound' && normalizedSlug !== 'outbound') {
-    return buildGenericTeamDeepDive(normalizedSlug, scopedRecords, actions, region, requestedPeriodKey);
+    return buildGenericTeamDeepDive(
+      normalizedSlug,
+      scopedRecords,
+      actions,
+      region,
+      requestedPeriodKey,
+      teamConfigs,
+    );
   }
   const canonicalTeam: 'Inbound' | 'Outbound' =
     normalizedSlug === 'outbound' ? 'Outbound' : 'Inbound';
@@ -2466,7 +2539,9 @@ export function buildTeamDeepDiveFromRecords(
     }, region);
   }
 
-  const cfg = canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : INBOUND_TEAM_CONFIG;
+  const cfg =
+    resolveTeamConfigForRecords(canonicalTeam, current, teamConfigs) ??
+    (canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : INBOUND_TEAM_CONFIG);
   const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const currAvg = mean(current.map((r) => r.score)) ?? fallback.summary.score;
 
@@ -2484,13 +2559,22 @@ export function buildTeamDeepDiveFromRecords(
   const gradeFull = fullGradeLabel(grade);
   const headcount = new Set(current.map((r) => r.employeeId)).size;
 
-  // Build real KPI items + 6-month trends
+  // Build real KPI items + 6-month trends using the same pooled team logic as Team Dashboard
+  const currentPooled = buildPooledKpiMap(current, cfg);
+  const prevPooled = buildPooledKpiMap(before, cfg);
   const currentKpiRows = monthlyKpiRows(current, before);
   const sixPeriods = trailingPeriods(effective, 6);
+  const monthPooledCache = new Map<string, ReturnType<typeof buildPooledKpiMap>>();
+  const getMonthPooled = (periodKey: string, monthRecs: ExecRecord[]) => {
+    if (!monthPooledCache.has(periodKey)) {
+      monthPooledCache.set(periodKey, buildPooledKpiMap(monthRecs, cfg));
+    }
+    return monthPooledCache.get(periodKey) ?? null;
+  };
 
   const kpis: TeamKpiItem[] =
     currentKpiRows.length > 0
-      ? currentKpiRows.slice(0, 4).map((row) => {
+      ? currentKpiRows.map((row) => {
           const unit = resolveKpiDisplayUnit(row.unit, current[0]?.region ?? region, {
             kpiKey: row.kpi_key,
             label: row.kpi_label,
@@ -2500,12 +2584,43 @@ export function buildTeamDeepDiveFromRecords(
           const lowerBetter = String(row.kpi_direction ?? '')
             .toLowerCase()
             .startsWith('lower');
+          const currAgg = matchPooledKpi(currentPooled, row.kpi_key, row.kpi_label);
+          const prevAgg = matchPooledKpi(prevPooled, row.kpi_key, row.kpi_label);
+          const currNums = currAgg ? pooledKpiDisplayNumbers(currAgg, unit) : null;
+          const prevNums = prevAgg ? pooledKpiDisplayNumbers(prevAgg, unit) : null;
+
+          const displayActual = currNums ? currNums.actual : row.actual;
+          const displayTarget = currNums && currNums.target !== null ? currNums.target : row.target;
+          const displayAch = currNums
+            ? currNums.achievementPct
+            : computeRatioAchievementPct(
+                displayActual,
+                displayTarget,
+                lowerBetter,
+                row.achievement_percent ?? 0,
+                current.length,
+                row.is_penalty,
+              );
+          const displayWeightPct = currNums?.weightPct ?? normalizeWeightPct(row.weight);
+          const displayContributionPct = currNums?.contributionPct ?? undefined;
+          const displayMet = currNums
+            ? currNums.metTarget === true
+            : displayActual !== null && displayTarget !== null
+              ? lowerBetter
+                ? displayActual <= displayTarget + 1e-6
+                : displayActual >= displayTarget - 1e-6
+              : row.target_status === 'met';
 
           const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((p) => {
-            const pRows = monthlyKpiRows(inPeriod(teamRecords, p), []);
-            const match = pRows.find((k) => k.kpi_key === row.kpi_key);
-            const actual = match?.actual ?? null;
-            const target = match?.target ?? null;
+            const monthRecs = inPeriod(teamRecords, p);
+            const mPooled = getMonthPooled(p.key, monthRecs);
+            const mAgg = matchPooledKpi(mPooled, row.kpi_key, row.kpi_label);
+            const mNums = mAgg ? pooledKpiDisplayNumbers(mAgg, unit) : null;
+            const match = mNums
+              ? undefined
+              : monthlyKpiRows(monthRecs, []).find((k) => k.kpi_key === row.kpi_key);
+            const actual = mNums ? mNums.actual : (match?.actual ?? null);
+            const target = mNums ? (mNums.target ?? displayTarget) : (match?.target ?? null);
             const metTarget =
               actual !== null && target !== null
                 ? lowerBetter
@@ -2540,23 +2655,31 @@ export function buildTeamDeepDiveFromRecords(
           const targetChanged = uniqueTargets.length > 1;
 
           const verdictBadge: TeamKpiItem['verdictBadge'] =
-            row.target_status === 'met'
+            displayMet
               ? 'Target Met'
               : targetChanged || (metMonths === 0 && agentsMeetingTarget < headcount * 0.25)
               ? 'Stretched Target + Execution'
               : 'Execution Issue';
 
           const explorerDiagnosis =
-            row.target_status === 'met'
-              ? `Target (${formatKpiValue(row.target, unit)}) is realistic and achieved: ${agentsMeetingTarget} of ${headcount} agents met the benchmark in ${effective.month}, with the team averaging ${formatKpiValue(row.actual, unit)}.`
+            displayMet
+              ? `Target (${formatKpiValue(displayTarget, unit)}) is realistic and achieved: ${agentsMeetingTarget} of ${headcount} agents met the benchmark in ${effective.month}, with the team at ${formatKpiValue(displayActual, unit)}.`
               : targetChanged
               ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} over the last 6 months. ${agentsMeetingTarget} of ${headcount} agents met the current target in ${effective.month}, showing both a tougher target bar and coaching opportunity for the bottom quartile.`
               : agentsMeetingTarget >= Math.ceil(headcount * 0.4)
-              ? `Execution is the primary issue, not the ${formatKpiValue(row.target, unit)} target: ${agentsMeetingTarget} of ${headcount} agents already achieve target in ${effective.month}, while low-performing outliers pull the team average to ${formatKpiValue(row.actual, unit)}.`
-              : `Structural gap across 6 months: only ${agentsMeetingTarget} of ${headcount} agents met the ${formatKpiValue(row.target, unit)} target in ${effective.month} (team met target in ${metMonths} of 6 months). Both workflow/window changes and target calibration review are needed.`;
+              ? `Execution is the primary issue, not the ${formatKpiValue(displayTarget, unit)} target: ${agentsMeetingTarget} of ${headcount} agents already achieve target in ${effective.month}, while low-performing outliers pull the team to ${formatKpiValue(displayActual, unit)}.`
+              : `Structural gap across 6 months: only ${agentsMeetingTarget} of ${headcount} agents met the ${formatKpiValue(displayTarget, unit)} target in ${effective.month} (team met target in ${metMonths} of 6 months). Both workflow/window changes and target calibration review are needed.`;
 
-          const rawChange = row.raw_change;
-          const improved = (row.change_value ?? 0) > 0;
+          const rawChange =
+            currNums && prevNums
+              ? round1(currNums.actual - prevNums.actual)
+              : row.raw_change;
+          const improved =
+            rawChange !== null
+              ? lowerBetter
+                ? rawChange < 0
+                : rawChange > 0
+              : (row.change_value ?? 0) > 0;
 
           return {
             kpiKey: row.kpi_key,
@@ -2564,17 +2687,19 @@ export function buildTeamDeepDiveFromRecords(
             shortLabel: row.kpi_label.replace(/\s*\(.*?\)\s*/g, ''),
             unit,
             betterDirection: lowerBetter ? 'lower' : 'higher',
-            actual: row.actual,
-            target: row.target,
-            actualFormatted: formatKpiValue(row.actual, unit),
-            targetFormatted: formatKpiValue(row.target, unit),
-            achievementPct: row.achievement_percent ?? 0,
+            actual: displayActual,
+            target: displayTarget,
+            actualFormatted: formatKpiValue(displayActual, unit),
+            targetFormatted: formatKpiValue(displayTarget, unit),
+            achievementPct: displayAch,
+            weightPct: displayWeightPct,
+            contributionPct: displayContributionPct,
             movementFormatted:
               rawChange !== null
                 ? `${rawChange >= 0 ? '▲ +' : '▼ '}${formatKpiValue(Math.abs(rawChange), unit)} vs ${previous?.month ?? 'August'}`
                 : '—',
             movementTone:
-              row.target_status === 'met' || improved
+              displayMet || improved
                 ? 'positive'
                 : lowerBetter && (rawChange ?? 0) > 0
                 ? 'negative'

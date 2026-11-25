@@ -4,18 +4,22 @@ export interface KpiAchievementCellProps {
   label: string;
   actualFormatted: string;
   targetFormatted?: string;
+  /** Column header target; when the person's own target differs, both actual and personal target are shown. */
+  columnTargetFormatted?: string;
   achievementPct: number | null;
   metTarget: boolean | null;
 }
 
 /**
- * Displays a KPI actual value pill with a smooth grade-gradient achievement bar
- * directly underneath showing achievement vs target (0–100%).
+ * Displays a KPI achievement % pill with a smooth grade-gradient achievement bar
+ * directly underneath (0–100%), plus the underlying actual (and personal target
+ * when it differs from the column target).
  */
 export function KpiAchievementCell({
   label,
   actualFormatted,
   targetFormatted,
+  columnTargetFormatted,
   achievementPct,
   metTarget,
 }: KpiAchievementCellProps) {
@@ -26,7 +30,7 @@ export function KpiAchievementCell({
     Number.isFinite(achievementPct);
 
   const clampedPct = isMeasured ? Math.max(0, Math.min(100, achievementPct)) : 0;
-  const roundedPct = isMeasured ? Math.round(achievementPct) : 0;
+  const achFormatted = isMeasured ? `${Math.max(0, achievementPct).toFixed(1)}%` : '—';
   const barFill = isMeasured
     ? metTarget
       ? 'var(--pms-grad-grade-a)'
@@ -35,22 +39,36 @@ export function KpiAchievementCell({
 
   const badgeTone = !isMeasured
     ? 'bg-slate-100 text-slate-500'
-    : metTarget
+    : metTarget || achievementPct >= 90
       ? 'bg-emerald-50 text-emerald-700'
-      : achievementPct < 75
+      : achievementPct < 70
         ? 'bg-rose-50 text-rose-700'
         : 'bg-amber-50 text-amber-800';
 
+  const hasDistinctPersonalTarget = Boolean(
+    isMeasured &&
+      targetFormatted &&
+      targetFormatted !== '—' &&
+      columnTargetFormatted &&
+      targetFormatted.trim() !== columnTargetFormatted.trim(),
+  );
+  const actualSubtext = !isMeasured
+    ? null
+    : hasDistinctPersonalTarget
+      ? `${actualFormatted} / ${targetFormatted}`
+      : actualFormatted;
+
   const tooltip = isMeasured
-    ? `${roundedPct}% of target (${actualFormatted}${targetFormatted ? ` vs ${targetFormatted}` : ''})`
+    ? `${label}: ${achFormatted} achievement (Actual ${actualFormatted}${targetFormatted ? ` vs Target ${targetFormatted}` : ''})`
     : `${label}: Not measured`;
 
   return (
-    <div className="inline-flex min-w-[78px] flex-col items-end gap-1.5" title={tooltip}>
+    <div className="inline-flex min-w-[84px] flex-col items-end gap-1" title={tooltip}>
       <span
+        data-testid="kpi-ach-value"
         className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold tabular-nums ${badgeTone}`}
       >
-        {actualFormatted}
+        {achFormatted}
       </span>
       {isMeasured && (
         <div
@@ -72,6 +90,14 @@ export function KpiAchievementCell({
             }}
           />
         </div>
+      )}
+      {actualSubtext && (
+        <span
+          data-testid="kpi-actual-subtext"
+          className="whitespace-nowrap text-xs font-medium text-slate-500 tabular-nums"
+        >
+          {actualSubtext}
+        </span>
       )}
     </div>
   );

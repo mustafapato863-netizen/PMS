@@ -31,6 +31,13 @@ import {
 } from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, UAE_SEP_2026_DATA, type GradeLetter } from './monthlyOverviewData';
+import {
+  buildPooledKpiMap,
+  computeRatioAchievementPct,
+  matchPooledKpi,
+  pooledKpiDisplayNumbers,
+  resolveTeamConfigForRecords,
+} from './pooledTeamKpi';
 
 export type MonthlyRegion = 'EGY' | 'UAE' | 'ALL';
 
@@ -2703,11 +2710,46 @@ export function buildCallCenterDeepDiveFromRecords(
 
     const unit = row.unit ?? '';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
+    const singleScopeTeam = new Set(scopeCurr.map((r) => r.team.trim().toLowerCase())).size === 1
+      ? scopeCurr[0]?.team ?? ''
+      : '';
+    const scopeConfig = singleScopeTeam ? resolveTeamConfigForRecords(singleScopeTeam, scopeCurr) : undefined;
+    const currPooled = buildPooledKpiMap(scopeCurr, scopeConfig);
+    const prevPooled = buildPooledKpiMap(scopePrev, scopeConfig);
+    const currAgg = matchPooledKpi(currPooled, row.kpi_key, row.kpi_label);
+    const prevAgg = matchPooledKpi(prevPooled, row.kpi_key, row.kpi_label);
+    const currNums = currAgg ? pooledKpiDisplayNumbers(currAgg, unit) : null;
+    const prevNums = prevAgg ? pooledKpiDisplayNumbers(prevAgg, unit) : null;
+
+    const displayActual = currNums ? currNums.actual : row.actual;
+    const displayTarget = currNums && currNums.target !== null ? currNums.target : row.target;
+    const displayAch = currNums
+      ? currNums.achievementPct
+      : computeRatioAchievementPct(
+          displayActual,
+          displayTarget,
+          lowerBetter,
+          row.achievement_percent ?? 0,
+          scopeCurr.length,
+          row.is_penalty,
+        );
+    const displayMet = currNums
+      ? currNums.metTarget === true
+      : displayActual !== null && displayTarget !== null
+        ? lowerBetter
+          ? displayActual <= displayTarget + 1e-6
+          : displayActual >= displayTarget - 1e-6
+        : row.target_status === 'met';
+
     const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
-      const mRows = monthlyKpiRows(inPeriod(scopeRecords, p), []);
+      const monthRecs = inPeriod(scopeRecords, p);
+      const mPooled = buildPooledKpiMap(monthRecs, scopeConfig);
+      const mAgg = matchPooledKpi(mPooled, row.kpi_key, row.kpi_label);
+      const mNums = mAgg ? pooledKpiDisplayNumbers(mAgg, unit) : null;
+      const mRows = mNums ? [] : monthlyKpiRows(monthRecs, []);
       const match = mRows.find((k) => k.kpi_key === targetKey);
-      const actual = match?.actual ?? null;
-      const target = match?.target ?? null;
+      const actual = mNums ? mNums.actual : (match?.actual ?? null);
+      const target = mNums ? (mNums.target ?? displayTarget) : (match?.target ?? null);
       const metTarget =
         actual !== null && target !== null
           ? lowerBetter
@@ -2725,8 +2767,11 @@ export function buildCallCenterDeepDiveFromRecords(
       };
     });
 
-    const rawDelta = row.raw_change;
-    const improved = (row.change_value ?? 0) > 0;
+    const rawDelta =
+      currNums && prevNums
+        ? round1(currNums.actual - prevNums.actual)
+        : row.raw_change;
+    const improved = rawDelta !== null ? (lowerBetter ? rawDelta < 0 : rawDelta > 0) : (row.change_value ?? 0) > 0;
     const evaluatedMonths = trend6Mo.filter((pt) => pt.metTarget !== null).length;
     const metInMonths = trend6Mo.filter((pt) => pt.metTarget === true).length;
     const uniqueTargets = [
@@ -2740,8 +2785,8 @@ export function buildCallCenterDeepDiveFromRecords(
         : targetShifted
         ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} during the 6-month window; actuals met target in ${metInMonths} of ${evaluatedMonths} months.`
         : metInMonths >= Math.ceil(evaluatedMonths / 2)
-        ? `Target (${formatKpiValue(row.target, unit)}) is realistic — achieved in ${metInMonths} of ${evaluatedMonths} measured months.`
-        : `Actuals missed the ${formatKpiValue(row.target, unit)} target in ${evaluatedMonths - metInMonths} of ${evaluatedMonths} measured months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
+        ? `Target (${formatKpiValue(displayTarget, unit)}) is realistic — achieved in ${metInMonths} of ${evaluatedMonths} measured months.`
+        : `Actuals missed the ${formatKpiValue(displayTarget, unit)} target in ${evaluatedMonths - metInMonths} of ${evaluatedMonths} measured months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
 
     return {
       id: `kpi-${targetKey.toLowerCase()}`,
@@ -2749,13 +2794,13 @@ export function buildCallCenterDeepDiveFromRecords(
       name: row.kpi_label || targetKey,
       shortName: row.kpi_label || targetKey,
       unit,
-      actualDisplay: formatKpiValue(row.actual, unit),
-      targetDisplay: formatKpiValue(row.target, unit),
-      achievementPct: row.achievement_percent ?? 0,
+      actualDisplay: formatKpiValue(displayActual, unit),
+      targetDisplay: formatKpiValue(displayTarget, unit),
+      achievementPct: displayAch,
       betterDirection: lowerBetter ? 'lower' : 'higher',
-      diagnosis: `${row.kpi_label || targetKey} averaged ${formatKpiValue(row.actual, unit)} vs the ${formatKpiValue(row.target, unit)} target in ${effective.month} ${effective.year}.`,
+      diagnosis: `${row.kpi_label || targetKey} averaged ${formatKpiValue(displayActual, unit)} vs the ${formatKpiValue(displayTarget, unit)} target in ${effective.month} ${effective.year}.`,
       trendTone:
-        row.target_status === 'met'
+        displayMet
           ? 'positive'
           : improved
           ? 'positive'
@@ -3113,7 +3158,14 @@ export function buildFunctionDeepDiveFromRecords(
             ...fbKpi,
             actualDisplay: formatKpiValue(row.actual, unit),
             targetDisplay: formatKpiValue(row.target, unit),
-            achievementPct: row.achievement_percent ?? fbKpi.achievementPct,
+            achievementPct: computeRatioAchievementPct(
+              row.actual,
+              row.target,
+              lowerBetter,
+              row.achievement_percent ?? fbKpi.achievementPct,
+              currRecords.length,
+              row.is_penalty,
+            ),
             trend6Mo,
           };
         })

@@ -10,6 +10,7 @@ import {
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
+import { computeRatioAchievementPct } from './pooledTeamKpi';
 import {
   buildExpectedImpactText,
   decodeIndividualActionMeta,
@@ -1312,8 +1313,16 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
     }
     const resolvedWeight =
       row.weight === 0 ? 0 : totalRawWeight > 0 && rawWeights[rowIdx] > 0 ? rawWeights[rowIdx] : defaultWeight;
-    const metrics = computeKpiMetrics(
+    const pooledAch = computeRatioAchievementPct(
+      actual,
+      target,
+      betterDirection === 'lower',
       row.achievement_percent ?? 0,
+      latestRecords.length,
+      row.is_penalty,
+    );
+    const metrics = computeKpiMetrics(
+      pooledAch,
       resolvedWeight,
       betterDirection,
       trend6Mo,
@@ -1322,8 +1331,8 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
     const diagnosis = resolvedWeight === 0
       ? `${row.kpi_label}: ${formatKpiValue(actual, unit)} actual vs ${formatKpiValue(target, unit)} target (reported measurement).`
       : gapLabel === 'On target'
-        ? `${row.kpi_label} achieved ${formatKpiValue(actual, unit)} against the ${formatKpiValue(target, unit)} target (${(row.achievement_percent ?? 100).toFixed(1)}% achievement · ${metrics.contributionPct.toFixed(1)}% of ${Math.round(metrics.weightPct)}% weight).`
-        : `${row.kpi_label} stood at ${formatKpiValue(actual, unit)} vs the ${formatKpiValue(target, unit)} target (${gapLabel}, ${(row.achievement_percent ?? 0).toFixed(1)}% achievement · −${metrics.pointsLost.toFixed(1)} pts on role score).`;
+        ? `${row.kpi_label} achieved ${formatKpiValue(actual, unit)} against the ${formatKpiValue(target, unit)} target (${pooledAch.toFixed(1)}% achievement · ${metrics.contributionPct.toFixed(1)}% of ${Math.round(metrics.weightPct)}% weight).`
+        : `${row.kpi_label} stood at ${formatKpiValue(actual, unit)} vs the ${formatKpiValue(target, unit)} target (${gapLabel}, ${pooledAch.toFixed(1)}% achievement · −${metrics.pointsLost.toFixed(1)} pts on role score).`;
     return {
       id: row.kpi_key,
       kpiKey: row.kpi_key,
@@ -1333,7 +1342,7 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
       betterDirection,
       actualDisplay: formatKpiValue(actual, unit),
       targetDisplay: formatKpiValue(target, unit),
-      achievementPct: row.achievement_percent ?? 0,
+      achievementPct: pooledAch,
       ...metrics,
       gapLabel,
       diagnosis,

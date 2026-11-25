@@ -186,7 +186,7 @@ describe('TeamDeepDive agent pagination and caching', () => {
     expect(onSelectEmployee).toHaveBeenCalledWith('emp-2');
   });
 
-  it('renders a smooth grade-gradient achievement bar under each measured KPI actual', () => {
+  it('renders achievement % with a smooth grade-gradient bar under each measured KPI', () => {
     const data = makeTeamData(1);
     data.agentsAverageOrBelow[0].kpiCells = [
       {
@@ -205,6 +205,14 @@ describe('TeamDeepDive agent pagination and caching', () => {
         achievementPct: 104.6,
         metTarget: true,
       },
+      {
+        kpiKey: 'ip_revenue',
+        label: 'IP Revenue Ach',
+        actualFormatted: 'AED 2.55M',
+        targetFormatted: 'AED 5.50M',
+        achievementPct: 46.4,
+        metTarget: false,
+      },
     ];
 
     render(
@@ -215,10 +223,26 @@ describe('TeamDeepDive agent pagination and caching', () => {
       />,
     );
 
+    const table = screen.getByTestId('agents-average-below-table');
+    expect(within(table).getAllByText(/^Target:/).length).toBeGreaterThan(0);
+
     const row = screen.getByTestId('low-agent-row-emp-1');
+    const values = within(row).getAllByTestId('kpi-ach-value');
+    const subtexts = within(row).getAllByTestId('kpi-actual-subtext');
     const bars = within(row).getAllByTestId('kpi-ach-bar');
     const fills = within(row).getAllByTestId('kpi-ach-bar-fill');
-    expect(bars).toHaveLength(2);
+    expect(values).toHaveLength(3);
+    expect(values[0]).toHaveTextContent('62.9%');
+    expect(values[1]).toHaveTextContent('104.6%');
+    expect(values[2]).toHaveTextContent('46.4%');
+    expect(subtexts[0]).toHaveTextContent('47.2%');
+    expect(subtexts[1]).toHaveTextContent('68.0%');
+    expect(subtexts[2]).toHaveTextContent('AED 2.55M / AED 5.50M');
+    expect(values[0].parentElement).toHaveAttribute(
+      'title',
+      'Reachability: 62.9% achievement (Actual 47.2% vs Target 75.0%)',
+    );
+    expect(bars).toHaveLength(3);
     expect(bars[0]).toHaveAttribute('aria-valuenow', '63');
     expect(fills[0].style.width).toBe('62.9%');
     expect(fills[0].style.background).toContain('--pms-grad-grade-e');

@@ -72,9 +72,10 @@ export function useTeamConfig(teamName: string) {
  * Fetch all team configurations at once
  * @returns Query object with array of team configs or error
  */
-export function useAllTeamConfigs() {
+export function useAllTeamConfigs(enabled = true) {
   return useQuery({
     queryKey: ['team-configs'],
+    enabled,
     queryFn: async ({ signal }) => {
       const json = await apiFetch<{ success: boolean; data: unknown; error?: string }>(
         '/api/config/teams',

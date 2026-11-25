@@ -6,6 +6,7 @@ import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
 import { canSeeSummaryActionAnalytics, isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
+import { useAllTeamConfigs } from '../../hooks/useTeamConfig';
 import {
   SUMMARY_BRANCHES,
   composeExecutiveSummary,
@@ -376,6 +377,7 @@ function MonthlyPresentationScreen({
   // Connect to real performance summary records & corrective actions store
   const summaryRecordsQuery = useSummaryRecords(true);
   const catalogQuery = usePerformanceCatalog(true);
+  const allTeamConfigsQuery = useAllTeamConfigs(true);
   const execRecords = useMemo(
     () => toExecRecords(summaryRecordsQuery.data ?? []).filter((record) => !isHiddenTeam(record.team)),
     [summaryRecordsQuery.data],
@@ -1137,8 +1139,9 @@ function MonthlyPresentationScreen({
       teamActions,
       activeRegion,
       selectedPeriodKey,
+      allTeamConfigsQuery.data,
     );
-  }, [activeBranch, activeRegion, activeRoleSlug, activeTeamSlug, branchScopedRecords, currentTeamRecords, explicitPreview, functionSlug, isInline, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
+  }, [activeBranch, activeRegion, activeRoleSlug, activeTeamSlug, allTeamConfigsQuery.data, branchScopedRecords, currentTeamRecords, explicitPreview, functionSlug, isInline, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
 
   const resolvedRoleData = useMemo(() => {
     if (!activeRoleSlug || !resolvedFunctionData) return null;

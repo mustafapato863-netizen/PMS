@@ -1165,4 +1165,106 @@ describe('multi-month agent trend context and individual action metadata codec',
     );
     expect(selectedTeamConfigSource(uaePreApprovalsDive)).toBe('Pre-Approvals OP Final');
   });
+
+  it('uses Team Dashboard pooled actual/target, achievement %, and real weights on team KPI cards', () => {
+    const makeOutboundAgent = (
+      id: string,
+      name: string,
+      bookings: number,
+      totalCalls: number,
+      attended: number,
+    ): ExecRecord => {
+      const bookingRatio = bookings / totalCalls;
+      const attendRatio = attended / bookings;
+      const bookingAch = Math.min(1, bookingRatio / 0.3);
+      const attendAch = Math.min(1, attendRatio / 0.65);
+      const score = Number(((attendAch * 70) + (bookingAch * 10) + 10 + 10).toFixed(1));
+      const rawAgent: AgentRecord = {
+        id: `outbound-${id}-sep`,
+        identity: {
+          employee_id: id,
+          name,
+          team: 'Outbound',
+          month: 'September',
+          year: 2026,
+          region: 'EGY',
+        },
+        score,
+        evaluation: { score, grade: 'C', grade_class: 'C' },
+        calls: {
+          total_handled: totalCalls,
+          inbound: 0,
+          outbound: totalCalls,
+          abandoned: 0,
+          aht_seconds: 120,
+        },
+        geo: {
+          bookings: { dubai: bookings, sharjah: 0, ajman: 0, clinics: 0 },
+          attended: { dubai: attended, sharjah: 0, ajman: 0, clinics: 0 },
+        },
+        kpi_values: [
+          {
+            kpi_key: 'Booking',
+            label: 'Booking Rate',
+            actual_value: bookingRatio,
+            target_value: 0.3,
+            achievement_ratio: bookingAch,
+            weight_applied: 0.1,
+            contribution: bookingAch * 0.1,
+            direction: 'higher_better',
+            unit: '%',
+          },
+          {
+            kpi_key: 'Attendance',
+            label: 'Attendance Rate',
+            actual_value: attendRatio,
+            target_value: 0.65,
+            achievement_ratio: attendAch,
+            weight_applied: 0.7,
+            contribution: attendAch * 0.7,
+            direction: 'higher_better',
+            unit: '%',
+          },
+        ],
+      };
+      return {
+        employeeId: id,
+        name,
+        team: 'Outbound',
+        region: 'EGY',
+        position: 'Agent',
+        level: 'Employee',
+        branches: ['dubai'],
+        period: { year: 2026, month: 'September', key: '2026-09' },
+        score,
+        kpis: rawAgent.kpi_values ?? [],
+        rawAgent,
+      };
+    };
+
+    // Agent 1: 100 / 200 = 50.0% booking (capped at 100% ach)
+    // Agent 2: 217 / 800 = 27.1% booking (90.4% ach)
+    // Raw mean of actuals = 38.6%, average of capped achievements = 95.2%
+    // Pooled Team Dashboard logic = (100 + 217) / (200 + 800) = 31.7% vs 30.0% -> 100.0% ach, Weight 10%, Contribution 10.0%
+    const outboundRecords = [
+      makeOutboundAgent('OUT-1', 'Nora', 100, 200, 60),
+      makeOutboundAgent('OUT-2', 'Karim', 217, 800, 120),
+    ];
+
+    const dive = buildTeamDeepDiveFromRecords('outbound', outboundRecords, [], 'EGY', '2026-09');
+    const bookingCard = dive.kpis.find((item) => item.kpiKey === 'Booking');
+    expect(bookingCard).toBeDefined();
+    expect(bookingCard?.actualFormatted).toBe('31.7%');
+    expect(bookingCard?.targetFormatted).toBe('30.0%');
+    expect(bookingCard?.achievementPct).toBe(100);
+    expect(bookingCard?.weightPct).toBe(10);
+    expect(bookingCard?.contributionPct).toBe(10);
+    expect(bookingCard?.verdictBadge).toBe('Target Met');
+
+    // Individual agent rows still keep each agent's own achievement % (Karim missed 30% target)
+    const karimRow = dive.agentsAverageOrBelow.find((row) => row.employeeId === 'OUT-2');
+    const karimBooking = karimRow?.kpiCells.find((cell) => cell.kpiKey === 'Booking');
+    expect(karimBooking?.achievementPct).toBeLessThan(95);
+    expect(karimBooking?.metTarget).toBe(false);
+  });
 });

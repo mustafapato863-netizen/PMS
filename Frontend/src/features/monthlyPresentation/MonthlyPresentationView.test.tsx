@@ -61,6 +61,10 @@ vi.mock('../../hooks/api/usePerformanceCatalog', () => ({
   usePerformanceCatalog: () => monthlyTestState.catalog,
 }));
 
+vi.mock('../../hooks/useTeamConfig', () => ({
+  useAllTeamConfigs: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+
 const mockSaveAction = vi.fn().mockResolvedValue({
   success: true,
   synced: true,

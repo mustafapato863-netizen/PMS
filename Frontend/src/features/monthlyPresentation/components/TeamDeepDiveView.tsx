@@ -196,12 +196,18 @@ function TeamDeepDiveViewContent({
         ? [40, 30, 30]
         : [30, 30, 20, 20];
     const items = data.kpis.map((kpi, idx) => {
-      const weightPct = weights[idx] ?? Math.round(100 / Math.max(1, count));
+      const weightPct =
+        typeof kpi.weightPct === 'number' && Number.isFinite(kpi.weightPct)
+          ? kpi.weightPct
+          : (weights[idx] ?? Math.round(100 / Math.max(1, count)));
       const cappedPct = Math.min(
         100,
         Math.max(0, Number.isFinite(kpi.achievementPct) ? kpi.achievementPct : 0),
       );
-      const contributionPct = Math.round(((cappedPct / 100) * weightPct) * 10) / 10;
+      const contributionPct =
+        typeof kpi.contributionPct === 'number' && Number.isFinite(kpi.contributionPct)
+          ? Math.round(Math.min(Math.max(kpi.contributionPct, 0), weightPct) * 10) / 10
+          : Math.round(((cappedPct / 100) * weightPct) * 10) / 10;
       const pointsLost = Math.max(0, Math.round((weightPct - contributionPct) * 10) / 10);
       const statusBadge: 'On Target' | 'Needs Attention' | 'Below Target' =
         cappedPct >= 99.95 || kpi.verdictBadge === 'Target Met'
@@ -1637,7 +1643,10 @@ function TeamDeepDiveViewContent({
                 <th className="py-3 pr-4">Agent</th>
                 <th className="px-4 py-3 text-right">Score</th>
                 {data.kpis.slice(0, 4).map((kpi) => (
-                  <th key={kpi.kpiKey} className="px-4 py-3 text-right">
+                  <th
+                    key={kpi.kpiKey}
+                    className="px-4 py-3 text-right"
+                  >
                     {kpi.shortLabel}
                     <span className="block text-xs font-normal text-slate-400 normal-case">
                       Target: {kpi.targetFormatted}
@@ -1706,12 +1715,13 @@ function TeamDeepDiveViewContent({
                         )}
                       </td>
 
-                      {agent.kpiCells.map((cell) => (
+                      {agent.kpiCells.map((cell, cellIdx) => (
                         <td key={cell.kpiKey} className="px-4 py-3.5 text-right">
                           <KpiAchievementCell
                             label={cell.label}
                             actualFormatted={cell.actualFormatted}
                             targetFormatted={cell.targetFormatted}
+                            columnTargetFormatted={data.kpis[cellIdx]?.targetFormatted}
                             achievementPct={cell.achievementPct}
                             metTarget={cell.metTarget}
                           />

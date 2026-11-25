@@ -1615,7 +1615,10 @@ export default function RoleDetailView({
                   <th className="py-3 pr-4">Employee</th>
                   <th className="px-4 py-3 text-right">Score</th>
                   {data.kpis.slice(0, 4).map((kpi) => (
-                    <th key={kpi.kpiKey} className="px-4 py-3 text-right">
+                    <th
+                      key={kpi.kpiKey}
+                      className="px-4 py-3 text-right"
+                    >
                       {kpi.shortName}
                       <span className="block text-xs font-normal text-slate-400 normal-case">
                         Target: {kpi.targetDisplay}
@@ -1681,7 +1684,7 @@ export default function RoleDetailView({
                       </td>
 
                       {/* Per-KPI Actual Cells with Diagnostic Coloring + Achievement Gradient Bar */}
-                      {(member.kpiCells ?? []).map((cell) => (
+                      {(member.kpiCells ?? []).map((cell, cellIdx) => (
                         <td
                           key={cell.kpiKey}
                           className="px-4 py-3.5 text-right tabular-nums"
@@ -1690,6 +1693,7 @@ export default function RoleDetailView({
                             label={cell.label}
                             actualFormatted={cell.actualFormatted}
                             targetFormatted={cell.targetFormatted}
+                            columnTargetFormatted={data.kpis[cellIdx]?.targetDisplay}
                             achievementPct={cell.achievementPct}
                             metTarget={cell.metTarget}
                           />
