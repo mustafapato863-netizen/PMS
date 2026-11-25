@@ -64,7 +64,7 @@ function StepCard({ step, first, onOpen }: { step: InsightsWalkStep; first: bool
             {step.score === null ? '—' : `${step.score.toFixed(1)}%`}
           </span>
           {step.score !== null && (
-            <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">People average</span>
+            <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">People average</span>
           )}
         </span>
       </span>

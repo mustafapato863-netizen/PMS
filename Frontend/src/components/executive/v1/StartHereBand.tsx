@@ -68,7 +68,7 @@ export default function StartHereBand({ summary, linkable }: { summary: Executiv
         <div className="flex flex-wrap items-end gap-[8px]">
           <ScoreText score={score} className="text-[36px] font-bold leading-none tracking-[-0.04em] tabular-nums">{fmtScore(score)}</ScoreText>
           <GradePill score={score} />
-          {score !== null && <span className="pb-[2px] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">People average</span>}
+          {score !== null && <span className="pb-[2px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">People average</span>}
         </div>
         <ScoreBar score={score} color={tone.gauge} />
         {share != null && share > 0 && (

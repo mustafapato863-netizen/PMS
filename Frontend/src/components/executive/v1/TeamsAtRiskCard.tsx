@@ -153,7 +153,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                       <button
                         type="button"
                         title={`Review ${displayName} on this page`}
-                        className="truncate text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400"
+                        className="hit-area truncate text-left text-[13.5px] font-bold leading-[1.3] text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400"
                         onClick={review}
                       >
                         {displayName}
@@ -212,7 +212,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                     <button
                       type="button"
                       onClick={review ?? (() => navigate(href))}
-                      className="inline-flex items-center gap-[4px] whitespace-nowrap text-[12.5px] font-bold text-[var(--insights-accent-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
+                      className="hit-area inline-flex items-center gap-[4px] whitespace-nowrap text-[12.5px] font-bold text-[var(--insights-accent-text)] transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
                     >
                       Review Team
                       <ArrowRight aria-hidden="true" className="size-[13px]" strokeWidth={2.2} />

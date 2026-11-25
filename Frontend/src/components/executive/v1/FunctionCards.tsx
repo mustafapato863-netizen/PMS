@@ -91,7 +91,7 @@ function CohortTile({ label, cohort }: { label: string; cohort: ExecutiveFunctio
       aria-label={label}
       className="flex min-w-0 flex-col gap-[5px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] p-[8px]"
     >
-      <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+      <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
         {label}
       </span>
       <div className="flex flex-wrap items-end gap-[6px]">
@@ -202,7 +202,7 @@ const FunctionCard = memo(function FunctionCard({
             {onSelectFunction ? (
               <button
                 type="button"
-                className="truncate text-left text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
+                className="hit-area truncate text-left text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
                 aria-label={`Open ${functionLabel}`}
                 onClick={() => onSelectFunction(card.function)}
               >
@@ -247,7 +247,7 @@ const FunctionCard = memo(function FunctionCard({
               {fmtScore(card.score)}
             </ScoreText>
             {card.score !== null && !classic && (
-              <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
+              <span className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
                 People average
               </span>
             )}
