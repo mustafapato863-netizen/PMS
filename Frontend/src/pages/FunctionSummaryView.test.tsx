@@ -142,7 +142,7 @@ describe('Function Summary routing and scope', () => {
     expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
       'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
       'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
-      'ER Dr', 'Radiology', 'Quality and management',
+      'ER Dr', 'Radiology',
     ]);
     expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
   });

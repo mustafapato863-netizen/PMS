@@ -766,8 +766,9 @@ def test_function_for_team_maps_source_teams_to_parent_domains():
     assert function_for_team("Radiologist") == "Radiology"
     assert function_for_team("Radiology") == "Radiology"
     assert functions_for_team("Radiologist") == ["Radiology"]
-    assert function_for_team("Qlty&Case-Mngt") == "Qlty&Case-Mngt"
-    assert functions_for_team("Qlty&Case-Mngt") == ["Qlty&Case-Mngt"]
+    assert function_for_team("Qlty&Case-Mngt") == "RCM"
+    assert functions_for_team("Qlty&Case-Mngt") == ["RCM"]
+    assert "qlty&case-mngt" in function_team_keys("RCM")
     assert function_for_team("Quality Management") == "Quality Management"
     assert function_team_keys("Radiology") == {"radiology", "radiologist"}
 

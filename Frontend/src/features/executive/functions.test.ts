@@ -8,9 +8,9 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual([
       'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
       'Finance', 'Human Resources', 'IT', 'Administration', 'Quality Management',
-      'ER Dr', 'Radiology', 'Qlty&Case-Mngt',
+      'ER Dr', 'Radiology',
     ]);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(14);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(13);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -24,7 +24,7 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Function Viewer')).toEqual([]);
   });
 
-  it.each(['Sales', 'CSR', 'Pharmacy', 'ER Dr', 'Radiology', 'Qlty&Case-Mngt'] as const)('keeps %s grants isolated and round-trips their summary route', (name) => {
+  it.each(['Sales', 'CSR', 'Pharmacy', 'ER Dr', 'Radiology'] as const)('keeps %s grants isolated and round-trips their summary route', (name) => {
     expect(allowedFunctionsFor('Function Director', [name])).toEqual([name]);
     expect(isTeamInFunctions(name, [name])).toBe(true);
     expect(isTeamInFunctions('Coding', [name])).toBe(false);
@@ -45,7 +45,7 @@ describe('function slugs and team paths', () => {
     expect(functionSlug('ER Dr')).toBe('er-dr');
     expect(functionFromSlug('er-dr')).toBe('ER Dr');
     expect(functionFromSlug('radiology')).toBe('Radiology');
-    expect(functionFromSlug('quality-case-management')).toBe('Qlty&Case-Mngt');
+    expect(functionFromSlug('quality-case-management')).toBe('RCM');
     expect(functionFromSlug('treasury')).toBeNull();
   });
 
@@ -80,7 +80,8 @@ describe('executiveFunctionForTeam (clinical functions)', () => {
     expect(executiveFunctionForTeam('ER Dr')).toBe('ER Dr');
     expect(executiveFunctionForTeam('Radiologist')).toBe('Radiology');
     expect(executiveFunctionForTeam('Radiology')).toBe('Radiology');
-    expect(executiveFunctionForTeam('Qlty&Case-Mngt')).toBe('Qlty&Case-Mngt');
+    expect(executiveFunctionForTeam('Qlty&Case-Mngt')).toBe('RCM');
+    expect(executiveFunctionForTeam('Quality and Case Management')).toBe('RCM');
   });
 
   it('leaves Quality Management mapped to itself', () => {

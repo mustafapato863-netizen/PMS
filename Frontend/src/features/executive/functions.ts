@@ -43,7 +43,9 @@ export function preApprovalsSubTeamOptions(teams: string[]): string[] {
 export function executiveFunctionForTeam(team: string | null | undefined, teamFunctions?: TeamFunctionMap): ExecutiveFunction | null {
   if (!team) return null;
   // Explicit rules first so a backend map listing a team under both functions cannot override them.
-  if (normalizeTeamIdentity(team) === normalizeTeamIdentity(IP_OFFSHORE_TEAM)) return 'RCM';
+  const norm = normalizeTeamIdentity(team);
+  if (norm === normalizeTeamIdentity(IP_OFFSHORE_TEAM)) return 'RCM';
+  if (norm === 'qltycasemngt' || norm === 'qualityandcasemanagement' || norm === 'qualityandmanagement') return 'RCM';
   if (isPreApprovalsSubTeam(team) || teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions)) return 'RCM';
   for (const name of EXECUTIVE_FUNCTIONS) {
     if (teamBelongsToFunction(team, name, teamFunctions)) return name;
@@ -72,7 +74,6 @@ const SLUGS: Record<ExecutiveFunction, string> = {
   'Quality Management': 'quality-management',
   'ER Dr': 'er-dr',
   Radiology: 'radiology',
-  'Qlty&Case-Mngt': 'quality-case-management',
 };
 
 export function functionSlug(name: ExecutiveFunction): string {
@@ -81,6 +82,7 @@ export function functionSlug(name: ExecutiveFunction): string {
 
 export function functionFromSlug(slug: string | null | undefined): ExecutiveFunction | null {
   const normalized = String(slug ?? '').trim().toLowerCase();
+  if (normalized === 'quality-case-management' || normalized === 'qlty&case-mngt') return 'RCM';
   return [...EXECUTIVE_FUNCTIONS, 'Pre-Approvals' as const].find((name) => SLUGS[name] === normalized || name.toLowerCase() === normalized) ?? null;
 }
 

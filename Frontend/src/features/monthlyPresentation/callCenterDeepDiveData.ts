@@ -10,6 +10,7 @@ import {
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import {
+  businessTeamName,
   canonicalEgyptResubmissionTeam,
   dedupeEgyptResubmissionRecords,
   isEgyptResubmissionTeam,
@@ -89,11 +90,12 @@ export function normalizeFunctionSlug(rawSlugOrName: string): string {
   if (s === 'radiology' || s === 'radiologist') return 'radiology';
   if (
     s === 'quality-case-management' ||
+    s === 'quality-and-case-management' ||
     s === 'quality-and-management' ||
     s === 'qlty-and-case-mngt' ||
     s === 'qlty-case-mngt' ||
     s === 'qltyandcase-mngt'
-  ) return 'quality-case-management';
+  ) return 'rcm';
   return s || 'call-center';
 }
 
@@ -127,7 +129,7 @@ export function canonicalFunctionNameFromSlug(functionSlug: string): string {
     case 'radiology':
       return 'Radiology';
     case 'quality-case-management':
-      return 'Quality and management';
+      return 'RCM';
     default:
       return functionSlug
         .split('-')
@@ -3001,7 +3003,7 @@ export function buildFunctionDeepDiveFromRecords(
       );
       const displayTeamName = isEgyptResubmissionTeam(teamName)
         ? 'Re-Submission'
-        : (fallbackTeam?.teamName ?? teamName);
+        : (fallbackTeam?.teamName ?? businessTeamName(teamName));
 
       const isCarrying =
         distinctTeams.length === 1

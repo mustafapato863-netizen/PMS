@@ -1129,9 +1129,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
   });
 
-  it('shows both regions in the All view, including the UAE Qlty&Case-Mngt function, and docks the filter in the toolbar', () => {
+  it('shows both regions in the All view, rolling UAE Qlty&Case-Mngt under RCM, and docks the filter in the toolbar', () => {
     monthlyTestState.catalog!.data.teams.push(
-      { team: 'Qlty&Case-Mngt', region: 'UAE', functions: ['Qlty&Case-Mngt'], performance_levels: ['Employee'] },
+      { team: 'Qlty&Case-Mngt', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
     );
     const qltyKpis = [
       { kpi_key: 'quality_errors_rate', label: 'Quality Errors Rate', actual_value: 0.02, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
@@ -1189,7 +1189,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('region-all')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('All regions');
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
-    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toHaveTextContent(/Quality and Case Management/i);
+    expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
 
     const regionShare = screen.getByTestId('monthly-region-performance-share');
     expect(within(regionShare).getByRole('heading', { name: 'Region Performance Share' })).toBeInTheDocument();
@@ -1220,14 +1221,14 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('location-probe')).toHaveTextContent('region=egy');
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('Offshore Egypt');
     expect(screen.queryByTestId('monthly-region-performance-share')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('function-card-quality-case-management')).not.toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).not.toHaveTextContent(/Quality and Case Management/i);
 
     // Switch back to All regions from the tab.
     fireEvent.click(screen.getByTestId('region-all'));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('region=all');
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('All regions');
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
-    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toHaveTextContent(/Quality and Case Management/i);
     expect(screen.getByTestId('monthly-region-performance-share')).toBeInTheDocument();
 
     // The docked panel opens from the bottom bar and offers Region, Reporting month, and Function.
@@ -1239,21 +1240,18 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(dialog).getByLabelText('Reporting month')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Function')).toBeInTheDocument();
 
-    // Focusing a branch from the filter narrows the view back to that region.
+    // Focusing UAE narrows RCM to UAE Quality and Case Management.
     fireEvent.change(regionSelect, { target: { value: 'UAE' } });
     expect(screen.getByTestId('location-probe')).toHaveTextContent('region=uae');
-    expect(screen.queryByTestId('function-card-rcm')).not.toBeInTheDocument();
-    expect(screen.getByTestId('function-card-quality-case-management')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toHaveTextContent(/Quality and Case Management/i);
 
-    // Back to All, the Qlty deep dive aggregates the UAE records.
+    // Back to All, opening RCM Deep Dive includes Quality and Case Management.
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     fireEvent.click(screen.getByTestId('region-all'));
-    fireEvent.click(screen.getByTestId('function-card-quality-case-management'));
-    expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
-    expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
-    // The deep-dive title renders "Quality and management Deep Dive", so the bare
-    // name never appears as an element's exact text; match it as a substring.
-    expect(screen.getAllByText(/Quality and management/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId('function-card-rcm'));
+    expect(screen.getByRole('heading', { name: 'RCM Deep Dive' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Quality and Case Management/).length).toBeGreaterThan(0);
   });
 
   it('steps from the control bar and saves agenda and notes for the region and month', () => {

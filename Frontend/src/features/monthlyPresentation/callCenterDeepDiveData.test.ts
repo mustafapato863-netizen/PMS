@@ -3,20 +3,18 @@ import type { ExecRecord } from '../executive/compose';
 import { normalizeFunctionSlug, scopeRecordsToRegion } from './callCenterDeepDiveData';
 
 describe('normalizeFunctionSlug', () => {
-  it("maps the Qlty&Case-Mngt team name to the executive function slug", () => {
-    // slugifyIdentifier turns '&' into 'and' with no dashes, so the raw slug
-    // is 'qltyandcase-mngt' — it must still resolve to the canonical
-    // 'quality-case-management' or the monthly overview drops the function.
-    expect(normalizeFunctionSlug('Qlty&Case-Mngt')).toBe('quality-case-management');
+  it("maps Qlty&Case-Mngt team spellings to the RCM parent function slug", () => {
+    expect(normalizeFunctionSlug('Qlty&Case-Mngt')).toBe('rcm');
   });
 
-  it('leaves the canonical slug unchanged', () => {
-    expect(normalizeFunctionSlug('quality-case-management')).toBe('quality-case-management');
+  it('maps the legacy quality-case-management slug to rcm', () => {
+    expect(normalizeFunctionSlug('quality-case-management')).toBe('rcm');
   });
 
   it('keeps the other Qlty spellings and functions resolving', () => {
-    expect(normalizeFunctionSlug('Qlty-and-Case-Mngt')).toBe('quality-case-management');
-    expect(normalizeFunctionSlug('Qlty-Case-Mngt')).toBe('quality-case-management');
+    expect(normalizeFunctionSlug('Qlty-and-Case-Mngt')).toBe('rcm');
+    expect(normalizeFunctionSlug('Qlty-Case-Mngt')).toBe('rcm');
+    expect(normalizeFunctionSlug('Quality and Case Management')).toBe('rcm');
     expect(normalizeFunctionSlug('Call Center')).toBe('call-center');
     expect(normalizeFunctionSlug('RCM')).toBe('rcm');
     expect(normalizeFunctionSlug('ER Dr')).toBe('er-dr');

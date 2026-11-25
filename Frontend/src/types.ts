@@ -189,7 +189,7 @@ export function isCallCenterChannelTeam(value: string | null | undefined, channe
 }
 
 /** Revenue Cycle Management domains shown under one shared function. */
-export type RcmDomainFilter = 'all' | 'pre_approvals' | 'submission' | 're_submission' | 'coding';
+export type RcmDomainFilter = 'all' | 'pre_approvals' | 'submission' | 're_submission' | 'coding' | 'quality_case_management';
 export type RcmGroupFilter = 'all' | 'offshore_egy' | 'uae';
 export const RCM_TEAM = 'RCM';
 export const RCM_TEAM_ID = 'rcm';
@@ -199,6 +199,7 @@ export const RCM_DOMAIN_LABELS: Record<RcmDomainFilter, string> = {
   submission: 'Submission',
   re_submission: 'Re-Submission',
   coding: 'Coding',
+  quality_case_management: 'Quality & Case Management',
 };
 export const RCM_GROUP_LABELS: Record<RcmGroupFilter, string> = {
   all: 'All RCM Groups',
@@ -219,6 +220,7 @@ const RCM_DOMAIN_TEAMS: Record<Exclude<RcmDomainFilter, 'all'>, readonly string[
   submission: ['Submission', 'Submission EGY'],
   re_submission: ['Re-Submission', 'Resubmission', 'Re-Submission EGY'],
   coding: ['Coding', 'Coding EGY'],
+  quality_case_management: ['Qlty&Case-Mngt', 'Quality and Case Management', 'Quality and management'],
 };
 
 export function rcmGroupForTeam(value: string | null | undefined, region?: string | null): Exclude<RcmGroupFilter, 'all'> | null {
@@ -470,6 +472,7 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'ER Dr': 'er-dr',
   Radiologist: 'radiologist',
   'Qlty&Case-Mngt': 'quality-case-management',
+  'Quality and Case Management': 'quality-case-management',
   'Quality and management': 'quality-case-management',
 };
 
@@ -506,7 +509,7 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'quality-management': 'Quality Management',
   'er-dr': 'ER Dr',
   radiologist: 'Radiologist',
-  'quality-case-management': 'Quality and management',
+  'quality-case-management': 'Quality and Case Management',
 };
 
 export const TEAM_DB_NAME_MAP: Record<string, string> = {

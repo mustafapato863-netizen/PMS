@@ -1,4 +1,4 @@
-import { ArrowUpRight, BadgeDollarSign, ClipboardCheck, Code, RefreshCw, Send } from 'lucide-react';
+import { ArrowUpRight, BadgeDollarSign, ClipboardCheck, Code, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import type { AgentRecord } from '../../types';
 import { isHossamRecord, RCM_DOMAIN_LABELS, rcmDomainForTeam, type RcmDomainFilter } from '../../types';
@@ -10,7 +10,13 @@ interface RcmDomainSummaryProps {
   domainScores?: Partial<Record<Exclude<RcmDomainFilter, 'all'>, number | null>>;
 }
 
-const DOMAINS: Array<Exclude<RcmDomainFilter, 'all'>> = ['pre_approvals', 'submission', 're_submission', 'coding'];
+const DOMAINS: Array<Exclude<RcmDomainFilter, 'all'>> = [
+  'pre_approvals',
+  'submission',
+  're_submission',
+  'coding',
+  'quality_case_management',
+];
 
 const DOMAIN_META: Record<Exclude<RcmDomainFilter, 'all'>, {
   icon: typeof BadgeDollarSign;
@@ -41,6 +47,12 @@ const DOMAIN_META: Record<Exclude<RcmDomainFilter, 'all'>, {
     tone: 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
     accent: 'bg-amber-500',
     glow: 'hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(245,158,11,0.24)] dark:hover:border-amber-400/60 dark:hover:shadow-[0_0_34px_rgba(251,191,36,0.25)]',
+  },
+  quality_case_management: {
+    icon: ShieldCheck,
+    tone: 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-400/15 dark:text-cyan-300',
+    accent: 'bg-cyan-500',
+    glow: 'hover:border-cyan-300/80 hover:shadow-[0_0_28px_rgba(6,182,212,0.24)] dark:hover:border-cyan-400/60 dark:hover:shadow-[0_0_34px_rgba(34,211,238,0.25)]',
   },
 };
 

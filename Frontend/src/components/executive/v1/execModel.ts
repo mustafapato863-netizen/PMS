@@ -152,7 +152,6 @@ export const FUNCTION_STYLE: Record<ExecutiveFunction, { icon: LucideIcon; bg: s
   'Quality Management': { icon: ShieldCheck, bg: 'var(--exec-function-pre-approvals)', color: 'var(--insights-positive)' },
   'ER Dr': { icon: Stethoscope, bg: 'var(--exec-function-pre-approvals)', color: 'var(--insights-positive)' },
   Radiology: { icon: ScanLine, bg: 'var(--exec-function-marketing)', color: 'var(--exec-comparison-line)' },
-  'Qlty&Case-Mngt': { icon: ShieldCheck, bg: 'var(--exec-function-pre-approvals)', color: 'var(--insights-positive)' },
 };
 
 export function movementTone(grade: GradeClass, movement: number): 'good' | 'bad' | 'neutral' {

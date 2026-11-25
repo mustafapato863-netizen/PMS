@@ -97,7 +97,11 @@ _ADMINISTRATION_KEYS = {"administration", "offshore admin & management"}
 
 _ER_DR_KEYS = {"er dr"}
 _RADIOLOGY_KEYS = {"radiology", "radiologist"}
-_QLTY_CASE_MNGT_KEYS = {"qlty&case-mngt"}
+_QLTY_CASE_MNGT_KEYS = {
+    "qlty&case-mngt",
+    "quality and case management",
+    "quality and management",
+}
 
 _RCM_KEYS = {
     "rcm",
@@ -124,6 +128,7 @@ _RCM_KEYS = {
     "pre-approvals ip elective",
     "pre-approvals ip elective dubai",
     "ip elective dubai",
+    *_QLTY_CASE_MNGT_KEYS,
 }
 
 
@@ -287,7 +292,6 @@ _FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
     "Administration": _ADMINISTRATION_KEYS,
     "ER Dr": _ER_DR_KEYS,
     "Radiology": _RADIOLOGY_KEYS,
-    "Qlty&Case-Mngt": _QLTY_CASE_MNGT_KEYS,
 }
 
 
@@ -310,7 +314,7 @@ def function_for_team(team_name: str) -> str | None:
     ``Pre-Approvals OP Dubai`` -> ``RCM`` (also listed under ``Pre-Approvals``
     by :func:`functions_for_team`), ``Marketing`` -> ``Marketing``,
     ``Radiologist`` -> ``Radiology``, ``ER Dr`` -> ``ER Dr``,
-    ``Qlty&Case-Mngt`` -> ``Qlty&Case-Mngt``.
+    ``Qlty&Case-Mngt`` -> ``RCM``.
     """
     functions = functions_for_team(team_name)
     return functions[0] if functions else None

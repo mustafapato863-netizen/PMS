@@ -146,10 +146,12 @@ function aliasByBusiness(name: string | null | undefined): CountryAlias | null {
 }
 
 const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
-  'qlty&case-mngt': 'Quality and management',
-  'qltyandcase-mngt': 'Quality and management',
-  'qlty-and-case-mngt': 'Quality and management',
-  'qlty-case-mngt': 'Quality and management',
+  'qlty&case-mngt': 'Quality and Case Management',
+  'qltyandcase-mngt': 'Quality and Case Management',
+  'qlty-and-case-mngt': 'Quality and Case Management',
+  'qlty-case-mngt': 'Quality and Case Management',
+  'quality and management': 'Quality and Case Management',
+  'quality and case management': 'Quality and Case Management',
 };
 
 /** Business name. Stored source names such as "Coding EGY" stay out of the label. */

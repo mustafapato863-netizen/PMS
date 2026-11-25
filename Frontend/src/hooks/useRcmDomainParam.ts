@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
 import type { RcmDomainFilter } from '../types';
 
-const DOMAIN_VALUES: RcmDomainFilter[] = ['all', 'pre_approvals', 'submission', 're_submission', 'coding'];
+const DOMAIN_VALUES: RcmDomainFilter[] = ['all', 'pre_approvals', 'submission', 're_submission', 'coding', 'quality_case_management'];
 
 export function useRcmDomainParam(defaultDomain: RcmDomainFilter = 'all') {
   const [searchParams, setSearchParams] = useSearchParams();

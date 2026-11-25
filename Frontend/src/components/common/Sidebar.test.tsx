@@ -140,7 +140,7 @@ describe('Sidebar team icons', () => {
     const teams = [
       ['ER Dr', 'ER Dr', 'er-dr'],
       ['Radiologist', 'Radiologist', 'radiologist'],
-      ['Qlty&Case-Mngt', 'Quality and management', 'quality-case-management'],
+      ['Qlty&Case-Mngt', 'Quality and Case Management', 'quality-case-management'],
     ];
     catalogState.scopes = teams.map(([team]) => ({ team, region: 'UAE', performance_level: 'Employee', position: '' }));
     renderSidebar('/executive?period=2026-10&region=UAE');
