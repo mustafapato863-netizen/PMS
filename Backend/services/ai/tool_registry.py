@@ -496,6 +496,16 @@ class DeterministicToolRegistry:
             "required": [],
             "additionalProperties": False,
         },
+        "search_pms_guide": {
+            "type": "object",
+            "description": "Search the local PMS System Guide markdown knowledge base for general system concepts: Grade A–E definitions, KPI scoring formula and 100% cap, Gap vs Gap Share, Executive Summary vs Monthly Review, Teams at Risk status badges, Balanced Scorecard and performance levels, RBAC roles/regions/branches, KPI glossary, and screen workflows.",
+            "properties": {
+                "query": {"type": "string", "description": "User question or PMS concept to look up in the system guide"},
+                "page_id": {"type": "string", "description": "Optional guide page_id filter"},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
         "simulate_kpi_improvement": {
             "type": "object",
             "description": "Deterministic What-If simulation: project score and grade change if a KPI improves by a given amount, respecting GLOBAL_KPI_ACHIEVEMENT_CAP and lower_better formulas.",
@@ -564,8 +574,8 @@ class DeterministicToolRegistry:
         # 1. is_self_only check
         if scope.get("is_self_only"):
             caller_emp_id = str(scope.get("employee_id") or "").strip()
-            if tool_name in ("explain_scoring_rules_and_targets", "discover_pms_catalog"):
-                pass  # Strictly scoped to caller's own authorized catalog/employee record; never exposes peer data
+            if tool_name in ("explain_scoring_rules_and_targets", "discover_pms_catalog", "search_pms_guide"):
+                pass  # Strictly scoped to caller's own authorized catalog/guide/employee record; never exposes peer data
             elif tool_name == "simulate_kpi_improvement":
                 req_emp = str(tool_arguments.get("employee_id") or "").strip()
                 if req_emp and req_emp.casefold() != caller_emp_id.casefold():
@@ -770,6 +780,10 @@ class DeterministicToolRegistry:
                     "summary": f"Loaded canonical scoring rules (cap={rules_data.get('achievement_cap')}, grades={rules_data.get('grade_thresholds')}).",
                 },
             )
+        elif tool_name == "search_pms_guide":
+            query_str = str(tool_arguments.get("query") or "").strip()
+            page_filter = str(tool_arguments.get("page_id") or "").strip() or None
+            return self.execute_guide_lookup(query=query_str, page_id=page_filter)
         elif tool_name == "simulate_kpi_improvement":
             from services.ai.agent_360_service import Agent360Service
 

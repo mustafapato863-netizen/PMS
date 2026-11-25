@@ -19,6 +19,15 @@ from services.evaluation.scoring import SUPPORTED_DIRECTIONS
 from utils.scoring_rules import GRADE_THRESHOLD_MAP
 
 
+GRADE_DEFINITIONS_SUMMARY: dict[str, dict[str, str]] = {
+    "A": {"label": "Excellent", "range": "95.0%–100.0%"},
+    "B": {"label": "Meet Expectations", "range": "90.0%–94.9%"},
+    "C": {"label": "Average", "range": "80.0%–89.9%"},
+    "D": {"label": "Below Average", "range": "70.0%–79.9%"},
+    "E": {"label": "Unsatisfactory", "range": "below 70.0%"},
+}
+
+
 class ScoreRulesExplainer:
     def __init__(self, db=None) -> None:
         self.db = db
@@ -31,6 +40,7 @@ class ScoreRulesExplainer:
         """Return applicable scoring rules for the caller's scope."""
         result: dict[str, Any] = {
             "grade_thresholds": dict(GRADE_THRESHOLD_MAP),
+            "grade_definitions": dict(GRADE_DEFINITIONS_SUMMARY),
             "achievement_cap": GLOBAL_KPI_ACHIEVEMENT_CAP,
             "supported_directions": sorted(SUPPORTED_DIRECTIONS),
             "formula": "higher_better: actual/target; lower_better: target/actual; capped at 1.0",

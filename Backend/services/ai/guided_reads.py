@@ -522,6 +522,20 @@ def detect_guided_read_intent(
             workflow_kind="guide_lookup",
         )
 
+    from services.ai.product_guide import is_system_knowledge_question
+
+    if is_system_knowledge_question(text):
+        return GuidedReadIntent(
+            operations=[
+                QueryOperationV2(
+                    operation_id="op_1",
+                    kind="guide_lookup",
+                    args={"query": text},
+                )
+            ],
+            workflow_kind="guide_lookup",
+        )
+
     return None
 
 
@@ -600,8 +614,19 @@ def _render_guide_section(
     steps = list(primary.get("steps") or [])
     route = primary.get("route")
     route_note = f" ({route})" if route and route not in summary else ""
-    headline = f"{summary}{route_note}" if summary else f"{sec_title}{route_note}."
-    bullets = [str(s) for s in steps[:4]]
+    asked_grade = None
+    if primary.get("id") == "pms-grade-scale":
+        from services.ai.product_guide import GRADE_DEFINITIONS, extract_asked_grade_letter
+
+        asked_grade = extract_asked_grade_letter(str((guide_res.arguments or {}).get("query") or ""))
+        if asked_grade and asked_grade in GRADE_DEFINITIONS:
+            g_label, g_range, g_desc = GRADE_DEFINITIONS[asked_grade]
+            headline = f"Grade {asked_grade} means {g_label} ({g_range}): {g_desc}"
+        else:
+            headline = f"{summary}{route_note}" if summary else f"{sec_title}{route_note}."
+    else:
+        headline = f"{summary}{route_note}" if summary else f"{sec_title}{route_note}."
+    bullets = [str(s) for s in steps[:5]]
     section_ids = [f"{s.get('id')}@v{s.get('version')}" for s in sections if s.get("id")]
     return headline, bullets, nav_targets, section_ids
 

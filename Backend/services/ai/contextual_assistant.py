@@ -654,6 +654,10 @@ def detect_contextual_capability(
 
     prompt = (req.prompt or "").strip()
     lower = prompt.casefold()
+    from services.ai.product_guide import is_system_knowledge_question, search_product_guide
+
+    if is_system_knowledge_question(prompt):
+        return "page_help", "local_rules", 0.0
     if is_explain_previous_prompt(prompt):
         return "explain_previous", "local_rules", 0.0
     if is_greeting_or_thanks_prompt(prompt) is not None:
@@ -803,6 +807,18 @@ def detect_contextual_capability(
 
     if _has_grounded_followup_context(req):
         return "performance_query", "local_rules", 0.0
+
+    # Check local PMS Product Guide before falling back to intent classifier or off_topic
+    if scope is not None:
+        guide_hits = search_product_guide(
+            prompt,
+            scope=scope,
+            session_state=req.session_state,
+            max_results=1,
+            min_score=0.72,
+        )
+        if guide_hits:
+            return "page_help", "local_rules", 0.0
 
     # Unrecognized prompt with zero PMS signals and zero grounded follow-up cues:
     # ask the configured intent classifier (with bounded context) once; never default to current_value.
@@ -1269,6 +1285,18 @@ def build_explain_previous_payload(
         "fallback_outcome": "none",
     }
     if last_turn_summary is None:
+        from services.ai.product_guide import format_guide_matches_for_help, search_product_guide
+
+        guide_hits = search_product_guide(
+            prompt,
+            scope=scope,
+            session_state=session_state,
+            max_results=2,
+            min_score=0.65,
+        )
+        if guide_hits:
+            g_head, g_bullets, _, _, g_followups = format_guide_matches_for_help(prompt, guide_hits)
+            return g_head, g_bullets, [], g_followups, "answer", meta
         return (
             "I haven't shared an analysis in this conversation yet. Which team, KPI, or period would you like me to inspect?",
             ["Specify a team, metric, or ask how performance looks overall so I have an answer to explain."],
@@ -1562,6 +1590,30 @@ def build_page_help_payload(
     """Build curated, role-aware page explanation without reading employee performance rows."""
     page_id = normalize_page_id(req.page_context)
     role = str(scope.get("role") or "Manager").strip()
+    lower_prompt = (req.prompt or "").strip().casefold()
+    is_current_page_prompt = any(pat.search(lower_prompt) for pat in _PAGE_HELP_PATTERNS)
+    if not is_current_page_prompt:
+        from services.ai.product_guide import (
+            format_guide_matches_for_help,
+            is_system_knowledge_question,
+            search_product_guide,
+        )
+
+        guide_min_score = 0.42 if (is_system_knowledge_question(req.prompt) or _SCORING_GUIDE.search(req.prompt)) else 0.68
+        guide_hits = search_product_guide(
+            req.prompt,
+            scope=scope,
+            session_state=session_state,
+            max_results=2,
+            min_score=guide_min_score,
+        )
+        if guide_hits:
+            g_head, g_bullets, g_sec, g_nav, g_followups = format_guide_matches_for_help(
+                req.prompt,
+                guide_hits,
+                fallback_page_id=page_id,
+            )
+            return g_head, g_bullets, g_sec, g_nav, g_followups, None
     if _SCORING_GUIDE.search(req.prompt):
         from config.loader import GLOBAL_KPI_ACHIEVEMENT_CAP
         from utils.scoring_rules import GRADE_THRESHOLDS

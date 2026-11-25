@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from models.ai_schemas import AiNavigationTarget, SessionFilterContext
+from models.ai_schemas import AiNavigationTarget, AiPageHelpSection, SessionFilterContext
 from services.ai.contextual_assistant import get_authorized_navigation_targets, is_self_only
 from utils.report_scope import user_can_access_team_level
 
@@ -44,12 +44,185 @@ _PAGE_ID_TO_NAV_ID: dict[str, str] = {
 
 _STOP_WORDS: frozenset[str] = frozenset(
     {
-        "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does",
-        "for", "from", "how", "i", "in", "is", "it", "me", "my", "of", "on",
-        "or", "please", "show", "tell", "the", "to", "want", "we", "what",
-        "where", "which", "with", "you",
+        "a", "an", "and", "are", "as", "at", "be", "by", "can", "define",
+        "definition", "describe", "do", "does", "explain", "for", "from",
+        "how", "i", "in", "info", "is", "it", "me", "mean", "meaning",
+        "means", "my", "of", "on", "or", "please", "show", "tell", "the",
+        "to", "want", "we", "what", "where", "which", "with", "you",
     }
 )
+
+GRADE_DEFINITIONS: dict[str, tuple[str, str, str]] = {
+    "A": ("Excellent", "95.0%–100.0%", "Top-tier performance exceeding expectations across weighted KPIs."),
+    "B": ("Meet Expectations", "90.0%–94.9%", "On-target performance meeting the 90% PMS benchmark."),
+    "C": (
+        "Average",
+        "80.0%–89.9%",
+        "Acceptable mid-range performance, below the 90% Meet Expectations benchmark; usually needs targeted coaching on 1–2 KPI gaps to reach Grade B.",
+    ),
+    "D": (
+        "Below Average",
+        "70.0%–79.9%",
+        "Underperforming; flagged on the Teams at Risk watchlist and requires focused coaching or a structured improvement plan.",
+    ),
+    "E": (
+        "Unsatisfactory",
+        "below 70.0%",
+        "Critical performance deficit; flagged as Critical <70% on Teams at Risk and requires immediate corrective action or PIP review.",
+    ),
+}
+
+_ASKED_GRADE_LETTER_RE = re.compile(
+    r"(?:\bgrade\s+([a-e])\b|\b([a-e])\s+grade\b|تقدير\s+([a-e])\b)",
+    re.I,
+)
+
+_DATA_QUERY_EXCLUDE_RE = re.compile(
+    r"\b(?:how\s+many|who\s+(?:is|are|was|were|got|has|have|scored)|list\s+|count\s+|"
+    r"compare\s+|\bvs\b|versus|dropped|trend|trajectory|lowest|worst|best|highest|"
+    r"top\s+\d+|bottom\s+\d+|rank(?:ed|ing)?|sghd\d+|emp[-_ ]?\d+|"
+    r"january|february|march|april|june|july|august|september|october|november|december|"
+    r"202[4-9]|203\d|percentage\s+points?|in\s+(?:this|your)\s+(?:answer|reply|response))\b",
+    re.I,
+)
+
+_SYSTEM_KNOWLEDGE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Grade meanings & thresholds (e.g. "what c grade mean", "what does grade C mean", "explain grades")
+    re.compile(
+        r"\b(?:what\s+(?:does\s+|is\s+|are\s+)?(?:a\s+|the\s+)?(?:grade\s+[a-e]|[a-e]\s+grade|grades?)\s*(?:mean|meaning|threshold|thresholds|scale|range|score)?|"
+        r"(?:explain|define|describe|tell\s+me\s+about)\s+(?:the\s+)?(?:grade\s+[a-e]|[a-e]\s+grade|grades?|grading\s+(?:scale|system))|"
+        r"(?:grade\s+[a-e]|[a-e]\s+grade)\s+(?:meaning|definition|threshold|range|score)|"
+        r"grade\s+(?:thresholds?|scale|definitions?|meanings?|system)|grading\s+(?:scale|system|rules?))\b"
+        r"|معنى\s+تقدير|ما\s+معنى\s+(?:التقدير|grade)|تقديرات\s+النظام|درجات\s+التقييم",
+        re.I,
+    ),
+    # Scoring rules, achievement cap, Gap vs Gap Share
+    re.compile(
+        r"\b(?:what\s+(?:is|does|are)\s+(?:the\s+)?(?:gap\s+share|gap\s+to\s+100|achievement\s+cap|100%\s+cap|scoring\s+(?:formula|rules?)|weighted\s+score|higher\s+is\s+better|lower\s+is\s+better|diagnostic\s+kpi|zero[- ]weight\s+kpi)\b|"
+        r"gap\s+(?:vs|versus)\s+gap\s+share|"
+        r"how\s+(?:is|are|does|do)\s+(?:the\s+)?(?:gap\s+share|scores?|scoring|grades?|achievement\s+cap|weighted\s+scores?|branch\s+filter)\s+(?:calculated|computed|determined|work)|"
+        r"(?:explain|define|describe)\s+(?:the\s+)?(?:gap\s+share|scoring\s+(?:formula|rules?)|achievement\s+cap))\b"
+        r"|نسبة\s+الفجوة|حصة\s+الفجوة|طريقة\s+حساب\s+التقييم|معادلة\s+حساب\s+النتيجة",
+        re.I,
+    ),
+    # Teams at Risk, Key Movers, Executive Summary vs Monthly Review, Balanced Scorecard, Roles/RBAC, KPI glossary, System overview
+    re.compile(
+        r"\b(?:what\s+(?:is|does|are)\s+(?:the\s+)?(?:pms|balanced\s+scorecard|bsc|rbac|teams?\s+at\s+risk|primary\s+bottleneck\s+kpi|key\s+movers|critical\s*<?\s*70%?|falling\s+2\s+mo|below\s+90%?|performance\s+levels?|user\s+roles?|executive\s+summary|monthly\s+review|monthly\s+report|aht|tat|cpl)\b|"
+        r"(?:explain|define|describe)\s+(?:the\s+)?(?:pms\s+system|balanced\s+scorecard|bsc|rbac|teams?\s+at\s+risk|performance\s+levels?|user\s+roles?|kpi\s+glossary|kpi\s+directions?)|"
+        r"how\s+does\s+(?:pms|the\s+system|balanced\s+scorecard|bsc|branch\s+filter(?:ing)?)\s+work\b|"
+        r"(?:tell\s+me|give\s+me)\s+(?:a\s+)?(?:br[ie]{1,2}f|overview|summary|guide)\s+(?:for|about|of)\s+(?:the\s+)?(?:system|pms)\b|"
+        r"(?:system|pms|product)\s+(?:overview|guide|brief|breef)|"
+        r"(?:what\s+roles|what\s+branches|what\s+kpis)\s+(?:exist|are\s+tracked|are\s+available|are\s+in)\s+(?:in\s+)?(?:pms|the\s+system|uae)\b|"
+        r"executive\s+summary\s+(?:vs|versus)\s+monthly\s+(?:review|report)|"
+        r"employee\s+(?:vs|versus)\s+managerial\s+(?:vs|versus)\s+corporate)\b"
+        r"|نظرة\s+عامة\s+على\s+النظام|ملخص\s+النظام|بطاقة\s+الأداء\s+المتوازن|صلاحيات\s+المستخدمين|دليل\s+مؤشرات\s+الأداء|الفرق\s+المعرضة\s+للخطر",
+        re.I,
+    ),
+)
+
+
+def extract_asked_grade_letter(prompt: str) -> str | None:
+    """Return 'A'..'E' when the user asks specifically about one PMS grade letter."""
+    match = _ASKED_GRADE_LETTER_RE.search(prompt or "")
+    if not match:
+        return None
+    for grp in match.groups():
+        if grp:
+            return grp.upper()
+    return None
+
+
+def is_system_knowledge_question(prompt: str) -> bool:
+    """Return True when the prompt asks a general PMS system/concept question (not a live data query)."""
+    text = (prompt or "").strip()
+    if not text:
+        return False
+    # Allow explicit "gap vs gap share" or "executive summary vs monthly review" even though they contain "vs"
+    has_conceptual_vs = bool(
+        re.search(
+            r"\b(?:gap\s+(?:vs|versus)\s+gap\s+share|executive\s+summary\s+(?:vs|versus)\s+monthly|"
+            r"employee\s+(?:vs|versus)\s+managerial|higher\s+is\s+better\s+(?:vs|versus)\s+lower|"
+            r"all\s+actions\s+(?:vs|versus)\s+follow[- ]?up|egy\s+(?:vs|versus)\s+uae\s+regions)\b",
+            text,
+            re.I,
+        )
+    )
+    if not has_conceptual_vs and _DATA_QUERY_EXCLUDE_RE.search(text):
+        return False
+    if re.search(r"\bhere\s*[?.!]*$", text, re.I):
+        return False
+    return any(pat.search(text) for pat in _SYSTEM_KNOWLEDGE_PATTERNS)
+
+
+def format_guide_matches_for_help(
+    prompt: str,
+    matches: list[GuideSearchMatch],
+    *,
+    fallback_page_id: str = "ai_workspace",
+) -> tuple[str, list[str], AiPageHelpSection, list[AiNavigationTarget], list[str]]:
+    """Format matched Product Guide sections into a clear, grounded contextual help response."""
+    primary = matches[0]
+    sec = primary.section
+    asked_grade = extract_asked_grade_letter(prompt) if sec.id == "pms-grade-scale" else None
+
+    if asked_grade and asked_grade in GRADE_DEFINITIONS:
+        label, score_range, desc = GRADE_DEFINITIONS[asked_grade]
+        headline = f"Grade {asked_grade} means {label} ({score_range}): {desc}"
+    else:
+        headline = sec.summary or sec.title
+
+    bullets: list[str] = []
+    for step in sec.steps[:6]:
+        bullets.append(step)
+
+    if len(matches) > 1 and len(bullets) < 5:
+        secondary = matches[1].section
+        if secondary.summary and secondary.summary != headline:
+            bullets.append(f"{secondary.title}: {secondary.summary}")
+
+    nav_targets: list[AiNavigationTarget] = []
+    seen_routes: set[str] = set()
+    for m in matches:
+        if m.navigation_target and m.navigation_target.route not in seen_routes:
+            seen_routes.add(m.navigation_target.route)
+            nav_targets.append(m.navigation_target)
+
+    section_payload = AiPageHelpSection(
+        page_id=sec.page_id or fallback_page_id,
+        page_title=sec.title,
+        summary=headline,
+        key_elements=bullets[:6],
+        available_actions=[
+            f"Guide reference: {sec.file} ({sec.title}, v{sec.version})",
+        ],
+    )
+
+    followups_by_id: dict[str, list[str]] = {
+        "pms-grade-scale": [
+            "How are KPI scores and the 100% cap calculated?",
+            "What is the difference between Gap and Gap Share?",
+            "What do the Teams at Risk status badges mean?",
+        ],
+        "pms-scoring-formula": [
+            "What do Grades A through E mean?",
+            "What is the difference between Gap and Gap Share?",
+            "What KPIs are tracked in PMS?",
+        ],
+        "pms-gap-vs-gap-share": [
+            "What do Grades A through E mean?",
+            "What do the Teams at Risk status badges mean?",
+            "How are KPI scores calculated?",
+        ],
+    }
+    followups = followups_by_id.get(
+        sec.id,
+        [
+            "What do Grades A through E mean?",
+            "How are KPI scores calculated?",
+            "Give me an overview of the PMS system",
+        ],
+    )
+    return headline, bullets[:6], section_payload, nav_targets[:3], followups[:3]
 
 
 class ProductGuideValidationError(ValueError):
@@ -70,6 +243,10 @@ class GuideSection:
     summary: str
     steps: tuple[str, ...]
     search_tokens: tuple[str, ...]
+    search_token_set: frozenset[str] = frozenset()
+    normalized_phrases: tuple[str, ...] = ()
+    title_syn_tokens: tuple[str, ...] = ()
+    title_syn_token_set: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -202,6 +379,10 @@ def load_product_guide_from_dir(content_dir: Path) -> LoadedProductGuide:
         synonyms = tuple(str(s).strip() for s in synonyms_raw if str(s).strip())
         audiences = tuple(str(a).strip() for a in audiences_raw if str(a).strip())
         tokens = tuple(dict.fromkeys(_tokenize(" ".join([title, *synonyms, body]))))
+        normalized_phrases = tuple(
+            dict.fromkeys(p for p in (_normalize_text(phrase) for phrase in (title, *synonyms)) if p)
+        )
+        title_syn_tokens = tuple(dict.fromkeys(_tokenize(" ".join([title, *synonyms]))))
 
         sections.append(
             GuideSection(
@@ -217,6 +398,10 @@ def load_product_guide_from_dir(content_dir: Path) -> LoadedProductGuide:
                 summary=summary,
                 steps=steps,
                 search_tokens=tokens,
+                search_token_set=frozenset(tokens),
+                normalized_phrases=normalized_phrases,
+                title_syn_tokens=title_syn_tokens,
+                title_syn_token_set=frozenset(title_syn_tokens),
             )
         )
 
@@ -287,17 +472,28 @@ def resolve_guide_navigation_target(
     return None
 
 
-def _token_fuzzy_similarity(query_tok: str, candidate_tokens: tuple[str, ...]) -> float:
+def _token_fuzzy_similarity(
+    query_tok: str,
+    candidate_tokens: tuple[str, ...],
+    candidate_token_set: frozenset[str] | None = None,
+) -> float:
     if not query_tok or not candidate_tokens:
         return 0.0
-    if query_tok in candidate_tokens:
+    if candidate_token_set is not None:
+        if query_tok in candidate_token_set:
+            return 1.0
+    elif query_tok in candidate_tokens:
         return 1.0
+    q_len = len(query_tok)
+    if q_len <= 2:
+        return 0.0
     best = 0.0
     for c_tok in candidate_tokens:
-        if len(query_tok) >= 4 and (c_tok.startswith(query_tok) or query_tok.startswith(c_tok)):
+        c_len = len(c_tok)
+        if q_len >= 4 and (c_tok.startswith(query_tok) or query_tok.startswith(c_tok)):
             best = max(best, 0.88)
             continue
-        if abs(len(query_tok) - len(c_tok)) > 3:
+        if abs(q_len - c_len) > 3:
             continue
         ratio = SequenceMatcher(None, query_tok, c_tok).ratio()
         if ratio >= 0.72 and ratio > best:
@@ -309,18 +505,18 @@ def _score_section(query_norm: str, query_tokens: list[str], section: GuideSecti
     if not query_norm:
         return 0.0
 
-    # 1. Exact or near-exact synonym / title phrase match
+    # 1. Exact or near-exact synonym / title phrase match (pre-normalized at load time)
     best_phrase = 0.0
-    for phrase in (section.title, *section.synonyms):
-        p_norm = _normalize_text(phrase)
-        if not p_norm:
-            continue
+    q_len = len(query_norm)
+    phrases = section.normalized_phrases or tuple(
+        p for p in (_normalize_text(phrase) for phrase in (section.title, *section.synonyms)) if p
+    )
+    for p_norm in phrases:
         if p_norm == query_norm:
-            best_phrase = 1.0
-            break
+            return 1.0
         if p_norm in query_norm or query_norm in p_norm:
             best_phrase = max(best_phrase, 0.90)
-        else:
+        elif abs(q_len - len(p_norm)) <= max(12, q_len // 2):
             sim = SequenceMatcher(None, query_norm, p_norm).ratio()
             if sim >= 0.62:
                 best_phrase = max(best_phrase, sim * 0.92)
@@ -328,13 +524,18 @@ def _score_section(query_norm: str, query_tokens: list[str], section: GuideSecti
     # 2. Token-level fuzzy coverage against title + synonyms + section body
     token_score = 0.0
     if query_tokens:
-        title_syn_tokens = tuple(dict.fromkeys(_tokenize(" ".join([section.title, *section.synonyms]))))
-        syn_hits = sum(_token_fuzzy_similarity(tok, title_syn_tokens) for tok in query_tokens)
-        body_hits = sum(_token_fuzzy_similarity(tok, section.search_tokens) for tok in query_tokens)
-        token_score = max(
-            (syn_hits / len(query_tokens)) * 0.95,
-            (body_hits / len(query_tokens)) * 0.82,
+        title_syn_tokens = section.title_syn_tokens or tuple(
+            dict.fromkeys(_tokenize(" ".join([section.title, *section.synonyms])))
         )
+        title_syn_set = section.title_syn_token_set or frozenset(title_syn_tokens)
+        syn_hits = sum(_token_fuzzy_similarity(tok, title_syn_tokens, title_syn_set) for tok in query_tokens)
+        syn_score = (syn_hits / len(query_tokens)) * 0.95
+        token_score = syn_score
+        # Skip scanning body tokens if phrase or title/synonym already beats the 0.82 body ceiling
+        if max(best_phrase, syn_score) < 0.82:
+            body_set = section.search_token_set or frozenset(section.search_tokens)
+            body_hits = sum(_token_fuzzy_similarity(tok, section.search_tokens, body_set) for tok in query_tokens)
+            token_score = max(syn_score, (body_hits / len(query_tokens)) * 0.82)
 
     return round(max(best_phrase, token_score), 4)
 
@@ -354,7 +555,7 @@ def search_product_guide(
     query_norm = _normalize_text(query)
     query_tokens = _tokenize(query)
 
-    scored: list[GuideSearchMatch] = []
+    candidates: list[tuple[float, GuideSection]] = []
     for section in loaded.sections:
         if not is_section_authorized(section, scope):
             continue
@@ -363,11 +564,18 @@ def search_product_guide(
         score = _score_section(query_norm, query_tokens, section)
         if score < min_score:
             continue
-        nav_target = resolve_guide_navigation_target(section.page_id, scope, session_state)
-        scored.append(GuideSearchMatch(section=section, score=score, navigation_target=nav_target))
+        candidates.append((score, section))
 
-    scored.sort(key=lambda item: (-item.score, item.section.id))
-    return scored[: max(1, min(max_results, 3))]
+    candidates.sort(key=lambda item: (-item[0], item[1].id))
+    top_candidates = candidates[: max(1, min(max_results, 3))]
+    return [
+        GuideSearchMatch(
+            section=sec,
+            score=score,
+            navigation_target=resolve_guide_navigation_target(sec.page_id, scope, session_state),
+        )
+        for score, sec in top_candidates
+    ]
 
 
 def get_guide_section_by_id(

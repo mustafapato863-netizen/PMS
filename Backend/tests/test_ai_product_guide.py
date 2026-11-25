@@ -53,6 +53,14 @@ def test_bundled_guide_loads_and_validates_all_sections():
         ("tell me breef for system", "pms-overview", "/monthly-presentation"),
         ("how can i check specfic team", "team-dashboard-navigation", "/monthly-presentation"),
         ("how do I approve and apply monthly evaluation settings?", "monthly-evaluation-workflow", "/settings?tab=evaluation"),
+        ("what c grade mean", "pms-grade-scale", "/monthly-presentation"),
+        ("what does grade C mean", "pms-grade-scale", "/monthly-presentation"),
+        ("what is gap share", "pms-gap-vs-gap-share", "/monthly-presentation"),
+        ("what does critical <70% mean", "pms-teams-at-risk", "/monthly-presentation"),
+        ("what is balanced scorecard", "pms-performance-levels", "/executive"),
+        ("what roles exist in pms", "pms-roles-and-access", "/monthly-presentation"),
+        ("what does aht mean", "pms-kpi-glossary", "/insights"),
+        ("معنى تقدير C", "pms-grade-scale", "/monthly-presentation"),
     ],
 )
 def test_guide_fuzzy_paraphrase_typo_and_arabic_retrieval(query: str, expected_section_id: str, expected_route_prefix: str):
@@ -177,3 +185,51 @@ def test_guide_warm_local_retrieval_meets_p95_under_50ms():
     p95 = latencies_ms[int(len(latencies_ms) * 0.95) - 1]
     assert p95 <= 50.0, f"Warm guide retrieval p95={p95:.2f}ms exceeded 50ms budget"
     assert GUIDE_CONTENT_DIR.is_dir()
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_snippets"),
+    [
+        ("what c grade mean", ("Grade C", "Average", "80.0%")),
+        ("what does grade C mean", ("Grade C", "Average", "80.0%")),
+        ("what does grade E mean?", ("Grade E", "Unsatisfactory", "70.0%")),
+        ("what is gap share?", ("Gap Share", "headcount")),
+        ("what does Critical <70% mean?", ("Critical <70%", "Grade E")),
+        ("what is balanced scorecard?", ("Balanced Scorecard", "Managerial", "Corporate")),
+        ("what roles exist in PMS?", ("Admin", "Manager", "Employee")),
+        ("what does AHT mean?", ("AHT", "lower better")),
+    ],
+)
+def test_orchestrator_answers_general_pms_guide_questions_with_zero_db_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: str,
+    expected_snippets: tuple[str, ...],
+):
+    from services.ai.orchestrator import PmsAiOrchestrator
+    from services.dashboard_record_service import DashboardRecordService
+    from services.database_record_source import DatabaseRecordSource
+    from models.ai_schemas import AiChatRequest
+    from test_ai_workspace import _build_in_memory_db
+
+    monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_GUIDED_READS_ENABLED", "false")
+
+    db_calls: list[str] = []
+    monkeypatch.setattr(DatabaseRecordSource, "get_all", lambda *a, **kw: db_calls.append("get_all") or [])
+    monkeypatch.setattr(DashboardRecordService, "list_analysis_records", lambda *a, **kw: db_calls.append("list") or [])
+
+    db = _build_in_memory_db()
+    try:
+        res = PmsAiOrchestrator(
+            db,
+            {"role": "Admin", "user_id": "guide-user", "has_unrestricted_team_access": True},
+        ).run_chat_turn(AiChatRequest(prompt=prompt, session_state=SessionFilterContext()))
+        assert res.outcome == "answer", f"Expected answer for {prompt!r}, got {res.outcome}: {res.headline}"
+        assert res.capability_mode == "page_help"
+        combined = f"{res.headline} {' '.join(res.narrative_bullets)}"
+        for snippet in expected_snippets:
+            assert snippet.casefold() in combined.casefold(), f"Expected {snippet!r} in {combined!r}"
+        assert db_calls == []
+    finally:
+        db.close()
