@@ -45,6 +45,9 @@ const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtit
   '/planning': { title: 'Planning', compactTitle: 'Planning', subtitle: 'Create, track and manage performance plans' },
 };
 
+/** Routes whose page renders its own h1. */
+const PAGES_WITH_OWN_H1 = ['/executive', '/monthly-presentation', '/monthly-view', '/insights', '/reports', '/planning', '/account', '/settings', '/corrective-actions', '/ai'];
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function getInitials(name: string): string {
@@ -254,6 +257,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const uniqueMonths = performanceCatalog?.months || [];
 
   const { title, compactTitle, subtitle } = resolveRoute(pathname);
+  const TitleTag = PAGES_WITH_OWN_H1.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ? 'div' : 'h1';
   const currentMonth = (searchParams.get('month') || 'All') as MonthKey;
 
   const handleOpenAskAi = useCallback(() => {
@@ -346,14 +350,15 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           />
 
           <div className="min-w-0 flex-1">
-            {/* A div, not an h1: every page renders its own h1, so a second one gave screen readers two page headings. */}
-            <div
+            {/* Most pages render their own h1, so the header title is a div there (two h1s gave screen readers two page headings).
+                Pages without their own h1 (team, employee, function summary, report builder...) keep the header title as the h1. */}
+            <TitleTag
               className={`app-header-title font-bold text-[var(--text-primary)] tracking-tight truncate transition-all duration-300
                 ${isScrolled ? 'text-sm lg:text-[14px]' : 'text-[14px] lg:text-base'}`}
             >
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
-            </div>
+            </TitleTag>
             <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-xs font-semibold tracking-tight text-blue-600 dark:text-blue-400">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
               {subtitle}
