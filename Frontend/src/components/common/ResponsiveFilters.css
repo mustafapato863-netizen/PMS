@@ -437,3 +437,24 @@
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Dark theme: the docked trigger hard-codes light tones; follow the app theme. */
+.dark .responsive-filter-docked--in-bar .responsive-filter-trigger {
+  border-color: var(--insights-muted-surface-border, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.dark .responsive-filter-docked--in-bar .responsive-filter-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--insights-heading, #f8fafc);
+}
+
+.dark .responsive-filter-docked--in-bar .responsive-filter-trigger[aria-expanded='true'],
+.dark .responsive-filter-docked--in-bar .responsive-filter-trigger.has-active-filters {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--exec-info-text, #7dd3fc);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
