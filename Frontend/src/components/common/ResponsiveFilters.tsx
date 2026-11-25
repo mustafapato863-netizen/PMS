@@ -45,7 +45,7 @@ interface SafeArea {
 const FILTER_POSITION_KEY = 'pms:responsive-filter-position:v1';
 
 function filterButtonSize() {
-  return window.innerWidth <= 639 ? 50 : 54;
+  return window.innerWidth <= 639 ? 44 : 54;
 }
 
 function edgeMargin() {

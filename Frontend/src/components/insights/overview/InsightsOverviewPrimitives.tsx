@@ -60,7 +60,7 @@ export function SectionHeader({
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-[2px] leading-normal">
         <h2 id={id} className="truncate text-[16px] font-bold text-[var(--insights-heading)]">{title}</h2>
-        {subtitle && <p className={`truncate text-[13px] font-normal ${subtitleTone === 'subtle' ? 'text-[var(--insights-subtle-text)]' : 'text-[var(--text-muted)]'}`}>{subtitle}</p>}
+        {subtitle && <p className={`text-[13px] font-normal sm:truncate ${subtitleTone === 'subtle' ? 'text-[var(--insights-subtle-text)]' : 'text-[var(--text-muted)]'}`}>{subtitle}</p>}
       </div>
       {action}
     </div>
