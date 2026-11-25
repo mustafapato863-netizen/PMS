@@ -1,21 +1,30 @@
 import type { ReactNode } from 'react';
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Building2,
   Globe,
   Info,
   Sparkles,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import type { ExecutiveRegion, ExecutiveTrendPoint } from '../../executive/types';
+import type { ExecutiveFunction, ExecutiveRegion, ExecutiveTrendPoint } from '../../executive/types';
 import { periodFromKey as execPeriodFromKey } from '../../executive/compose';
+import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../executive/format';
 import { getGradeTone, gradeTokenVar } from '../../../constants/grades';
-import { ScoreBar } from '../../../components/executive/v1/ExecPrimitives';
-import { formatShare } from '../../../components/executive/v1/execModel';
+import {
+  GradePill as ExecGradePill,
+  ScoreBar,
+  ScoreText,
+  StatLabel,
+  StatusPill,
+  ToneText,
+} from '../../../components/executive/v1/ExecPrimitives';
+import { FUNCTION_STYLE, formatShare } from '../../../components/executive/v1/execModel';
 import { gradeGradientVar } from '../../../components/executive/v1/gradeGradient';
+import FunctionTrendChart from '../../../components/executive/v1/FunctionTrendChart';
 import ScoreTrendChart from '../../../components/executive/v1/ScoreTrendChart';
 import {
   GRADE_STYLES,
@@ -314,12 +323,33 @@ export function SixMonthTrendCard({ trend, executiveTrend }: SixMonthTrendCardPr
 
 export interface RegionPerformanceShareSectionProps {
   regions: ExecutiveRegion[];
+  overallGap?: number | null;
   previousMonthLabel: string;
   onSelectRegion?: (region: 'EGY' | 'UAE') => void;
 }
 
+function resolveOverallGap(
+  overallGap: number | null | undefined,
+  regions: ExecutiveRegion[],
+): number | null {
+  if (overallGap !== null && overallGap !== undefined && Number.isFinite(overallGap)) {
+    return overallGap;
+  }
+  let weightedScore = 0;
+  let totalEmployees = 0;
+  for (const region of regions) {
+    if (region.score !== null && Number.isFinite(region.score) && region.employees > 0) {
+      weightedScore += region.score * region.employees;
+      totalEmployees += region.employees;
+    }
+  }
+  if (totalEmployees === 0) return null;
+  return Number((weightedScore / totalEmployees - 100).toFixed(1));
+}
+
 export function RegionPerformanceShareSection({
   regions,
+  overallGap,
   previousMonthLabel,
   onSelectRegion,
 }: RegionPerformanceShareSectionProps) {
@@ -328,6 +358,11 @@ export function RegionPerformanceShareSection({
   const topGapRegion = [...regions]
     .filter((region) => region.gap_share_percent !== null)
     .sort((left, right) => (right.gap_share_percent ?? 0) - (left.gap_share_percent ?? 0))[0];
+  const resolvedOverallGap = resolveOverallGap(overallGap, regions);
+  const formattedOverallGap =
+    resolvedOverallGap !== null && resolvedOverallGap < 0
+      ? `${resolvedOverallGap.toFixed(1)}%`
+      : null;
 
   return (
     <section
@@ -463,8 +498,16 @@ export function RegionPerformanceShareSection({
           <Info className="mt-0.5 size-4 shrink-0 text-slate-400" />
           <span>
             <strong className="font-semibold text-slate-800">{topGapRegion.region} gap share:</strong>{' '}
-            {Math.round(topGapRegion.gap_share_percent ?? 0)}% of the company gap from{' '}
-            {Math.round(topGapRegion.headcount_share_percent)}% of evaluated headcount.
+            {Math.round(topGapRegion.gap_share_percent ?? 0)}% of the{' '}
+            {formattedOverallGap ? (
+              <>
+                overall <strong className="font-semibold text-slate-800 tabular-nums">{formattedOverallGap}</strong>{' '}
+                company gap
+              </>
+            ) : (
+              'company gap'
+            )}{' '}
+            from {Math.round(topGapRegion.headcount_share_percent)}% of evaluated headcount.
           </span>
         </div>
       )}
@@ -517,7 +560,6 @@ export function GradeDistributionSection({
       {/* Horizontal bars A -> E */}
       <div className="mt-5 space-y-3.5">
         {rows.map((row) => {
-          const style = GRADE_STYLES[row.grade];
           const hasMove = row.change !== 0;
           const isUp = row.change > 0;
           return (
@@ -542,8 +584,12 @@ export function GradeDistributionSection({
               <div className="sm:col-span-6">
                 <div className="h-3.5 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
-                    style={{ width: `${Math.max(row.percentage, 3)}%` }}
-                    className={`h-full rounded-full transition-all duration-300 ${style.barFill}`}
+                    data-testid={`grade-bar-${row.grade}`}
+                    style={{
+                      width: `${Math.max(row.percentage, 3)}%`,
+                      background: `var(--pms-grad-grade-${row.grade.toLowerCase()})`,
+                    }}
+                    className="h-full rounded-full transition-all duration-300"
                   />
                 </div>
               </div>
@@ -739,48 +785,67 @@ export interface FunctionsOverviewSectionProps {
   onSelectFunction: (fn: FunctionOverviewItem) => void;
 }
 
+const FALLBACK_FUNCTION_STYLE = {
+  icon: Building2,
+  bg: 'var(--exec-chip-bg)',
+  color: 'var(--insights-accent)',
+};
+
+function shortComparisonLabel(previousMonthLabel: string): string {
+  const trimmed = previousMonthLabel.trim();
+  if (!trimmed || /^previous\b/i.test(trimmed)) return 'vs last';
+  const firstWord = trimmed.split(/\s+/)[0] ?? trimmed;
+  return `vs ${firstWord.slice(0, 3)}`;
+}
+
 export function FunctionsOverviewSection({
   functions,
   previousMonthLabel,
   onSelectFunction,
 }: FunctionsOverviewSectionProps) {
   const sortedFunctions = [...functions].sort((a, b) => a.score - b.score);
+  const comparison = shortComparisonLabel(previousMonthLabel);
+  const hasTrendCharts = sortedFunctions.some((fn) => (fn.trend?.length ?? 0) > 0);
 
   return (
     <section
       id="presentation-section-functions"
       data-section-label="Functions"
       aria-labelledby="functions-overview-heading"
-      className="pms-glass-surface scroll-mt-24 rounded-2xl p-6"
+      className="pms-glass-well scroll-mt-24 rounded-[22px] p-[18px] sm:p-[22px]"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <span className="text-xs font-semibold tracking-wider text-[var(--text-muted)] uppercase">
-            Functional Breakdown
-          </span>
-          <div className="mt-0.5 flex items-center gap-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-[10px]">
+        <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-wrap items-center gap-[8px]">
             <h2
               id="functions-overview-heading"
-              className="text-lg font-bold text-[var(--insights-heading)]"
+              className="text-[17px] font-bold tracking-[-0.015em] text-[var(--insights-heading)]"
             >
               Functions Overview
             </h2>
-            <span className="rounded-full border border-[var(--pms-glass-stage-border)] bg-[var(--pms-glass-stage-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">
+            <span className="rounded-full bg-[var(--exec-chip-bg)] px-[9px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
               {sortedFunctions.length} functions
             </span>
           </div>
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Sorted worst-first so functions needing support stand out immediately · Click any card to drill down
+          </p>
         </div>
-        <p className="text-xs font-medium text-[var(--text-muted)]">
-          Click any function card to open its deep-dive presentation page
-        </p>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-4">
         {sortedFunctions.map((fn) => {
           const tone = getGradeTone(fn.score);
-          const formattedGap = `${fn.gap > 0 ? '+' : ''}${fn.gap.toFixed(1)}%`;
-          const hasChange = fn.change !== null && fn.change !== undefined;
-          const isPositiveChange = (fn.change ?? 0) >= 0;
+          const fnStyle =
+            FUNCTION_STYLE[fn.functionName as ExecutiveFunction] ?? FALLBACK_FUNCTION_STYLE;
+          const Icon = fnStyle.icon;
+          const changeTone = scoreTone(fn.change);
+          const trendColor = changeTone === 'neutral' ? fnStyle.color : toneColor(changeTone);
+          const showCalloutRow = Boolean(
+            fn.isMostImproved ||
+              (fn.fallingMonths !== null && fn.fallingMonths !== undefined && fn.fallingMonths >= 2) ||
+              (fn.lowestTeam && fn.lowestTeam.score < 85),
+          );
 
           return (
             <button
@@ -789,13 +854,10 @@ export function FunctionsOverviewSection({
               data-testid={`function-card-${fn.slug}`}
               data-grade={fn.grade}
               onClick={() => onSelectFunction(fn)}
-              className="pms-glass-surface pms-glass-surface--interactive group relative flex flex-col justify-between overflow-hidden rounded-[18px] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
+              className="pms-glass-surface pms-glass-surface--interactive group/fcard relative flex h-full min-w-0 flex-col gap-[10px] overflow-hidden rounded-[18px] p-[15px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)]"
               style={{
-                backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} ${fn.hasMajorIssue ? 18 : 14}%, transparent) 0%, transparent 66%), var(--pms-glass-card-bg)`,
-                borderColor: `color-mix(in srgb, ${tone.gauge} ${fn.hasMajorIssue ? 42 : 22}%, var(--pms-glass-card-border))`,
-                boxShadow: fn.hasMajorIssue
-                  ? `0 0 0 1px color-mix(in srgb, ${tone.gauge} 24%, transparent), var(--pms-glass-card-shadow)`
-                  : undefined,
+                backgroundImage: `radial-gradient(circle at 95% 6%, color-mix(in srgb, ${tone.gauge} 13%, transparent) 0%, transparent 64%), var(--pms-glass-card-bg)`,
+                borderColor: `color-mix(in srgb, ${tone.gauge} 20%, var(--pms-glass-card-border))`,
               }}
             >
               {/* Smooth Linear-Gradient Top Grade Accent Strip */}
@@ -805,79 +867,132 @@ export function FunctionsOverviewSection({
                 style={{ background: gradeGradientVar(fn.score) }}
               />
 
-              <div className="w-full">
-                {/* Highlight Badge for Major Issues */}
-                {fn.hasMajorIssue && (
-                  <div className="mb-3">
+              {/* Zone 1: Function Icon + Title + Soft Grade Pill + Metadata Subtitle */}
+              <div className="flex w-full flex-col gap-[4px]">
+                <div className="flex items-center justify-between gap-[6px]">
+                  <div className="flex min-w-0 items-center gap-[8px]">
                     <span
-                      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold"
+                      aria-hidden="true"
+                      className="flex size-[32px] shrink-0 items-center justify-center rounded-[8px] shadow-2xs"
                       style={{
-                        background: tone.badgeBg,
-                        color: tone.badgeText,
-                        borderColor: tone.border,
+                        background: fnStyle.bg,
+                        border: `1px solid color-mix(in srgb, ${fnStyle.color} 18%, transparent)`,
                       }}
                     >
-                      <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
-                      {fn.highlightBadge ?? 'Major issue — deep dive next'}
+                      <Icon
+                        style={{ color: fnStyle.color, width: 16.5, height: 16.5 }}
+                        strokeWidth={1.85}
+                      />
                     </span>
+                    <h3 className="truncate text-[15px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] group-hover/fcard:underline">
+                      {fn.functionName}
+                    </h3>
                   </div>
-                )}
-
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-base font-bold text-[var(--insights-heading)] transition-colors group-hover:text-[var(--insights-accent-text)]">
-                    {fn.functionName}
-                  </h3>
-                  <GradePill grade={fn.grade} size="sm" />
+                  <ExecGradePill score={fn.score} className="!px-[8px] !py-[2px] !text-[11px]" />
                 </div>
 
-                {/* Frosted Metric Stage matching Executive Summary Function Cards */}
-                <div className="pms-glass-stage mt-3 space-y-2.5 rounded-[12px] px-3 py-2.5">
-                  <div
-                    className="text-3xl font-extrabold leading-none tracking-tight tabular-nums"
-                    style={{ color: tone.text }}
-                  >
-                    {fn.score.toFixed(1)}%
-                  </div>
-
-                  <ScoreBar score={fn.score} color={tone.gauge} showThreshold90 />
-
-                  <div className="space-y-1 border-t border-[var(--pms-glass-stage-border)] pt-2 text-xs">
-                    <div className="flex items-center justify-between text-[var(--text-secondary)]">
-                      <span>Gap to target</span>
-                      <span className="font-semibold tabular-nums text-[var(--insights-heading)]">{formattedGap}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[var(--text-secondary)]">
-                      <span>vs {previousMonthLabel}</span>
-                      {hasChange ? (
-                        <span
-                          className={`font-semibold tabular-nums ${
-                            isPositiveChange ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-rose-400'
-                          }`}
-                        >
-                          {isPositiveChange ? '+' : ''}
-                          {fn.change!.toFixed(1)}%
-                        </span>
-                      ) : (
-                        <span className="text-[var(--text-muted)]">No prior baseline</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {fn.teamsList && (
-                  <p className="mt-2.5 line-clamp-1 text-[11px] text-[var(--text-muted)]" title={fn.teamsList}>
-                    {fn.teamsList}
-                  </p>
-                )}
+                <p className="truncate text-[12px] leading-[1.35] text-[var(--text-muted)]">
+                  {fn.teamsCount} {fn.teamsCount === 1 ? 'team' : 'teams'} · {fn.headcount}{' '}
+                  {fn.headcount === 1 ? 'person' : 'people'}
+                  {fn.regions?.length ? ` · ${fn.regions.join(' + ')}` : ''}
+                </p>
               </div>
 
-              <div className="mt-3.5 flex w-full items-center justify-between border-t border-[var(--pms-glass-stage-border)] pt-2.5 text-[11px] font-medium text-[var(--text-muted)]">
-                <span>
-                  {fn.teamsCount} {fn.teamsCount === 1 ? 'team' : 'teams'} · {fn.headcount} HC
-                </span>
-                <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--insights-accent-text)] transition-transform group-hover:translate-x-0.5">
-                  Deep dive
-                  <ArrowRight className="size-3" aria-hidden="true" />
+              {/* Zone 2: Frosted Metric Stage (Score + Gap | vs Prev + ScoreBar w/ 90% Marker) */}
+              <div className="pms-glass-stage w-full space-y-2 rounded-[12px] px-3 py-2.5">
+                <div className="flex items-center justify-between gap-1.5">
+                  <ScoreText
+                    score={fn.score}
+                    className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums"
+                  >
+                    {fmtScore(fn.score)}
+                  </ScoreText>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex flex-col items-end">
+                      <StatLabel>Gap</StatLabel>
+                      <ToneText
+                        tone={scoreTone(fn.gap)}
+                        className="whitespace-nowrap text-[12px] font-bold tabular-nums"
+                      >
+                        {arrow(fn.gap)} {fmtSigned(fn.gap)}
+                      </ToneText>
+                    </div>
+                    <div className="h-6 w-px bg-[var(--exec-card-border)]" aria-hidden="true" />
+                    <div className="flex flex-col items-end">
+                      <StatLabel>{comparison}</StatLabel>
+                      <ToneText
+                        tone={changeTone}
+                        className="whitespace-nowrap text-[12px] font-semibold tabular-nums"
+                      >
+                        {arrow(fn.change)} {fmtSigned(fn.change)}
+                      </ToneText>
+                    </div>
+                  </div>
+                </div>
+
+                <ScoreBar score={fn.score} color={tone.gauge} showThreshold90 />
+              </div>
+
+              {/* Zone 3: Momentum & Lowest Team Highlight */}
+              {showCalloutRow && (
+                <div className="flex h-[20px] w-full items-center justify-between gap-1.5 overflow-hidden">
+                  <div className="flex shrink-0 items-center">
+                    {fn.isMostImproved ? (
+                      <StatusPill tone="success" icon={TrendingUp}>
+                        Most improved
+                      </StatusPill>
+                    ) : fn.fallingMonths !== null && fn.fallingMonths !== undefined && fn.fallingMonths >= 2 ? (
+                      <StatusPill tone="danger" icon={TrendingDown}>
+                        Falling {fn.fallingMonths} mo
+                      </StatusPill>
+                    ) : null}
+                  </div>
+
+                  {fn.lowestTeam && fn.lowestTeam.score < 85 && (
+                    <span
+                      aria-hidden="true"
+                      className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
+                      title={`Lowest team: ${fn.lowestTeam.team} (${fn.lowestTeam.score.toFixed(1)}%)`}
+                    >
+                      Low: {fn.lowestTeam.team} ({fn.lowestTeam.score.toFixed(0)}%)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Zone 4: 6-Month Sparkline Chart (matches Executive Summary when live trend exists) */}
+              {hasTrendCharts && (
+                <div className="w-full">
+                  <FunctionTrendChart
+                    color={trendColor}
+                    title={`${fn.functionName} score`}
+                    points={fn.trend ?? []}
+                  />
+                </div>
+              )}
+
+              {/* Zone 5: Uniform Bottom-Aligned Footer */}
+              <div className="mt-auto flex w-full items-center justify-between gap-[8px] border-t border-[var(--insights-row-border)] pt-[9px]">
+                <p
+                  className="min-w-0 flex-1 truncate text-[11.5px] font-medium leading-[1.35] text-[var(--text-secondary)]"
+                  title={fn.teamsList || fn.functionName}
+                >
+                  {fn.teamsList || fn.functionName}
+                </p>
+                <span
+                  className="inline-flex min-h-[28px] shrink-0 items-center justify-center gap-[4px] rounded-[9px] border px-[10px] py-[4px] text-[11.5px] font-bold transition-all duration-200 group-hover/fcard:brightness-95"
+                  style={{
+                    background: fnStyle.bg,
+                    color: fnStyle.color,
+                    borderColor: `color-mix(in srgb, ${fnStyle.color} 26%, transparent)`,
+                  }}
+                >
+                  Open
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-[12px] transition-transform duration-200 group-hover/fcard:translate-x-0.5"
+                  />
                 </span>
               </div>
             </button>
