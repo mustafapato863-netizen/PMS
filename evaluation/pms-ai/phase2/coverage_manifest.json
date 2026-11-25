@@ -1880,7 +1880,7 @@
         "source": "Frontend/src/types.ts#TEAM_DB_NAME_MAP"
       },
       {
-        "count": 66,
+        "count": 68,
         "mappings": [
           {
             "alias": "CSR",
@@ -2031,6 +2031,12 @@
             "country": null,
             "kind": "route",
             "target": "Quality Management"
+          },
+          {
+            "alias": "Quality and Case Management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and Case Management"
           },
           {
             "alias": "Quality and management",
@@ -2223,6 +2229,12 @@
             "country": null,
             "kind": "route",
             "target": "Qlty&Case-Mngt"
+          },
+          {
+            "alias": "quality-case-management",
+            "country": null,
+            "kind": "route",
+            "target": "Quality and Case Management"
           },
           {
             "alias": "quality-case-management",
@@ -2426,7 +2438,7 @@
             "alias": "quality-case-management",
             "country": null,
             "kind": "route-display",
-            "target": "Quality and management"
+            "target": "Quality and Case Management"
           },
           {
             "alias": "quality-management",
@@ -2991,7 +3003,7 @@
           {
             "country": null,
             "source": "Frontend/src/types.ts#TEAM_NAME_MAP",
-            "target": "Quality and management"
+            "target": "Quality and Case Management"
           }
         ]
       },
@@ -3031,6 +3043,11 @@
             "country": null,
             "source": "Frontend/src/types.ts#TEAM_ID_MAP",
             "target": "Qlty&Case-Mngt"
+          },
+          {
+            "country": null,
+            "source": "Frontend/src/types.ts#TEAM_ID_MAP",
+            "target": "Quality and Case Management"
           },
           {
             "country": null,
@@ -7868,7 +7885,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "5feb321b2d61f7e0625f9eb9a4976bc42717601edcf8cdbbb12e735b87af1831",
+  "inputs_fingerprint": "8a84e506eec27e9f22fee6d4d723893c01cb8ed5a3a581fc90518ce19b714014",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -38034,7 +38051,7 @@
       },
       {
         "area": "route-map:quality-case-management",
-        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and Case Management",
         "current_code_state": "The same route id has different display and database names. Neither was chosen as a new team.",
         "recommended_resolution_path": "unresolved",
         "sources": [
@@ -38053,7 +38070,7 @@
       },
       {
         "area": "route:quality-case-management",
-        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and management",
+        "conflicting_or_ambiguous_evidence": "Qlty&Case-Mngt, Quality and Case Management, Quality and management",
         "current_code_state": "The same alias is attached to more than one team or country in repository tables. No target was chosen.",
         "recommended_resolution_path": "unresolved",
         "sources": [

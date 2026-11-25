@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
 Version `2.1.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
-Input fingerprint `5feb321b2d61f7e0625f9eb9a4976bc42717601edcf8cdbbb12e735b87af1831`.
+Input fingerprint `8a84e506eec27e9f22fee6d4d723893c01cb8ed5a3a581fc90518ce19b714014`.
 
 This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. The runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` use the same roadmap vocabulary (Phase 2, issue #94); `CERTIFIED` is never emitted.
 
@@ -95,9 +95,9 @@ RCM Egypt children and RCM UAE children are separate config teams. The RCM paren
 - `region-switch:coding-submission-resubmission` (region_dependent_resolution) alias `coding | submission | resubmission | re-submission` → Coding (UAE), Coding EGY (EGY), Re-Submission (UAE), Resubmission (EGY), Submission (UAE), Submission EGY (EGY). resolve_canonical_team_name picks Egypt or UAE from a region hint, including a hint parsed from the prompt. This manifest does not call that function and does not pick a side.
 - `route-map:administration` (route_display_db_mismatch) alias `administration` → Administration, Offshore Admin & Management. The same route id has different display and database names. Neither was chosen as a new team.
 - `route-map:pre-approvals-ip-elective-dubai` (route_display_db_mismatch) alias `pre-approvals-ip-elective-dubai` → Pre-Approvals IP Elective, Pre-Approvals IP Elective Dubai. The same route id has different display and database names. Neither was chosen as a new team.
-- `route-map:quality-case-management` (route_display_db_mismatch) alias `quality-case-management` → Qlty&Case-Mngt, Quality and management. The same route id has different display and database names. Neither was chosen as a new team.
+- `route-map:quality-case-management` (route_display_db_mismatch) alias `quality-case-management` → Qlty&Case-Mngt, Quality and Case Management. The same route id has different display and database names. Neither was chosen as a new team.
 - `route:pre-approvals` (same_alias_multiple_targets) alias `pre-approvals` → Pre-Approvals, Pre-Approvals IP Offshore. The same alias is attached to more than one team or country in repository tables. No target was chosen.
-- `route:quality-case-management` (same_alias_multiple_targets) alias `quality-case-management` → Qlty&Case-Mngt, Quality and management. The same alias is attached to more than one team or country in repository tables. No target was chosen.
+- `route:quality-case-management` (same_alias_multiple_targets) alias `quality-case-management` → Qlty&Case-Mngt, Quality and Case Management, Quality and management. The same alias is attached to more than one team or country in repository tables. No target was chosen.
 - `spelling:coding` (mismatched_spellings) alias `coding` → Coding, Coding (UAE), Coding EGY (EGY). These spellings collapse to the same letters-and-digits key but name different targets. Frontend teamRouteKey strips punctuation, so a non-exact lookup can collide. No spelling was chosen.
 - `spelling:preapprovalsipelective` (mismatched_spellings) alias `preapprovalsipelective` → Pre-Approvals IP Elective (shared), Pre-Approvals IP Elective Dubai. These spellings collapse to the same letters-and-digits key but name different targets. Frontend teamRouteKey strips punctuation, so a non-exact lookup can collide. No spelling was chosen.
 - `spelling:preapprovalsipelectivedubai` (mismatched_spellings) alias `preapprovalsipelectivedubai` → Pre-Approvals IP Elective, Pre-Approvals IP Elective Dubai, Pre-Approvals IP Elective Dubai (UAE). These spellings collapse to the same letters-and-digits key but name different targets. Frontend teamRouteKey strips punctuation, so a non-exact lookup can collide. No spelling was chosen.
