@@ -16,7 +16,7 @@ import { UploadJobProvider } from './context/UploadJobContext';
 import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
-import { ROUTE_ROLES } from './lib/access';
+import { executiveViewForRole, ROUTE_ROLES } from './lib/access';
 import { hasAiAccess } from './utils/aiAccess';
 import { AiRouteGuard } from './components/common/AiRouteGuard';
 import { AiAvailabilityProvider } from './features/ai/aiAvailability';
@@ -25,7 +25,6 @@ import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 import MaintenanceView from './pages/MaintenanceView';
 
-const DepartmentalSummaryView = lazy(() => import('./pages/DepartmentalSummaryView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
 const PositionDepartmentRoute = lazy(() => import('./pages/PositionDepartmentRoute'));
@@ -49,6 +48,19 @@ const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" labe
 function RedirectToExecutiveSummary() {
   const { search } = useLocation();
   return <Navigate to={{ pathname: '/executive', search }} replace />;
+}
+
+/** Executive Summary now renders the Monthly Review workspace; Function Viewer redirects to Function Summary. */
+function ExecutiveSummaryRoute() {
+  const { currentUser } = useAuth();
+  if (executiveViewForRole(currentUser?.role) === 'function') {
+    return <Navigate to="/function-summary" replace />;
+  }
+  return (
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <MonthlyPresentationView />
+    </Suspense>
+  );
 }
 
 function AnimatedRoutes() {
@@ -86,8 +98,8 @@ function AnimatedRoutes() {
         {/* Login Page Redirect when authenticated */}
         <Route path="/login" element={<Navigate to="/executive" replace />} />
 
-        {/* Executive Summary: corporate, managerial (team scope) and function redirect. */}
-        <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
+        {/* Executive Summary (powered by Monthly Review); legacy DepartmentalSummaryView is hidden. */}
+        <Route path="/executive" element={<ExecutiveSummaryRoute />} />
         <Route path="/departmental-summary" element={<RedirectToExecutiveSummary />} />
         <Route path="/bsc" element={<RedirectToExecutiveSummary />} />
         <Route path="/balanced-scorecard" element={<RedirectToExecutiveSummary />} />
@@ -177,23 +189,9 @@ function AnimatedRoutes() {
           }
         />
 
-        {/* Monthly Review: same signed-in audience as Executive Summary. Function roles are sent to Function Summary. */}
-        <Route
-          path="/monthly-presentation"
-          element={
-            <RouteGuard allowedRoles={ROUTE_ROLES.monthlyPresentation}>
-              <Suspense fallback={<RouteLoadingFallback />}><MonthlyPresentationView /></Suspense>
-            </RouteGuard>
-          }
-        />
-        <Route
-          path="/monthly-view"
-          element={
-            <RouteGuard allowedRoles={ROUTE_ROLES.monthlyPresentation}>
-              <Suspense fallback={<RouteLoadingFallback />}><MonthlyPresentationView /></Suspense>
-            </RouteGuard>
-          }
-        />
+        {/* Legacy Monthly Review paths redirect to Executive Summary while preserving query filters. */}
+        <Route path="/monthly-presentation" element={<RedirectToExecutiveSummary />} />
+        <Route path="/monthly-view" element={<RedirectToExecutiveSummary />} />
 
         {/* Maintenance / Status Page */}
         <Route path="/maintenance" element={<MaintenanceView mode="maintenance" />} />

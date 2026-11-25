@@ -5,7 +5,6 @@ import {
   CalendarCheck, ChevronDown, Eye, Gauge, LogOut, Settings, ShieldAlert, User, Users, UsersRound, X, Megaphone,
   FileBarChart,
   Lightbulb,
-  Presentation,
   Building2,
   Layers,
   PanelLeftClose,
@@ -30,7 +29,6 @@ import {
   canAccessCorrectiveActions,
   canAccessSettingsContent,
   canAccessInsights,
-  canAccessMonthlyPresentation,
   canAccessPmsAi,
   canAccessPlanning,
   canSeeReportsNav,
@@ -346,7 +344,6 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean; drawerOnly?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(aiEnabled && canAccessPmsAi(role, effectiveAiTier) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),

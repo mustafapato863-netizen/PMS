@@ -74,16 +74,7 @@ const baseNavigation = ({
       subtitle: 'Performance overview across all teams',
       icon: 'layout',
       path: '/executive',
-      keywords: ['departmental'],
-    });
-    items.push({
-      id: 'nav-monthly-review',
-      group: 'navigation',
-      label: 'Monthly Review',
-      subtitle: 'Speaking deck for one region and month',
-      icon: 'chart',
-      path: '/monthly-presentation',
-      keywords: ['monthly presentation', 'presentation'],
+      keywords: ['departmental', 'monthly review', 'monthly presentation', 'presentation'],
     });
   }
 

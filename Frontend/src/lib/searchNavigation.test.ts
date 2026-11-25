@@ -24,24 +24,26 @@ const BROAD_PATHS = ['/reports', '/insights', '/planning'];
 describe('buildLocalSearchResults access (General Manager role string)', () => {
   it('lets a General Manager search product pages, but not Settings shortcuts', () => {
     const paths = pathsFor(user('General Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/executive', '/monthly-presentation', '/team/all']) {
+    for (const path of [...BROAD_PATHS, '/corrective-actions', '/executive', '/team/all']) {
       expect(paths).toContain(path);
     }
-    for (const path of ['/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
+    for (const path of ['/monthly-presentation', '/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
   });
 
   it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
     const paths = pathsFor(user('Manager', true));
     // Executive v1 (Mustafa): Manager gets Reports, Planning and Corrective Actions, never Insights.
-    for (const path of ['/insights', '/team-management', ...SETTINGS_SHORTCUTS]) {
+    for (const path of ['/insights', '/monthly-presentation', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
-    for (const path of ['/executive', '/monthly-presentation', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
+    for (const path of ['/executive', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
   });
 
-  it('finds the single Executive Summary entry by its old Departmental name', () => {
+  it('finds the single Executive Summary entry by its old Departmental or Monthly Review names', () => {
     const results = buildLocalSearchResults({ role: 'Admin', currentUser: user('Admin', true), firstTeamPath: null, query: 'departmental' });
     expect(results.filter((item) => item.group === 'navigation').map((item) => item.path)).toEqual(['/executive']);
+    const monthly = buildLocalSearchResults({ role: 'Admin', currentUser: user('Admin', true), firstTeamPath: null, query: 'monthly review' });
+    expect(monthly.filter((item) => item.group === 'navigation').map((item) => item.path)).toEqual(['/executive']);
     const executive = buildLocalSearchResults({ role: 'Admin', currentUser: user('Admin', true), firstTeamPath: null, query: 'executive' });
     expect(executive.filter((item) => item.path === '/executive')).toHaveLength(1);
   });
@@ -57,8 +59,8 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
   it('offers Executive Corrective Actions but not Admin/GM-only pages', () => {
     const paths = pathsFor(user('Executive'));
     expect(paths).toContain('/corrective-actions');
-    expect(paths).toContain('/monthly-presentation');
-    for (const path of [...BROAD_PATHS, '/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
+    expect(paths).toContain('/executive');
+    for (const path of [...BROAD_PATHS, '/monthly-presentation', '/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
   });
 
   it('keeps upload and user-management actions Admin-only', () => {

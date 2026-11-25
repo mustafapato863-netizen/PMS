@@ -180,8 +180,8 @@ export function gradeForScore(score: number): GradeLetter {
  * Canonical September 2026 Offshore Egypt Snapshot
  */
 export const OFFSHORE_EGYPT_SEP_2026_DATA: MonthlyOverviewData = {
-  title: 'Monthly Presentation',
-  FlowName: 'Monthly Overview',
+  title: 'Executive Summary',
+  FlowName: 'Executive Overview',
   regionCode: 'EGY',
   regionName: 'Offshore Egypt',
   monthLabel: 'September 2026',
@@ -679,7 +679,7 @@ export function adaptSummaryToMonthlyOverview(
               change: fn.change,
               teamsCount: fn.teams?.length ?? 0,
               headcount: fn.employees,
-              teamsList: (fn.teams ?? []).join(' · '),
+              teamsList: (fn.teams ?? []).map((team) => presentationTeamName(team)).join(' · '),
               hasMajorIssue,
               highlightBadge: hasMajorIssue ? 'Major issue — deep dive next' : undefined,
               regions: fn.regions,
@@ -807,7 +807,7 @@ function emptyMonthlyOverview(
   const effective = summary?.period.effective;
   const label = effective ? `${effective.month} ${effective.year}` : 'No period selected';
   return {
-    title: 'Monthly Review',
+    title: 'Executive Summary',
     FlowName: 'Authorized scope',
     regionCode: region,
     regionName: monthlyRegionName(region),

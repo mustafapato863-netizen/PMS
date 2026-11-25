@@ -243,7 +243,7 @@ export default function FunctionDeepDiveView({
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
             >
               <ArrowLeft className="size-3.5" aria-hidden />
-              <span>Back to Monthly Overview</span>
+              <span>Back to Executive Summary</span>
             </button>
 
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-semibold text-emerald-700">

@@ -20,7 +20,7 @@ export function MonthlyReviewLoading({ toolbar }: { toolbar?: ReactNode }) {
         className="space-y-5"
       >
         <div className="rounded-2xl border border-slate-200/90 bg-white px-4 py-4 shadow-xs sm:px-5">
-          <h1 className="text-lg font-bold text-slate-900">Loading Monthly Review</h1>
+          <h1 className="text-lg font-bold text-slate-900">Loading Executive Summary</h1>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-600">
             Gathering the teams and scores available to your account.
           </p>

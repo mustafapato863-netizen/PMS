@@ -138,7 +138,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     const status = screen.getByTestId('monthly-loading');
     expect(status).toHaveAttribute('aria-busy', 'true');
-    expect(within(status).getByRole('heading', { name: 'Loading Monthly Review' })).toBeInTheDocument();
+    expect(within(status).getByRole('heading', { name: 'Loading Executive Summary' })).toBeInTheDocument();
     expect(within(status).getByText(/teams and scores available to your account/i)).toBeInTheDocument();
     expect(screen.getByTestId('monthly-loading-preview')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByTestId('region-egy')).toBeEnabled();
@@ -253,9 +253,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     );
 
     expect(
-      screen.getByRole('heading', { name: 'Monthly Presentation' }),
+      screen.getByRole('heading', { name: 'Executive Summary' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Monthly Overview')).toBeInTheDocument();
+    expect(screen.getByText('Executive Overview')).toBeInTheDocument();
     expect(screen.getByText('Offshore Egypt · September 2026')).toBeInTheDocument();
     expect(screen.getByTestId('header-region-badge')).toHaveTextContent('Offshore Egypt');
     expect(screen.getByTestId('header-page-indicator')).toHaveTextContent('Page 1 of 6');
@@ -387,7 +387,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     // 1. Header with breadcrumb & full-word grade
     const breadcrumb = screen.getByTestId('team-deep-dive-breadcrumb');
-    expect(within(breadcrumb).getByText('Overview')).toBeInTheDocument();
+    expect(within(breadcrumb).getByText('Executive Summary')).toBeInTheDocument();
     expect(within(breadcrumb).getByText('Call Center')).toBeInTheDocument();
     expect(within(breadcrumb).getByText('Inbound Agents')).toBeInTheDocument();
     expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('92.6%');
@@ -1096,9 +1096,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('role-action-form')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Edit' }).length).toBeGreaterThan(0);
 
-    fireEvent.click(within(screen.getByTestId('role-detail-breadcrumb')).getByRole('button', { name: 'Overview' }));
+    fireEvent.click(within(screen.getByTestId('role-detail-breadcrumb')).getByRole('button', { name: 'Executive Summary' }));
     expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Monthly Presentation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Executive Summary' })).toBeInTheDocument();
     expect(screen.getByTestId('overall-score-value')).toHaveTextContent('86.6%');
     expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
   }, 15000);
@@ -1208,10 +1208,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(teamsAtRisk).getAllByText('Critical <70%').length).toBeGreaterThan(0);
 
     // The filter trigger is docked inside the bottom control bar, not in the top header or floating.
-    const header = screen.getByRole('banner', { name: 'Monthly Presentation Header' });
+    const header = screen.getByRole('banner', { name: 'Executive Summary Header' });
     const bar = screen.getByTestId('presentation-control-bar');
-    expect(within(header).queryByRole('button', { name: /Monthly filters/ })).not.toBeInTheDocument();
-    expect(within(bar).getByRole('button', { name: /Monthly filters/ })).toBeInTheDocument();
+    expect(within(header).queryByRole('button', { name: /Executive filters/ })).not.toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: /Executive filters/ })).toBeInTheDocument();
     expect(document.querySelector('.responsive-filter-docked--in-bar')).not.toBeNull();
     expect(document.querySelector('.responsive-filter-launcher')).toBeNull();
 
@@ -1231,8 +1231,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('monthly-region-performance-share')).toBeInTheDocument();
 
     // The docked panel opens from the bottom bar and offers Region, Reporting month, and Function.
-    fireEvent.click(within(bar).getByRole('button', { name: /Monthly filters/ }));
-    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Executive filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Executive filters' });
     expect(dialog).toBeInTheDocument();
     const regionSelect = within(dialog).getByLabelText('Region') as HTMLSelectElement;
     expect(regionSelect.value).toBe('ALL');
@@ -1251,9 +1251,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     fireEvent.click(screen.getByTestId('function-card-quality-case-management'));
     expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
     expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
-    // The deep-dive title renders "Qlty&Case-Mngt Deep Dive", so the bare
+    // The deep-dive title renders "Quality and management Deep Dive", so the bare
     // name never appears as an element's exact text; match it as a substring.
-    expect(screen.getAllByText(/Qlty&Case-Mngt/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Quality and management/).length).toBeGreaterThan(0);
   });
 
   it('steps from the control bar and saves agenda and notes for the region and month', () => {
@@ -1275,7 +1275,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(bar).getByRole('switch', { name: 'Presentation Mode' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
-    const filterBtn = within(bar).getByRole('button', { name: /Monthly filters/ });
+    const filterBtn = within(bar).getByRole('button', { name: /Executive filters/ });
     const barOrder = [
       within(bar).getByTestId('presentation-month'),
       filterBtn,
@@ -1692,8 +1692,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     // Open Monthly filters dialog and choose Dubai branch.
     const bar = screen.getByTestId('presentation-control-bar');
-    fireEvent.click(within(bar).getByRole('button', { name: /Monthly filters/ }));
-    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    fireEvent.click(within(bar).getByRole('button', { name: /Executive filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Executive filters' });
     const branchSelect = within(dialog).getByLabelText('Branch') as HTMLSelectElement;
     expect(branchSelect.value).toBe('');
     expect(Array.from(branchSelect.options).map((o) => o.text)).toEqual([
@@ -1724,8 +1724,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
 
     // Selecting Ajman and clicking the active branch pill clear button restores all branches.
-    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/ }));
-    fireEvent.change(within(screen.getByRole('dialog', { name: 'Monthly filters' })).getByLabelText('Branch'), {
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Executive filters/ }));
+    fireEvent.change(within(screen.getByRole('dialog', { name: 'Executive filters' })).getByLabelText('Branch'), {
       target: { value: 'ajman' },
     });
     expect(screen.queryByTestId('function-card-rcm')).not.toBeInTheDocument();
@@ -1800,8 +1800,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
     expect(screen.queryByTestId('function-card-csr')).not.toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/ }));
-    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Executive filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Executive filters' });
     const branchSelect = within(dialog).getByLabelText('Branch') as HTMLSelectElement;
     expect(branchSelect).toBeDisabled();
     expect(branchSelect.value).toBe('dubai');
@@ -1931,8 +1931,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getAllByText('48.0%').length).toBeGreaterThan(0);
 
     // Open Monthly filters and choose Sharjah (20 / 25 = 80.0% Attendance -> higher score).
-    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/i }));
-    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Executive filters/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Executive filters' });
     fireEvent.change(within(dialog).getByLabelText('Branch'), { target: { value: 'sharjah' } });
     const sharjahScore = screen.getByTestId('team-deep-dive-score').textContent;
     expect(screen.getAllByText('80.0%').length).toBeGreaterThan(0);

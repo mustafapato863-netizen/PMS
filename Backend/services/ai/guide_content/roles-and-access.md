@@ -17,4 +17,4 @@ PMS organizes performance across two regions and four UAE branches:
 
 - **Regions**: **Offshore Egypt (`EGY`)**, **UAE Region (`UAE`)**, and **All regions** (combined view with a Region Performance Share comparison).
 - **UAE Branches**: **Dubai**, **Sharjah**, **Ajman**, and **Clinics**.
-- **Branch Filtering**: Selecting a UAE branch in **Monthly Review**, **Executive Summary**, or **Team Dashboard** filters branch-owned teams (such as UAE Pre-Approvals and clinical units) and recalculates geo-partitioned Call Center (**Inbound** and **Outbound**) Attendance Rate and weighted scores specifically for that branch.
+- **Branch Filtering**: Selecting a UAE branch in **Executive Summary** or **Team Dashboard** filters branch-owned teams (such as UAE Pre-Approvals and clinical units) and recalculates geo-partitioned Call Center (**Inbound** and **Outbound**) Attendance Rate and weighted scores specifically for that branch.

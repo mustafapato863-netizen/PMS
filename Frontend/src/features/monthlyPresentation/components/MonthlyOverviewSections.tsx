@@ -123,7 +123,7 @@ export function MonthlyOverviewHeader({
 }: MonthlyOverviewHeaderProps) {
   return (
     <header
-      aria-label="Monthly Presentation Header"
+      aria-label="Executive Summary Header"
       className="pms-glass-surface flex min-w-0 flex-col gap-4 rounded-2xl p-4 sm:p-5"
     >
       <div className="flex min-w-0 flex-col gap-2">

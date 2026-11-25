@@ -940,7 +940,7 @@ export function PresentationControlBar({
                     <span className="text-[10px] font-bold tabular-nums text-slate-400">
                       01
                     </span>
-                    <span className="truncate text-xs font-bold">Monthly Overview</span>
+                    <span className="truncate text-xs font-bold">Executive Summary</span>
                   </div>
                   {typeof overallScore === 'number' && (
                     <span className="shrink-0 text-xs font-bold tabular-nums text-slate-600">
@@ -1175,9 +1175,9 @@ export function PresentationControlBar({
                 activeCount={resolvedFilterActiveCount}
                 clearableCount={resolvedFilterClearableCount}
                 onClear={onClearFilters ?? onSelectOverview}
-                label="Monthly filters"
+                label="Executive filters"
               >
-                <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Monthly filters">
+                <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label="Executive filters">
                   {onRegionChange && (
                     <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
                       Region

@@ -28,6 +28,8 @@ import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 
 const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtitle: string }> = {
   '/executive': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
+  '/monthly-presentation': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
+  '/monthly-view': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
   '/function-summary': { title: 'Function Summary', compactTitle: 'Function', subtitle: 'Performance within your selected function' },
   '/account': { title: 'Account Settings', compactTitle: 'Account', subtitle: 'Your profile, security and appearance' },
   '/settings': { title: 'Administration', compactTitle: 'Admin', subtitle: 'System configuration and user management' },

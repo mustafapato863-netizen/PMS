@@ -1751,7 +1751,7 @@ function MonthlyPresentationScreen({
           onDeleteIndividualAction={handleDeleteIndividualAction}
           toolbar={isInline ? employeePicker : headerToolbar}
           presentationMode={isInline || presentationMode}
-          overviewLabel={isInline ? 'Executive Summary' : undefined}
+          overviewLabel="Executive Summary"
           onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} />}
@@ -1780,7 +1780,7 @@ function MonthlyPresentationScreen({
           onRestoreTeamActions={handleRestoreTeamActions}
           toolbar={isInline ? employeePicker : headerToolbar}
           presentationMode={isInline || presentationMode}
-          overviewLabel={isInline ? 'Executive Summary' : undefined}
+          overviewLabel="Executive Summary"
           onSelectEmployee={isInline ? selectEmployee : openEmployeeProfile}
         />
         {isInline && canReadInlineActions && <ExecutiveTeamDecisions records={inlineMembers} overallOnly />}
@@ -2041,7 +2041,7 @@ function MonthlyPresentationScreen({
     ).split(' ');
     const parsedYear = Number(monthParts[1]);
     return {
-      page_id: isInline ? 'executive_summary' : 'monthly_presentation',
+      page_id: 'executive_summary',
       route_id: `${location.pathname}${location.search}`,
       region: activeRegion,
       branch: activeBranch || null,
@@ -2060,7 +2060,6 @@ function MonthlyPresentationScreen({
     activeRegion,
     authorizedRecords.length,
     explicitPreview,
-    isInline,
     location.pathname,
     location.search,
     overviewData.drivers?.negative,
@@ -2127,13 +2126,13 @@ function MonthlyPresentationScreen({
   }
 
   if (pageHasError || hasNoAssignments || invalidScopeRequest || noDataForSelection) {
-    const surfaceName = isInline ? 'Executive Summary analysis' : 'Monthly Review';
+    const surfaceName = isInline ? 'Executive Summary analysis' : 'Executive Summary';
     const heading = pageHasError
         ? `${surfaceName} data could not be loaded`
         : hasNoAssignments
           ? isInline
             ? 'No assigned teams in scope'
-            : 'No monthly review assignments'
+            : 'No executive summary assignments'
           : invalidScopeRequest
             ? `This ${surfaceName} scope is outside your access`
             : activeBranchLabel
@@ -2214,7 +2213,7 @@ function MonthlyPresentationScreen({
                   onClick={handleBackToOverview}
                   className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Back to overview
+                  Back to Executive Summary
                 </button>
               )}
             </div>
