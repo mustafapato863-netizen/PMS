@@ -19,6 +19,7 @@ const monthlyTestState = vi.hoisted(() => ({
     email: string;
     accessible_regions: string[];
     accessible_functions: string[];
+    accessible_branches?: string[];
     assigned_region: string | null;
   },
   catalog: null as null | {
@@ -1601,5 +1602,178 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     } finally {
       planItemsSpy.mockRestore();
     }
+  });
+
+  it('filters the monthly report by Branch from Monthly filters, supports clearing, and recovers from empty branch states', () => {
+    monthlyTestState.catalog = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: {
+        periods: [{ year: 2026, month: 'October', key: '2026-10' }],
+        months: ['October'],
+        scopes: [],
+        teams: [
+          { team: 'Coding', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+        ],
+        authorized_functions: ['RCM', 'CSR'],
+      },
+    };
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'U-DXB-1', name: 'Dubai Coder', team: 'Coding', month: 'October' },
+          region: 'UAE',
+          branch_key: 'dubai',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.92, grade: 'B' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'U-AJM-1', name: 'Ajman CSR', team: 'CSR', month: 'October' },
+          region: 'UAE',
+          branch_key: 'ajman',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Ajman' },
+          evaluation: { score: 0.64, grade: 'E' },
+          kpi_values: [],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=uae&period=2026-10']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    // Unfiltered: both RCM (Dubai) and CSR (Ajman) appear.
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
+    expect(screen.queryByTestId('header-branch-badge')).not.toBeInTheDocument();
+
+    // Open Monthly filters dialog and choose Dubai branch.
+    const bar = screen.getByTestId('presentation-control-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /Monthly filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    const branchSelect = within(dialog).getByLabelText('Branch') as HTMLSelectElement;
+    expect(branchSelect.value).toBe('');
+    expect(Array.from(branchSelect.options).map((o) => o.text)).toEqual([
+      'All branches',
+      'Dubai',
+      'Sharjah (Sharqa)',
+      'Ajman',
+      'Clinics',
+    ]);
+
+    fireEvent.change(branchSelect, { target: { value: 'dubai' } });
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('branch=dubai');
+    expect(screen.getByTestId('header-branch-badge')).toHaveTextContent('Dubai');
+    expect(screen.getByTestId('active-branch-pill')).toHaveTextContent('Branch: Dubai');
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-csr')).not.toBeInTheDocument();
+
+    // Selecting a branch with no data shows an empty state with a Branch selector to recover.
+    fireEvent.change(branchSelect, { target: { value: 'clinics' } });
+    expect(screen.getByTestId('monthly-no-data')).toHaveTextContent('No performance data for Clinics in October 2026');
+    const emptyBranchSelect = within(screen.getByTestId('monthly-no-data')).getByLabelText('Branch') as HTMLSelectElement;
+    expect(emptyBranchSelect.value).toBe('clinics');
+
+    // Recover by clearing back to All branches from the empty-state Branch dropdown.
+    fireEvent.change(emptyBranchSelect, { target: { value: '' } });
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('branch=');
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
+
+    // Selecting Ajman and clicking the active branch pill clear button restores all branches.
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/ }));
+    fireEvent.change(within(screen.getByRole('dialog', { name: 'Monthly filters' })).getByLabelText('Branch'), {
+      target: { value: 'ajman' },
+    });
+    expect(screen.queryByTestId('function-card-rcm')).not.toBeInTheDocument();
+    expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Ajman branch filter' }));
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
+  });
+
+  it('locks the Branch filter to the assigned branch for Branch Director accounts', () => {
+    monthlyTestState.role = 'Branch Director';
+    monthlyTestState.currentUser = {
+      email: 'director@sgh.test',
+      accessible_regions: ['UAE'],
+      accessible_functions: ['RCM', 'CSR'],
+      accessible_branches: ['dubai'],
+      assigned_region: 'UAE',
+    };
+    monthlyTestState.catalog = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: {
+        periods: [{ year: 2026, month: 'October', key: '2026-10' }],
+        months: ['October'],
+        scopes: [],
+        teams: [
+          { team: 'Coding', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+        ],
+        authorized_functions: ['RCM', 'CSR'],
+      },
+    };
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'U-DXB-1', name: 'Dubai Coder', team: 'Coding', month: 'October' },
+          region: 'UAE',
+          branch_key: 'dubai',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Dubai' },
+          evaluation: { score: 0.92, grade: 'B' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'U-AJM-1', name: 'Ajman CSR', team: 'CSR', month: 'October' },
+          region: 'UAE',
+          branch_key: 'ajman',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: { Branch: 'Ajman' },
+          evaluation: { score: 0.64, grade: 'E' },
+          kpi_values: [],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=uae&period=2026-10']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('header-branch-badge')).toHaveTextContent('Dubai');
+    expect(screen.getByTestId('active-branch-pill')).toHaveTextContent('Branch: Dubai');
+    expect(screen.queryByRole('button', { name: /Clear Dubai branch filter/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-csr')).not.toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('presentation-control-bar')).getByRole('button', { name: /Monthly filters/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Monthly filters' });
+    const branchSelect = within(dialog).getByLabelText('Branch') as HTMLSelectElement;
+    expect(branchSelect).toBeDisabled();
+    expect(branchSelect.value).toBe('dubai');
   });
 });

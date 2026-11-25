@@ -60,6 +60,7 @@ export interface MonthlyOverviewHeaderProps {
   title: string;
   flowName: string;
   regionName: string;
+  branchLabel?: string;
   monthLabel: string;
   regionCode: 'EGY' | 'UAE' | 'ALL';
   pageIndicatorLabel: string;
@@ -70,6 +71,7 @@ export function MonthlyOverviewHeader({
   title,
   flowName,
   regionName,
+  branchLabel,
   monthLabel,
   regionCode,
   pageIndicatorLabel,
@@ -101,6 +103,16 @@ export function MonthlyOverviewHeader({
             {regionName}
           </span>
 
+          {branchLabel && (
+            <span
+              data-testid="header-branch-badge"
+              className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-0.5 text-xs font-semibold text-cyan-800"
+            >
+              <span className="size-1.5 rounded-full bg-current" />
+              {branchLabel}
+            </span>
+          )}
+
           {/* Page Indicator Badge */}
           <span
             data-testid="header-page-indicator"
@@ -115,7 +127,8 @@ export function MonthlyOverviewHeader({
             {title}
           </h1>
           <p className="mt-1 text-sm font-medium text-slate-500">
-            {regionName} · {monthLabel}
+            {regionName}
+            {branchLabel ? ` · ${branchLabel}` : ''} · {monthLabel}
           </p>
         </div>
       </div>

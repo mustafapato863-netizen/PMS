@@ -727,6 +727,10 @@ export function PresentationControlBar({
   region,
   availableRegions,
   onRegionChange,
+  branch = '',
+  branchOptions = [],
+  branchLocked = false,
+  onBranchChange,
   filterActiveCount,
   filterClearableCount,
   onClearFilters,
@@ -752,6 +756,10 @@ export function PresentationControlBar({
   region: 'EGY' | 'UAE' | 'ALL';
   availableRegions?: Array<'ALL' | 'EGY' | 'UAE'>;
   onRegionChange?: (region: 'ALL' | 'EGY' | 'UAE') => void;
+  branch?: string;
+  branchOptions?: Array<{ value: string; label: string }>;
+  branchLocked?: boolean;
+  onBranchChange?: (branch: string) => void;
   filterActiveCount?: number;
   filterClearableCount?: number;
   onClearFilters?: () => void;
@@ -806,8 +814,13 @@ export function PresentationControlBar({
   const resolvedRegions = availableRegions && availableRegions.length > 0
     ? availableRegions
     : [region];
-  const resolvedFilterActiveCount = filterActiveCount ?? ((region !== 'ALL' ? 1 : 0) + (activeFunctionSlug ? 1 : 0));
-  const resolvedFilterClearableCount = filterClearableCount ?? (activeFunctionSlug ? 1 : 0);
+  const activeBranchLabel = branch
+    ? branchOptions.find((option) => option.value === branch)?.label ?? branch
+    : '';
+  const resolvedFilterActiveCount =
+    filterActiveCount ?? ((region !== 'ALL' ? 1 : 0) + (branch ? 1 : 0) + (activeFunctionSlug ? 1 : 0));
+  const resolvedFilterClearableCount =
+    filterClearableCount ?? ((!branchLocked && branch ? 1 : 0) + (activeFunctionSlug ? 1 : 0));
 
   const padKey = `${region}:${periodKey}`;
 
@@ -1065,7 +1078,8 @@ export function PresentationControlBar({
           title="Data Compliance"
           subtitle={
             <span className="rounded-md bg-[var(--bg-sunken)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]">
-              {region === 'EGY' ? 'Egypt' : region === 'UAE' ? 'UAE' : 'All regions'} · {selectedMonthLabel}
+              {region === 'EGY' ? 'Egypt' : region === 'UAE' ? 'UAE' : 'All regions'}
+              {activeBranchLabel ? ` · ${activeBranchLabel}` : ''} · {selectedMonthLabel}
             </span>
           }
           icon={<ClipboardCheck size={15} className="shrink-0 text-[var(--sgh-cyan-primary)]" aria-hidden="true" />}
@@ -1176,6 +1190,23 @@ export function PresentationControlBar({
                         <option value="ALL" disabled={!resolvedRegions.includes('ALL')}>All regions</option>
                         <option value="EGY" disabled={!resolvedRegions.includes('EGY')}>Egypt (EGY)</option>
                         <option value="UAE" disabled={!resolvedRegions.includes('UAE')}>UAE</option>
+                      </select>
+                    </label>
+                  )}
+                  {onBranchChange && (
+                    <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+                      Branch
+                      <select
+                        aria-label="Branch"
+                        value={branch}
+                        disabled={branchLocked}
+                        onChange={(event) => onBranchChange(event.target.value)}
+                        className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                      >
+                        {!branchLocked && <option value="">All branches</option>}
+                        {branchOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
                       </select>
                     </label>
                   )}

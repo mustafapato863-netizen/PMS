@@ -6,7 +6,12 @@ import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
 import { isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
-import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
+import {
+  SUMMARY_BRANCHES,
+  composeExecutiveSummary,
+  normalizeRegion,
+  toExecRecords,
+} from '../executive/compose';
 import { apiFetch } from '../../lib/apiClient';
 import {
   businessTeamName,
@@ -317,7 +322,40 @@ function MonthlyPresentationScreen({
 
   const rawRegion = searchParams.get('region');
   const normalizedUrlRegion = normalizeRegion(rawRegion);
+  const rawBranch = (searchParams.get('branch') || '').trim().toLowerCase();
   const periodParam = searchParams.get('period') || searchParams.get('month') || undefined;
+
+  const availableBranches = useMemo(() => {
+    if (assigned.branchLocked) {
+      if (assigned.branches.length === 0) return [];
+      return assigned.branches.map((value) => {
+        const known = SUMMARY_BRANCHES.find((item) => item.value === value);
+        return known ?? { value, label: value.charAt(0).toUpperCase() + value.slice(1) };
+      });
+    }
+    return SUMMARY_BRANCHES;
+  }, [assigned.branchLocked, assigned.branches]);
+
+  const availableBranchValues = useMemo(
+    () => new Set(availableBranches.map((item) => item.value)),
+    [availableBranches],
+  );
+  const branchLockedSingle = assigned.branchLocked && availableBranches.length <= 1;
+
+  const activeBranch = useMemo(() => {
+    if (assigned.branchLocked && assigned.branch) return assigned.branch;
+    if (rawBranch && availableBranchValues.has(rawBranch)) return rawBranch;
+    return '';
+  }, [assigned.branch, assigned.branchLocked, availableBranchValues, rawBranch]);
+
+  const activeBranchLabel = useMemo(() => {
+    if (!activeBranch) return undefined;
+    return (
+      availableBranches.find((item) => item.value === activeBranch)?.label ??
+      SUMMARY_BRANCHES.find((item) => item.value === activeBranch)?.label ??
+      activeBranch
+    );
+  }, [activeBranch, availableBranches]);
 
   const activeRegion: MonthlyRegionFilter = useMemo(() => {
     const validRegions: MonthlyRegionFilter[] = availableRegions.length ? availableRegions : ['EGY'];
@@ -354,6 +392,20 @@ function MonthlyPresentationScreen({
     [searchParams, setSearchParams],
   );
 
+  const handleBranchChange = useCallback(
+    (nextBranch: string) => {
+      if (branchLockedSingle) return;
+      const normalized = nextBranch.trim().toLowerCase();
+      const next = new URLSearchParams(searchParams);
+      if (normalized && availableBranchValues.has(normalized)) next.set('branch', normalized);
+      else next.delete('branch');
+      // Role slugs can carry a branch suffix (e.g. csr-ajman); clear role when switching branches.
+      next.delete('role');
+      setSearchParams(next, { replace: true });
+    },
+    [availableBranchValues, branchLockedSingle, searchParams, setSearchParams],
+  );
+
   // Kept up here because the header toolbar below uses this handler.
   const handlePeriodChange = useCallback((key: string) => {
     const next = new URLSearchParams(searchParams);
@@ -384,22 +436,34 @@ function MonthlyPresentationScreen({
     });
   }, [execRecords, explicitPreview, serverTeams]);
 
+  const branchScopedRecords = useMemo(() => {
+    if (!activeBranch) return authorizedRecords;
+    return authorizedRecords
+      .filter((record) =>
+        (record.branches ?? []).some((branch) => branch.trim().toLowerCase() === activeBranch),
+      )
+      .map((record) => ({ ...record, branches: [activeBranch] }));
+  }, [activeBranch, authorizedRecords]);
+
   const overviewData: MonthlyOverviewData = useMemo(() => {
     const base =
-      explicitPreview && data && data.regionCode === activeRegion
+      explicitPreview && data && data.regionCode === activeRegion && !activeBranch
         ? data
         : adaptSummaryToMonthlyOverview(
             composeExecutiveSummary({
               view: 'corporate',
               role,
-              records: authorizedRecords,
+              records: branchScopedRecords,
               // The All view aggregates both regions: no region filter.
-              filters: { region: activeRegion === 'ALL' ? undefined : activeRegion },
+              filters: {
+                region: activeRegion === 'ALL' ? undefined : activeRegion,
+                branch: activeBranch || undefined,
+              },
               today: clock,
               requestedPeriodKey,
             }),
             activeRegion,
-            { allowSnapshotFallback: explicitPreview },
+            { allowSnapshotFallback: explicitPreview && !activeBranch },
           );
     const regionFunctionSlugs = new Set(
       (explicitPreview ? authorizedFunctionNames : serverTeams
@@ -415,10 +479,11 @@ function MonthlyPresentationScreen({
       ),
     };
   }, [
+    activeBranch,
     activeRegion,
     authorizedFunctionNames,
     authorizedFunctionSlugs,
-    authorizedRecords,
+    branchScopedRecords,
     clock,
     data,
     explicitPreview,
@@ -428,23 +493,28 @@ function MonthlyPresentationScreen({
     serverTeams,
   ]);
 
-  const latestAuthorizedPeriod = authorizedRecords
+  const branchRegionRecords = useMemo(
+    () => branchScopedRecords.filter((record) => activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion),
+    [activeRegion, branchScopedRecords],
+  );
+  const periodOptionSource = branchRegionRecords.length > 0 ? branchScopedRecords : authorizedRecords;
+  const latestAuthorizedPeriod = periodOptionSource
     .filter((record) => activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion)
     .map((record) => record.period.key)
     .sort((a, b) => b.localeCompare(a))[0];
   const currentPeriodKey = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, '0')}`;
   const displayedPeriodKey = requestedPeriodKey ??
-    (explicitPreview && data?.regionCode === activeRegion ? data.periodKey : undefined) ??
+    (explicitPreview && data?.regionCode === activeRegion && !activeBranch ? data.periodKey : undefined) ??
     latestAuthorizedPeriod ??
     currentPeriodKey;
   const monthOptions = useMemo(
     () => presentationMonthOptions(
-      authorizedRecords.map((record) => ({ region: record.region, periodKey: record.period.key })),
+      periodOptionSource.map((record) => ({ region: record.region, periodKey: record.period.key })),
       activeRegion,
       clock,
       displayedPeriodKey,
     ),
-    [activeRegion, authorizedRecords, clock, displayedPeriodKey],
+    [activeRegion, clock, displayedPeriodKey, periodOptionSource],
   );
   const selectedPeriodKey = displayedPeriodKey;
 
@@ -493,10 +563,10 @@ function MonthlyPresentationScreen({
   );
 
   const selectedPeriodRecords = useMemo(
-    () => authorizedRecords.filter(
+    () => branchScopedRecords.filter(
       (record) => (activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion) && record.period.key === selectedPeriodKey,
     ),
-    [activeRegion, authorizedRecords, selectedPeriodKey],
+    [activeRegion, branchScopedRecords, selectedPeriodKey],
   );
   const currentFunctionRecords = useMemo(
     () => selectedPeriodRecords.filter((record) => {
@@ -558,6 +628,18 @@ function MonthlyPresentationScreen({
     next.delete('role');
     setSearchParams(next, { replace: true });
   }, [availableRegions, catalogQuery.isLoading, normalizedUrlRegion, rawRegion, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (catalogQuery.isLoading || !rawBranch) return;
+    const branchAllowed = assigned.branchLocked && assigned.branch
+      ? rawBranch === assigned.branch
+      : availableBranchValues.has(rawBranch);
+    if (branchAllowed) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('branch');
+    next.delete('role');
+    setSearchParams(next, { replace: true });
+  }, [assigned.branch, assigned.branchLocked, availableBranchValues, catalogQuery.isLoading, rawBranch, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (catalogQuery.isLoading || (!explicitPreview && catalogQuery.isError)) return;
@@ -653,6 +735,24 @@ function MonthlyPresentationScreen({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
 
+  const handleClearFilters = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    if (!branchLockedSingle) next.delete('branch');
+    next.delete('deepDive');
+    next.delete('team');
+    next.delete('role');
+    if (params.functionSlug) {
+      const basePath = location.pathname.startsWith('/monthly-view')
+        ? '/monthly-view'
+        : '/monthly-presentation';
+      const query = next.toString();
+      navigate(`${basePath}${query ? `?${query}` : ''}`);
+    } else {
+      setSearchParams(next);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [branchLockedSingle, location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
+
   const handleSelectAgentTeam = useCallback(
     (teamSlug: string, functionName?: string) => {
       const next = new URLSearchParams(searchParams);
@@ -693,24 +793,24 @@ function MonthlyPresentationScreen({
   const resolvedFunctionData: CallCenterDeepDiveData | null = useMemo(() => {
     if (!functionSlug || !isFunctionAuthorized(functionSlug)) return null;
     if (!explicitPreview && currentFunctionRecords.length === 0) return null;
-    if (functionSlug === 'call-center' && explicitPreview && callCenterDeepDiveData) return callCenterDeepDiveData;
+    if (functionSlug === 'call-center' && explicitPreview && !activeBranch && callCenterDeepDiveData) return callCenterDeepDiveData;
     return buildFunctionDeepDiveFromRecords(
       functionSlug,
-      authorizedRecords,
+      branchScopedRecords,
       storedActions,
       activeRegion,
       selectedPeriodKey,
       // Explicit preview (the September 2026 presentation demo) may stand
       // in the published September snapshot when nothing was measured at
       // all. Production measured dives never fall back to it.
-      { allowSnapshotFallback: explicitPreview },
+      { allowSnapshotFallback: explicitPreview && !activeBranch },
     );
-  }, [activeRegion, authorizedRecords, callCenterDeepDiveData, currentFunctionRecords.length, explicitPreview, functionSlug, isFunctionAuthorized, selectedPeriodKey, storedActions]);
+  }, [activeBranch, activeRegion, branchScopedRecords, callCenterDeepDiveData, currentFunctionRecords.length, explicitPreview, functionSlug, isFunctionAuthorized, selectedPeriodKey, storedActions]);
 
   const roleCards = useMemo(() => {
     if (!resolvedFunctionData || !isRoleBasedFunction(resolvedFunctionData.functionSlug)) return [];
-    return resolveRoleCards(resolvedFunctionData, authorizedRecords);
-  }, [authorizedRecords, resolvedFunctionData]);
+    return resolveRoleCards(resolvedFunctionData, branchScopedRecords);
+  }, [branchScopedRecords, resolvedFunctionData]);
 
   const currentRoleRecords = useMemo(() => {
     if (!activeRoleSlug) return [];
@@ -720,7 +820,7 @@ function MonthlyPresentationScreen({
     if (directMatches.length > 0) return directMatches;
     const effectivePeriodKey = resolvedFunctionData?.periodKey;
     if (effectivePeriodKey && effectivePeriodKey !== selectedPeriodKey) {
-      return authorizedRecords.filter(
+      return branchScopedRecords.filter(
         (record) =>
           (activeRegion === 'ALL' || normalizeRegion(record.region) === activeRegion) &&
           record.period.key === effectivePeriodKey &&
@@ -728,28 +828,28 @@ function MonthlyPresentationScreen({
       );
     }
     return [];
-  }, [activeRegion, activeRoleSlug, authorizedRecords, currentFunctionRecords, resolvedFunctionData, selectedPeriodKey]);
+  }, [activeRegion, activeRoleSlug, branchScopedRecords, currentFunctionRecords, resolvedFunctionData, selectedPeriodKey]);
 
   const resolvedTeamData: TeamDeepDiveData | null = useMemo(() => {
     if (!activeTeamSlug || activeRoleSlug || !functionSlug || !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)) return null;
     if (!explicitPreview && currentTeamRecords.length === 0) return null;
-    if (explicitPreview && teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
+    if (explicitPreview && !activeBranch && teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
       return teamDeepDiveData;
     }
     return buildTeamDeepDiveFromRecords(
       activeTeamSlug,
-      authorizedRecords,
+      branchScopedRecords,
       storedActions,
       activeRegion,
       selectedPeriodKey,
     );
-  }, [activeRegion, activeRoleSlug, activeTeamSlug, authorizedRecords, currentTeamRecords.length, explicitPreview, functionSlug, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
+  }, [activeBranch, activeRegion, activeRoleSlug, activeTeamSlug, branchScopedRecords, currentTeamRecords.length, explicitPreview, functionSlug, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
 
   const resolvedRoleData = useMemo(() => {
     if (!activeRoleSlug || !resolvedFunctionData) return null;
-    if (!hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, authorizedRecords)) return null;
-    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, authorizedRecords);
-  }, [activeRoleSlug, authorizedRecords, resolvedFunctionData, storedActions]);
+    if (!hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, branchScopedRecords)) return null;
+    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, branchScopedRecords);
+  }, [activeRoleSlug, branchScopedRecords, resolvedFunctionData, storedActions]);
 
   // The combined view dedupes each country's catalog separately, so a shared
   // business team present in both regions lists once per region.
@@ -768,17 +868,21 @@ function MonthlyPresentationScreen({
   // 'Call Center' is a deprecated parent team (replaced by Inbound/Outbound);
   // it never has its own records, so hide only that row from the box. RCM
   // and the *_management teams stay listed until the user decides otherwise.
-  const teamsWithoutData = teamsInCurrentFunction.filter((team) =>
-    team.team !== CALL_CENTER_TEAM &&
-    !selectedPeriodRecords.some((record) => recordMatchesCatalogTeam({
-      recordTeam: record.team,
-      recordRegion: record.region,
-      recordLevel: record.level,
-      catalogTeam: team.team,
-      catalogRegion: normalizeRegion(team.region),
-      levels: team.performance_levels,
-    })),
-  );
+  // Catalog teams do not store per-branch membership, so omit missing-upload
+  // attribution while a single branch filter is active.
+  const teamsWithoutData = activeBranch
+    ? []
+    : teamsInCurrentFunction.filter((team) =>
+        team.team !== CALL_CENTER_TEAM &&
+        !selectedPeriodRecords.some((record) => recordMatchesCatalogTeam({
+          recordTeam: record.team,
+          recordRegion: record.region,
+          recordLevel: record.level,
+          catalogTeam: team.team,
+          catalogRegion: normalizeRegion(team.region),
+          levels: team.performance_levels,
+        })),
+      );
 
   const canonicalTeam = resolvedTeamData?.canonicalTeam ?? '';
   const teamPeriodKey = resolvedTeamData?.periodKey ?? '';
@@ -1110,69 +1214,98 @@ function MonthlyPresentationScreen({
   );
 
   const [presentationMode, setPresentationMode] = useState(false);
-  // The global filter counts the always-applied region plus the function deep
-  // dive; the reporting month is a required dimension, not a filter (same as
-  // InsightsHeader, which does not count its period either). Only the
-  // function deep dive can be cleared, back to the overview. The combined
-  // All view is the unfiltered state, so it adds nothing to the badge.
-  const monthlyFilterActiveCount = (activeRegion !== 'ALL' ? 1 : 0) + (functionSlug ? 1 : 0);
-  const monthlyFilterClearableCount = functionSlug ? 1 : 0;
-  const headerToolbar = availableRegions.length > 1 ? (
-    <div
-      role="tablist"
-      aria-label="Region filter"
-      className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
-    >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeRegion === 'ALL'}
-        data-testid="region-all"
-        onClick={() => handleRegionChange('ALL')}
-        disabled={!availableRegions.includes('ALL')}
-        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-          activeRegion === 'ALL'
-            ? 'bg-white font-bold text-blue-600 shadow-xs'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        <span>All regions</span>
-      </button>
+  // The global filter counts the always-applied region plus any active branch
+  // and function deep dive; the reporting month is a required dimension, not a
+  // filter (same as InsightsHeader, which does not count its period either).
+  // Unlocked branch and function deep dive can be cleared back to the overview.
+  // The combined All view is the unfiltered state, so it adds nothing to the badge.
+  const monthlyFilterActiveCount =
+    (activeRegion !== 'ALL' ? 1 : 0) +
+    (activeBranch ? 1 : 0) +
+    (functionSlug ? 1 : 0);
+  const monthlyFilterClearableCount =
+    (!branchLockedSingle && activeBranch ? 1 : 0) +
+    (functionSlug ? 1 : 0);
+  const hasRegionTabs = availableRegions.length > 1;
+  const headerToolbar = hasRegionTabs || activeBranchLabel ? (
+    <>
+      {hasRegionTabs && (
+        <div
+          role="tablist"
+          aria-label="Region filter"
+          className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRegion === 'ALL'}
+            data-testid="region-all"
+            onClick={() => handleRegionChange('ALL')}
+            disabled={!availableRegions.includes('ALL')}
+            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+              activeRegion === 'ALL'
+                ? 'bg-white font-bold text-blue-600 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>All regions</span>
+          </button>
 
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeRegion === 'EGY'}
-        data-testid="region-egy"
-        onClick={() => handleRegionChange('EGY')}
-        disabled={!availableRegions.includes('EGY')}
-        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-          activeRegion === 'EGY'
-            ? 'bg-white font-bold text-blue-600 shadow-xs'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        <EgyptFlag className="size-3.5" />
-        <span>Egypt (EGY)</span>
-      </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRegion === 'EGY'}
+            data-testid="region-egy"
+            onClick={() => handleRegionChange('EGY')}
+            disabled={!availableRegions.includes('EGY')}
+            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+              activeRegion === 'EGY'
+                ? 'bg-white font-bold text-blue-600 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <EgyptFlag className="size-3.5" />
+            <span>Egypt (EGY)</span>
+          </button>
 
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeRegion === 'UAE'}
-        data-testid="region-uae"
-        onClick={() => handleRegionChange('UAE')}
-        disabled={!availableRegions.includes('UAE')}
-        className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
-          activeRegion === 'UAE'
-            ? 'bg-white font-bold text-blue-600 shadow-xs'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        <UaeFlag className="size-3.5" />
-        <span>UAE</span>
-      </button>
-    </div>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRegion === 'UAE'}
+            data-testid="region-uae"
+            onClick={() => handleRegionChange('UAE')}
+            disabled={!availableRegions.includes('UAE')}
+            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+              activeRegion === 'UAE'
+                ? 'bg-white font-bold text-blue-600 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <UaeFlag className="size-3.5" />
+            <span>UAE</span>
+          </button>
+        </div>
+      )}
+      {activeBranchLabel && (
+        <span
+          data-testid="active-branch-pill"
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-semibold text-cyan-800 shadow-2xs"
+        >
+          <span className="size-1.5 rounded-full bg-cyan-500" aria-hidden="true" />
+          <span>Branch: {activeBranchLabel}</span>
+          {!branchLockedSingle && (
+            <button
+              type="button"
+              aria-label={`Clear ${activeBranchLabel} branch filter`}
+              onClick={() => handleBranchChange('')}
+              className="compact-control ml-0.5 inline-flex size-5 !min-h-0 items-center justify-center rounded-md text-cyan-700 transition-colors hover:bg-cyan-100 hover:text-cyan-950"
+            >
+              ×
+            </button>
+          )}
+        </span>
+      )}
+    </>
   ) : null;
 
   const insideDetail = Boolean(activeTeamSlug || activeRoleSlug);
@@ -1316,6 +1449,7 @@ function MonthlyPresentationScreen({
           title={overviewData.title}
           flowName={overviewData.FlowName}
           regionName={overviewData.regionName}
+          branchLabel={activeBranchLabel}
           monthLabel={overviewData.monthLabel}
           regionCode={overviewData.regionCode}
           pageIndicatorLabel={overviewData.pageIndicator.label}
@@ -1379,19 +1513,19 @@ function MonthlyPresentationScreen({
     const sorted = [...overviewData.functions].sort((a, b) => a.score - b.score);
     return sorted.map((fn) => {
       const fnDeepDive =
-        explicitPreview && fn.slug === 'call-center' && callCenterDeepDiveData
+        explicitPreview && !activeBranch && fn.slug === 'call-center' && callCenterDeepDiveData
           ? callCenterDeepDiveData
           : buildFunctionDeepDiveFromRecords(
               fn.slug,
-              authorizedRecords,
+              branchScopedRecords,
               storedActions,
               activeRegion,
               selectedPeriodKey,
-              { allowSnapshotFallback: explicitPreview },
+              { allowSnapshotFallback: explicitPreview && !activeBranch },
             );
 
       if (isRoleBasedFunction(fn.slug)) {
-        const cards = resolveRoleCards(fnDeepDive, authorizedRecords).sort(
+        const cards = resolveRoleCards(fnDeepDive, branchScopedRecords).sort(
           (a, b) => a.score - b.score,
         );
         const withIssues = cards.filter((c) => c.score < 90);
@@ -1443,8 +1577,9 @@ function MonthlyPresentationScreen({
       };
     });
   }, [
+    activeBranch,
     activeRegion,
-    authorizedRecords,
+    branchScopedRecords,
     callCenterDeepDiveData,
     explicitPreview,
     overviewData.functions,
@@ -1454,6 +1589,7 @@ function MonthlyPresentationScreen({
 
   const sectionViewKey = [
     activeRegion,
+    activeBranch,
     selectedPeriodKey,
     functionSlug,
     activeTeamSlug,
@@ -1481,6 +1617,7 @@ function MonthlyPresentationScreen({
       page_id: 'monthly_presentation',
       route_id: `${location.pathname}${location.search}`,
       region: activeRegion,
+      branch: activeBranch || null,
       period: selectedPeriodKey,
       month: monthParts[0] || null,
       year: Number.isFinite(parsedYear) && parsedYear >= 2000 ? parsedYear : null,
@@ -1491,6 +1628,7 @@ function MonthlyPresentationScreen({
       is_fallback_data: isFallbackData,
     };
   }, [
+    activeBranch,
     activeRegion,
     authorizedRecords.length,
     explicitPreview,
@@ -1517,14 +1655,17 @@ function MonthlyPresentationScreen({
       : !explicitPreview && serverTeams.length === 0);
   const invalidRegionRequest = !explicitPreview && Boolean(rawRegion) &&
     (!normalizedUrlRegion || !availableRegions.includes(normalizedUrlRegion as MonthlyRegionFilter));
+  const invalidBranchRequest = !explicitPreview && Boolean(rawBranch) &&
+    !(assigned.branchLocked && assigned.branch ? rawBranch === assigned.branch : availableBranchValues.has(rawBranch));
   const invalidFunctionRequest = Boolean(functionSlug) && !isFunctionAuthorized(functionSlug);
   const invalidTeamRequest = Boolean(activeTeamSlug) && (
     !functionSlug || !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)
   );
   const invalidRoleRequest = Boolean(activeRoleSlug) && (
-    !resolvedFunctionData || !hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, authorizedRecords)
+    !resolvedFunctionData || !hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, branchScopedRecords)
   );
-  const invalidScopeRequest = invalidRegionRequest || invalidFunctionRequest || invalidTeamRequest || invalidRoleRequest;
+  const invalidScopeRequest =
+    invalidRegionRequest || invalidBranchRequest || invalidFunctionRequest || invalidTeamRequest || invalidRoleRequest;
   const selectionHasData = activeRoleSlug
     ? Boolean(
         resolvedRoleData && (
@@ -1540,14 +1681,16 @@ function MonthlyPresentationScreen({
         : selectedPeriodRecords.length > 0;
   const noDataForSelection = !explicitPreview && !pageIsLoading && !pageHasError &&
     !hasNoAssignments && !invalidScopeRequest && !selectionHasData;
-  const scopeTeamsForNoData = activeTeamSlug
-    ? teamsInCurrentFunction.filter((team) => {
-        const teamCountry = parseTeamCountry(normalizeRegion(team.region));
-        return team.team !== CALL_CENTER_TEAM &&
-          (slugifyIdentifier(team.team) === activeTeamSlug
-            || (teamCountry !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, teamCountry)));
-      })
-    : teamsInCurrentFunction.filter((team) => team.team !== CALL_CENTER_TEAM);
+  const scopeTeamsForNoData = activeBranch
+    ? []
+    : activeTeamSlug
+      ? teamsInCurrentFunction.filter((team) => {
+          const teamCountry = parseTeamCountry(normalizeRegion(team.region));
+          return team.team !== CALL_CENTER_TEAM &&
+            (slugifyIdentifier(team.team) === activeTeamSlug
+              || (teamCountry !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, teamCountry)));
+        })
+      : teamsInCurrentFunction.filter((team) => team.team !== CALL_CENTER_TEAM);
   const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
 
   if (pageIsLoading) {
@@ -1561,7 +1704,9 @@ function MonthlyPresentationScreen({
           ? 'No monthly review assignments'
           : invalidScopeRequest
             ? 'This Monthly Review link is outside your access'
-            : `No performance data for ${selectedPeriodLabel}`;
+            : activeBranchLabel
+              ? `No performance data for ${activeBranchLabel} in ${selectedPeriodLabel}`
+              : `No performance data for ${selectedPeriodLabel}`;
     const detail = pageHasError
         ? 'The authorized team list or performance records could not be fetched. Retry to load your scope again.'
         : hasNoAssignments
@@ -1569,10 +1714,12 @@ function MonthlyPresentationScreen({
             ? 'Your account has no authorized function for Monthly Review. Contact your administrator to request access.'
             : 'No active teams are currently assigned to your account. Contact your administrator if this looks wrong.'
           : invalidScopeRequest
-            ? 'The requested region, function, team, or position is not included in your authorized scope.'
-            : functionSlug
-              ? 'No results were uploaded for this function, team, or position in the selected period.'
-              : 'No results were uploaded for your authorized scope in the selected period.';
+            ? 'The requested region, branch, function, team, or position is not included in your authorized scope.'
+            : activeBranchLabel
+              ? `No results were found for ${activeBranchLabel} in the selected scope and period.`
+              : functionSlug
+                ? 'No results were uploaded for this function, team, or position in the selected period.'
+                : 'No results were uploaded for your authorized scope in the selected period.';
 
     return (
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
@@ -1598,6 +1745,23 @@ function MonthlyPresentationScreen({
                   {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
                 </select>
               </label>
+              {availableBranches.length > 0 && (
+                <label className="flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
+                  Branch
+                  <select
+                    aria-label="Branch"
+                    value={activeBranch}
+                    disabled={branchLockedSingle}
+                    onChange={(event) => handleBranchChange(event.target.value)}
+                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    {!branchLockedSingle && <option value="">All branches</option>}
+                    {availableBranches.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {functionSlug && (
                 <button
                   type="button"
@@ -1638,9 +1802,13 @@ function MonthlyPresentationScreen({
         region={activeRegion}
         availableRegions={availableRegions}
         onRegionChange={handleRegionChange}
+        branch={activeBranch}
+        branchOptions={availableBranches}
+        branchLocked={branchLockedSingle}
+        onBranchChange={handleBranchChange}
         filterActiveCount={monthlyFilterActiveCount}
         filterClearableCount={monthlyFilterClearableCount}
-        onClearFilters={handleBackToOverview}
+        onClearFilters={handleClearFilters}
         periodKey={selectedPeriodKey}
         monthOptions={monthOptions}
         onPeriodChange={handlePeriodChange}
