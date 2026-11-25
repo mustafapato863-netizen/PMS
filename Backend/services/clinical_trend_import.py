@@ -44,6 +44,56 @@ def _clinical_frame(excel_file, team):
     return frame.rename(columns={"Report Month": "Date", "EmpID": "HR ID", "Emp Name": "Agent Name"})
 
 
+# These columns are the workbook's achieved KPI scores. The ER block
+# repeats labels for actual, target and achievement in that order.
+_ER_ACHIEVEMENTS = {
+    "Valid Complains": "Valid complaints",
+    "Satisfaction Score.3": "Satisfaction",
+    "LAMA Retention %.2": "LAMA retention",
+    "Admission Rate %.2": "Admission rate",
+    "Re-visit Rate  %.2": "24-hour revisit rate",
+    "Avg Time to Initial Patient Assessment 10%": "Time to initial patient assessment",
+    "Medical Error Rate ": "Medical error rate",
+    "Documentation%.3": "Documentation",
+}
+_QUALITY_ACHIEVEMENTS = {
+    "Audit Compliance Rate % (IP, OP, Re-Submission)": "Audit compliance",
+    "Rejection Rate": "Rejection rate",
+    "Case Management Rate": "Case management",
+    "Revenue Impact": "Revenue impact",
+}
+
+
+def clinical_measurements(team, raw):
+    """Expose source achievement separately from the published employee score."""
+    if not isinstance(raw, dict):
+        return []
+    if team == "ER Dr":
+        columns = _ER_ACHIEVEMENTS
+    elif team == "Qlty&Case-Mngt":
+        columns = _QUALITY_ACHIEVEMENTS
+    elif team == "Radiologist":
+        columns = {key: key[4:].strip().rstrip("%").strip() for key in raw if key.startswith("Ach.")}
+    else:
+        return []
+    measurements = []
+    for column, label in columns.items():
+        try:
+            value = float(raw.get(column))
+        except (ValueError, TypeError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+        measurements.append({
+            "kpi_key": f"achievement_{key}", "label": f"{label} achievement",
+            "direction": "higher_better", "unit": "%", "actual_value": value,
+            "target_value": 1.0, "achievement_ratio": min(value, 1),
+            "weight_applied": 0, "contribution": 0, "view_only": True,
+        })
+    return measurements
+
+
 def import_clinical_trend(excel_file):
     records, employees = [], []
     for team in TEAMS:
@@ -89,6 +139,6 @@ def import_clinical_trend(excel_file):
                     "kpi_key": "PerformanceScore", "label": "Performance Score", "direction": "higher_better",
                     "actual_value": score / 100, "target_value": 1, "achievement_ratio": score / 100,
                     "weight_applied": 1, "contribution": score / 100,
-                }],
+                }, *clinical_measurements(team, raw)],
             ))
     return records, employees

@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from config.database import Base
-from models.models import PerformanceRecord, Team
+from models.models import KPIValue, PerformanceRecord, Team
 from scripts.prepare_csr_source_upload import SOURCE_TABS, prepare_upload
 from services.dashboard_record_service import DashboardRecordService
 from services.performance_dashboard_read_service import PerformanceDashboardReadService, _summary
@@ -103,19 +103,19 @@ def test_all_three_clinical_trends_keep_source_scores_and_skip_unscored_rows():
         er = writer.book.create_sheet("ER Dr")
         er.append(["Date", "HR ID", "Performance Score", "Performance Grade", "A.No Re-visit within 72 hours"])
         er.append([september, "SGHD00101", 0.60, "Unsatisfactory", 7, None,
-                   "Report Month", "Location", "EmpID", "Emp Name", "No Re-visit within 24 hours",
+                   "Report Month", "Location", "EmpID", "Emp Name", "No Re-visit within 24 hours", "Valid Complains",
                    "Performance Score", "Performance Grade"])
-        er.append([None] * 6 + [october, "Dubai", "SGHD00102", "ER doctor", 1, 0.82, "Average"])
-        er.append([None] * 6 + [october, "Dubai", "SGHD00103", "ER doctor without score", 0, None, None])
+        er.append([None] * 6 + [october, "Dubai", "SGHD00102", "ER doctor", 1, 0, 0.82, "Average"])
+        er.append([None] * 6 + [october, "Dubai", "SGHD00103", "ER doctor without score", 0, None, None, None])
 
         columns = ["Date", "HR ID", "Employee Name", "Branch", "Performance Score", "Performance Grade"]
         pd.DataFrame([
-            [october, "SGHD00104", "Radiologist", "Dubai", 0.97, "Meet Expectations"],
-        ], columns=columns).to_excel(writer, sheet_name="Radiologist", index=False)
+            [october, "SGHD00104", "Radiologist", "Dubai", 0.97, "Meet Expectations", 0.85],
+        ], columns=columns + ["Ach.TAT %"]).to_excel(writer, sheet_name="Radiologist", index=False)
         pd.DataFrame([
-            [october, "SGHD00105", "Quality reviewer", "Dubai", 0.69, "Below average"],
-            [october, "SGHD00106", "Quality reviewer without score", "Dubai", None, None],
-        ], columns=columns).to_excel(writer, sheet_name="Qlty&Case-Mngt", index=False)
+            [october, "SGHD00105", "Quality reviewer", "Dubai", 0.69, "Below average", 0.72],
+            [october, "SGHD00106", "Quality reviewer without score", "Dubai", None, None, None],
+        ], columns=columns + ["Case Management Rate"]).to_excel(writer, sheet_name="Qlty&Case-Mngt", index=False)
 
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -126,6 +126,14 @@ def test_all_three_clinical_trends_keep_source_scores_and_skip_unscored_rows():
         assert {r.team: (r.evaluation.score, r.evaluation.grade) for r in records} == {
             "ER Dr": (82.0, "C"), "Radiologist": (97.0, "B"), "Qlty&Case-Mngt": (69.0, "D"),
         }
+        expected = {"ER Dr": 0.0, "Radiologist": 0.85, "Qlty&Case-Mngt": 0.72}
+        def observations(rows):
+            return {r.team: [v["actual_value"] for v in r.kpi_values if v.get("view_only")] for r in rows}
+        assert observations(records) == {team: [value] for team, value in expected.items()}
+        # Existing imports only have the summary KPI persisted.
+        db.query(KPIValue).filter(KPIValue.kpi_key != "PerformanceScore").delete()
+        db.commit()
+        assert observations(DashboardRecordService(db).list_records()) == observations(records)
         er_record = next(r for r in records if r.team == "ER Dr")
         assert er_record.branch_key == "dubai"
         assert er_record.raw_data["No Re-visit within 24 hours"] == 1

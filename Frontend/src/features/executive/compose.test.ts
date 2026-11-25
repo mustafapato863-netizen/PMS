@@ -5,6 +5,7 @@ import {
   gradeDistribution,
   isAtRisk,
   kpiRows,
+  monthlyKpiRows,
   mapDrivers,
   scopedRecordDrivers,
   summarizeActions,
@@ -40,6 +41,20 @@ function compose(patch: Partial<ComposeInput> = {}) {
 const record = (score: number, patch: Partial<ExecRecord> = {}): ExecRecord => ({
   employeeId: `e${score}`, name: `E ${score}`, team: 'Inbound', region: 'EGY', position: 'Agent L1', level: 'Employee',
   period: { key: '2026-06', year: 2026, month: 'June' } as ExecRecord['period'], score, kpis: [], ...patch,
+});
+
+it.each(['Sales', 'ER Dr', 'Radiologist', 'Qlty&Case-Mngt'])('keeps %s published measurements visible in Monthly Review', (team) => {
+  const agent = {
+    identity: { employee_id: 'sample', name: 'Sample', team, month: 'October' },
+    year: 2026, region: 'UAE', evaluation: { score: 61.5 },
+    raw_data: team === 'Sales' ? { ScoringMethod: 'uae_published_employee_score' } : {},
+    kpi_values: [{ kpi_key: 'example', actual_value: 0, target_value: 1, achievement_ratio: 0,
+      weight_applied: 0, contribution: 0, unit: '%', view_only: true }],
+  } as unknown as AgentRecord;
+  const month = toExecRecords([agent]);
+  expect(month[0].score).toBe(61.5);
+  expect(kpiRows(month, [])).toHaveLength(0);
+  expect(monthlyKpiRows(month, [])).toMatchObject([{ actual: 0, target: 100, weight: 0 }]);
 });
 
 describe('executive function membership (disjoint, Executive cards only)', () => {

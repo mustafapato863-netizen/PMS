@@ -2,7 +2,7 @@ import type { PMSAction } from '../../types';
 import type { ObservationStatus } from '../ai/types';
 import {
   SUMMARY_BRANCHES,
-  kpiRows,
+  monthlyKpiRows,
   normalizeRegion,
   periodFromKey,
   trailingPeriods,
@@ -745,7 +745,7 @@ function movementFor(record: ExecRecord, records: ExecRecord[]): number | null {
 
 function cardsFromRecords(current: ExecRecord[], records: ExecRecord[]): FunctionRoleCard[] {
   const seeds: RoleSeed[] = current.flatMap((record) => {
-    const rows = kpiRows([record], []);
+    const rows = monthlyKpiRows([record], []);
     const weakest = rows[0];
     const strongest = rows
       .slice()
@@ -1211,7 +1211,7 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
   const prevKey = sortedKeys.length >= 2 ? sortedKeys[sortedKeys.length - 2] : undefined;
   const latestRecords = periodMap.get(latestKey) ?? [];
   const prevRecords = prevKey ? (periodMap.get(prevKey) ?? []) : [];
-  const latestRows = kpiRows(latestRecords, prevRecords).slice(0, 6);
+  const latestRows = monthlyKpiRows(latestRecords, prevRecords);
   if (!latestRows.length) return [];
 
   const sixSlots = buildTrailingSixPeriods(anchorPeriodKey || latestKey);
@@ -1236,7 +1236,7 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
 
     const rawSlots = sixSlots.map((slot) => {
       const slotRecords = periodMap.get(slot.periodKey) ?? [];
-      const slotRows = slotRecords.length ? kpiRows(slotRecords, []) : [];
+      const slotRows = slotRecords.length ? monthlyKpiRows(slotRecords, []) : [];
       const point = slotRows.find(
         (item) =>
           item.kpi_key === row.kpi_key ||
@@ -1290,7 +1290,7 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
       gapLabel = worse ? `${formatKpiValue(Math.abs(delta), unit)} off target` : 'On target';
     }
     const resolvedWeight =
-      totalRawWeight > 0 && rawWeights[rowIdx] > 0 ? rawWeights[rowIdx] : defaultWeight;
+      row.weight === 0 ? 0 : totalRawWeight > 0 && rawWeights[rowIdx] > 0 ? rawWeights[rowIdx] : defaultWeight;
     const metrics = computeKpiMetrics(
       row.achievement_percent ?? 0,
       resolvedWeight,
@@ -1298,8 +1298,9 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
       trend6Mo,
       gapLabel,
     );
-    const diagnosis =
-      gapLabel === 'On target'
+    const diagnosis = resolvedWeight === 0
+      ? `${row.kpi_label}: ${formatKpiValue(actual, unit)} actual vs ${formatKpiValue(target, unit)} target (reported measurement).`
+      : gapLabel === 'On target'
         ? `${row.kpi_label} achieved ${formatKpiValue(actual, unit)} against the ${formatKpiValue(target, unit)} target (${(row.achievement_percent ?? 100).toFixed(1)}% achievement · ${metrics.contributionPct.toFixed(1)}% of ${Math.round(metrics.weightPct)}% weight).`
         : `${row.kpi_label} stood at ${formatKpiValue(actual, unit)} vs the ${formatKpiValue(target, unit)} target (${gapLabel}, ${(row.achievement_percent ?? 0).toFixed(1)}% achievement · −${metrics.pointsLost.toFixed(1)} pts on role score).`;
     return {
@@ -1563,7 +1564,7 @@ export function buildRoleDetail(
           namesMatch(rec.name, baseMember.personName),
         )
         .sort((a, b) => b.period.key.localeCompare(a.period.key))[0];
-    const memberKpiRows = memberRecord ? kpiRows([memberRecord], []) : [];
+    const memberKpiRows = memberRecord ? monthlyKpiRows([memberRecord], []) : [];
     const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi) => {
       const matchedRow = memberKpiRows.find(
         (r) =>

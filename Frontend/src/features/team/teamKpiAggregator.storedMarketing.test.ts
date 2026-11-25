@@ -45,6 +45,18 @@ describe('team KPI aggregation of stored KPIs the config does not know', () => {
     expect(reporting?.weight).toBeCloseTo(0.1);
   });
 
+  it.each(['ER Dr', 'Radiologist', 'Qlty&Case-Mngt'])('shows published clinical achievement on the %s team page', (team) => {
+    const clinical = {
+      ...agent,
+      identity: { ...agent.identity, team },
+      kpi_values: [{ ...storedReporting, label: 'Audit achievement', actual_value: 0,
+        achievement_ratio: 0, weight_applied: 0, contribution: 0, view_only: true }],
+    } as AgentRecord;
+    const config = { ...marketingConfig, team };
+    const rows = [...aggregateConfiguredTeamKpis([clinical], config).values()];
+    expect(rows).toMatchObject([{ label: 'Audit achievement', actual: 0, weight: 0, viewOnly: true }]);
+  });
+
   it('still skips a stored KPI the config does not know for other teams', () => {
     const inboundConfig = { ...marketingConfig, team: 'Inbound' } as unknown as TeamConfig;
     const inboundAgent = {

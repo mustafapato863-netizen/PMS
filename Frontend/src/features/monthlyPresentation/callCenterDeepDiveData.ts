@@ -2,7 +2,7 @@ import type { AgentRecord, PMSAction } from '../../types';
 import { GRADE_PALETTE, getGradeClass } from '../../constants/grades';
 import { parseActionRootCauseMeta } from '../../utils/actionNoteFormatter';
 import {
-  kpiRows,
+  monthlyKpiRows,
   normalizeRegion,
   periodFromKey,
   trailingPeriods,
@@ -2446,8 +2446,8 @@ export function buildCallCenterDeepDiveFromRecords(
   const totalMeasuredAgents = inboundHc + outboundHc;
 
   // Compute real KPI rows for Inbound and Outbound to enrich diagnoses
-  const inbKpis = kpiRows(inboundCurr, inboundPrevForChange);
-  const outKpis = kpiRows(outboundCurr, outboundPrevForChange);
+  const inbKpis = monthlyKpiRows(inboundCurr, inboundPrevForChange);
+  const outKpis = monthlyKpiRows(outboundCurr, outboundPrevForChange);
 
   const inbWeakest = inbKpis[0];
   const inbStrongest = [...inbKpis].sort(
@@ -2619,7 +2619,7 @@ export function buildCallCenterDeepDiveFromRecords(
   // Key Agent KPIs with real 6-month trends from trailingPeriods(effective, 6)
   const agentOnlyRecords = [...inboundAll, ...outboundAll];
   const agentCurr = [...inboundCurr, ...outboundCurr];
-  const combinedKpiRows = kpiRows(agentCurr, [...inboundPrevForChange, ...outboundPrevForChange]);
+  const combinedKpiRows = monthlyKpiRows(agentCurr, [...inboundPrevForChange, ...outboundPrevForChange]);
   const sixPeriods = trailingPeriods(effective, 6);
 
   const buildKpiCard = (
@@ -2631,7 +2631,7 @@ export function buildCallCenterDeepDiveFromRecords(
     // it is a gap the row has no change and the card says so (below).
     const scopePrev = inPeriod(scopeRecords, exactPrevious);
     const row =
-      kpiRows(scopeCurr, scopePrev).find((k) => k.kpi_key === targetKey) ??
+      monthlyKpiRows(scopeCurr, scopePrev).find((k) => k.kpi_key === targetKey) ??
       combinedKpiRows.find((k) => k.kpi_key === targetKey);
     // No row for this KPI in the effective month: omit the card instead of
     // showing the September baseline card for it.
@@ -2640,7 +2640,7 @@ export function buildCallCenterDeepDiveFromRecords(
     const unit = row.unit ?? '';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
     const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
-      const mRows = kpiRows(inPeriod(scopeRecords, p), []);
+      const mRows = monthlyKpiRows(inPeriod(scopeRecords, p), []);
       const match = mRows.find((k) => k.kpi_key === targetKey);
       const actual = match?.actual ?? null;
       const target = match?.target ?? null;
@@ -2719,7 +2719,7 @@ export function buildCallCenterDeepDiveFromRecords(
     .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
     .slice(0, 6)
     .map((agent) => {
-      const personKpis = kpiRows([agent], []);
+      const personKpis = monthlyKpiRows([agent], []);
       const weakest = personKpis[0];
       const secondWeakest = personKpis[1];
       const reason = weakest
@@ -2928,7 +2928,7 @@ export function buildFunctionDeepDiveFromRecords(
       const tHc = new Set(tCurr.map((r) => r.employeeId)).size;
       const tBelow90 = tCurr.filter((r) => r.score < 90).length;
       const tSlug = isEgyptResubmissionTeam(teamName) ? 're-submission' : slugifyIdentifier(teamName);
-      const tKpis = kpiRows(tCurr, tPrevForChange);
+      const tKpis = monthlyKpiRows(tCurr, tPrevForChange);
       const weakestKpi = tKpis[0];
       const strongestKpi = [...tKpis].sort(
         (a, b) => (b.achievement_percent ?? 0) - (a.achievement_percent ?? 0),
@@ -3010,7 +3010,7 @@ export function buildFunctionDeepDiveFromRecords(
 
   // Key Function KPIs with real 6-month trends
   const sixPeriods = trailingPeriods(effective, 6);
-  const currKpiRows = kpiRows(currRecords, inPeriod(fnRecords, exactPrevious));
+  const currKpiRows = monthlyKpiRows(currRecords, inPeriod(fnRecords, exactPrevious));
   const keyKpis: AgentKeyKpiItem[] =
     fallback.keyKpis.length > 0
       ? fallback.keyKpis.map((fbKpi) => {
@@ -3021,7 +3021,7 @@ export function buildFunctionDeepDiveFromRecords(
             .toLowerCase()
             .startsWith('lower');
           const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
-            const pRows = kpiRows(inPeriod(fnRecords, p), []);
+            const pRows = monthlyKpiRows(inPeriod(fnRecords, p), []);
             const match = pRows.find(
               (k) =>
                 k.kpi_key === row.kpi_key ||
@@ -3065,7 +3065,7 @@ export function buildFunctionDeepDiveFromRecords(
   const agentsNeedingAttention: AgentNeedingAttentionItem[] =
     targetPool.length > 0
       ? targetPool.map((emp) => {
-          const empKpis = kpiRows([emp], []);
+          const empKpis = monthlyKpiRows([emp], []);
           const weakest = empKpis[0];
           const secondWeakest = empKpis[1];
           const reason = weakest

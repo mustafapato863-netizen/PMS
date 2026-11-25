@@ -3,7 +3,7 @@ import { normalizePercentageKpiForDisplay } from '../../components/common/perfor
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import type { ObservationStatus } from '../ai/types';
 import {
-  kpiRows,
+  monthlyKpiRows,
   normalizeRegion,
   periodFromKey,
   periodOf,
@@ -2088,14 +2088,14 @@ function buildGenericTeamDeepDive(
       slug: isEgyptResubmissionTeam(name) ? 're-submission' : slugifyIdentifier(name),
       label: isEgyptResubmissionTeam(name) ? 'Re-Submission' : name,
     }));
-  const currentKpis = kpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
+  const currentKpis = monthlyKpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
   const sixPeriods = trailingPeriods(effective, 6);
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
     const unit = row.unit ?? '%';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
     const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((period) => {
       const monthRecords = teamRecords.filter((record) => record.period.key === period.key);
-      const match = kpiRows(recordsForTeamKpis(monthRecords), []).find((item) => item.kpi_key === row.kpi_key);
+      const match = monthlyKpiRows(recordsForTeamKpis(monthRecords), []).find((item) => item.kpi_key === row.kpi_key);
       const actual = match?.actual ?? null;
       const target = match?.target ?? null;
       return {
@@ -2116,7 +2116,7 @@ function buildGenericTeamDeepDive(
     const trend6Mo = trend6MoRaw;
     let agentsMeetingTarget = 0;
     current.forEach((agent) => {
-      const agentRow = kpiRows([agent], []).find((item) => item.kpi_key === row.kpi_key);
+      const agentRow = monthlyKpiRows([agent], []).find((item) => item.kpi_key === row.kpi_key);
       if (agentRow?.target_status === 'met') agentsMeetingTarget += 1;
     });
     return {
@@ -2142,7 +2142,7 @@ function buildGenericTeamDeepDive(
   const low = current.filter((record) => record.score < 90).sort((a, b) => a.score - b.score);
   const agentsAverageOrBelow: AgentAverageOrBelowRow[] = low.map((agent) => {
     const g = gradeForScore(agent.score);
-    const agentKpiRows = kpiRows([agent], []);
+    const agentKpiRows = monthlyKpiRows([agent], []);
     const weakest = agentKpiRows[0];
     const trendCtx = deriveAgentTrendContext(
       agent.employeeId,
@@ -2397,7 +2397,7 @@ export function buildTeamDeepDiveFromRecords(
   const headcount = new Set(current.map((r) => r.employeeId)).size;
 
   // Build real KPI items + 6-month trends
-  const currentKpiRows = kpiRows(current, before);
+  const currentKpiRows = monthlyKpiRows(current, before);
   const sixPeriods = trailingPeriods(effective, 6);
 
   const kpis: TeamKpiItem[] =
@@ -2409,7 +2409,7 @@ export function buildTeamDeepDiveFromRecords(
             .startsWith('lower');
 
           const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((p) => {
-            const pRows = kpiRows(inPeriod(teamRecords, p), []);
+            const pRows = monthlyKpiRows(inPeriod(teamRecords, p), []);
             const match = pRows.find((k) => k.kpi_key === row.kpi_key);
             const actual = match?.actual ?? null;
             const target = match?.target ?? null;
@@ -2434,7 +2434,7 @@ export function buildTeamDeepDiveFromRecords(
           // Count how many agents in current period met this KPI's target
           let agentsMeetingTarget = 0;
           current.forEach((agent) => {
-            const aRow = kpiRows([agent], []).find((k) => k.kpi_key === row.kpi_key);
+            const aRow = monthlyKpiRows([agent], []).find((k) => k.kpi_key === row.kpi_key);
             if (aRow?.target_status === 'met') agentsMeetingTarget += 1;
           });
 
@@ -2524,7 +2524,7 @@ export function buildTeamDeepDiveFromRecords(
             prevAgentScore !== null ? true : trendCtx.previousIsAdjacent;
           const missingIntermediatePeriods =
             prevAgentScore !== null ? [] : trendCtx.missingIntermediatePeriods;
-          const agentKpiRows = kpiRows([agent], []);
+          const agentKpiRows = monthlyKpiRows([agent], []);
           const weakest = agentKpiRows[0];
           const secondWeakest = agentKpiRows[1];
           const weakestKey = weakest?.kpi_key ?? kpiColumns[0]?.kpiKey ?? 'Booking';

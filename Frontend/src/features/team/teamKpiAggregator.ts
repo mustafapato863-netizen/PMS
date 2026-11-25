@@ -1,6 +1,6 @@
 import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord, KPIConfig, LocationKey } from '../../types';
-import { getKPIsForAgent, inboundCallCount, isHossamRecord, usesPublishedEmployeeScore } from '../../types';
+import { getKPIsForAgent, inboundCallCount, isHossamRecord, usesPublishedEmployeeScore, usesStoredPeriodScore } from '../../types';
 import { getWeightForLabel } from '../../utils/kpiScore';
 
 export interface AggregatedTeamKpi {
@@ -234,7 +234,8 @@ export function aggregateConfiguredTeamKpis(
       // Marketing keeps a stored KPI the file does not name. A position department does that only when
       // it has no shared root KPI list. Other teams skip unconfigured rows unless the row is pinned.
       const storedPositionKpi = !definition && keepsUnconfiguredPositionKpi(config);
-      if (definitions.length > 0 && !definition && !pinned && !storedPositionKpi) return;
+      const publishedMeasurement = kpi.viewOnly && usesStoredPeriodScore(agent);
+      if (definitions.length > 0 && !definition && !pinned && !storedPositionKpi && !publishedMeasurement) return;
       const aggregation = definition && normalize(definition.key) === 'other' && isUtilizationKpi(kpi)
         ? { method: 'average' as const }
         : definition?.aggregation ?? { method: 'average' as const };

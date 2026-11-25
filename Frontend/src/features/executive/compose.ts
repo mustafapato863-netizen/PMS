@@ -10,7 +10,7 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, usesPublishedEmployeeScore, type AgentRecord } from '../../types';
+import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, usesPublishedEmployeeScore, usesStoredPeriodScore, type AgentRecord } from '../../types';
 import { canonicalEgyptResubmissionTeam, dedupeEgyptResubmissionRecords, isEgyptResubmissionTeam } from '../team/countryTeamIdentity';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import {
@@ -426,26 +426,35 @@ function executivePercentValue(value: number, unit: string | null | undefined, t
 }
 
 /** Direction-aware KPI rows (worst achievement first) from per-employee `kpi_values`. */
-export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?: { range?: boolean }): ExecutiveKpiRow[] {
+export function monthlyKpiRows(current: ExecRecord[], previous: ExecRecord[]): ExecutiveKpiRow[] {
+  return kpiRows(current, previous, { includePublishedMeasurements: true });
+}
+
+export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?: { range?: boolean; includePublishedMeasurements?: boolean }): ExecutiveKpiRow[] {
   type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; teams: Set<string> };
   const collect = (records: ExecRecord[]) => {
     const buckets = new Map<string, Bucket>();
-    records.forEach((record) => record.kpis.forEach((kpi) => {
-      if (!kpi?.kpi_key || !kpiCountsInScore(kpi.weight_applied)) return;
-      const bucket = buckets.get(kpi.kpi_key) ?? {
-        label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
-        actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
-      };
-      const storedTarget = Number.isFinite(kpi.target_value) ? Number(kpi.target_value) : null;
-      if (Number.isFinite(kpi.actual_value)) {
-        bucket.actual.push(executivePercentValue(Number(kpi.actual_value), kpi.unit, storedTarget));
+    for (const record of records) {
+      const published = options?.includePublishedMeasurements && record.rawAgent && usesStoredPeriodScore(record.rawAgent);
+      const measurements = published ? record.rawAgent?.kpi_values ?? record.kpis : record.kpis;
+      for (const kpi of measurements) {
+        if (!kpi?.kpi_key) continue;
+        if (!kpiCountsInScore(kpi.weight_applied) && !(published && kpi.view_only && kpi.weight_applied === 0 && Number.isFinite(kpi.actual_value))) continue;
+        const bucket = buckets.get(kpi.kpi_key) ?? {
+          label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
+          actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
+        };
+        const storedTarget = Number.isFinite(kpi.target_value) ? Number(kpi.target_value) : null;
+        if (Number.isFinite(kpi.actual_value)) {
+          bucket.actual.push(executivePercentValue(Number(kpi.actual_value), kpi.unit, storedTarget));
+        }
+        if (storedTarget !== null) bucket.target.push(executivePercentValue(storedTarget, kpi.unit, storedTarget));
+        if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
+        if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Math.min(Math.max(Number(kpi.achievement_ratio), 0), 1) * 100);
+        bucket.teams.add(record.team);
+        buckets.set(kpi.kpi_key, bucket);
       }
-      if (storedTarget !== null) bucket.target.push(executivePercentValue(storedTarget, kpi.unit, storedTarget));
-      if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
-      if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Math.min(Math.max(Number(kpi.achievement_ratio), 0), 1) * 100);
-      bucket.teams.add(record.team);
-      buckets.set(kpi.kpi_key, bucket);
-    }));
+    }
     return buckets;
   };
   const now = collect(current);

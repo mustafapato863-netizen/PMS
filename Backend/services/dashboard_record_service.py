@@ -15,7 +15,7 @@ from config.loader import (
 )
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
-from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS
+from services.clinical_trend_import import TEAMS as CLINICAL_TREND_TEAMS, clinical_measurements
 from services.csr_sharjah_scoring import METHOD_ID as SHARJAH_CSR_METHOD_ID
 from services.uae_published_scores import uses_published_score
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values, normalized_text_memo
@@ -587,6 +587,10 @@ class DashboardRecordService:
                         for value in stored:
                             key = value["kpi_key"]
                             value["direction"] = persisted_directions.get(key) or config_by_key.get(key, {}).get("direction")
+                        if team_name in CLINICAL_TREND_TEAMS:
+                            existing_keys = {value["kpi_key"] for value in stored}
+                            stored.extend(value for value in clinical_measurements(team_name, raw_payload)
+                                          if value["kpi_key"] not in existing_keys)
                         scoped_cache.append(stored)
                         return stored
                     normalised = _normalise_kpi_values(
