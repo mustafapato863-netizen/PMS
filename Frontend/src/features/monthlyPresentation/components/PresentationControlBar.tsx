@@ -824,6 +824,13 @@ export function PresentationControlBar({
 
   const padKey = `${region}:${periodKey}`;
 
+  // This bar is the page's own bottom control. While it is mounted the global navigation dock steps aside
+  // (see mobile-tablet-fixes.css) so two bottom bars never stack on phones and tablets.
+  useEffect(() => {
+    document.body.classList.add('has-page-control-bar');
+    return () => document.body.classList.remove('has-page-control-bar');
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
