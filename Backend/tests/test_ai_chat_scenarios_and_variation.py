@@ -659,3 +659,15 @@ def test_no_relative_period_note_when_month_named_or_not_relative():
     assert _relative_period_note("last month in Oct 2026", "October 2026") is None
     assert _relative_period_note("weakest team", "October 2026") is None
     assert _relative_period_note("last month", "") is None
+
+
+def test_concern_phrasing_ranks_weakest_first():
+    from services.ai.domain_policies import parse_query_rankings_spec
+
+    for prompt in (
+        "which team should I worry about most in Call Center?",
+        "which team needs the most attention",
+    ):
+        spec = parse_query_rankings_spec(prompt)
+        assert spec is not None and spec.sort_order == "asc" and spec.entity == "team"
+    assert parse_query_rankings_spec("which team is best").sort_order == "desc"

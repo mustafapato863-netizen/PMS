@@ -1236,7 +1236,7 @@ def asks_cohort_score(prompt: str) -> bool:
 
 
 _RANKING_CUE_RE = re.compile(
-    r"\b(?:tops?|best|highest|lowest|shortest|longest|bottom|worst|rank(?:ed|ing)?|arrange|order|sort|finished\s+first)\b",
+    r"\b(?:tops?|best|highest|lowest|shortest|longest|bottom|worst|rank(?:ed|ing)?|arrange|order|sort|finished\s+first|worry\s+about|worried\s+about|struggling|underperforming|at\s+risk|needs?\s+(?:the\s+most\s+)?attention)\b",
     re.I,
 )
 _ENTITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -1385,6 +1385,13 @@ def parse_query_rankings_spec(
     )
     asc_cue = re.search(r"\b(?:lowest|shortest|bottom|worst|least)\b", lower)
     desc_cue = re.search(r"\b(?:top|best|highest|longest|most)\b", lower)
+    # "which team should I worry about most" asks for the weakest, "most" is an intensifier.
+    concern_cue = re.search(
+        r"\b(?:worry|worried|worrying|concern(?:ed|ing)?|struggling|underperform(?:ing|s|ed)?|at\s+risk|needs?\s+(?:the\s+most\s+)?attention)\b",
+        lower,
+    )
+    if concern_cue and not re.search(r"\b(?:top|best|highest|longest)\b", lower):
+        asc_cue, desc_cue = concern_cue, None
     if explicit_low_to_high:
         sort_order = "asc"
     elif explicit_high_to_low:
