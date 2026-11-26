@@ -17,6 +17,8 @@ from models.models import AiApprovedPattern, AiConversation, AiInteractionTrace,
 from services.ai.config import get_ai_runtime_config, redact_secrets
 from services.audit_service import AuditService
 
+from services.ai.quality_scoring import quality_loop_enabled, score_answer  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 _PII_ID_RE = re.compile(
@@ -724,6 +726,16 @@ class TrainingTraceLogger:
         )
         name_tokens = _build_name_token_set(all_names)
 
+        if isinstance(structured_response, dict) and quality_loop_enabled():
+            structured_response["quality"] = score_answer(
+                prompt=prompt,
+                headline=str(structured_response.get("headline") or ""),
+                bullets=[str(b) for b in (structured_response.get("narrative_bullets") or [])],
+                outcome=str(structured_response.get("outcome") or ""),
+                tool_digest=tool_digest if isinstance(tool_digest, dict) else {},
+                non_empty_evidence=non_empty_evidence,
+                guardrail_triggered=guardrail_triggered,
+            )
         # Also harvest any employee names inside tool_digest or structured_response before sanitizing prompt
         redact_nested_payload(tool_digest, _precomputed_tokens=name_tokens)
         redact_nested_payload(structured_response, _precomputed_tokens=name_tokens)
