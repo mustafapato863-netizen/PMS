@@ -4329,8 +4329,12 @@ class HybridQueryRouter:
                 and (not asks_ranking_person or not re.search(r"\b(?:agent|employee|person|who)\b", lower))
                 and comparison_teams
                 and len(eff_periods) == 1
-                and re.search(r"\b(?:compare|comparison|vs\.?|versus|difference|higher|better|stronger|lower|worst|highest|best|or)\b", lower)
-                and re.search(r"\b(?:scores?|scored|performance|points?|higher|better|lower|highest|best|worst)\b|two teams|اعلى|افضل|اقل", lower + " " + normalize_bilingual_text(text))
+                and re.search(r"\b(?:compare|compares|comparison|vs\.?|versus|against|ahead|difference|higher|better|stronger|lower|worst|highest|best|or)\b", lower)
+                and (
+                    re.search(r"\b(?:scores?|scored|performance|points?|higher|better|lower|highest|best|worst)\b|two teams|اعلى|افضل|اقل", lower + " " + normalize_bilingual_text(text))
+                    # An explicit two-team compare with no metric named is a comparison of overall scores.
+                    or re.search(r"\b(?:compare|compares|comparison|vs\.?|versus|against|ahead)\b", lower)
+                )
                 and not re.search(r"\b(?:why|drivers?|recommend|decisions?|target)\b", lower)
             ):
                 plan.comparison_teams = comparison_teams
