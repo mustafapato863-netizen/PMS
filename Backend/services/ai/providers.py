@@ -692,7 +692,12 @@ class DeterministicLocalProviderAdapter:
                 if rank_metric_lbl != "Overall PMS Score" and sp.get("ranking_metric_display")
                 else f"{sc_disp} (Grade {gr})"
             )
-            chg_txt = f", moving {chg:+.1f} pp vs {prev_lbl}" if chg is not None else ""
+            if chg is None:
+                chg_txt = ""
+            elif round(chg, 1) == 0:
+                chg_txt = f", unchanged vs {prev_lbl}"
+            else:
+                chg_txt = f", {'up' if chg > 0 else 'down'} {chg:+.1f} pp vs {prev_lbl}"
             same_comparison = bool(
                 chg is not None and six_d is not None
                 and prev_lbl == first_lbl and round(chg, 1) == round(six_d, 1)

@@ -5824,6 +5824,24 @@ class PmsAiOrchestrator:
         )
 
         _plower = (req.prompt or "").casefold()
+        _kpi_delta_match = re.search(
+            r"\bwhich\s+(?:kpi|metric)s?\s+(?:has\s+|have\s+|had\s+|did\s+)?"
+            r"(declined|dropped|fell|decreased|worsened|improved|rose|increased|grew|gained)\b[^?]*?\bmost\b",
+            _plower,
+        ) or re.search(
+            r"\b(?:biggest|largest|greatest)\s+(?:kpi\s+|metric\s+)?(drop|decline|decrease|improvement|increase|gain)\b",
+            _plower,
+        )
+        kpi_delta_want = (
+            None if not _kpi_delta_match
+            else ("declined" if _kpi_delta_match.group(1) in {"declined", "dropped", "fell", "decreased", "worsened", "drop", "decline", "decrease"} else "improved")
+        )
+        kpi_delta_periods = list(routed.plan.periods or [])
+        kpi_delta = bool(
+            kpi_delta_want and len(kpi_delta_periods) >= 2
+            and (routed.plan.team or routed.plan.function)
+            and not shared_choice_team
+        )
         region_compare = bool(
             re.search(r"\b(?:egy|egypt)\b", _plower)
             and re.search(r"\b(?:uae|emirates)\b", _plower)
@@ -5834,6 +5852,7 @@ class PmsAiOrchestrator:
         det_threshold_spec = parse_score_threshold_query(req.prompt)
         cache_sig = {
             "region_compare": region_compare,
+            "kpi_delta": [kpi_delta_want, kpi_delta_periods] if kpi_delta else None,
             "verified_comparison": routed.plan.verified_comparison,
             "verified_cohort_score": routed.plan.verified_cohort_score,
             "score_measure": routed.plan.score_measure or "official",
@@ -5881,6 +5900,12 @@ class PmsAiOrchestrator:
         if cached_results is not None:
             tool_results = cached_results
             cache_hit = True
+        elif kpi_delta and not region_compare:
+            tool_results = [registry.execute_kpi_period_delta(
+                team=routed.plan.team, function=routed.plan.function, branch=routed.plan.branch,
+                performance_level=routed.plan.performance_level,
+                periods=kpi_delta_periods, want=kpi_delta_want,
+            )]
         elif region_compare:
             # Only a period named in the prompt pins the comparison; otherwise the tool
             # picks the latest period where both regions have data and names it.

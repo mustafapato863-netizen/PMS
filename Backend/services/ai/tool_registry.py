@@ -1735,6 +1735,77 @@ class DeterministicToolRegistry:
         )
 
     @_read_only_tool
+    def execute_kpi_period_delta(
+        self,
+        *,
+        team: str | None = None,
+        function: str | None = None,
+        branch: str | None = None,
+        performance_level: str | None = None,
+        periods: list[str],
+        want: str = "declined",
+    ) -> ToolExecutionResult:
+        """Which KPI moved the most between two periods, using the same KPI reads for both."""
+        first_period, second_period = sorted(periods)[0], sorted(periods)[-1]
+        reads = []
+        for period in (first_period, second_period):
+            month, year = _period_key_to_month_year(period)
+            reads.append(self.execute_kpi_diagnosis_and_trends(
+                team=team, function=function, branch=branch,
+                performance_level=performance_level, month=month, year=year,
+            ))
+        scope_label = team or function or "the selected scope"
+        labels = [f"{r.resolved_month} {r.resolved_year}" for r in reads]
+        before = {e.metric_id: e for e in reads[0].typed_evidence if e.actual is not None and e.sample_size}
+        after = {e.metric_id: e for e in reads[1].typed_evidence if e.actual is not None and e.sample_size}
+        moves = []
+        for metric_id, new_ev in after.items():
+            old_ev = before.get(metric_id)
+            if old_ev is None:
+                continue
+            raw = round(float(new_ev.actual) - float(old_ev.actual), 2)
+            lower_better = str(new_ev.direction or "").startswith("lower")
+            better = -raw if lower_better else raw
+            moves.append((better, raw, old_ev, new_ev))
+        digest: dict[str, Any] = {"scope": scope_label, "period": labels[1]}
+        if not moves:
+            digest["comparison_headline"] = (
+                f"No KPI is published for both {labels[0]} and {labels[1]} in {scope_label}, so the change cannot be compared."
+            )
+        else:
+            moves.sort(key=lambda m: m[0])
+            pick = moves[0] if want == "declined" else moves[-1]
+            better, raw, old_ev, new_ev = pick
+            moved_right_way = (better < 0) if want == "declined" else (better > 0)
+            if not moved_right_way or better == 0:
+                digest["comparison_headline"] = (
+                    f"No KPI in {scope_label} {'declined' if want == 'declined' else 'improved'} "
+                    f"from {labels[0]} to {labels[1]}."
+                )
+            else:
+                unit = new_ev.unit or ""
+                suffix = "%" if unit == "%" else (f" {unit}" if unit else "")
+                verb = "declined" if want == "declined" else "improved"
+                digest["comparison_headline"] = (
+                    f"{new_ev.display_name} {verb} the most in {scope_label} from {labels[0]} to {labels[1]}: "
+                    f"{old_ev.actual:.1f}{suffix} to {new_ev.actual:.1f}{suffix} ({raw:+.1f}{' pts' if unit == '%' else ''})."
+                )
+                digest["verified_answer_family"] = "kpi_period_delta"
+        result = ToolExecutionResult(
+            tool_name="get_kpi_period_delta",
+            arguments={"team": team, "function": function, "periods": [first_period, second_period], "want": want},
+            records_evaluated=sum(r.records_evaluated for r in reads),
+            digest=digest,
+            visual_cards=[],
+            citations=[*reads[1].citations],
+            deep_links=[],
+            typed_evidence=[e for r in reads for e in r.typed_evidence],
+            resolved_month=reads[1].resolved_month,
+            resolved_year=reads[1].resolved_year,
+        )
+        return result
+
+    @_read_only_tool
     def execute_kpi_diagnosis_and_trends(
         self,
         *,
