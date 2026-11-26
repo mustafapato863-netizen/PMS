@@ -91,7 +91,7 @@ def client(monkeypatch):
         db.add(PerformanceRecord(
             id=uuid.uuid4(), year=2026, employee_id=emp.id, team_id=team.id, month="June",
             performance_level="Employee", region="EGY", score=80 + i, grade="B", status="Meets",
-            record_payload={"raw_data": {"x": 0.0000995 * (i + 1)}},
+            record_payload={"raw_data": {"x": 0.00009 * (i + 1)}},
         ))
     db.commit()
     CacheInvalidationService.bump_data_version()  # no entry from another test can match this key
@@ -120,4 +120,4 @@ def test_miss_and_hit_return_identical_bodies_and_headers(client):
         assert response.headers["cache-control"] == "private, max-age=60"
     body = miss.json()
     assert body["success"] is True and len(body["data"]) == 2
-    assert b"0.0000995" in miss.content  # numbers print as the pydantic writer always did
+    assert b"e-0" not in miss.content  # small numbers print as the pydantic writer always did (0.0001, not 1e-04)
