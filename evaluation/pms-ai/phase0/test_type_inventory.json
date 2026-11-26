@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 76,
-  "case_count": 934,
+  "file_count": 77,
+  "case_count": 936,
   "files_by_label": {
-    "synthetic": 21,
+    "synthetic": 22,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -279,6 +279,16 @@
       ],
       "cases": 9,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_kpi_period_delta.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
