@@ -8,12 +8,12 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 77. Test functions or `it` blocks: 936.
+Test files: 78. Test functions or `it` blocks: 938.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 22 | not applicable |
+| `synthetic` | 23 | not applicable |
 | `mocked` | 52 | partial |
 | `live-model` | 5 | blocked |
 | `source-parity` | 2 | partial |

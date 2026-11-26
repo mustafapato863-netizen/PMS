@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 77,
-  "case_count": 936,
+  "file_count": 78,
+  "case_count": 938,
   "files_by_label": {
-    "synthetic": 22,
+    "synthetic": 23,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
