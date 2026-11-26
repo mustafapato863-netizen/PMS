@@ -3848,7 +3848,7 @@ class PmsAiOrchestrator:
                                     rep_has_val = bool(rep_h)
                                     if tool_name == "query_rankings" and qr_rows_check:
                                         first_row = qr_rows_check[0]
-                                        rep_has_val = top_name_check in rep_text and (
+                                        rep_has_val = top_name_check in rep_text and _headline_leads_with_first_ranked(rep_h, qr_rows_check) and (
                                             ranking_value(first_row).casefold() in rep_text
                                             or (first_row.get("unit", "%") == "%" and any(
                                                 f"{float(first_row['score']):.{decimals}f}%" in rep_text
@@ -3866,6 +3866,10 @@ class PmsAiOrchestrator:
                                 if rep_check.valid and rep_has_val and rep_has_unit and rep_compound:
                                     final_headline = rep_h
                                     final_bullets = rep_b if rep_b else fallback_bullets
+                                    if tool_name == "query_rankings":
+                                        _rep_note = _relative_period_note(req.prompt, str(facts_payload.get("period") or ""))
+                                        if _rep_note and _rep_note not in final_bullets:
+                                            final_bullets = [*final_bullets, _rep_note]
                                     final_provider = resp_repair.provider
                                     final_model = resp_repair.model
                                     final_fallback_outcome = "none"
