@@ -1,3 +1,5 @@
+import gzip
+import json
 from collections import defaultdict
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response, UploadFile, File
@@ -42,9 +44,15 @@ from services.insights_service import InsightsService
 from services.database_record_source import DatabaseRecordSource
 from services.planning_service import PlanningService
 from services.response_cache import (
+    DEFAULT_PRIVATE_MAX_AGE_SECONDS,
     apply_private_cache_headers,
     build_scoped_response_cache_key,
+    encoded_body_response,
+    pack_gzip_body,
     read_cached_response,
+    render_json_body,
+    single_flight,
+    unpack_gzip_body,
     write_cached_response,
 )
 from services.summary_records_service import (
@@ -446,11 +454,53 @@ def get_summary_records(
     scope = require_authenticated_scope(db, request)
     filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team, region=region)
     cache_key: str | None = None
+    accept_encoding = request.headers.get("accept-encoding") if request is not None else None
+    message = "Authorized summary evidence retrieved"
+
+    def entry_headers(total, truncated, *, hit: bool) -> dict[str, str]:
+        headers = {"X-Result-Truncated": "true" if truncated else "false"}
+        if total is not None:
+            headers["X-Total-Count"] = str(total)
+        headers["Cache-Control"] = f"private, max-age={DEFAULT_PRIVATE_MAX_AGE_SECONDS}"
+        headers["X-Cache"] = "HIT" if hit else "MISS"
+        return headers
+
+    def deliver(*, body: bytes | None, packed: str | None, data, total, truncated, hit: bool):
+        headers = entry_headers(total, truncated, hit=hit)
+        if request is None:
+            # Direct (non-HTTP) callers keep the model return and the headers on ``response``.
+            if data is None:
+                data = json.loads(gzip.decompress(unpack_gzip_body(packed)))["data"]
+            if response is not None:
+                response.headers.update(headers)
+            return StandardResponse(success=True, message=message, data=data)
+        if packed is not None:
+            return encoded_body_response(packed, accept_encoding=accept_encoding, headers=headers)
+        return Response(content=body, media_type="application/json", headers=headers)
+
+    def cached_response(entry):
+        if not isinstance(entry, dict) or not isinstance(entry.get("gz"), str):
+            return None
+        return deliver(body=None, packed=entry["gz"], data=None, total=entry.get("total"),
+                       truncated=bool(entry.get("truncated")), hit=True)
+
+    def compute():
+        record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
+        result = None
+        if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
+            # Filters and limit are applied in SQL / before resolving payloads.
+            result = summary_records_indexed(db, record_service, scope, filters, limit)
+        if result is None:
+            result = _summary_records_legacy(db, record_service, scope, filters, limit)
+        return result
+
     if isinstance(db, Session):
+        # schema_version 2: entries hold the rendered gzip body (v1 held the row list).
         cache_key = build_scoped_response_cache_key(
             db,
             namespace="summary-records",
             scope=scope,
+            schema_version=2,
             params={
                 "employee_id": filters.employee_id,
                 "year": filters.year,
@@ -460,39 +510,37 @@ def get_summary_records(
                 "limit": limit,
             },
         )
-        cached = read_cached_response(cache_key, cache_type="summary_records")
-        if isinstance(cached, dict) and isinstance(cached.get("data"), list):
+        hit = cached_response(read_cached_response(cache_key, cache_type="summary_records"))
+        if hit is not None:
             release_read_transaction(db)
-            if response is not None:
-                if cached.get("total") is not None:
-                    response.headers["X-Total-Count"] = str(cached["total"])
-                response.headers["X-Result-Truncated"] = "true" if cached.get("truncated") else "false"
-            apply_private_cache_headers(response, hit=True)
-            return StandardResponse(
-                success=True,
-                message="Authorized summary evidence retrieved",
-                data=cached["data"],
+            return hit
+        # Identical cold requests (the dashboards fire several at once) compute once.
+        release_read_transaction(db)
+        with single_flight(cache_key):
+            hit = cached_response(read_cached_response(cache_key, cache_type="summary_records"))
+            if hit is not None:
+                release_read_transaction(db)
+                return hit
+            result = compute()
+            body = render_json_body(StandardResponse(success=True, message=message, data=result.data))
+            packed = pack_gzip_body(body)
+            write_cached_response(
+                cache_key,
+                {"gz": packed, "total": result.total, "truncated": result.truncated},
+                cache_type="summary_records",
             )
-    record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
-    result = None
-    if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
-        # Filters and limit are applied in SQL / before resolving payloads.
-        result = summary_records_indexed(db, record_service, scope, filters, limit)
-    if result is None:
-        result = _summary_records_legacy(db, record_service, scope, filters, limit)
-    if cache_key is not None:
-        write_cached_response(
-            cache_key,
-            {"data": result.data, "total": result.total, "truncated": result.truncated},
-            cache_type="summary_records",
-        )
+        release_read_transaction(db)
+        return deliver(body=body, packed=packed, data=result.data, total=result.total,
+                       truncated=result.truncated, hit=False)
+
+    result = compute()
     release_read_transaction(db)
     if response is not None:
         if result.total is not None:
             response.headers["X-Total-Count"] = str(result.total)
         response.headers["X-Result-Truncated"] = "true" if result.truncated else "false"
     apply_private_cache_headers(response, hit=False)
-    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=result.data)
+    return StandardResponse(success=True, message=message, data=result.data)
 
 
 # Kill switch for the query-level path (tests compare both paths).
