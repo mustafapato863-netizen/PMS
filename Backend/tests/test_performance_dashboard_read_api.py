@@ -546,7 +546,7 @@ def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, 
             assert result.status_code == 200
             assert {row["employee_id"] for row in result.json()["data"]["items"]} == expected
             assert client.get(url).status_code == 401
-            assert client.get(f"{url}&page_size=101", headers=headers).status_code == 422
+            assert client.get(f"{url}&page_size=501", headers=headers).status_code == 422
             team_page = client.get("/api/performance/team/Inbound", headers=headers)
             assert team_page.status_code == 200
             assert team_page.json()["data"]

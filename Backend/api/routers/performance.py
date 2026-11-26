@@ -886,7 +886,7 @@ def get_monthly_records(
     sort: str = Query("name"),
     detail: str = Query("table"),
     cursor: str | None = Query(None, max_length=500),
-    page_size: int = Query(50, ge=1, le=100),
+    page_size: int = Query(50, ge=1, le=500),
     include_total: bool = Query(False),
 ):
     # Keep the pre-rollout month-based contract for one compatibility release.
