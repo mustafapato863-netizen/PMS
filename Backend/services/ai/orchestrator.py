@@ -140,6 +140,32 @@ logger = logging.getLogger(__name__)
 REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
 
 
+
+_RELATIVE_PERIOD_RE = re.compile(
+    r"\b(?:last|previous|this|current)\s+month\b|\bthis\s+(?:past\s+)?month\b|الشهر\s+(?:ده|دا|هذا|الماضي|اللي فات)",
+    re.IGNORECASE,
+)
+_EXPLICIT_MONTH_RE = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?:20\d{2}\b)?|\b20\d{2}-\d{2}\b",
+    re.IGNORECASE,
+)
+
+
+def _relative_period_note(prompt: str | None, period_label: str | None) -> str | None:
+    """Explain which period an answer used when the user said 'last/this month'.
+
+    The assistant answers from published PMS periods, not the calendar, so a relative
+    month word is not matched to a calendar month. Say so instead of implying it was.
+    """
+    text = str(prompt or "")
+    period = str(period_label or "").strip()
+    if not period or not _RELATIVE_PERIOD_RE.search(text) or _EXPLICIT_MONTH_RE.search(text):
+        return None
+    return (
+        f"Period used: {period}. Relative words like 'last month' are not matched to the calendar; "
+        "name a month (for example 'October 2026') to get a specific period."
+    )
+
 def _distinct_supporting_text(headline: str, *groups: list[str]) -> tuple[list[str], ...]:
     """Remove repeated sentences while retaining new facts in the same bullet."""
     def sentences(text: str) -> list[str]:
@@ -3186,8 +3212,14 @@ class PmsAiOrchestrator:
                 "coverage": qr_data.get("coverage"),
                 "excluded_unverified": qr_excluded,
                 "sort_order": qr_sort,
+                "rank_order": (
+                    "rank 1 is the HIGHEST score (best first)"
+                    if is_best
+                    else "rank 1 is the LOWEST score (weakest first); a higher rank number means a better score"
+                ),
                 "scope": qr_scope,
                 "period": qr_period,
+                **({"period_note": _relative_period_note(req.prompt, qr_period)} if _relative_period_note(req.prompt, qr_period) else {}),
                 "rows": [
                     {
                         "rank": i + 1,
@@ -3206,8 +3238,14 @@ class PmsAiOrchestrator:
                 "When score_basis is average employee score, use those words for the measure. "
                 "If ranking_entity is 'role', label the ranked items as roles (not teams) and mention evaluated_count when 1 employee is measured. "
                 "Disclose any tied scores clearly. Do NOT invent numbers or names. "
+                "Read `rank_order` literally: when rank 1 is the LOWEST score, the first row is the weakest and needs the most attention; "
+                "never call a higher-scoring entity the one to prioritize or say the lowest-scoring one 'ranked 1st' without saying it is the lowest. "
+                "If `period_note` is present, mention it in one short bullet. "
                 'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
             )
+            _qr_note = _relative_period_note(req.prompt, qr_period)
+            if _qr_note:
+                fallback_bullets = [*fallback_bullets, _qr_note]
         elif tool_name == "rank_employees":
             tcs = (tool_result.digest or {}).get("threshold_count_summary") if isinstance(tool_result.digest, dict) else None
             if tcs:
