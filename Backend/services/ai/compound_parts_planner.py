@@ -1091,15 +1091,22 @@ def render_compound_parts_answer(
         eval_actual = float(kpi_actual) if kpi_actual is not None else (float(overall_score_val) if overall_score_val is not None else None)
         eval_unit = kpi_unit if kpi_actual is not None else "%"
         eval_label = kpi_label if kpi_actual is not None else "Overall PMS Score"
-        if previous_kpi_evidence and previous_kpi_evidence.get("actual") is not None and eval_actual is not None:
+        if (
+            previous_kpi_evidence
+            and previous_kpi_evidence.get("actual") is not None
+            and eval_actual is not None
+            # A "moved from X to Y" line needs two different periods; never compare a month with itself.
+            and str(previous_kpi_evidence.get("period") or "").strip().casefold() != str(period_label).strip().casefold()
+        ):
             prev_val = float(previous_kpi_evidence["actual"])
             prev_period = str(previous_kpi_evidence.get("period") or "prior period")
             delta = round(eval_actual - prev_val, 2)
             prev_disp = format_metric_with_unit(prev_val, eval_unit, high_precision_min=True)
+            delta_unit = "pp" if eval_unit == "%" else eval_unit
             sentences.append(
                 f"{subject_name}'s {eval_label} moved from {prev_disp} in {prev_period} to "
                 f"{format_metric_with_unit(eval_actual, eval_unit, high_precision_min=True)} in {period_label} "
-                f"({'+' if delta > 0 else ''}{delta:.2f} {eval_unit}). "
+                f"({'+' if delta > 0 else ''}{delta:.2f} {delta_unit}). "
                 "Root causes are not directly recorded in PMS scores; hypotheses to verify include queue handoff delays, peak-hour staffing balance, and workflow bottlenecks."
             )
         else:

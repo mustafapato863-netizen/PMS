@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 77,
-  "case_count": 936,
+  "file_count": 78,
+  "case_count": 938,
   "files_by_label": {
-    "synthetic": 22,
+    "synthetic": 23,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -77,6 +77,16 @@
       ],
       "cases": 12,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_causal_period_guard.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
