@@ -18,3 +18,16 @@ def test_plain_team_comparisons_return_both_teams():
     out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, check=True, capture_output=True, text=True, timeout=100).stdout
     for answer in json.loads(out.strip().splitlines()[-1]):
         assert "Inbound" in answer and "Outbound" in answer
+
+
+def test_named_employee_without_score_keyword_is_answered_and_strangers_are_not():
+    code = (
+        "import json, scripts.eval_assistant_quality as E; "
+        "qs = ['how is Nadia Mansour doing in September 2026', 'tell me about Elon Musk']; "
+        "r = E.run(cases=[{'id': f't{i}', 'cat': 'x', 'prompt': q} for i, q in enumerate(qs)]); "
+        "print(json.dumps([x['answer'] for x in r]))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, check=True, capture_output=True, text=True, timeout=100).stdout
+    known, stranger = json.loads(out.strip().splitlines()[-1])
+    assert "Nadia Mansour" in known and "96.0" in known
+    assert "I can only help" in stranger
