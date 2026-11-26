@@ -160,7 +160,12 @@ def test_model_led_output_limit_and_reasoning_wire_settings(
         assert body["response_format"] == {"type": "json_object"}
         assert "max_completion_tokens" not in body
         if model_led:
-            assert "max_tokens" not in body
+            # Capped only when thinking is off (nothing to truncate); reasoning requests stay uncapped.
+            thinking_off = (model != "@cf/zai-org/glm-4.7-flash") or purpose == "model_led_synthesis"
+            if model == "@cf/zai-org/glm-4.7-flash" and thinking_off:
+                assert body["max_tokens"] == 1200
+            else:
+                assert "max_tokens" not in body
         else:
             assert body["max_tokens"] == 300
         expected = reasoning

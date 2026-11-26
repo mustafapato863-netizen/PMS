@@ -1049,7 +1049,16 @@ class CloudflareAIProviderAdapter:
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens or 2048
         if request.purpose in MODEL_LED_REQUEST_PURPOSES and resolved_model == "@cf/zai-org/glm-4.7-flash":
-            payload["chat_template_kwargs"] = {"enable_thinking": _cloudflare_thinking_enabled(config, request)}
+            _thinking = _cloudflare_thinking_enabled(config, request)
+            payload["chat_template_kwargs"] = {"enable_thinking": _thinking}
+            if not _thinking and request.max_tokens is None:
+                # No reasoning tokens to protect, so bound the visible answer (default 1200).
+                try:
+                    _cap = int(os.getenv("PMS_AI_MODEL_LED_MAX_TOKENS") or 1200)
+                except ValueError:
+                    _cap = 1200
+                if _cap > 0:
+                    payload["max_tokens"] = _cap
         if request.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
