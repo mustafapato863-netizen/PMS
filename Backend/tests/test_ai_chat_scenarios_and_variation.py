@@ -641,3 +641,21 @@ def test_spotlight_missing_months_no_double_period_across_variants():
         if seed in (1, 2):
             sentences = [s for s in res.headline.split(". ") if s.strip()]
             assert 1 <= len(sentences) <= 2
+
+
+
+def test_relative_period_note_for_last_month():
+    from services.ai.orchestrator import _relative_period_note
+
+    note = _relative_period_note("which team is weakest last month?", "September 2026")
+    assert note and "September 2026" in note
+    assert _relative_period_note("ايه اكتر KPI بيهبط الشهر ده؟", "October 2026")
+
+
+def test_no_relative_period_note_when_month_named_or_not_relative():
+    from services.ai.orchestrator import _relative_period_note
+
+    assert _relative_period_note("weakest team in October 2026", "October 2026") is None
+    assert _relative_period_note("last month in Oct 2026", "October 2026") is None
+    assert _relative_period_note("weakest team", "October 2026") is None
+    assert _relative_period_note("last month", "") is None
