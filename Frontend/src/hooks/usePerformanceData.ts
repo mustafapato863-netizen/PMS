@@ -387,7 +387,7 @@ async function fetchScopedPerformanceData(
       const params = new URLSearchParams({
         period: period.key,
         detail: 'full',
-        page_size: '100',
+        page_size: '500',
       });
       if (region !== 'All') params.set('region', region);
       if (performanceLevel !== 'All') params.set('performance_level', performanceLevel);
