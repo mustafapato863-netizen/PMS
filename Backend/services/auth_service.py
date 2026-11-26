@@ -265,9 +265,19 @@ class AuthenticationService:
         if not session:
             raise RefreshTokenError("Refresh session is invalid.")
 
+        replay_within_grace = False
         if session.revoked_at is not None:
-            AuthenticationService._revoke_family(db, session.family_id, "refresh_token_reuse", now)
-            raise RefreshTokenReuseError("Refresh session reuse detected.")
+            # A token rotated moments ago is often replayed by the same browser: a reload that aborted the
+            # refresh response, or two tabs reloading together. Treat that as a race, not theft, and let it
+            # continue the family. Anything older, or revoked for another reason, still kills the family.
+            grace = timedelta(seconds=max(0, int(getattr(settings, "AUTH_REFRESH_REUSE_GRACE_SECONDS", 20))))
+            replay_within_grace = (
+                session.revocation_reason == "rotated"
+                and now - _aware(session.revoked_at) <= grace
+            )
+            if not replay_within_grace:
+                AuthenticationService._revoke_family(db, session.family_id, "refresh_token_reuse", now)
+                raise RefreshTokenReuseError("Refresh session reuse detected.")
 
         if _aware(session.expires_at) <= now:
             session.revoked_at = now
@@ -299,9 +309,10 @@ class AuthenticationService:
             parent_session_id=session.id,
             commit=False,
         )
-        session.revoked_at = now
-        session.revocation_reason = "rotated"
-        session.replaced_by_session_id = rotated.session_id
+        if not replay_within_grace:
+            session.revoked_at = now
+            session.revocation_reason = "rotated"
+            session.replaced_by_session_id = rotated.session_id
         db.commit()
         AuthenticationService._cache_session(
             f"session:{rotated.session_id}",
