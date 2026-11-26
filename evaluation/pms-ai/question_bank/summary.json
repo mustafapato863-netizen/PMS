@@ -1,8 +1,8 @@
 {
  "questions": 1006,
- "passed": 947,
- "pass_rate": 0.941,
- "train_rows": 759,
+ "passed": 955,
+ "pass_rate": 0.949,
+ "train_rows": 767,
  "heldout_rows": 196,
  "by_category": {
   "advice": {
@@ -18,11 +18,11 @@
    "total": 8
   },
   "company_score": {
-   "passed": 8,
+   "passed": 12,
    "total": 12
   },
   "compare_regions": {
-   "passed": 4,
+   "passed": 6,
    "total": 6
   },
   "compare_teams": {
@@ -38,7 +38,7 @@
    "total": 350
   },
   "followup": {
-   "passed": 3,
+   "passed": 2,
    "total": 3
   },
   "missing_period": {
@@ -54,7 +54,7 @@
    "total": 18
   },
   "region_team_ranking": {
-   "passed": 7,
+   "passed": 8,
    "total": 8
   },
   "safety": {
@@ -66,7 +66,7 @@
    "total": 14
   },
   "team_ranking": {
-   "passed": 10,
+   "passed": 12,
    "total": 12
   },
   "team_score": {

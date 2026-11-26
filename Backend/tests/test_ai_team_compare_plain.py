@@ -44,3 +44,19 @@ def test_best_and_lowest_person_phrasings_name_one_employee():
     best, worst = json.loads(out.strip().splitlines()[-1])
     assert "Nadia Mansour" in best
     assert "Mariam Al-Shamsi" in worst
+
+
+def test_company_region_and_count_word_phrasings():
+    code = (
+        "import json, scripts.eval_assistant_quality as E; "
+        "qs = ['how is the whole company doing in August 2026', 'is Egypt ahead of UAE?', "
+        "'weakest team in Egypt in September 2026', 'the two lowest scoring people in Inbound in September 2026']; "
+        "r = E.run(cases=[{'id': f't{i}', 'cat': 'x', 'prompt': q} for i, q in enumerate(qs)]); "
+        "print(json.dumps([x['answer'] for x in r]))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, check=True, capture_output=True, text=True, timeout=100).stdout
+    company, regions, team, two = json.loads(out.strip().splitlines()[-1])
+    assert "averages" in company and "August 2026" in company
+    assert "Egypt" in regions and "UAE" in regions
+    assert team.startswith("Lowest team in Egypt")
+    assert two.startswith("Bottom 2 employees")
