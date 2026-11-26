@@ -364,13 +364,17 @@ async function fetchScopedPerformanceData(
   location: LocationKey,
   team?: string,
   signal?: AbortSignal,
-  allPeriods = false,
+  olderThanLoaded = false,
 ): Promise<AgentRecord[]> {
   const catalog = await getScopedCatalog();
   if (signal?.aborted) throw new DOMException('The performance records read was cancelled.', 'AbortError');
-  const periods = allPeriods
-    ? (catalog.periods || []).slice().sort((left, right) => right.key.localeCompare(left.key))
-    : periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
+  const loadedPeriods = periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
+  // The background history read asks only for the months the first read did not load.
+  const periods = olderThanLoaded
+    ? (catalog.periods || [])
+      .filter((period) => !loadedPeriods.some((loaded) => loaded.key === period.key))
+      .sort((left, right) => right.key.localeCompare(left.key))
+    : loadedPeriods;
 
   // Periods are independent. Keep pagination sequential within one period,
   // but fetch the requested periods together so a six-month view does not
@@ -611,14 +615,18 @@ export function usePerformanceData(
     retry: false,
   });
   const historyQuery = useQuery({
-    queryKey: ['performance', 'bounded-history', session, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
-    queryFn: ({ signal }) => fetchScopedPerformanceData('All', region, performanceLevel, location, scopedTeam, signal, true),
+    queryKey: ['performance', 'bounded-history', session, month, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
+    queryFn: ({ signal }) => fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam, signal, true),
     enabled: enabled && !scopedPerformanceApiEnabled && scopedQuery.isSuccess,
     staleTime: 2 * 60_000,
     retry: false,
   });
   const allData = useMemo(
-    () => (enabled ? (historyQuery.data ?? scopedQuery.data ?? []) : []),
+    () => {
+      if (!enabled) return [];
+      const recent = scopedQuery.data ?? [];
+      return historyQuery.data ? [...recent, ...historyQuery.data] : recent;
+    },
     [enabled, historyQuery.data, scopedQuery.data],
   );
   const loading = enabled && scopedQuery.isLoading;

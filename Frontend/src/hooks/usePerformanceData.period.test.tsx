@@ -84,4 +84,19 @@ describe('default bounded performance period selection', () => {
     await waitFor(() => expect(latestJuly.result.current.rows.map((row) => row.name)).toEqual(['July 2026']));
     expect(latestJuly.result.current.totalAgents).toBe(1);
   });
+
+  it('loads each older month once: the history read skips the months already loaded', async () => {
+    const hook = renderHook(() => usePerformanceData('2026-07', 'all'), { wrapper: wrapperFor() });
+    await waitFor(() => expect(hook.result.current.agents.length).toBeGreaterThan(0));
+    // Recent (2026-07, 2026-06) plus background history (2025-07, 2025-06).
+    await waitFor(() => expect(
+      vi.mocked(apiFetch).mock.calls.filter(([url]) => String(url).startsWith('/api/performance/records')),
+    ).toHaveLength(4));
+    const periods = vi.mocked(apiFetch).mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.startsWith('/api/performance/records'))
+      .map((url) => new URL(url, 'http://x').searchParams.get('period'))
+      .sort();
+    expect(periods).toEqual(['2025-06', '2025-07', '2026-06', '2026-07']);
+  });
 });
