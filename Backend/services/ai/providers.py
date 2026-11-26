@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 import re
 from dataclasses import dataclass, field, replace
@@ -194,6 +195,16 @@ def build_minimized_routing_payload(
     }
 
 
+
+def _routing_timeout(provider_timeout: float, remaining: float | None) -> float:
+    """Structured routing only refines a rule plan, so fail fast (PMS_AI_NVIDIA_ROUTING_TIMEOUT_SECONDS, default 6s)."""
+    try:
+        cap = float(os.getenv("PMS_AI_NVIDIA_ROUTING_TIMEOUT_SECONDS") or 6.0)
+    except ValueError:
+        cap = 6.0
+    limit = min(provider_timeout, cap) if cap > 0 else provider_timeout
+    return min(limit, remaining) if remaining is not None else limit
+
 class NvidiaStructuredRouterAdapter:
     """Routes legacy shadow and hybrid requests through the unified provider engine."""
 
@@ -244,7 +255,7 @@ class NvidiaStructuredRouterAdapter:
                 messages=[ProviderMessage(role="user", content=json.dumps(minimized_input, ensure_ascii=False))],
                 response_format="json",
                 json_schema={"type": "object", "properties": {"intent": {"type": "string"}}, "required": ["intent"]},
-                timeout_seconds=min(cfg.provider_timeout_seconds, timeout) if timeout is not None else cfg.provider_timeout_seconds,
+                timeout_seconds=_routing_timeout(cfg.provider_timeout_seconds, timeout),
                 purpose="structured_routing",
                 task_role="routine",
             )

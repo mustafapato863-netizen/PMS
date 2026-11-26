@@ -10,7 +10,7 @@
     "browser"
   ],
   "file_count": 82,
-  "case_count": 951,
+  "case_count": 952,
   "files_by_label": {
     "synthetic": 27,
     "mocked": 52,
@@ -207,7 +207,7 @@
       "labels": [
         "synthetic"
       ],
-      "cases": 3,
+      "cases": 4,
       "evidence_status": "not applicable",
       "note": ""
     },
