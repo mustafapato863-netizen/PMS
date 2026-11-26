@@ -20,3 +20,13 @@ def test_other_questions_keep_model_planner(q):
 def test_kill_switch(monkeypatch):
     monkeypatch.setenv("PMS_AI_DETERMINISTIC_FIRST", "off")
     assert det_first("how is the whole company doing") is False
+
+
+def test_structured_routing_timeout_is_capped(monkeypatch):
+    from services.ai.providers import _routing_timeout
+
+    monkeypatch.delenv("PMS_AI_NVIDIA_ROUTING_TIMEOUT_SECONDS", raising=False)
+    assert _routing_timeout(15, 40) == 6.0
+    assert _routing_timeout(15, 3) == 3
+    monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_TIMEOUT_SECONDS", "0")
+    assert _routing_timeout(15, 40) == 15

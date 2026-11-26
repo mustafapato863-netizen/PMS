@@ -5286,7 +5286,8 @@ class HybridQueryRouter:
             )
         )
         if (should_call_nvidia and not plan.verified_comparison and not plan.verified_cohort_score and not ranked_action_request
-            and not explicit_kpi_question_kind(text) and (turn_deadline is None or turn_deadline > perf_counter())):
+            and not explicit_kpi_question_kind(text) and not _deterministic_first_question(lower)
+            and (turn_deadline is None or turn_deadline > perf_counter())):
             if is_prompt_safe_for_external_projection(text):
                 eligible_team_names = [
                     t.value for t in self.catalog.get_eligible_scope_options(self.scope)["eligible_teams"]
