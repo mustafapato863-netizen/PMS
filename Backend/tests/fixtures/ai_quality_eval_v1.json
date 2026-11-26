@@ -1,0 +1,48 @@
+{
+  "schema_version": "pms-ai-quality-eval-v1",
+  "data_boundary": "strictly_synthetic_zero_pii",
+  "note": "English only. Data comes from scripts/eval_assistant_quality.py (synthetic EGY Sep/Aug 2026, UAE Aug 2026). Each case is scored on its first answer. all_of is a list of groups; each group needs one token. none_of tokens must not appear.",
+  "cases": [
+    {"id": "worry_team", "cat": "direction", "prompt": "which team should I worry about most in Egypt in September 2026?", "all_of": [["Coding EGY"]], "none_of": ["leads"]},
+    {"id": "attention_team", "cat": "direction", "prompt": "which team needs the most attention in Egypt in September 2026?", "all_of": [["Coding EGY"]]},
+    {"id": "lowest_team", "cat": "direction", "prompt": "lowest team in Egypt in September 2026", "all_of": [["Coding EGY"]]},
+    {"id": "best_team", "cat": "direction", "prompt": "best team in Egypt in September 2026", "all_of": [["Human Resources"]]},
+    {"id": "struggling_emp", "cat": "direction", "prompt": "who is struggling the most in Marketing in September 2026", "all_of": [["Samir Gamil"]]},
+    {"id": "top3_inbound", "cat": "direction", "prompt": "top 3 employees in Inbound September 2026", "all_of": [["Nadia"], ["Karim"], ["Hala"]]},
+    {"id": "bottom2_inbound", "cat": "direction", "prompt": "bottom 2 employees in Inbound September 2026", "all_of": [["Rami"], ["Hala"]]},
+
+    {"id": "cmp_regions", "cat": "cross_region", "prompt": "compare Egypt and UAE overall performance", "all_of": [["Egypt", "EGY"], ["UAE"]]},
+    {"id": "cmp_uae_egy_aug", "cat": "cross_region", "prompt": "how does UAE compare to Egypt in August 2026?", "all_of": [["Egypt", "EGY"], ["UAE"]]},
+    {"id": "cmp_better_region", "cat": "cross_region", "prompt": "which region is performing better, Egypt or UAE?", "all_of": [["Egypt", "EGY"], ["UAE"]]},
+    {"id": "cmp_sales", "cat": "cross_region", "prompt": "UAE Sales average in August 2026", "all_of": [["76"]]},
+
+    {"id": "kpi_declined", "cat": "period_change", "prompt": "which KPI declined the most from August to September 2026 in Outbound?", "all_of": [["Booking"]]},
+    {"id": "kpi_improved", "cat": "period_change", "prompt": "which KPI improved the most in Inbound from August to September 2026?", "all_of": [["Booking", "Waiting"]]},
+    {"id": "mkt_change", "cat": "period_change", "prompt": "how did Marketing change from August to September 2026?", "all_of": [["88"], ["82", "6.0"]]},
+    {"id": "mkt_trend", "cat": "period_change", "prompt": "is Marketing trending up or down?", "all_of": [["up", "rose", "increase", "improv"]]},
+
+    {"id": "reset_company_1", "cat": "scope_reset", "setup": ["top 3 employees in Inbound September 2026"], "prompt": "what is the overall score across the whole company in September 2026?", "all_of": [["%"]], "none_of": ["Nadia", "Karim"]},
+    {"id": "reset_company_2", "cat": "scope_reset", "setup": ["who is the lowest employee in Marketing in September 2026"], "prompt": "and for the whole company?", "all_of": [["%"]], "none_of": ["Samir"]},
+
+    {"id": "compound_help", "cat": "compound", "prompt": "What can you do? Also who is the top employee in Inbound in September 2026?", "all_of": [["Nadia"], ["help", "can", "ask"]]},
+    {"id": "compound_score_low", "cat": "compound", "prompt": "Give me Marketing's score and the lowest employee in Marketing for September 2026", "all_of": [["88"], ["Samir"]]},
+    {"id": "compound_top_bottom", "cat": "compound", "prompt": "top employee in Inbound and bottom employee in Inbound September 2026", "all_of": [["Nadia"], ["Rami"]]},
+
+    {"id": "why_emp", "cat": "why", "prompt": "why is Samir Gamil the lowest in Marketing in September 2026?", "all_of": [["76"], ["88"], ["70"]]},
+    {"id": "why_team", "cat": "why", "prompt": "why did Coding EGY score low in September 2026?", "all_of": [["72"], ["Quality Errors"]]},
+    {"id": "why_below_avg", "cat": "why", "prompt": "why is Rami Khoury below the Inbound average in September 2026?", "all_of": [["84"], ["91.5"], ["Waiting"]]},
+    {"id": "why_action", "cat": "why", "prompt": "what should I do about Coding EGY in September 2026?", "all_of": [["Quality Errors", "quality"]]},
+
+    {"id": "period_last_month", "cat": "period", "prompt": "what is the Inbound team score last month?", "all_of": [["Period used"]]},
+    {"id": "period_this_month", "cat": "period", "prompt": "weakest team this month in Egypt", "all_of": [["Period used"]]},
+
+    {"id": "ctl_score", "cat": "control", "prompt": "what is Nadia Mansour's score in September 2026", "all_of": [["96"]]},
+    {"id": "ctl_bookings", "cat": "control", "prompt": "how many bookings did Inbound handle in Dubai in September 2026", "all_of": [["220"]]},
+    {"id": "ctl_waiting", "cat": "control", "prompt": "what is Nadia Mansour's waiting time in September 2026", "all_of": [["3.4"]]},
+    {"id": "ctl_outbound_tie", "cat": "control", "prompt": "top performers in Outbound in September 2026", "all_of": [["Dina", "Omar"]]},
+    {"id": "ctl_uae_best", "cat": "control", "prompt": "which team has the highest average in UAE in August 2026", "all_of": [["Coding"]]},
+    {"id": "ctl_uae_low", "cat": "control", "prompt": "lowest team in UAE in August 2026", "all_of": [["CSR"]]},
+    {"id": "ctl_hello", "cat": "control", "prompt": "hello", "expected_outcomes": ["answer", "clarification", "unsupported_request"]},
+    {"id": "ctl_offtopic", "cat": "control", "prompt": "what is the weather in Cairo?", "expected_outcomes": ["answer", "clarification", "unsupported_request", "unavailable_data"], "none_of": ["degrees", "sunny"]}
+  ]
+}
