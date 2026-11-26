@@ -5322,6 +5322,7 @@ class PmsAiOrchestrator:
                 or composable_spec.entity in {"department", "team", "position", "branch"}
                 or bool(composable_spec.region)
                 or bool(composable_spec.position)
+                or (explicit_rank_count and composable_spec.limit > 1 and bool(composable_spec.department or composable_spec.team))
                 or (composable_spec.score_threshold is not None and composable_spec.entity in {"department", "team", "branch"})
                 or explicit_arrange
                 or same_dep_followup
@@ -6834,6 +6835,24 @@ class PmsAiOrchestrator:
                 if is_ranking_result and not routed.plan.employee_id
                 else []
             )
+            if len(ranking_candidates) < 2 and is_ranking_result and not routed.plan.employee_id:
+                # Composable top/bottom-N employee rankings: keep the listed people so
+                # "his/her ..." follow-ups clarify instead of guessing.
+                for _dg in tool_digests or []:
+                    _qr = (_dg or {}).get("query_rankings") if isinstance(_dg, dict) else None
+                    if isinstance(_qr, dict) and _qr.get("entity") == "employee":
+                        _rows = [r for r in (_qr.get("rows") or []) if isinstance(r, dict) and r.get("id") and r.get("name")]
+                        if len(_rows) > 1:
+                            ranking_candidates = [
+                                {
+                                    "employee_id": str(r["id"]),
+                                    "employee_name": str(r["name"]),
+                                    "team": str(r.get("team") or ""),
+                                    "position": str(r.get("position") or ""),
+                                }
+                                for r in _rows[:5]
+                            ]
+                            break
             if len(ranking_candidates) > 1:
                 routed.confirmed_context.candidate_employees = ranking_candidates
                 routed.confirmed_context.last_subject_employee_id = None
