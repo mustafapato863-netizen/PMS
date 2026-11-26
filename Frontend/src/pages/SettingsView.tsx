@@ -12,6 +12,7 @@ import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActi
 import { DataSnapshotPanel } from '../components/settings/DataSnapshotPanel';
 import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
 import { AiFeedbackLearningPanel } from '../components/settings/AiFeedbackLearningPanel';
+import { AiAnswerQualityPanel } from '../components/settings/AiAnswerQualityPanel';
 import { AiModelsKeysPanel } from '../components/settings/AiModelsKeysPanel';
 import { AdminOverview } from '../components/settings/shell/AdminOverview';
 import { AdminPageHeader } from '../components/settings/shell/AdminPageHeader';
@@ -59,7 +60,12 @@ const SettingsView = () => {
         {page === 'kpis' && <EvaluationSettingsPanel />}
         {page === 'users' && <UserManagementPanel />}
         {page === 'system_errors' && <SystemErrorsPanel />}
-        {page === 'ai_feedback' && <AiFeedbackLearningPanel />}
+        {page === 'ai_feedback' && (
+          <>
+            <AiFeedbackLearningPanel />
+            <AiAnswerQualityPanel />
+          </>
+        )}
         {page === 'ai_models' && <AiModelsKeysPanel />}
       </SettingsLayout>
     </motion.main>
