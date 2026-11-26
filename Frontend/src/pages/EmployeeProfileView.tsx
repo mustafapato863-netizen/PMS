@@ -686,12 +686,12 @@ const EmployeeProfileView = () => {
         </section>
       )}
 
-      {/* Loading state when employee not found yet */}
-      {!employee && loadingProfile && (
+      {/* Show the skeleton until the roster and the profile both settle: "not found" only after the data is in. */}
+      {!employee && (loadingProfile || loadingRoster) && (
         <PageLoadingSkeleton variant="detail" label="Loading employee profile" compact />
       )}
 
-      {!employee && !loadingProfile && (
+      {!employee && !loadingProfile && !loadingRoster && (
         <div className="glass-panel rounded-xl p-10 text-center">
           <AlertTriangle size={32} className="mx-auto text-amber-400 mb-3" />
           <h3 className="text-lg font-bold text-[var(--text-primary)]">Employee not found</h3>
