@@ -276,8 +276,8 @@ export default function InsightsSummaryStrip({
               <span
                 className={`inline-flex items-center gap-1 text-[13px] font-semibold tabular-nums ${
                   change < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-emerald-600 dark:text-emerald-400'
+                    ? 'text-rose-600'
+                    : 'text-emerald-600'
                 }`}
               >
                 {change >= 0 ? (
@@ -314,8 +314,8 @@ export default function InsightsSummaryStrip({
               <span
                 className={`font-semibold tabular-nums ${
                   gap >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
+                    ? 'text-emerald-600'
+                    : 'text-rose-600'
                 }`}
               >
                 {gap >= 0
@@ -341,14 +341,14 @@ export default function InsightsSummaryStrip({
                 <span
                   data-testid="recovery-potential-badge"
                   title="Estimated score points recoverable if below-target employees reach benchmark"
-                  className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-300"
+                  className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-semibold text-indigo-600"
                 >
                   <Sparkles size={11} aria-hidden="true" />
                   +{recoverablePoints.toFixed(1)} pts recoverable
                 </span>
               )}
               {summary?.coverage_percent !== null && summary?.coverage_percent !== undefined && (
-                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <span className="text-xs font-medium text-emerald-600">
                   {summary.coverage_percent}% coverage
                 </span>
               )}
@@ -373,15 +373,15 @@ export default function InsightsSummaryStrip({
             KPI Health Distribution
           </span>
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="flex items-center gap-1.5 font-medium text-emerald-600">
               <CheckCircle2 size={13} aria-hidden="true" />
               <span>{onTrackCount} on track ({onTrackPct.toFixed(0)}%)</span>
             </span>
-            <span className="flex items-center gap-1.5 font-medium text-amber-600 dark:text-amber-400">
+            <span className="flex items-center gap-1.5 font-medium text-amber-600">
               <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
               <span>{atRiskCount} at risk ({atRiskPct.toFixed(0)}%)</span>
             </span>
-            <span className="flex items-center gap-1.5 font-medium text-rose-600 dark:text-rose-400">
+            <span className="flex items-center gap-1.5 font-medium text-rose-600">
               <span className="size-2 rounded-full bg-rose-500" aria-hidden="true" />
               <span>{criticalCount} critical ({criticalPct.toFixed(0)}%)</span>
             </span>
@@ -449,8 +449,8 @@ export default function InsightsSummaryStrip({
                   <span
                     className={
                       story.primary_driver_impact < 0
-                        ? 'font-semibold text-rose-600 dark:text-rose-400'
-                        : 'font-semibold text-emerald-600 dark:text-emerald-400'
+                        ? 'font-semibold text-rose-600'
+                        : 'font-semibold text-emerald-600'
                     }
                   >
                     ({story.primary_driver_impact > 0 ? '+' : ''}
@@ -467,11 +467,11 @@ export default function InsightsSummaryStrip({
       {totalAlerts > 0 && currentAlert && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <AlertTriangle size={15} className="shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            <AlertTriangle size={15} className="shrink-0 text-rose-600" aria-hidden="true" />
             <button
               type="button"
               onClick={() => onOpenInsight(currentAlert)}
-              className="truncate text-left text-[13px] font-semibold text-rose-700 transition hover:underline dark:text-rose-300"
+              className="truncate text-left text-[13px] font-semibold text-rose-700 transition hover:underline"
             >
               <span>
                 {totalAlerts} critical {totalAlerts === 1 ? 'alert' : 'alerts'}: {currentAlert.title}
@@ -481,7 +481,7 @@ export default function InsightsSummaryStrip({
 
           <div className="flex shrink-0 items-center gap-2">
             {totalAlerts > 1 && (
-              <div className="flex items-center gap-1 text-xs font-semibold text-rose-700 dark:text-rose-300">
+              <div className="flex items-center gap-1 text-xs font-semibold text-rose-700">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -512,7 +512,7 @@ export default function InsightsSummaryStrip({
             <button
               type="button"
               onClick={() => onOpenInsight(currentAlert)}
-              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-700 transition hover:bg-rose-500/25 dark:text-rose-200"
+              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-700 transition hover:bg-rose-500/25"
             >
               <span>View Details</span>
               <ArrowRight size={13} aria-hidden="true" />

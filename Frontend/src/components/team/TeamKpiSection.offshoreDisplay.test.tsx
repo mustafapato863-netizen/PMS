@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { ThemeProvider } from '../../context/ThemeContext';
 import TeamKpiSection from './TeamKpiSection';
 
 // Synthetic Pre-Approvals IP Offshore month, shaped like the screenshot. Stored
@@ -49,7 +48,7 @@ const offshoreMetrics = {
 };
 
 const renderOffshore = (metrics: typeof offshoreMetrics) => render(
-  <ThemeProvider>
+  <>
     <TeamKpiSection
       totalAgents={6}
       avgScore={70}
@@ -65,7 +64,7 @@ const renderOffshore = (metrics: typeof offshoreMetrics) => render(
       teamName="Pre-Approvals IP Offshore"
       month="September"
     />
-  </ThemeProvider>,
+  </>,
 );
 
 describe('Pre-Approvals IP Offshore team cards show each percentage once', () => {

@@ -106,8 +106,8 @@ function StatusBanner({ status }: { status: Status }) {
       role="status"
       className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
         status.type === 'success'
-          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-          : 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400'
+          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600'
+          : 'border-red-500/20 bg-red-500/10 text-red-600'
       }`}
     >
       {status.type === 'success' ? <CheckCircle2 size={16} className="shrink-0" /> : <AlertCircle size={16} className="shrink-0" />}
@@ -123,8 +123,8 @@ function ProcessingBanner({ busyType }: { busyType: 'employee' | 'management' })
       role="status"
       className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-xs font-semibold shadow-sm animate-pulse ${
         isEmployee
-          ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-          : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'
+          ? 'border-blue-500/30 bg-blue-500/10 text-blue-600'
+          : 'border-purple-500/30 bg-purple-500/10 text-purple-600'
       }`}
     >
       <Loader2 size={18} className={`animate-spin shrink-0 ${isEmployee ? 'text-blue-500' : 'text-purple-500'}`} />
@@ -200,7 +200,7 @@ function DeleteConfirmModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-rose-600 dark:text-rose-400">
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-rose-600">
                     Confirm Deletion
                   </p>
                   <h3 id="delete-confirm-title" className="mt-1 text-lg font-black text-[var(--text-primary)] leading-snug break-words">

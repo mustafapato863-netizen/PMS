@@ -91,7 +91,7 @@ export function UploadHistory({ items, management = false, loading = false, busy
 
   const selectionBar = onBatchDelete && selectedCount > 0 ? (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+      <span className="text-xs font-semibold text-rose-600">
         {countText} selected
       </span>
       <button

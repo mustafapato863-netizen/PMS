@@ -44,10 +44,10 @@ function UploadProgressNote({
     job?.result && typeof job.result === 'object' ? job.result.column_warnings : undefined,
   );
   const tone = isFailed
-    ? 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/95 dark:text-rose-100'
+    ? 'border-rose-200 bg-rose-50 text-rose-900'
     : isSucceeded
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/95 dark:text-emerald-100'
-      : 'border-blue-200 bg-white text-slate-900 dark:border-blue-900/70 dark:bg-slate-900 dark:text-slate-100';
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+      : 'border-blue-200 bg-white text-slate-900';
 
   return (
     <aside
@@ -56,7 +56,7 @@ function UploadProgressNote({
       className={`fixed bottom-4 left-1/2 z-[10000] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 rounded-2xl border px-4 py-3 shadow-xl backdrop-blur ${tone}`}
     >
       <div className="flex items-start gap-3">
-        <Icon size={19} className={`mt-0.5 shrink-0 ${!isTerminal ? 'animate-spin text-blue-600 dark:text-blue-300' : ''}`} />
+        <Icon size={19} className={`mt-0.5 shrink-0 ${!isTerminal ? 'animate-spin text-blue-600' : ''}`} />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold">Employee PMS upload</p>
           <p className="mt-0.5 text-xs leading-relaxed opacity-80">{message}</p>
@@ -67,7 +67,7 @@ function UploadProgressNote({
           )}
           {!isTerminal && (
             <div
-              className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"
               role="progressbar"
               aria-label="Upload processing progress"
               aria-valuemin={0}
@@ -75,7 +75,7 @@ function UploadProgressNote({
               aria-valuenow={progress}
             >
               <div
-                className="h-full rounded-full bg-blue-600 transition-[width] duration-500 dark:bg-blue-400"
+                className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -84,7 +84,7 @@ function UploadProgressNote({
         <button
           type="button"
           onClick={() => navigate('/settings/data')}
-          className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-blue-300"
+          className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-blue-500"
         >
           Uploads
         </button>
@@ -93,7 +93,7 @@ function UploadProgressNote({
             type="button"
             onClick={onDismiss}
             aria-label="Dismiss upload status"
-            className="shrink-0 rounded-lg p-1 opacity-60 hover:bg-black/5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:bg-white/10"
+            className="shrink-0 rounded-lg p-1 opacity-60 hover:bg-black/5 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-blue-500"
           >
             <X size={16} />
           </button>

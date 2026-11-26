@@ -29,20 +29,20 @@ const ICON_MAP: Record<ToastType, typeof CheckCircle2> = {
 
 const STYLE_MAP: Record<ToastType, string> = {
   success:
-    'border-emerald-500/25 bg-emerald-50 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-950/80 dark:text-emerald-200',
+    'border-emerald-500/25 bg-emerald-50 text-emerald-800',
   error:
-    'border-rose-500/25 bg-rose-50 text-rose-800 dark:border-rose-400/20 dark:bg-rose-950/80 dark:text-rose-200',
+    'border-rose-500/25 bg-rose-50 text-rose-800',
   warning:
-    'border-amber-500/25 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-950/80 dark:text-amber-200',
+    'border-amber-500/25 bg-amber-50 text-amber-800',
   info:
-    'border-blue-500/25 bg-blue-50 text-blue-800 dark:border-blue-400/20 dark:bg-blue-950/80 dark:text-blue-200',
+    'border-blue-500/25 bg-blue-50 text-blue-800',
 };
 
 const ICON_COLOR: Record<ToastType, string> = {
-  success: 'text-emerald-600 dark:text-emerald-400',
-  error: 'text-rose-600 dark:text-rose-400',
-  warning: 'text-amber-600 dark:text-amber-400',
-  info: 'text-blue-600 dark:text-blue-400',
+  success: 'text-emerald-600',
+  error: 'text-rose-600',
+  warning: 'text-amber-600',
+  info: 'text-blue-600',
 };
 
 const PROGRESS_COLOR: Record<ToastType, string> = {

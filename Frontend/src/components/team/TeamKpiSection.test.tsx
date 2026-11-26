@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { ThemeProvider } from '../../context/ThemeContext';
 import TeamKpiSection from './TeamKpiSection';
 
 const teamMetrics = {
@@ -20,7 +19,7 @@ const teamMetrics = {
 };
 
 const renderSection = (month: 'May' | 'June') => render(
-  <ThemeProvider>
+  <>
     <TeamKpiSection
       totalAgents={31}
       avgScore={91.7}
@@ -37,7 +36,7 @@ const renderSection = (month: 'May' | 'June') => render(
       month={month}
       teamWeights={{ Attend: 0.7, Booking: 0.1, Quality: 0.05, AHT: 0.05, Other: 0.1 }}
     />
-  </ThemeProvider>,
+  </>,
 );
 
 describe('TeamKpiSection active monthly KPI cards', () => {
@@ -61,7 +60,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('shows aggregate weights and contributions when the legacy settings weights are unavailable', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={32}
           avgScore={91.1}
@@ -86,7 +85,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Inbound"
           month="June"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('Contribution63.3%');
@@ -100,7 +99,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('automatically renders every additional scored call-center KPI', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={32}
           avgScore={91.1}
@@ -125,7 +124,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Inbound"
           month="June"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const noShowCard = screen.getByText('No Show Rate').closest('article');
@@ -137,7 +136,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('shows the pooled IP Offshore rates and effective dynamic weights', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={5}
           avgScore={68.8}
@@ -165,7 +164,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           month="June"
           teamWeights={{ Rejection: 0.50, InitialError: 0.20, Submission: 0.30 }}
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const rejectionCard = screen.getByText('IP Rejection Rate').closest('article');
@@ -184,7 +183,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('shows the 100% target on every Sales performance card', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={10}
           avgScore={87}
@@ -207,7 +206,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Sales"
           month="June"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     for (const label of ['OP Census Ach', 'OP Revenue Ach', 'IP Census Ach', 'IP Revenue Ach', 'Activity Score']) {
@@ -217,7 +216,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('uses KPI record weights for newly onboarded position-scoped teams', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={8}
           avgScore={92.4}
@@ -244,7 +243,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Pre-Approvals OP Dubai"
           month="May"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const rejectionCard = screen.getByText('Initial Rejection Rate').closest('article');
@@ -255,7 +254,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('caps KPI contributions at the configured weight for Pre-Approvals IP Final Dubai', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={4}
           avgScore={108}
@@ -281,7 +280,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Pre-Approvals IP Final Dubai"
           month="May"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const submissionCard = screen.getByText('Submission Within Month %').closest('article');
@@ -292,7 +291,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
   it('renders an above-target fractional percentage KPI consistently', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={9}
           avgScore={83.2}
@@ -318,7 +317,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
           teamName="Re-Submission"
           month="June"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const tatCard = screen.getByText('TAT').closest('article');
@@ -353,7 +352,7 @@ const variedKpi = (label: string, actual = 0.4) => ({
 describe('TeamKpiSection applied call-center basis', () => {
   it('hides fixed families and extra KPIs when the applied basis is not calculated', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -378,7 +377,7 @@ describe('TeamKpiSection applied call-center basis', () => {
             ],
           }}
         />
-      </ThemeProvider>,
+      </>,
     );
 
     for (const label of [
@@ -398,7 +397,7 @@ describe('TeamKpiSection applied call-center basis', () => {
 
   it('hides inbound utilization and abandon when their basis is not calculated', () => {
     const { unmount } = render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -413,7 +412,7 @@ describe('TeamKpiSection applied call-center basis', () => {
             dynamicKpis: [variedKpi('Utilization', 0.4)],
           }}
         />
-      </ThemeProvider>,
+      </>,
     );
     expect(screen.queryByText('Utilization')).not.toBeInTheDocument();
     expect(screen.queryByText('85%')).not.toBeInTheDocument();
@@ -421,7 +420,7 @@ describe('TeamKpiSection applied call-center basis', () => {
     unmount();
 
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -436,7 +435,7 @@ describe('TeamKpiSection applied call-center basis', () => {
             dynamicKpis: [variedKpi('Abandon Rate', 0.03)],
           }}
         />
-      </ThemeProvider>,
+      </>,
     );
     expect(screen.queryByText('Call Abandon Rate')).not.toBeInTheDocument();
     expect(screen.queryByText('Abandon Rate')).not.toBeInTheDocument();
@@ -446,7 +445,7 @@ describe('TeamKpiSection applied call-center basis', () => {
 
   it('follows an applied lower-better attendance pin and a higher-better handle-time pin', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -472,7 +471,7 @@ describe('TeamKpiSection applied call-center basis', () => {
             ],
           }}
         />
-      </ThemeProvider>,
+      </>,
     );
 
     const attendance = screen.getByText('Patient Attendance Rate').closest('article');
@@ -492,7 +491,7 @@ describe('TeamKpiSection applied call-center basis', () => {
 
   it('preserves the static attendance fallback, the four-column grid, and a zero-weight handle-time diagnostic', () => {
     const { unmount } = render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -502,7 +501,7 @@ describe('TeamKpiSection applied call-center basis', () => {
           month="August"
           teamMetrics={{ ...teamMetrics, dynamicKpis: [] }}
         />
-      </ThemeProvider>,
+      </>,
     );
     const attendance = screen.getByText('Patient Attendance Rate').closest('article');
     expect(attendance).toHaveTextContent('55%');
@@ -511,7 +510,7 @@ describe('TeamKpiSection applied call-center basis', () => {
     unmount();
 
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           {...callCenterShell}
           isCallCenterView
@@ -533,7 +532,7 @@ describe('TeamKpiSection applied call-center basis', () => {
             }],
           }}
         />
-      </ThemeProvider>,
+      </>,
     );
     expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('75%');
     const handleTime = screen.getByText('Avg. Handle Time').closest('article');

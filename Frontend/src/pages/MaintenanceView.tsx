@@ -132,7 +132,7 @@ export default function MaintenanceView({
             <span className="text-sm font-extrabold tracking-tight text-[var(--text-primary)] block leading-tight">
               SGH Hub
             </span>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 block leading-none mt-0.5">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600 block leading-none mt-0.5">
               Performance Intelligence
             </span>
           </div>
@@ -143,7 +143,7 @@ export default function MaintenanceView({
           initial={{ opacity: 0, scale: 0.96, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.08 }}
-          className="rounded-[32px] border border-[var(--border-light)] bg-[var(--bg-surface)]/90 backdrop-blur-xl p-8 sm:p-12 shadow-[0_24px_64px_rgba(15,23,42,0.12)] dark:shadow-[0_24px_64px_rgba(0,0,0,0.40)] text-left"
+          className="rounded-[32px] border border-[var(--border-light)] bg-[var(--bg-surface)]/90 backdrop-blur-xl p-8 sm:p-12 shadow-[0_24px_64px_rgba(15,23,42,0.12)](0,0,0,0.40)] text-left"
         >
           {/* Status Badge + Visual Emblem */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 mb-8">
@@ -175,8 +175,8 @@ export default function MaintenanceView({
               <span
                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border tracking-wide uppercase ${
                   isErrorMode
-                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                    : 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-600'
+                    : 'border-blue-500/30 bg-blue-500/10 text-blue-600'
                 }`}
               >
                 <span
@@ -208,7 +208,7 @@ export default function MaintenanceView({
           {/* System Services Health Matrix */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-[var(--bg-sunken)]/60 border border-[var(--border-light)]">
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
                 <Database size={18} />
               </div>
               <div className="min-w-0 flex-1">
@@ -223,7 +223,7 @@ export default function MaintenanceView({
             </div>
 
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-[var(--bg-sunken)]/60 border border-[var(--border-light)]">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600">
                 <ShieldCheck size={18} />
               </div>
               <div className="min-w-0 flex-1">
@@ -238,7 +238,7 @@ export default function MaintenanceView({
             </div>
 
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-[var(--bg-sunken)]/60 border border-[var(--border-light)]">
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
                 <Cpu size={18} />
               </div>
               <div className="min-w-0 flex-1">
@@ -286,7 +286,7 @@ export default function MaintenanceView({
               {copied ? (
                 <>
                   <Check size={16} className="text-emerald-500" />
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Copied</span>
+                  <span className="text-xs font-bold text-emerald-600">Copied</span>
                 </>
               ) : (
                 <>
@@ -365,7 +365,7 @@ export default function MaintenanceView({
             <span>Need assistance? Contact IT Operations at</span>
             <a
               href="mailto:support@saudigerman.com"
-              className="font-bold text-blue-600 dark:text-blue-400 hover:underline"
+              className="font-bold text-blue-600 hover:underline"
             >
               support@saudigerman.com
             </a>

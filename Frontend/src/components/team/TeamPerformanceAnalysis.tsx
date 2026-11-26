@@ -8,10 +8,10 @@ interface TeamPerformanceAnalysisProps {
 }
 
 const severityStyles: Record<InsightItem['severity'], string> = {
-  critical: 'border-rose-300/70 bg-rose-500/[0.055] text-rose-700 dark:border-rose-500/25 dark:text-rose-300',
-  risk: 'border-amber-300/70 bg-amber-500/[0.055] text-amber-700 dark:border-amber-500/25 dark:text-amber-300',
-  opportunity: 'border-emerald-300/70 bg-emerald-500/[0.055] text-emerald-700 dark:border-emerald-500/25 dark:text-emerald-300',
-  information: 'border-blue-300/70 bg-blue-500/[0.055] text-blue-700 dark:border-blue-500/25 dark:text-blue-300',
+  critical: 'border-rose-300/70 bg-rose-500/[0.055] text-rose-700',
+  risk: 'border-amber-300/70 bg-amber-500/[0.055] text-amber-700',
+  opportunity: 'border-emerald-300/70 bg-emerald-500/[0.055] text-emerald-700',
+  information: 'border-blue-300/70 bg-blue-500/[0.055] text-blue-700',
 };
 
 const severityLabel: Record<InsightItem['severity'], string> = {
@@ -46,7 +46,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
     <section className="mt-5 border-t border-[var(--border-light)] pt-4" aria-labelledby="team-performance-analysis-title">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-extrabold text-[var(--text-primary)]">
-          <Lightbulb size={15} className="text-violet-600 dark:text-violet-400" />
+          <Lightbulb size={15} className="text-violet-600" />
           <h4 id="team-performance-analysis-title">Performance Analysis</h4>
         </div>
         {analysisItems.length > 3 && (
@@ -84,7 +84,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
                     <TrendIcon size={11} />
                     {item.trend_label}
                     {item.impact_points !== null && (
-                      <strong className={positive ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>
+                      <strong className={positive ? 'text-emerald-600' : 'text-rose-600'}>
                         {item.impact_points > 0 ? '+' : ''}{item.impact_points.toFixed(1)}%
                       </strong>
                     )}
@@ -98,7 +98,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
               {isExpanded && (
                 <div className="border-t border-current/10 px-4 py-3 text-xs font-medium leading-relaxed text-[var(--text-secondary)]">
                   <p>{item.explanation}</p>
-                  <p className="mt-2 font-bold text-violet-700 dark:text-violet-300">Recommended focus: {item.detail.recommended_focus}</p>
+                  <p className="mt-2 font-bold text-violet-700">Recommended focus: {item.detail.recommended_focus}</p>
                 </div>
               )}
             </div>
@@ -108,10 +108,10 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
 
       {recommendations.length > 0 && (
         <div className="mt-3 flex flex-col gap-2 rounded-xl border border-violet-500/15 bg-violet-500/[0.055] p-3">
-          <span className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
+          <span className="text-xs font-extrabold text-violet-700">Recommended focus</span>
           <div className="flex flex-wrap gap-2">
             {recommendations.map((recommendation) => (
-              <span key={recommendation} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">
+              <span key={recommendation} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-violet-700">
                 {recommendation}
               </span>
             ))}

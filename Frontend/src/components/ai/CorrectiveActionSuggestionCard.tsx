@@ -289,12 +289,12 @@ export default function CorrectiveActionSuggestionCard({
   return (
     <div
       data-testid="ai-corrective-action-card"
-      className={`rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[0.04] to-[var(--bg-surface)] p-4 shadow-sm transition-all dark:border-purple-400/20 dark:from-purple-950/20 ${className}`}
+      className={`rounded-2xl border border-purple-500/25 bg-gradient-to-b from-purple-500/[0.04] to-[var(--bg-surface)] p-4 shadow-sm transition-all ${className}`}
     >
       {/* Card Header */}
       <div className="flex items-start justify-between gap-3 border-b border-[var(--border-light)] pb-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-purple-600 dark:bg-purple-500/25 dark:text-purple-300">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-purple-600">
             <Sparkles size={16} />
           </div>
           <div>
@@ -302,7 +302,7 @@ export default function CorrectiveActionSuggestionCard({
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--text-primary)]">
                 AI Corrective Action Suggestion
               </h4>
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-700">
                 Draft — Requires Review
               </span>
             </div>
@@ -375,7 +375,7 @@ export default function CorrectiveActionSuggestionCard({
             data-testid="ai-card-loading"
             className="space-y-3 py-2 animate-pulse"
           >
-            <div className="flex items-center gap-2 text-xs font-semibold text-purple-600 dark:text-purple-400">
+            <div className="flex items-center gap-2 text-xs font-semibold text-purple-600">
               <Loader2 size={15} className="animate-spin" />
               <span>Analyzing KPI evidence and generating recommendation...</span>
             </div>
@@ -432,17 +432,17 @@ export default function CorrectiveActionSuggestionCard({
                             Actual: <strong className="text-[var(--text-primary)]">{actualStr}</strong> / Target: {targetStr}
                           </span>
                           {kpi.projected_agent_score_lift != null && kpi.projected_agent_score_lift > 0 && (
-                            <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                            <span className="text-xs font-medium text-indigo-700">
                               Projected impact if {kpi.display_name} reaches {targetStr} target: +{kpi.projected_agent_score_lift.toFixed(1)} pts (assuming other KPIs stay constant)
                             </span>
                           )}
                           <span
                             className={`rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider ${
                               isBelow
-                                ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
+                                ? 'bg-rose-500/10 text-rose-700 border border-rose-500/20'
                                 : isMet
-                                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
-                                  : 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-500/20'
+                                  ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
+                                  : 'bg-slate-500/10 text-slate-600 border border-slate-500/20'
                             }`}
                           >
                             {isBelow ? 'Below Target' : isMet ? 'Target Met' : 'Unavailable'}
@@ -477,7 +477,7 @@ export default function CorrectiveActionSuggestionCard({
             )}
 
             {/* AI Recommendation Details */}
-            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-2 dark:bg-purple-950/20">
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold text-[var(--text-primary)]">
                   {data.draft.title}
@@ -488,7 +488,7 @@ export default function CorrectiveActionSuggestionCard({
                       {data.draft.responsible_role}
                     </span>
                   )}
-                  <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-bold text-purple-700 dark:text-purple-300">
+                  <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-bold text-purple-700">
                     {data.draft.action_type}
                   </span>
                 </div>
@@ -509,7 +509,7 @@ export default function CorrectiveActionSuggestionCard({
               </div>
 
               {data.draft.recommended_follow_up && (
-                <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                <div className="text-xs font-semibold text-purple-700">
                   Follow-up: {data.draft.recommended_follow_up}
                 </div>
               )}
@@ -569,12 +569,12 @@ export default function CorrectiveActionSuggestionCard({
                 </span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {surveyRating === 'up' && (
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="text-xs font-semibold text-emerald-600">
                       Usability rating saved
                     </span>
                   )}
                   {surveyRating === 'down' && (
-                    <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    <span className="text-xs font-semibold text-rose-600">
                       Draft issue flagged for review
                     </span>
                   )}
@@ -590,7 +590,7 @@ export default function CorrectiveActionSuggestionCard({
                     onClick={() => void handleSubmitDraftSurvey('up', 'good_quality_recommendation')}
                     className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                       surveyRating === 'up'
-                        ? 'bg-emerald-500/15 font-semibold text-emerald-700 dark:text-emerald-300'
+                        ? 'bg-emerald-500/15 font-semibold text-emerald-700'
                         : 'text-[var(--text-secondary)] hover:bg-emerald-500/10 hover:text-emerald-700'
                     }`}
                   >
@@ -605,7 +605,7 @@ export default function CorrectiveActionSuggestionCard({
                     onClick={() => setShowSurveyForm((prev) => !prev)}
                     className={`inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                       surveyRating === 'down' || showSurveyForm
-                        ? 'bg-rose-500/15 font-semibold text-rose-700 dark:text-rose-300'
+                        ? 'bg-rose-500/15 font-semibold text-rose-700'
                         : 'text-[var(--text-secondary)] hover:bg-rose-500/10 hover:text-rose-700'
                     }`}
                   >
@@ -678,8 +678,8 @@ export default function CorrectiveActionSuggestionCard({
         {/* 4. Insufficient Evidence State */}
         {state === 'insufficient_evidence' && (
           <div data-testid="ai-card-insufficient-evidence" className="space-y-3 py-1">
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
-              <Info size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-800">
+              <Info size={16} className="shrink-0 mt-0.5 text-amber-600" />
               <div className="space-y-1">
                 <p className="font-bold">Not enough verified performance data is available.</p>
                 {(() => {
@@ -699,7 +699,7 @@ export default function CorrectiveActionSuggestionCard({
                     <>
                       <p className="text-xs opacity-90">{humanizedReason}</p>
                       {showLimitation && (
-                        <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                        <p className="text-xs font-medium text-amber-900">
                           {limitation}
                         </p>
                       )}
@@ -725,8 +725,8 @@ export default function CorrectiveActionSuggestionCard({
         {/* 5. Model Unavailable State */}
         {state === 'model_unavailable' && (
           <div data-testid="ai-card-model-unavailable" className="space-y-3 py-1">
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
-              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-800">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600" />
               <div>
                 <p className="font-bold">AI suggestion service is temporarily unavailable.</p>
                 <p className="mt-0.5 text-xs opacity-90">
@@ -759,8 +759,8 @@ export default function CorrectiveActionSuggestionCard({
         {/* 6. Draft Rejected State */}
         {state === 'draft_rejected' && (
           <div data-testid="ai-card-draft-rejected" className="space-y-3 py-1">
-            <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-xs text-rose-800 dark:text-rose-300">
-              <ShieldAlert size={16} className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-xs text-rose-800">
+              <ShieldAlert size={16} className="shrink-0 mt-0.5 text-rose-600" />
               <div>
                 <p className="font-bold">Suggestion discarded for safety.</p>
                 <p className="mt-0.5 text-xs opacity-90">
@@ -793,8 +793,8 @@ export default function CorrectiveActionSuggestionCard({
         {/* 7. Error State */}
         {state === 'error' && (
           <div data-testid="ai-card-error" className="space-y-3 py-1">
-            <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-300">
-              <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-700">
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
               <div>
                 <p className="font-bold">Request Error</p>
                 <p className="mt-0.5 text-xs opacity-90">{errorMessage || 'An error occurred.'}</p>

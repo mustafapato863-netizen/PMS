@@ -25,10 +25,10 @@ export interface EmployeeHeroStatsProps {
 }
 
 const STABILITY_META: Record<StabilityCategory, { color: string; icon: typeof Activity }> = {
-  Stable: { color: 'text-blue-600 dark:text-blue-400', icon: Minus },
-  Improving: { color: 'text-emerald-600 dark:text-emerald-400', icon: TrendingUp },
-  Volatile: { color: 'text-amber-600 dark:text-amber-400', icon: Activity },
-  Declining: { color: 'text-rose-600 dark:text-rose-400', icon: TrendingDown },
+  Stable: { color: 'text-blue-600', icon: Minus },
+  Improving: { color: 'text-emerald-600', icon: TrendingUp },
+  Volatile: { color: 'text-amber-600', icon: Activity },
+  Declining: { color: 'text-rose-600', icon: TrendingDown },
 };
 
 export function EmployeeHeroStats({
@@ -80,7 +80,7 @@ export function EmployeeHeroStats({
 
       {/* Score + Trend */}
       <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-500/10 text-blue-600">
           {trend !== null ? (
             trend >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />
           ) : (
@@ -95,7 +95,7 @@ export function EmployeeHeroStats({
             {score.toFixed(1)}%
             {trend !== null && (
               <span
-                className={`ml-1.5 text-xs font-bold ${trend >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                className={`ml-1.5 text-xs font-bold ${trend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
               >
                 {trend >= 0 ? '↑' : '↓'} {Math.abs(trend).toFixed(1)}
               </span>
@@ -106,7 +106,7 @@ export function EmployeeHeroStats({
 
       {/* Rank */}
       <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-600">
           <Trophy size={20} />
         </span>
         <div className="min-w-0">
@@ -139,14 +139,14 @@ export function EmployeeHeroStats({
 
       {/* Archetype */}
       <div className="col-span-2 flex items-center gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 sm:col-span-1 lg:col-span-1">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600">
           <Sparkles size={20} />
         </span>
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Archetype
           </p>
-          <p className="truncate text-sm font-extrabold text-violet-600 dark:text-violet-400">
+          <p className="truncate text-sm font-extrabold text-violet-600">
             {archetype}
           </p>
         </div>

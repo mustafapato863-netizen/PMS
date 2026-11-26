@@ -123,17 +123,17 @@ export function ManagerSummarySection({
   // Score pills use the A–E grade palette (global `.grade-A` … `.grade-E` → --pms-grade-* tokens).
   const getStatusPill = (score: number | null | undefined) => {
     const grade = getGradeClassOrNull(score);
-    if (!grade) return { text: 'N/A', cls: 'bg-slate-500/10 text-slate-500 dark:bg-slate-500/20 dark:text-slate-400' };
+    if (!grade) return { text: 'N/A', cls: 'bg-slate-500/10 text-slate-500' };
     return { text: GRADE_PALETTE[grade].label, cls: `grade-${grade} border` };
   };
 
   // Helper for perspective formatting
   const getPerspectiveMeta = (perspKey: string) => {
     const key = perspKey.toLowerCase();
-    if (key.includes('financial')) return { label: 'FINANCIAL', color: '#3b82f6', cls: 'text-blue-500 dark:text-blue-400' };
-    if (key.includes('customer')) return { label: 'CUSTOMER', color: '#8b5cf6', cls: 'text-indigo-500 dark:text-indigo-400' };
-    if (key.includes('internal')) return { label: 'INTERNAL PROCESS', color: '#10b981', cls: 'text-emerald-500 dark:text-emerald-400' };
-    return { label: 'LEARNING & GROWTH', color: '#f59e0b', cls: 'text-amber-500 dark:text-amber-400' };
+    if (key.includes('financial')) return { label: 'FINANCIAL', color: '#3b82f6', cls: 'text-blue-500' };
+    if (key.includes('customer')) return { label: 'CUSTOMER', color: '#8b5cf6', cls: 'text-indigo-500' };
+    if (key.includes('internal')) return { label: 'INTERNAL PROCESS', color: '#10b981', cls: 'text-emerald-500' };
+    return { label: 'LEARNING & GROWTH', color: '#f59e0b', cls: 'text-amber-500' };
   };
 
   // Helper for formatting KPI weight consistently
@@ -167,7 +167,7 @@ export function ManagerSummarySection({
     <div className="space-y-6 w-full">
       <div className={`grid grid-cols-1 gap-4 ${worstKpi ? 'xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.55fr)]' : ''}`}>
       {/* ── 1. Compact executive summary ── */}
-      <section className="glass-card h-full space-y-3 rounded-2xl border border-slate-200/50 p-4 shadow-sm dark:border-slate-800">
+      <section className="glass-card h-full space-y-3 rounded-2xl border border-slate-200/50 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-sm font-extrabold text-[var(--text-primary)]">Executive summary</h2>
@@ -185,7 +185,7 @@ export function ManagerSummarySection({
 
         <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4">
           {/* metric 1 */}
-          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center">
             <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Overall Score</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">{managerScore.toFixed(1)}%</div>
             <div>
@@ -196,18 +196,18 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 2 */}
-          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center">
             <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Team Ranking</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">#{rank} / {totalRank}</div>
             <div>
-              <span className="inline-block text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-md mt-1.5 border border-blue-500/20">
+              <span className="inline-block text-xs font-extrabold text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded-md mt-1.5 border border-blue-500/20">
                 {rank === 1 ? 'Top Performer' : 'Active Contributor'}
               </span>
             </div>
           </div>
 
           {/* metric 3 */}
-          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center">
             <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Target ({targetVal}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {targetGap >= 0 ? '+' : ''}{targetGap.toFixed(1)}%
@@ -220,7 +220,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 4 */}
-          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center">
             <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Team Avg ({teamAvg.toFixed(1)}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {teamAvgGap >= 0 ? '+' : ''}{teamAvgGap.toFixed(1)}%
@@ -237,7 +237,7 @@ export function ManagerSummarySection({
 
       {/* ── 2. Priority Attention Section ── */}
       {worstKpi && (
-        <section className="glass-card flex h-full flex-col rounded-2xl border border-amber-200 bg-amber-500/5 p-4 dark:border-amber-900/30">
+        <section className="glass-card flex h-full flex-col rounded-2xl border border-amber-200 bg-amber-500/5 p-4">
           <div className="flex items-center justify-between mb-3.5">
             <div>
               <h3 className="text-sm font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">
@@ -249,20 +249,20 @@ export function ManagerSummarySection({
             <button
               type="button"
               onClick={() => onSelectKpi(worstKpi.kpi_key)}
-              className="min-h-11 text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 rounded-lg border border-blue-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="min-h-11 text-xs font-extrabold text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 rounded-lg border border-blue-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               Inspect KPI
             </button>
           </div>
 
           {/* Worst KPI Card Layout */}
-          <div className="glass-card rounded-xl p-4 bg-[var(--bg-surface)] border border-slate-200/50 dark:border-slate-800/60 shadow-sm flex flex-1 flex-col justify-between gap-5">
+          <div className="glass-card rounded-xl p-4 bg-[var(--bg-surface)] border border-slate-200/50 shadow-sm flex flex-1 flex-col justify-between gap-5">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-amber-500">
                   {getPerspectiveMeta(worstKpi.perspective).label}
                 </span>
-                <span className="text-xs font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20">
+                <span className="text-xs font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded border border-amber-500/20">
                   Monitor
                 </span>
               </div>
@@ -300,7 +300,7 @@ export function ManagerSummarySection({
 
       {/* ── 3. Tabbed KPI Performance Overview Grid ── */}
       <div className="space-y-4.5">
-        <div className="flex flex-col gap-3 pb-2 border-b border-slate-200/50 dark:border-slate-800/60">
+        <div className="flex flex-col gap-3 pb-2 border-b border-slate-200/50">
           <div>
             <h3 className="text-sm font-extrabold text-[var(--text-primary)]">KPI performance overview</h3>
             <p className="text-xs text-[var(--text-secondary)] font-medium">Filter indicators by perspective to focus on key areas</p>
@@ -325,7 +325,7 @@ export function ManagerSummarySection({
                           : 'bg-blue-600 text-white border-blue-600 shadow-sm'
                         : tab.isAlert
                           ? 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20'
-                          : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)] border-slate-200/40 dark:border-slate-800 hover:text-[var(--text-primary)]'
+                          : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)] border-slate-200/40 hover:text-[var(--text-primary)]'
                     }`}
                   >
                     {tab.isAlert && <AlertTriangle size={12} aria-hidden="true" />}
@@ -333,7 +333,7 @@ export function ManagerSummarySection({
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-extrabold ${
                       active
                         ? 'bg-white/25 text-white'
-                        : 'bg-slate-200 dark:bg-slate-800 text-[var(--text-muted)]'
+                        : 'bg-slate-200 text-[var(--text-muted)]'
                     }`}>
                       {tab.count}
                     </span>
@@ -345,7 +345,7 @@ export function ManagerSummarySection({
         </div>
 
         {filteredKpis.length === 0 ? (
-          <div className="text-center py-10 text-xs text-[var(--text-muted)] font-medium bg-[var(--bg-sunken)]/40 rounded-2xl border border-dashed border-slate-200/50 dark:border-slate-800">
+          <div className="text-center py-10 text-xs text-[var(--text-muted)] font-medium bg-[var(--bg-sunken)]/40 rounded-2xl border border-dashed border-slate-200/50">
             No KPIs match the selected filter.
           </div>
         ) : (
@@ -373,7 +373,7 @@ export function ManagerSummarySection({
                   className={`glass-card w-full text-left rounded-2xl p-4 border shadow-sm transition-colors duration-200 cursor-pointer flex flex-col justify-between min-h-[139px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     active 
                       ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/30 bg-blue-500/[0.02]' 
-                      : 'border-slate-200/50 dark:border-slate-800/80 hover:border-blue-400/50 dark:hover:border-blue-500/50 hover:shadow-md'
+                      : 'border-slate-200/50 hover:border-blue-400/50 hover:shadow-md'
                   }`}
                 >
                   <div className="space-y-2">
@@ -381,7 +381,7 @@ export function ManagerSummarySection({
                       <span className={`text-xs font-extrabold uppercase tracking-wider ${persp.cls}`}>
                         {persp.label}
                       </span>
-                      <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 whitespace-nowrap">
+                      <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20 whitespace-nowrap">
                         Weight: {weightPct <= 0.01 ? 'View' : `${weightPct.toFixed(0)}%`}
                       </span>
                     </div>
@@ -398,7 +398,7 @@ export function ManagerSummarySection({
                             const scoreGap = kpi.score != null ? kpi.score - 100 : 0;
                             const isPos = scoreGap >= 0;
                             return (
-                              <span className={`text-xs font-bold flex items-center ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                              <span className={`text-xs font-bold flex items-center ${isPos ? 'text-emerald-600' : 'text-amber-600'}`}>
                                 <ArrowUpRight size={10} className={`mr-0.5 ${isPos ? '' : 'rotate-90'}`} />
                                 {isPos ? '+' : ''}{scoreGap.toFixed(1)}%
                               </span>
@@ -406,7 +406,7 @@ export function ManagerSummarySection({
                           })()}
                         </div>
                         <div className="text-right">
-                          <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                          <span className="text-xs font-bold text-blue-600">
                             {weightPct <= 0.01 ? '0.0%' : `${contribPct.toFixed(1)}%`}
                           </span>
                           <span className="text-xs text-[var(--text-muted)] block font-semibold">

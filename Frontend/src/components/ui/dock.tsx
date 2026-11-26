@@ -126,7 +126,7 @@ function Dock({
         'mx-auto flex w-fit items-end gap-2',
         bare
           ? 'bg-transparent'
-          : 'rounded-2xl border border-slate-200/90 bg-slate-50/90 px-2.5 pb-1.5 shadow-[0_10px_32px_rgba(15,23,42,0.14)] backdrop-blur-xl dark:border-neutral-800 dark:bg-neutral-900/90',
+          : 'rounded-2xl border border-slate-200/90 bg-slate-50/90 px-2.5 pb-1.5 shadow-[0_10px_32px_rgba(15,23,42,0.14)] backdrop-blur-xl',
         className,
       )}
       style={{ height: panelHeight }}
@@ -253,7 +253,7 @@ function DockLabel({ children, className, isHovered: propIsHovered }: DockLabelP
           exit={{ opacity: 0, y: 0 }}
           transition={{ duration: 0.16 }}
           className={cn(
-            'pointer-events-none absolute -top-7 left-1/2 z-30 w-fit -translate-x-1/2 rounded-md border border-slate-200/90 bg-white/95 px-2 py-0.5 text-xs font-semibold whitespace-pre text-slate-700 shadow-xs backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/95 dark:text-neutral-200',
+            'pointer-events-none absolute -top-7 left-1/2 z-30 w-fit -translate-x-1/2 rounded-md border border-slate-200/90 bg-white/95 px-2 py-0.5 text-xs font-semibold whitespace-pre text-slate-700 shadow-xs backdrop-blur-md',
             className,
           )}
           role="tooltip"

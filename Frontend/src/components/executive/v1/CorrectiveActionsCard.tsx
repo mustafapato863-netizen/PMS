@@ -116,12 +116,12 @@ function parseActionPlanSections(raw: string): ActionPlanSection[] {
 }
 
 const ACTION_TYPE_PILL: Record<string, string> = {
-  PIP: 'border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800 dark:border-rose-400/25 dark:from-rose-500/15 dark:to-red-500/15 dark:text-rose-300',
-  Coaching: 'border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800 dark:border-violet-400/25 dark:from-violet-500/15 dark:to-purple-500/15 dark:text-violet-300',
-  Training: 'border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800 dark:border-sky-400/25 dark:from-sky-500/15 dark:to-blue-500/15 dark:text-sky-300',
-  Monitor: 'border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800 dark:border-amber-400/25 dark:from-amber-500/15 dark:to-orange-500/15 dark:text-amber-300',
-  Reward: 'border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800 dark:border-emerald-400/25 dark:from-emerald-500/15 dark:to-teal-500/15 dark:text-emerald-300',
-  'Team Action': 'border-indigo-300/60 bg-gradient-to-r from-indigo-50 to-sky-100/80 text-indigo-800 dark:border-indigo-400/25 dark:from-indigo-500/15 dark:to-sky-500/15 dark:text-indigo-300',
+  PIP: 'border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800',
+  Coaching: 'border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800',
+  Training: 'border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800',
+  Monitor: 'border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800',
+  Reward: 'border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800',
+  'Team Action': 'border-indigo-300/60 bg-gradient-to-r from-indigo-50 to-sky-100/80 text-indigo-800',
 };
 
 const TILE_TONE: Record<TileFilter, { bg: string; border: string; accent: string }> = {
@@ -218,12 +218,12 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
         data-testid="action-row"
         className={`flex flex-col gap-[8px] border-b border-[var(--insights-row-border)] px-[16px] py-[11px] transition-colors last:border-b-0 md:grid md:min-h-[56px] md:items-center md:gap-[14px] md:py-[9px] ${ROW_COLUMNS} ${
           open
-            ? 'border-l-[3px] border-l-[var(--insights-accent)] bg-sky-50/55 dark:bg-sky-950/30'
-            : 'hover:bg-white/60 dark:hover:bg-slate-800/35'
+            ? 'border-l-[3px] border-l-[var(--insights-accent)] bg-sky-50/55'
+            : 'hover:bg-white/60'
         }`}
       >
         <span role="cell" className="min-w-0">
-          <Link to={employeeHref} className="block truncate text-[13.5px] font-bold text-[var(--insights-heading)] hover:text-sky-600 hover:underline dark:hover:text-sky-400">
+          <Link to={employeeHref} className="block truncate text-[13.5px] font-bold text-[var(--insights-heading)] hover:text-sky-600 hover:underline">
             {item.employee_name || 'Whole team'}
           </Link>
           {item.team && <span className="block truncate text-[12px] font-medium text-[var(--text-muted)]">{item.team}</span>}
@@ -275,7 +275,7 @@ function ActionRow({ item, workspaceHref, canEdit, onStatusChange, open, onToggl
         <span role="cell" className="text-[12.5px]" style={{ color: overdue ? 'var(--insights-negative)' : 'var(--text-secondary)' }}>
           <span className="md:hidden text-[var(--text-muted)]">Due: </span>
           {item.due_date ? (
-            <span className={overdue ? 'inline-flex rounded-full border border-rose-300/60 bg-rose-500/10 px-2 py-0.5 font-bold text-rose-700 dark:border-rose-400/30 dark:text-rose-300' : 'font-medium'}>
+            <span className={overdue ? 'inline-flex rounded-full border border-rose-300/60 bg-rose-500/10 px-2 py-0.5 font-bold text-rose-700' : 'font-medium'}>
               {fmtDate(item.due_date)}
             </span>
           ) : (

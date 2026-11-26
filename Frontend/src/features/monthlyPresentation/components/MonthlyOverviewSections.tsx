@@ -79,7 +79,7 @@ export function GradePill({
     <span
       data-grade={grade}
       className={`inline-flex items-center justify-center border ${sizeClasses}${
-        isBlueB ? ' border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/45 dark:bg-blue-500/20 dark:text-blue-300' : ''
+        isBlueB ? ' border-blue-200 bg-blue-50 text-blue-700' : ''
       }`}
       style={
         isBlueB
@@ -916,7 +916,7 @@ export function FunctionsOverviewSection({
                   {isBlueB ? (
                     <span
                       data-grade="B"
-                      className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-[8px] py-[2px] text-[11px] font-semibold leading-normal text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                      className="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-[8px] py-[2px] text-[11px] font-semibold leading-normal text-blue-700"
                     >
                       Grade B
                     </span>
@@ -936,7 +936,7 @@ export function FunctionsOverviewSection({
               <div className="pms-glass-stage w-full space-y-2 rounded-[12px] px-3 py-2.5">
                 <div className="flex items-center justify-between gap-1.5">
                   {isBlueB ? (
-                    <span className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums text-blue-700 dark:text-blue-400">
+                    <span className="text-[23px] font-bold leading-none tracking-[-0.04em] tabular-nums text-blue-700">
                       {fmtScore(fn.score)}
                     </span>
                   ) : (
@@ -1008,7 +1008,7 @@ export function FunctionsOverviewSection({
                   {fn.lowestTeam && fn.lowestTeam.score < 85 && (
                     <span
                       aria-hidden="true"
-                      className="truncate text-xs font-semibold text-amber-700 dark:text-amber-300"
+                      className="truncate text-xs font-semibold text-amber-700"
                       title={`Lowest team: ${presentationTeamName(fn.lowestTeam.team)} (${fn.lowestTeam.score.toFixed(1)}%)`}
                     >
                       Low: {presentationTeamName(fn.lowestTeam.team)} ({fn.lowestTeam.score.toFixed(0)}%)

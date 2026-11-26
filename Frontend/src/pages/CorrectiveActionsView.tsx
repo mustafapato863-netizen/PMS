@@ -32,11 +32,11 @@ import { downloadCorrectiveActionsPowerPoint } from '../utils/correctiveActionPo
 const ACTION_TYPES: ActionType[] = ['Training', 'Reward', 'PIP', 'Monitor', 'Coaching'];
 
 const ACTION_STYLES: Record<ActionType, { label: string; className: string; accent: string }> = {
-  Training: { label: 'Training', className: 'border border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800 dark:border-sky-400/25 dark:from-sky-500/15 dark:to-blue-500/15 dark:text-sky-300', accent: 'var(--pms-grad-accent)' },
-  Reward: { label: 'Reward', className: 'border border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800 dark:border-emerald-400/25 dark:from-emerald-500/15 dark:to-teal-500/15 dark:text-emerald-300', accent: 'var(--pms-grad-grade-a)' },
-  PIP: { label: 'PIP', className: 'border border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800 dark:border-rose-400/25 dark:from-rose-500/15 dark:to-red-500/15 dark:text-rose-300', accent: 'var(--pms-grad-grade-e)' },
-  Monitor: { label: 'Monitor', className: 'border border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800 dark:border-amber-400/25 dark:from-amber-500/15 dark:to-orange-500/15 dark:text-amber-300', accent: 'var(--pms-grad-grade-c)' },
-  Coaching: { label: 'Coaching', className: 'border border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800 dark:border-violet-400/25 dark:from-violet-500/15 dark:to-purple-500/15 dark:text-violet-300', accent: 'var(--pms-grad-violet)' },
+  Training: { label: 'Training', className: 'border border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800', accent: 'var(--pms-grad-accent)' },
+  Reward: { label: 'Reward', className: 'border border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800', accent: 'var(--pms-grad-grade-a)' },
+  PIP: { label: 'PIP', className: 'border border-rose-300/60 bg-gradient-to-r from-rose-50 to-red-100/80 text-rose-800', accent: 'var(--pms-grad-grade-e)' },
+  Monitor: { label: 'Monitor', className: 'border border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800', accent: 'var(--pms-grad-grade-c)' },
+  Coaching: { label: 'Coaching', className: 'border border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800', accent: 'var(--pms-grad-violet)' },
 };
 
 function formatDate(value: string): string {
@@ -130,14 +130,14 @@ function ActionCard({
       {action.due_date && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusPill status={action.status || 'Open'} />
-          <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
+          <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
             {dueBadgeLabel(action.due_date, action.days_to_due)}
           </span>
         </div>
       )}
       <p className="mt-4 whitespace-pre-line text-xs font-semibold leading-5 text-[var(--text-secondary)]">{action.action_text || 'No action details provided.'}</p>
       <div className="mt-4 rounded-xl border border-[var(--pms-grad-panel-warn-border)] px-3 py-2.5 text-xs leading-4 text-[var(--text-secondary)]" style={{ background: 'var(--pms-grad-panel-warn)' }}>
-        <span className="font-black text-amber-800 dark:text-amber-300">Root-cause note: </span>
+        <span className="font-black text-amber-800">Root-cause note: </span>
         {formattedRootCause || 'No note recorded.'}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
@@ -147,7 +147,7 @@ function ActionCard({
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Link
           to={`/employee/${encodeURIComponent(action.employee_id)}?month=${encodeURIComponent(action.month)}`}
-          className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:underline dark:text-blue-400"
+          className="inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:underline"
         >
           Open profile <span aria-hidden="true">↗</span>
         </Link>
@@ -155,7 +155,7 @@ function ActionCard({
           href={buildOutlookComposeUrl(action)}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-xs font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+          className="inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-xs font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           aria-label={`Forward corrective action for ${action.employee_name || action.employee_id} in Outlook`}
         >
           <Mail size={13} aria-hidden="true" />
@@ -170,7 +170,7 @@ function ActionCard({
               setDeleteError('');
               setConfirmingDelete(true);
             }}
-            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-black text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-black text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
           >
             <Trash2 size={13} aria-hidden="true" />
             Delete
@@ -183,11 +183,11 @@ function ActionCard({
           aria-label={`Confirm delete corrective action for ${action.employee_name || action.employee_id}`}
           className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/5 p-3"
         >
-          <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+          <p className="text-xs font-semibold text-rose-800">
             Delete corrective action for {action.employee_name || action.employee_id}?
           </p>
           {deleteError && (
-            <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <p role="alert" className="mt-1.5 text-xs font-semibold text-rose-700">
               {deleteError}
             </p>
           )}
@@ -303,7 +303,7 @@ export default function CorrectiveActionsView() {
         </button>
         <button type="button" role="tab" aria-selected={pageTab === 'team-actions'} onClick={() => setPageTab('team-actions')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black transition-all ${pageTab === 'team-actions' ? 'text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`} style={pageTab === 'team-actions' ? { background: 'linear-gradient(135deg, #0284C7 0%, #3898EC 100%)' } : undefined}>
           Team actions
-          {teamActionsCount > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-black ${pageTab === 'team-actions' ? 'bg-white/25 text-white' : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'}`} aria-label={`${teamActionsCount} team actions`}>{teamActionsCount}</span>}
+          {teamActionsCount > 0 && <span className={`rounded-full px-2 py-0.5 text-xs font-black ${pageTab === 'team-actions' ? 'bg-white/25 text-white' : 'bg-indigo-500/15 text-indigo-700'}`} aria-label={`${teamActionsCount} team actions`}>{teamActionsCount}</span>}
         </button>
       </div>
 
@@ -311,15 +311,15 @@ export default function CorrectiveActionsView() {
 
       {pageTab === 'team-actions' && <TeamActionsPanel canEdit={canEditActionFollowUp(role)} scopeFunction={functionFilter} availableTeams={teams} />}
 
-      {pageTab === 'all' && exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
+      {pageTab === 'all' && exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700">{exportError}</p>}
 
       {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} hideWorkspaceLink />}
 
       {pageTab === 'all' && <section className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
-        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-info)', borderColor: 'var(--pms-grad-panel-info-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} /><p className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
-        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-violet)', borderColor: 'var(--pms-grad-panel-violet-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-violet)' }} /><p className="text-xs font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
-        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-pos)', borderColor: 'var(--pms-grad-panel-pos-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-a)' }} /><p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
-        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-warn)', borderColor: 'var(--pms-grad-panel-warn-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-c)' }} /><p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-info)', borderColor: 'var(--pms-grad-panel-info-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} /><p className="text-xs font-bold uppercase tracking-wider text-sky-700">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-violet)', borderColor: 'var(--pms-grad-panel-violet-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-violet)' }} /><p className="text-xs font-bold uppercase tracking-wider text-violet-700">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-pos)', borderColor: 'var(--pms-grad-panel-pos-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-a)' }} /><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
+        <article className="pms-glass-surface rf-stat-card relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-warn)', borderColor: 'var(--pms-grad-panel-warn-border)' }}><span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-c)' }} /><p className="text-xs font-bold uppercase tracking-wider text-amber-700">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
       </section>}
 
       {pageTab === 'all' && <ResponsiveFilters

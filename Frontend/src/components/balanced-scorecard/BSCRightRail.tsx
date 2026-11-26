@@ -319,7 +319,7 @@ export function BSCRightRail({
 
         <div className="mt-2 pt-2 border-t border-[var(--border-light)] flex items-center justify-between text-xs">
           <span className="font-semibold text-[var(--bsc-panel-muted)]">Data Status</span>
-          <span className="inline-flex items-center gap-1.5 font-extrabold text-emerald-600 dark:text-emerald-400">
+          <span className="inline-flex items-center gap-1.5 font-extrabold text-emerald-600">
             <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
             Live Measured
           </span>

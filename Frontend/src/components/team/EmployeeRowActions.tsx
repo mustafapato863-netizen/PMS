@@ -325,14 +325,14 @@ const EmployeeRowActions = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-blue-500/15 bg-blue-500/10 p-4">
                     <p className="text-xs font-extrabold uppercase tracking-wider text-blue-500">Employee</p>
-                    <p className="mt-2 text-2xl font-black text-blue-600 dark:text-blue-400">{row.score.toFixed(1)}%</p>
+                    <p className="mt-2 text-2xl font-black text-blue-600">{row.score.toFixed(1)}%</p>
                   </div>
                   <div className="rounded-2xl border border-violet-500/15 bg-violet-500/10 p-4">
                     <p className="text-xs font-extrabold uppercase tracking-wider text-violet-500">Team average</p>
-                    <p className="mt-2 text-2xl font-black text-violet-600 dark:text-violet-400">{teamAverage.toFixed(1)}%</p>
+                    <p className="mt-2 text-2xl font-black text-violet-600">{teamAverage.toFixed(1)}%</p>
                   </div>
                 </div>
-                <div className={`rounded-2xl p-4 text-sm font-bold ${row.score >= teamAverage ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+                <div className={`rounded-2xl p-4 text-sm font-bold ${row.score >= teamAverage ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-600'}`}>
                   {row.score >= teamAverage ? 'Above' : 'Below'} team average by {Math.abs(row.score - teamAverage).toFixed(1)}%.
                 </div>
               </div>

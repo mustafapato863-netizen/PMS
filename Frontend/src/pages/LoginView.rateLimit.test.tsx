@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LoginView from './LoginView';
-import { ThemeProvider } from '../context/ThemeContext';
 
 const mockLogin = vi.fn();
 
@@ -25,9 +24,9 @@ describe('LoginView rate limiting', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <ThemeProvider>
+        <>
           <LoginView />
-        </ThemeProvider>
+        </>
       </MemoryRouter>,
     );
 

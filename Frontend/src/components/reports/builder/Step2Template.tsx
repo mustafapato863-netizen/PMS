@@ -69,7 +69,7 @@ export default function Step2Template() {
         <h2 className="text-2xl font-extrabold text-[var(--text-primary)]">Choose the management story</h2>
         <p className="mt-1 text-[var(--text-muted)]">Preview the story first, then generate a complete editable report from authorized PMS data.</p>
       </div>
-      {createDraft.error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">{createDraft.error.message}</div>}
+      {createDraft.error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{createDraft.error.message}</div>}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {templates.map((template) => {
           const Icon = TEMPLATE_ICON[template.report_type] || FileBarChart;
@@ -89,7 +89,7 @@ export default function Step2Template() {
               <div className="flex items-center justify-between font-bold"><span>Estimated story</span><span>{estimatedPages(template)} pages</span></div>
               {metadata?.pages_per_team ? <p className="mt-1 text-xs text-[var(--text-muted)]">Includes one filtered page for each team with data.</p> : null}
             </div>
-            <button type="button" onClick={() => setPreview(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/30 bg-[var(--sgh-cyan-primary,#00A3E0)]/[0.07] px-4 text-sm font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)] transition hover:bg-[var(--sgh-cyan-primary,#00A3E0)]/15">
+            <button type="button" onClick={() => setPreview(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/30 bg-[var(--sgh-cyan-primary,#00A3E0)]/[0.07] px-4 text-sm font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)] transition hover:bg-[var(--sgh-cyan-primary,#00A3E0)]/15">
               Preview story <ArrowRight size={16} />
             </button>
           </article>;

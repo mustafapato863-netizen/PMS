@@ -19,7 +19,7 @@ function ColumnNoticeGroup({ code, warnings }: { code: ColumnWarningCode; warnin
   const copy = COPY[code];
   const truncated = warnings.some((warning) => warning.truncated);
   return (
-    <section aria-label={copy.title} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-900 dark:text-amber-100">
+    <section aria-label={copy.title} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-900">
       <h4 className="font-extrabold">{copy.title}</h4>
       <p className="mt-1 leading-relaxed">{copy.detail}</p>
       <ul className="mt-2 max-h-48 list-disc space-y-1 overflow-y-auto pl-5">

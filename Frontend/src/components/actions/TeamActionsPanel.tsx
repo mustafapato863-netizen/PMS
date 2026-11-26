@@ -33,19 +33,19 @@ const TEAM_STATUS_OPTIONS: TeamActionStatus[] = ['Open', 'In Progress', 'Planned
 
 const STATUS_STYLE: Record<TeamActionStatus, { badge: string; accent: string }> = {
   Open: {
-    badge: 'border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800 dark:border-sky-400/25 dark:from-sky-500/15 dark:to-blue-500/15 dark:text-sky-300',
+    badge: 'border-sky-300/60 bg-gradient-to-r from-sky-50 to-blue-100/80 text-sky-800',
     accent: 'var(--pms-grad-accent)',
   },
   'In Progress': {
-    badge: 'border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800 dark:border-amber-400/25 dark:from-amber-500/15 dark:to-orange-500/15 dark:text-amber-300',
+    badge: 'border-amber-300/60 bg-gradient-to-r from-amber-50 to-orange-100/80 text-amber-800',
     accent: 'var(--pms-grad-grade-c)',
   },
   Planned: {
-    badge: 'border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800 dark:border-violet-400/25 dark:from-violet-500/15 dark:to-purple-500/15 dark:text-violet-300',
+    badge: 'border-violet-300/60 bg-gradient-to-r from-violet-50 to-purple-100/80 text-violet-800',
     accent: 'var(--pms-grad-violet)',
   },
   Completed: {
-    badge: 'border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800 dark:border-emerald-400/25 dark:from-emerald-500/15 dark:to-teal-500/15 dark:text-emerald-300',
+    badge: 'border-emerald-300/60 bg-gradient-to-r from-emerald-50 to-teal-100/80 text-emerald-800',
     accent: 'var(--pms-grad-grade-a)',
   },
 };
@@ -113,7 +113,7 @@ function TeamActionCard({
         {/* Header badges */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300/60 bg-gradient-to-r from-indigo-50 to-sky-100/80 px-2.5 py-1 text-[11px] font-bold text-indigo-800 dark:border-indigo-400/25 dark:from-indigo-500/15 dark:to-sky-500/15 dark:text-indigo-300">
+            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300/60 bg-gradient-to-r from-indigo-50 to-sky-100/80 px-2.5 py-1 text-[11px] font-bold text-indigo-800">
               {isCohort ? <Layers size={12} aria-hidden="true" /> : <Users size={12} aria-hidden="true" />}
               {isCohort ? 'Whole-Team Action' : 'Team Summary Action'}
             </span>
@@ -150,7 +150,7 @@ function TeamActionCard({
         {/* Target KPI inset pill (matches Team-Level Action Plan) */}
         {item.target_kpi && (
           <div className="pms-glass-stage mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]">
-            <Target size={14} className="mt-0.5 shrink-0 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
+            <Target size={14} className="mt-0.5 shrink-0 text-indigo-600" aria-hidden="true" />
             <span className="leading-snug">{item.target_kpi}</span>
           </div>
         )}
@@ -171,9 +171,9 @@ function TeamActionCard({
             className="mt-3 flex items-start gap-2 rounded-xl border border-[var(--pms-grad-panel-pos-border)] px-3 py-2 text-xs text-[var(--text-secondary)]"
             style={{ background: 'var(--pms-grad-panel-pos)' }}
           >
-            <Sparkles size={13} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+            <Sparkles size={13} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden="true" />
             <span>
-              <strong className="font-bold text-emerald-800 dark:text-emerald-300">Expected impact: </strong>
+              <strong className="font-bold text-emerald-800">Expected impact: </strong>
               {item.expected_team_impact}
             </span>
           </div>
@@ -201,7 +201,7 @@ function TeamActionCard({
         </dl>
 
         {actionError && (
-          <p role="alert" className="mt-2.5 rounded-lg border border-rose-500/25 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+          <p role="alert" className="mt-2.5 rounded-lg border border-rose-500/25 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-700">
             {actionError}
           </p>
         )}
@@ -215,7 +215,7 @@ function TeamActionCard({
                 setConfirmingDelete(true);
               }}
               aria-label={`Delete team action ${item.title}`}
-              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
             >
               <Trash2 size={12} aria-hidden="true" />
               Delete
@@ -229,7 +229,7 @@ function TeamActionCard({
             aria-label={`Confirm delete team action ${item.title}`}
             className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/5 p-3"
           >
-            <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+            <p className="text-xs font-semibold text-rose-800">
               Remove this whole-team action for {item.team}?
             </p>
             <div className="mt-2.5 flex justify-end gap-2">
@@ -365,7 +365,7 @@ export function TeamActionsPanel({
       {/* Header strip + CTA */}
       <div className="pms-glass-surface flex flex-col gap-3 rounded-[18px] p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-400">
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-700">
             Cohort-wide interventions
           </p>
           <h2 className="mt-1 text-xl font-black tracking-tight text-[var(--text-primary)]">
@@ -508,7 +508,7 @@ export function TeamActionsPanel({
           </div>
 
           {formError && (
-            <p role="alert" className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <p role="alert" className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-700">
               {formError}
             </p>
           )}
@@ -537,28 +537,28 @@ export function TeamActionsPanel({
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Team action summary">
         <article className="pms-glass-surface relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-info)', borderColor: 'var(--pms-grad-panel-info-border)' }}>
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-accent)' }} />
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-700">
             <ClipboardList size={14} aria-hidden="true" /> Total team actions
           </p>
           <p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{scopedItems.length}</p>
         </article>
         <article className="pms-glass-surface relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-warn)', borderColor: 'var(--pms-grad-panel-warn-border)' }}>
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-c)' }} />
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-700">
             <Clock size={14} aria-hidden="true" /> Active & planned
           </p>
           <p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{openOrInProgress}</p>
         </article>
         <article className="pms-glass-surface relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-pos)', borderColor: 'var(--pms-grad-panel-pos-border)' }}>
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-grade-a)' }} />
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-700">
             <CheckCircle2 size={14} aria-hidden="true" /> Completed
           </p>
           <p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{completedCount}</p>
         </article>
         <article className="pms-glass-surface relative overflow-hidden rounded-[16px] p-4" style={{ background: 'var(--pms-grad-panel-violet)', borderColor: 'var(--pms-grad-panel-violet-border)' }}>
           <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: 'var(--pms-grad-violet)' }} />
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-violet-700">
             <Users size={14} aria-hidden="true" /> Teams covered
           </p>
           <p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsCovered}</p>

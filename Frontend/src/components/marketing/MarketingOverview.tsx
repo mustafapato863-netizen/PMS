@@ -53,33 +53,33 @@ const getPositionStatus = (
     return { label: 'No Data', tone: 'bg-slate-500/10 text-[var(--text-muted)] border-slate-500/15' };
   }
   if (summary.dataStatus === 'No Results for Filters') {
-    return { label: 'No Results', tone: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300' };
+    return { label: 'No Results', tone: 'bg-amber-500/10 text-amber-700 border-amber-500/20' };
   }
   if (summary.classDECount > 0 || (summary.averageScore ?? 0) < config.grade_thresholds.C) {
-    return { label: 'At Risk', tone: 'bg-rose-500/10 text-rose-600 border-rose-500/20 dark:text-rose-400' };
+    return { label: 'At Risk', tone: 'bg-rose-500/10 text-rose-600 border-rose-500/20' };
   }
-  return { label: 'On Track', tone: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' };
+  return { label: 'On Track', tone: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' };
 };
 
 const insightTone = {
   critical: {
     icon: CircleAlert,
-    iconClass: 'text-rose-600 dark:text-rose-400',
+    iconClass: 'text-rose-600',
     container: 'border-rose-500/15 bg-rose-500/[0.055]',
   },
   warning: {
     icon: AlertTriangle,
-    iconClass: 'text-amber-600 dark:text-amber-400',
+    iconClass: 'text-amber-600',
     container: 'border-amber-500/15 bg-amber-500/[0.055]',
   },
   positive: {
     icon: TrendingUp,
-    iconClass: 'text-emerald-600 dark:text-emerald-400',
+    iconClass: 'text-emerald-600',
     container: 'border-emerald-500/15 bg-emerald-500/[0.055]',
   },
   neutral: {
     icon: Lightbulb,
-    iconClass: 'text-violet-600 dark:text-violet-400',
+    iconClass: 'text-violet-600',
     container: 'border-violet-500/15 bg-violet-500/[0.055]',
   },
 } as const;
@@ -210,7 +210,7 @@ const MarketingOverview = ({
                 </div>
 
                 <div className="mt-4 flex items-center gap-2">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
                     <BriefcaseBusiness size={18} />
                   </span>
                   <div className="grid flex-1 grid-cols-[auto_1fr_1fr] gap-1.5">
@@ -233,7 +233,7 @@ const MarketingOverview = ({
                 <button
                   type="button"
                   onClick={() => onOpenPosition(summary.position)}
-                  className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-violet-500/25 px-3 py-2 text-xs font-extrabold text-violet-700 transition hover:bg-violet-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 dark:text-violet-300"
+                  className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-violet-500/25 px-3 py-2 text-xs font-extrabold text-violet-700 transition hover:bg-violet-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                 >
                   Open Position <ArrowUpRight size={14} />
                 </button>
@@ -312,7 +312,7 @@ const MarketingOverview = ({
                 onClick={() => onOpenPosition(position.position)}
                 className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition hover:bg-[var(--bg-sunken)]/50"
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-xs font-extrabold text-amber-700 dark:text-amber-300">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-xs font-extrabold text-amber-700">
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">

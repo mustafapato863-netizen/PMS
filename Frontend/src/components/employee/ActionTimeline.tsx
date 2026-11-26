@@ -9,11 +9,11 @@ import { formatActionRootCauseNote, parseActionRootCauseMeta } from '../../utils
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ACTION_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  Training:  { bg: 'bg-blue-500/10 border border-blue-500/20',     text: 'text-blue-600 dark:text-blue-400',       dot: 'bg-blue-500' },
-  Reward:    { bg: 'bg-emerald-500/10 border border-emerald-500/20', text: 'text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-500' },
-  PIP:       { bg: 'bg-red-500/10 border border-red-500/20',         text: 'text-red-600 dark:text-red-400',         dot: 'bg-red-500' },
-  Monitor:   { bg: 'bg-amber-500/10 border border-amber-500/20',     text: 'text-amber-600 dark:text-amber-400',     dot: 'bg-amber-500' },
-  Coaching:  { bg: 'bg-purple-500/10 border border-purple-500/20',   text: 'text-purple-600 dark:text-purple-400',   dot: 'bg-purple-500' },
+  Training:  { bg: 'bg-blue-500/10 border border-blue-500/20',     text: 'text-blue-600',       dot: 'bg-blue-500' },
+  Reward:    { bg: 'bg-emerald-500/10 border border-emerald-500/20', text: 'text-emerald-600', dot: 'bg-emerald-500' },
+  PIP:       { bg: 'bg-red-500/10 border border-red-500/20',         text: 'text-red-600',         dot: 'bg-red-500' },
+  Monitor:   { bg: 'bg-amber-500/10 border border-amber-500/20',     text: 'text-amber-600',     dot: 'bg-amber-500' },
+  Coaching:  { bg: 'bg-purple-500/10 border border-purple-500/20',   text: 'text-purple-600',   dot: 'bg-purple-500' },
   default:   { bg: 'bg-[var(--bg-sunken)] border border-[var(--border-light)]', text: 'text-[var(--text-secondary)]',     dot: 'bg-[var(--text-muted)]' },
 };
 
@@ -200,7 +200,7 @@ const ActionTimeline = ({
           </p>
           <button
             onClick={() => setFilterMode('all')}
-            className="text-xs text-blue-600 dark:text-blue-400 font-bold mt-2 hover:underline cursor-pointer"
+            className="text-xs text-blue-600 font-bold mt-2 hover:underline cursor-pointer"
           >
             View all actions
           </button>
@@ -247,7 +247,7 @@ const ActionTimeline = ({
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="text-xs font-bold text-[var(--text-muted)]">Due {action.dueDate || 'not set'}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-black ${action.daysToDue != null && action.daysToDue < 0 && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-black ${action.daysToDue != null && action.daysToDue < 0 && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700' : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
                     {dueBadgeLabel(action.dueDate, action.daysToDue)}
                   </span>
                   <ActionStatusMenu
@@ -285,7 +285,7 @@ const ActionTimeline = ({
                           })
                         }
                         aria-label="Edit Action"
-                        className="p-1 text-[var(--text-muted)] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-500/10 rounded transition-colors cursor-pointer"
                         title="Edit Action"
                       >
                         <Edit2 size={11} />
@@ -293,7 +293,7 @@ const ActionTimeline = ({
                       <button
                         onClick={() => setConfirmDeleteId(action.id)}
                         aria-label="Delete Action"
-                        className="p-1 text-[var(--text-muted)] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                        className="p-1 text-[var(--text-muted)] hover:text-red-600 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
                         title="Delete Action"
                       >
                         <Trash2 size={11} />
@@ -322,7 +322,7 @@ const ActionTimeline = ({
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 to-rose-600" />
 
               {/* Warning Icon Container */}
-              <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mt-2">
+              <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto mt-2">
                 <AlertTriangle size={24} />
               </div>
 

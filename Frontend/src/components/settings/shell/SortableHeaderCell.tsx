@@ -21,7 +21,7 @@ export function SortableHeaderCell({ label, direction, onSort, align = 'left' }:
     <th scope="col" aria-sort={ariaSortFor(direction)} className={`${HEAD_CELL_CLASS} ${align === 'right' ? 'text-right' : ''}`}>
       <button type="button" onClick={onSort} className={`${HEAD_BUTTON_CLASS} ${align === 'right' ? 'justify-end' : ''}`}>
         <span>{label}</span>
-        <Icon size={13} aria-hidden="true" className={direction ? 'text-blue-600 dark:text-blue-400' : 'opacity-60'} />
+        <Icon size={13} aria-hidden="true" className={direction ? 'text-blue-600' : 'opacity-60'} />
       </button>
     </th>
   );

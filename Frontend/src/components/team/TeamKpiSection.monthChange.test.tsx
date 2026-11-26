@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { ThemeProvider } from '../../context/ThemeContext';
 import TeamKpiSection from './TeamKpiSection';
 
 type Kpi = {
@@ -57,7 +56,7 @@ function renderSection(options: {
   prevMonthLabel?: string | null;
 }) {
   return render(
-    <ThemeProvider>
+    <>
     <TeamKpiSection
       totalAgents={10}
       avgScore={85}
@@ -74,7 +73,7 @@ function renderSection(options: {
       teamId="pre-approvals-ip-offshore"
       prevMonthLabel={options.prevMonthLabel ?? null}
     />
-    </ThemeProvider>,
+    </>,
   );
 }
 
@@ -120,7 +119,7 @@ describe('team KPI card change against the previous month', () => {
 
   it('prints the average and its month change from the same one-decimal points', () => {
     render(
-      <ThemeProvider>
+      <>
         <TeamKpiSection
           totalAgents={10}
           avgScore={91.46}
@@ -136,7 +135,7 @@ describe('team KPI card change against the previous month', () => {
           prevAvgScore={90.44}
           prevMonthLabel="Aug"
         />
-      </ThemeProvider>,
+      </>,
     );
 
     expect(screen.getByText('91.5%')).toBeInTheDocument();

@@ -64,13 +64,13 @@ interface ActionFollowUpBoardProps {
 
 function badgeClass(action: PMSAction): string {
   if (action.follow_up_state === 'overdue' || action.is_overdue) {
-    return 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300';
+    return 'border-rose-500/25 bg-rose-500/10 text-rose-700';
   }
   if (action.follow_up_state === 'due_soon') {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300';
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-800';
   }
   if (action.follow_up_state === 'completed' || action.status === 'Completed') {
-    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700';
   }
   return 'border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] text-[var(--text-secondary)]';
 }
@@ -85,19 +85,19 @@ function rowAccentClass(action: PMSAction): string {
 function actionTypeBadgeClass(type?: string | null): string {
   const normalized = String(type || '').trim().toLowerCase();
   if (normalized.includes('pip') || normalized.includes('escalat')) {
-    return 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300';
+    return 'border-rose-500/25 bg-rose-500/10 text-rose-700';
   }
   if (normalized.includes('warn')) {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300';
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-800';
   }
   if (normalized.includes('train')) {
-    return 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300';
+    return 'border-violet-500/25 bg-violet-500/10 text-violet-700';
   }
   if (normalized.includes('coach')) {
-    return 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+    return 'border-sky-500/25 bg-sky-500/10 text-sky-700';
   }
   if (normalized.includes('recogn')) {
-    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700';
   }
   return 'border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] text-[var(--text-secondary)]';
 }
@@ -378,11 +378,11 @@ export function ActionFollowUpBoard({
         className="mt-1 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/25 bg-rose-500/5 px-4 py-3"
       >
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-rose-800 dark:text-rose-200">
+          <p className="text-xs font-semibold text-rose-800">
             Delete corrective action for {action.employee_name || action.employee_id}?
           </p>
           {deleteError && (
-            <p role="alert" className="mt-1 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <p role="alert" className="mt-1 text-xs font-semibold text-rose-700">
               {deleteError}
             </p>
           )}
@@ -445,12 +445,12 @@ export function ActionFollowUpBoard({
   return (
     <section className="space-y-4" aria-label="Action follow-up">
       <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
-        <SummaryChip label="Overdue" value={summary.overdue} tone="text-rose-700 dark:text-rose-300" bg="var(--pms-grad-panel-neg)" border="var(--pms-grad-panel-neg-border)" accent="var(--pms-grad-grade-e)" />
-        <SummaryChip label="Due this week" value={summary.due_soon} tone="text-amber-700 dark:text-amber-300" bg="var(--pms-grad-panel-warn)" border="var(--pms-grad-panel-warn-border)" accent="var(--pms-grad-grade-c)" />
-        <SummaryChip label="Open" value={summary.open} tone="text-sky-700 dark:text-sky-300" bg="var(--pms-grad-panel-info)" border="var(--pms-grad-panel-info-border)" accent="var(--pms-grad-accent)" />
-        <SummaryChip label="In Progress" value={summary.in_progress} tone="text-violet-700 dark:text-violet-300" bg="var(--pms-grad-panel-violet)" border="var(--pms-grad-panel-violet-border)" accent="var(--pms-grad-violet)" />
-        <SummaryChip label="Completed this month" value={summary.completed_this_month} tone="text-emerald-700 dark:text-emerald-300" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-a)" />
-        <SummaryChip label="Completion rate" value={`${summary.completion_rate}%`} tone="text-emerald-700 dark:text-emerald-300" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-b)" />
+        <SummaryChip label="Overdue" value={summary.overdue} tone="text-rose-700" bg="var(--pms-grad-panel-neg)" border="var(--pms-grad-panel-neg-border)" accent="var(--pms-grad-grade-e)" />
+        <SummaryChip label="Due this week" value={summary.due_soon} tone="text-amber-700" bg="var(--pms-grad-panel-warn)" border="var(--pms-grad-panel-warn-border)" accent="var(--pms-grad-grade-c)" />
+        <SummaryChip label="Open" value={summary.open} tone="text-sky-700" bg="var(--pms-grad-panel-info)" border="var(--pms-grad-panel-info-border)" accent="var(--pms-grad-accent)" />
+        <SummaryChip label="In Progress" value={summary.in_progress} tone="text-violet-700" bg="var(--pms-grad-panel-violet)" border="var(--pms-grad-panel-violet-border)" accent="var(--pms-grad-violet)" />
+        <SummaryChip label="Completed this month" value={summary.completed_this_month} tone="text-emerald-700" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-a)" />
+        <SummaryChip label="Completion rate" value={`${summary.completion_rate}%`} tone="text-emerald-700" bg="var(--pms-grad-panel-pos)" border="var(--pms-grad-panel-pos-border)" accent="var(--pms-grad-grade-b)" />
       </div>
 
       <div className="pms-glass-surface grid gap-3 rounded-[16px] p-3 lg:grid-cols-[minmax(180px,1fr)_repeat(4,minmax(130px,0.7fr))]">
@@ -469,8 +469,8 @@ export function ActionFollowUpBoard({
       {isError && (
         <div role="alert" className="pms-glass-surface rounded-[16px] border-rose-500/25 px-4 py-6 text-center" style={{ background: 'var(--pms-grad-panel-neg)' }}>
           <AlertCircle className="mx-auto text-rose-600" size={22} />
-          <p className="mt-2 text-sm font-bold text-rose-700 dark:text-rose-300">Follow-up could not be loaded.</p>
-          {onRetry && <button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl border border-rose-500/30 bg-[var(--bg-surface)] px-3.5 text-xs font-bold text-rose-700 dark:text-rose-300"><RefreshCw size={14} />Try again</button>}
+          <p className="mt-2 text-sm font-bold text-rose-700">Follow-up could not be loaded.</p>
+          {onRetry && <button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl border border-rose-500/30 bg-[var(--bg-surface)] px-3.5 text-xs font-bold text-rose-700"><RefreshCw size={14} />Try again</button>}
         </div>
       )}
       {!isLoading && !isError && visible.length === 0 && (
@@ -588,7 +588,7 @@ export function ActionFollowUpBoard({
                                     setDeleteError('');
                                     setConfirmTarget({ id: action.id, surface: 'table' });
                                   }}
-                                  className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:text-rose-400"
+                                  className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                                 >
                                   <Trash2 size={15} aria-hidden="true" />
                                 </button>
@@ -659,7 +659,7 @@ export function ActionFollowUpBoard({
                           setDeleteError('');
                           setConfirmTarget({ id: action.id, surface: 'card' });
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:text-rose-400"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                       >
                         <Trash2 size={14} aria-hidden="true" />
                         Delete

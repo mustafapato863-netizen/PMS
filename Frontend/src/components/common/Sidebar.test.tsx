@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { StrictMode, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ThemeProvider } from '../../context/ThemeContext';
 import { apiFetch } from '../../lib/apiClient';
 import Sidebar from './Sidebar';
 import { TEAM_ITEMS } from './sidebarTeamItems';
@@ -81,9 +80,9 @@ const QueryWrapper = ({ children }: { children: ReactNode }) => (
 
 const renderSidebar = (initialEntry = '/') => render(
   <MemoryRouter initialEntries={[initialEntry]}>
-    <ThemeProvider>
+    <>
       <Sidebar isOpen setIsOpen={vi.fn()} />
-    </ThemeProvider>
+    </>
   </MemoryRouter>, { wrapper: QueryWrapper },
 );
 
@@ -115,7 +114,7 @@ describe('Sidebar team icons', () => {
   });
 
   it('shares configuration requests across StrictMode remounts', async () => {
-    render(<StrictMode><MemoryRouter><ThemeProvider><Sidebar isOpen setIsOpen={vi.fn()} /></ThemeProvider></MemoryRouter></StrictMode>, { wrapper: QueryWrapper });
+    render(<StrictMode><MemoryRouter><><Sidebar isOpen setIsOpen={vi.fn()} /></></MemoryRouter></StrictMode>, { wrapper: QueryWrapper });
     await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith('/api/config/teams'));
     await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith('/api/team-management/management-kpi-config/teams'));
     expect(mockedApiFetch.mock.calls.filter(([path]) => path === '/api/config/teams')).toHaveLength(1);
@@ -158,9 +157,9 @@ describe('Sidebar team icons', () => {
     const onToggleCollapsed = vi.fn();
     render(
       <MemoryRouter>
-        <ThemeProvider>
+        <>
           <Sidebar isOpen setIsOpen={vi.fn()} onToggleCollapsed={onToggleCollapsed} />
-        </ThemeProvider>
+        </>
       </MemoryRouter>, { wrapper: QueryWrapper },
     );
 
@@ -173,9 +172,9 @@ describe('Sidebar team icons', () => {
   it('keeps the collapsed header controls inside the compact rail', () => {
     render(
       <MemoryRouter>
-        <ThemeProvider>
+        <>
           <Sidebar isOpen setIsOpen={vi.fn()} isCollapsed onToggleCollapsed={vi.fn()} />
-        </ThemeProvider>
+        </>
       </MemoryRouter>, { wrapper: QueryWrapper },
     );
 
@@ -523,7 +522,7 @@ describe('responsive dock and navigation drawer', () => {
   });
 
   const renderResponsive = (path = '/executive') => render(
-    <MemoryRouter initialEntries={[path]}><ThemeProvider><ResponsiveSidebarHarness /></ThemeProvider></MemoryRouter>,
+    <MemoryRouter initialEntries={[path]}><><ResponsiveSidebarHarness /></></MemoryRouter>,
     { wrapper: QueryWrapper },
   );
 

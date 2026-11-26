@@ -42,7 +42,7 @@ function FilterSelect({ label, value, onChange, values, allLabel, required = fal
         </select>
         <ChevronDown aria-hidden="true" size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
       </div>
-      {error && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
     </div>
   );
 }
@@ -137,7 +137,7 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
             aria-invalid={Boolean(validationErrors.report_name)}
             className={`${selectClass} w-full pr-3 ${validationErrors.report_name ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15' : ''}`}
           />
-          {validationErrors.report_name && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{validationErrors.report_name}</p>}
+          {validationErrors.report_name && <p className="text-xs font-semibold text-red-600">{validationErrors.report_name}</p>}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -209,7 +209,7 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
       </div>
 
       {isScopeValid && (
-         <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-700 dark:text-emerald-300">
+         <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-700">
            <CheckCircle2 size={20} />
            <span className="font-semibold text-sm">Scope is fully defined. You can proceed to the next step.</span>
          </div>

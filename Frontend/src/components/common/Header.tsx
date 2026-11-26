@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { MonthKey } from '../../types';
-import ThemeToggle from './ThemeToggle';
 import GlobalSearch from './GlobalSearch';
 import { useUserRole } from '../../context/RoleContext';
 import { useAuth } from '../../context/auth';
@@ -359,7 +358,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
             </TitleTag>
-            <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-xs font-semibold tracking-tight text-blue-600 dark:text-blue-400">
+            <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-xs font-semibold tracking-tight text-blue-600">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
               {subtitle}
             </p>
@@ -397,8 +396,6 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           <div className="h-5 w-px bg-[var(--border-light)] hidden sm:block" aria-hidden="true" />
 
           <NotificationBell />
-
-          <ThemeToggle />
 
           {currentUser && (
             <ProfileMenu

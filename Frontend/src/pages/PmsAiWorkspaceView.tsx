@@ -1235,7 +1235,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const watchingAlertCount = watchingData?.alerts?.length ?? 0;
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-950 px-3 py-3 sm:px-5">
+    <div className="min-h-full bg-slate-50 px-3 py-3 sm:px-5">
       <div className="mx-auto max-w-[1440px]">
         <div className="flex min-h-0 flex-col gap-4 lg:flex-row lg:items-stretch">
           {/* Left Rail (desktop lg:+) / Slide-over Drawer (< lg): Recent chats */}
@@ -1281,9 +1281,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
           {/* Center Conversation-First Workspace */}
           <section
             aria-label="PMS AI analytical conversation workspace"
-            className="ai-workspace-chat relative flex h-[calc(100dvh-104px)] min-h-[420px] min-w-0 flex-1 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
+            className="ai-workspace-chat relative flex h-[calc(100dvh-104px)] min-h-[420px] min-w-0 flex-1 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white"
           >
-            <div className="relative z-30 border-b border-slate-100/90 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-950 sm:px-6">
+            <div className="relative z-30 border-b border-slate-100/90 bg-white px-4 py-2.5 sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-xs">
@@ -1316,7 +1316,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                     type="button"
                     aria-expanded={showFilters}
                     onClick={() => setShowFilters((previous) => !previous)}
-                    className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                    className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                   >
                     <SlidersHorizontal size={15} />
                     <span>Chat settings</span>
@@ -1387,7 +1387,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
               {showFilters && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Chat options">
-                  {!isSelfOnly && <span className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400">{activeScopeSummary}</span>}
+                  {!isSelfOnly && <span className="px-2 py-1 text-xs text-slate-600">{activeScopeSummary}</span>}
                   {!isSelfOnly && <ActiveFilterChips chips={activeFilterChips} onRemove={handleFilterChange} />}
 
                   <button
@@ -1563,12 +1563,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       <div className="flex items-center justify-end gap-2.5">
                         <div
                           dir="auto"
-                          className="max-w-[86%] whitespace-pre-wrap break-words rounded-2xl bg-blue-50 px-4 py-2.5 text-sm font-medium leading-relaxed text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                          className="max-w-[86%] whitespace-pre-wrap break-words rounded-2xl bg-blue-50 px-4 py-2.5 text-sm font-medium leading-relaxed text-slate-900"
                         >
                           {turn.userPrompt}
                         </div>
                         <div
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600"
                           aria-hidden="true"
                         >
                           {userInitials}

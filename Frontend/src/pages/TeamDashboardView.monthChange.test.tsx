@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ThemeProvider } from '../context/ThemeContext';
 import TeamDashboardView from './TeamDashboardView';
 
 const hookState = vi.hoisted(() => ({
@@ -41,13 +40,13 @@ vi.mock('../hooks/usePerformanceData', async (importOriginal) => ({
 
 function renderAllTeams(search: string) {
   return render(
-    <ThemeProvider>
+    <>
       <MemoryRouter initialEntries={[`/team/all${search}`]}>
         <Routes>
           <Route path="/team/:teamId" element={<TeamDashboardView />} />
         </Routes>
       </MemoryRouter>
-    </ThemeProvider>,
+    </>,
   );
 }
 

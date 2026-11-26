@@ -87,11 +87,11 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
           zIndex: 9999,
           pointerEvents: 'none',
         }}
-        className="rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-[0_20px_50px_rgba(15,23,42,0.22)] backdrop-blur-2xl dark:bg-slate-900/95"
+        className="rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-[0_20px_50px_rgba(15,23,42,0.22)] backdrop-blur-2xl"
       >
         {/* Top Tag & Delta Badge */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-widest text-blue-600 dark:text-blue-400">
+          <div className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-widest text-blue-600">
             <span className="h-2 w-2 rounded-full bg-blue-500" />
             Selected KPI
           </div>
@@ -109,7 +109,7 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
         <div className="mt-3 flex items-center justify-between rounded-2xl bg-[var(--bg-sunken)]/75 p-3 border border-[var(--border-light)]">
           <div>
             <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Score</span>
-            <strong className="text-sm font-extrabold text-blue-600 dark:text-blue-400">{scoreVal != null ? `${scoreVal.toFixed(1)}%` : 'N/A'}</strong>
+            <strong className="text-sm font-extrabold text-blue-600">{scoreVal != null ? `${scoreVal.toFixed(1)}%` : 'N/A'}</strong>
           </div>
           <div className="h-7 w-px bg-[var(--border-light)]" />
           <div className="text-right">
@@ -126,7 +126,7 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
         {/* Chart Header & Best Month Highlight */}
         <div className="mt-3.5 flex items-center justify-between">
           <span className="text-xs font-extrabold text-[var(--text-primary)]">KPI trend</span>
-          <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span className="text-xs font-extrabold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
             🏆 Best: {bestMonthName} ({maxScoreVal.toFixed(1)}%)
           </span>
         </div>
@@ -161,7 +161,7 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
                       fontSize={labelFontSize}
                       fontWeight={pt.isBest ? '900' : '750'}
                       fill={pt.isBest ? '#D97706' : '#2563EB'}
-                      className="dark:fill-blue-400"
+                      className=""
                     >
                       {valText}
                     </text>
@@ -184,7 +184,7 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
           {/* Month Labels */}
           <div className="mt-1 flex justify-between px-1 text-xs font-extrabold text-[var(--text-muted)]">
             {points.map((pt, i) => (
-              <span key={i} className={pt.isBest ? 'text-amber-600 dark:text-amber-400 font-black' : ''}>
+              <span key={i} className={pt.isBest ? 'text-amber-600 font-black' : ''}>
                 {pt.month}
               </span>
             ))}

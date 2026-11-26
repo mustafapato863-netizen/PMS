@@ -12,8 +12,8 @@ function StatusBanner({ status }: { status: Status }) {
       role="status"
       className={`flex items-start gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
         status.type === 'success'
-          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-          : 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400'
+          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600'
+          : 'border-red-500/20 bg-red-500/10 text-red-600'
       }`}
     >
       {status.type === 'success' ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertCircle size={16} className="mt-0.5 shrink-0" />}
@@ -90,7 +90,7 @@ export function CorrectiveActionDataPanel() {
 
       <section className="glass-panel space-y-5 rounded-3xl p-6 shadow-sm">
         <div className="flex items-start gap-3 rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4">
-          <ShieldCheck size={20} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          <ShieldCheck size={20} className="mt-0.5 shrink-0 text-blue-600" />
           <div>
             <h3 className="text-sm font-black text-[var(--text-primary)]">Portable JSON backup</h3>
             <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
@@ -102,7 +102,7 @@ export function CorrectiveActionDataPanel() {
         <div className="grid gap-4 md:grid-cols-2">
           <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5">
             <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400"><Download size={19} /></span>
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-500/10 text-blue-600"><Download size={19} /></span>
               <div>
                 <h3 className="text-sm font-black text-[var(--text-primary)]">Download backup</h3>
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">Export all corrective actions to JSON.</p>
@@ -121,7 +121,7 @@ export function CorrectiveActionDataPanel() {
 
           <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5">
             <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><Upload size={19} /></span>
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600"><Upload size={19} /></span>
               <div>
                 <h3 className="text-sm font-black text-[var(--text-primary)]">Restore from backup</h3>
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">Import a JSON file into this database.</p>
@@ -142,7 +142,7 @@ export function CorrectiveActionDataPanel() {
               type="button"
               onClick={() => inputRef.current?.click()}
               disabled={busy !== null}
-              className="mt-5 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-5 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-xs font-extrabold text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy === 'upload' ? <Loader2 size={15} className="animate-spin" /> : <FileJson size={15} />}
               {busy === 'upload' ? 'Restoring actions…' : 'Upload JSON'}

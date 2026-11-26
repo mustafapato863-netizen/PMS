@@ -53,10 +53,10 @@ export default function AiMorningBriefingHome({
           <Sparkles size={22} />
         </div>
 
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[26px]">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-[26px]">
           Hi {firstName}, how can I help?
         </h2>
-        <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1.5 text-sm text-slate-500">
           Ask about {scopeSummaryLabel}, or start with a suggestion.
         </p>
       </div>
@@ -170,11 +170,11 @@ export default function AiMorningBriefingHome({
                   key={item.id}
                   type="button"
                   onClick={() => onSelectPrompt(item.prompt)}
-                  className="group flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-900"
+                  className="group flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300"
                   title={item.subtitle || undefined}
                 >
-                    <CardIcon size={15} aria-hidden="true" className="shrink-0 text-blue-600 dark:text-blue-400" />
-                    <span dir="auto" className="flex-1 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
+                    <CardIcon size={15} aria-hidden="true" className="shrink-0 text-blue-600" />
+                    <span dir="auto" className="flex-1 text-sm font-medium leading-snug text-slate-900">
                       {item.label}
                     </span>
                     <ArrowRight size={14} aria-hidden="true" className="shrink-0 text-slate-400 group-hover:text-blue-600" />

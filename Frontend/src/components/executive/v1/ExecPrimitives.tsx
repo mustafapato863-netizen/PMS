@@ -25,7 +25,7 @@ export function ExecCardHeader({ icon: Icon, iconBg, iconColor, title, subtitle,
 }) {
   return (
     <div className="flex w-full flex-wrap items-center gap-[10px]">
-      <span aria-hidden="true" className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 shadow-2xs dark:border-white/10" style={{ background: iconBg }}>
+      <span aria-hidden="true" className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 shadow-2xs" style={{ background: iconBg }}>
         <Icon className="size-[17px]" style={{ color: iconColor }} strokeWidth={1.8} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-[2px]">

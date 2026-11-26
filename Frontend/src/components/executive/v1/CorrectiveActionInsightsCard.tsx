@@ -17,12 +17,12 @@ type Accent = 'blue' | 'violet' | 'amber' | 'green' | 'rose' | 'teal';
 type MetricCard = { label: string; count: number; icon: LucideIcon; accent: Accent };
 
 const ACCENTS: Record<Accent, { icon: string; surface: string }> = {
-  blue: { icon: 'text-sky-700 dark:text-sky-300', surface: 'bg-sky-100 dark:bg-sky-900/40' },
-  violet: { icon: 'text-violet-700 dark:text-violet-300', surface: 'bg-violet-100 dark:bg-violet-900/40' },
-  amber: { icon: 'text-amber-700 dark:text-amber-300', surface: 'bg-amber-100 dark:bg-amber-900/40' },
-  green: { icon: 'text-emerald-700 dark:text-emerald-300', surface: 'bg-emerald-100 dark:bg-emerald-900/40' },
-  rose: { icon: 'text-rose-700 dark:text-rose-300', surface: 'bg-rose-100 dark:bg-rose-900/40' },
-  teal: { icon: 'text-teal-700 dark:text-teal-300', surface: 'bg-teal-100 dark:bg-teal-900/40' },
+  blue: { icon: 'text-sky-700', surface: 'bg-sky-100' },
+  violet: { icon: 'text-violet-700', surface: 'bg-violet-100' },
+  amber: { icon: 'text-amber-700', surface: 'bg-amber-100' },
+  green: { icon: 'text-emerald-700', surface: 'bg-emerald-100' },
+  rose: { icon: 'text-rose-700', surface: 'bg-rose-100' },
+  teal: { icon: 'text-teal-700', surface: 'bg-teal-100' },
 };
 
 const ACTION_VISUALS: Record<string, { icon: LucideIcon; accent: Accent }> = {
@@ -151,7 +151,7 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
         <div className={`grid gap-[12px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {metricCards.map(({ label, count, icon: Icon, accent }) => (
             <div key={label} className="pms-glass-stage flex min-w-0 items-center gap-[12px] rounded-[12px] px-[14px] py-[12px]">
-              <span aria-hidden="true" className={`flex size-[36px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 dark:border-white/10 ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
+              <span aria-hidden="true" className={`flex size-[36px] shrink-0 items-center justify-center rounded-[10px] border border-white/60 ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
                 <Icon className="size-[17px]" strokeWidth={1.8} />
               </span>
               <div className="min-w-0">

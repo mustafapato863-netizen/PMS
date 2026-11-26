@@ -79,7 +79,7 @@ const MarketingFiltersHeader = ({
               <ArrowLeft size={20} />
             </button>
           ) : (
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <HeaderIcon size={22} />
             </div>
           )}

@@ -27,8 +27,8 @@ const MoMIndicator = ({
       stable
         ? 'text-[var(--text-muted)]'
         : good
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-rose-600 dark:text-rose-500'
+          ? 'text-emerald-600'
+          : 'text-rose-600'
     } ${className}`}>
       <Icon size={12} />
       <span>{delta > 0 ? '+' : ''}{delta.toFixed(1)}% MoM</span>

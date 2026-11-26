@@ -51,7 +51,7 @@ export default function GlobalSearchResults({
 }) {
   if (error) {
     return (
-      <div className="px-4 py-6 text-sm text-rose-600 dark:text-rose-300">
+      <div className="px-4 py-6 text-sm text-rose-600">
         {error}
       </div>
     );
@@ -106,7 +106,7 @@ export default function GlobalSearchResults({
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
                       active
                         ? 'border-white/20 bg-white/10'
-                        : 'border-[var(--border-light)] bg-[var(--bg-sunken)] text-blue-600 dark:text-blue-300'
+                        : 'border-[var(--border-light)] bg-[var(--bg-sunken)] text-blue-600'
                     }`}
                   >
                     <Icon size={16} />

@@ -22,18 +22,18 @@ import {
 const input = 'min-h-11 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all';
 
 const statusStyle: Record<string, string> = {
-  Draft: 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-700/40 dark:text-slate-300',
-  'In Progress': 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300',
-  'At Risk': 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300',
-  Archived: 'border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-600 dark:bg-slate-700/40 dark:text-slate-400',
+  Draft: 'border-slate-300 bg-slate-100 text-slate-600',
+  'In Progress': 'border-blue-200 bg-blue-50 text-blue-700',
+  'At Risk': 'border-rose-200 bg-rose-50 text-rose-700',
+  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Archived: 'border-slate-300 bg-slate-100 text-slate-500',
 };
 
 const insightStyle: Record<string, string> = {
-  critical: 'border-rose-200 bg-rose-50/70 dark:border-rose-500/25 dark:bg-rose-500/[0.07]',
-  risk: 'border-amber-200 bg-amber-50/70 dark:border-amber-500/25 dark:bg-amber-500/[0.07]',
-  opportunity: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/25 dark:bg-emerald-500/[0.07]',
-  information: 'border-blue-200 bg-blue-50/70 dark:border-blue-500/25 dark:bg-blue-500/[0.07]',
+  critical: 'border-rose-200 bg-rose-50/70',
+  risk: 'border-amber-200 bg-amber-50/70',
+  opportunity: 'border-emerald-200 bg-emerald-50/70',
+  information: 'border-blue-200 bg-blue-50/70',
 };
 
 function formatDate(value: string | null | undefined) {
@@ -93,7 +93,7 @@ function KpiTable({ detail, limit }: { detail: PlanDetail; limit?: number }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-left text-xs">
         <thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/45 text-xs uppercase tracking-wide text-[var(--text-faint)]"><th className="px-4 py-3">KPI</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Target</th><th className="px-3 py-3">Current</th><th className="px-3 py-3">Achievement</th><th className="px-3 py-3">Gap</th><th className="px-4 py-3">Direction</th></tr></thead>
-        <tbody>{rows.map((kpi) => <tr key={kpi.id} className="border-b border-[var(--border-light)] last:border-0"><td className="px-4 py-3"><strong className="text-[var(--text-primary)]">{kpi.label}</strong><span className="ml-1 text-xs text-[var(--text-muted)]">({kpi.unit})</span></td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.baseline}</td><td className="px-3 py-3 font-bold text-[var(--text-primary)]">{kpi.target}</td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.current ?? 'N/A'}</td><td className="px-3 py-3 font-bold text-[var(--sgh-cyan-primary)]">{kpi.achievement === null ? 'N/A' : `${kpi.achievement}%`}</td><td className={`px-3 py-3 font-bold ${kpi.gap === null ? 'text-[var(--text-muted)]' : kpi.gap >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{kpi.gap ?? 'N/A'}</td><td className="px-4 py-3 capitalize text-[var(--text-muted)]">{kpi.direction.replace('_', ' ')}</td></tr>)}</tbody>
+        <tbody>{rows.map((kpi) => <tr key={kpi.id} className="border-b border-[var(--border-light)] last:border-0"><td className="px-4 py-3"><strong className="text-[var(--text-primary)]">{kpi.label}</strong><span className="ml-1 text-xs text-[var(--text-muted)]">({kpi.unit})</span></td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.baseline}</td><td className="px-3 py-3 font-bold text-[var(--text-primary)]">{kpi.target}</td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.current ?? 'N/A'}</td><td className="px-3 py-3 font-bold text-[var(--sgh-cyan-primary)]">{kpi.achievement === null ? 'N/A' : `${kpi.achievement}%`}</td><td className={`px-3 py-3 font-bold ${kpi.gap === null ? 'text-[var(--text-muted)]' : kpi.gap >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{kpi.gap ?? 'N/A'}</td><td className="px-4 py-3 capitalize text-[var(--text-muted)]">{kpi.direction.replace('_', ' ')}</td></tr>)}</tbody>
       </table>
     </div>
   );
@@ -119,7 +119,7 @@ function PlanActionList({ actions, canEdit, onComplete }: { actions: PlanDetail[
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
               <span>Owner {owner}</span>
               <span>Due {due ? formatDate(due) : 'No due date'}</span>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-black ${dueLabel.includes('overdue') && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>{dueLabel}</span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-black ${dueLabel.includes('overdue') && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>{dueLabel}</span>
             </div>
             {canEdit && action.status !== 'Completed' && (
               <button type="button" onClick={() => onComplete(action.id)} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary)]/30 px-3 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:bg-[var(--sgh-cyan-primary)]/10 transition-colors">
@@ -144,23 +144,23 @@ function Overview({ detail, onOpenKpis }: { detail: PlanDetail; onOpenKpis: () =
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Plan outcome summary">
-        <SummaryMetric label="Baseline" value={formatMetric(detail.summary.baseline, detail.summary.unit)} hint="Starting point" icon={Gauge} tone="bg-slate-500/10 text-slate-600 dark:text-slate-300" />
+        <SummaryMetric label="Baseline" value={formatMetric(detail.summary.baseline, detail.summary.unit)} hint="Starting point" icon={Gauge} tone="bg-slate-500/10 text-slate-600" />
         <SummaryMetric label="Target" value={formatMetric(detail.summary.target, detail.summary.unit)} hint={detail.summary.direction.replace('_', ' ')} icon={Target} tone="bg-[var(--sgh-cyan-primary)]/10 text-[var(--sgh-cyan-primary)]" />
-        <SummaryMetric label="Current" value={formatMetric(detail.summary.current, detail.summary.unit)} hint="Latest measured result" icon={CheckCircle2} tone="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" />
-        <SummaryMetric label="Expected impact" value={impact === null ? 'N/A' : `${impact > 0 ? '+' : ''}${impact.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${detail.summary.unit}`} hint="Target minus baseline" icon={Flag} tone="bg-violet-500/10 text-violet-600 dark:text-violet-300" />
+        <SummaryMetric label="Current" value={formatMetric(detail.summary.current, detail.summary.unit)} hint="Latest measured result" icon={CheckCircle2} tone="bg-emerald-500/10 text-emerald-600" />
+        <SummaryMetric label="Expected impact" value={impact === null ? 'N/A' : `${impact > 0 ? '+' : ''}${impact.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${detail.summary.unit}`} hint="Target minus baseline" icon={Flag} tone="bg-violet-500/10 text-violet-600" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(340px,1.2fr)]">
         <div className="space-y-4">
           <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4">
-            <div className="flex items-center justify-between"><div><h3 className="font-extrabold text-[var(--text-primary)]">Execution readiness</h3><p className="mt-1 text-xs text-[var(--text-muted)]">Required building blocks for an actionable plan.</p></div><strong className={`rounded-full px-3 py-1 text-xs ${readyCount === 4 ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>{readyCount}/4 ready</strong></div>
+            <div className="flex items-center justify-between"><div><h3 className="font-extrabold text-[var(--text-primary)]">Execution readiness</h3><p className="mt-1 text-xs text-[var(--text-muted)]">Required building blocks for an actionable plan.</p></div><strong className={`rounded-full px-3 py-1 text-xs ${readyCount === 4 ? 'bg-emerald-500/10 text-emerald-700' : 'bg-amber-500/10 text-amber-700'}`}>{readyCount}/4 ready</strong></div>
             <div className="mt-4 grid grid-cols-2 gap-2">{[
               ['Objective', detail.counts.objectives, 'Define the measurable outcome'],
               ['Action', detail.counts.actions, 'Assign the work to execute'],
               ['KPI', detail.counts.kpis, 'Measure result movement'],
               ['Milestone', detail.counts.milestones, 'Set review checkpoints'],
-            ].map(([label, count, hint]) => <div key={String(label)} className={`rounded-xl border p-3 ${Number(count) > 0 ? 'border-emerald-500/20 bg-emerald-500/[0.055]' : 'border-amber-500/20 bg-amber-500/[0.055]'}`}><div className="flex items-center gap-2">{Number(count) > 0 ? <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" /> : <AlertCircle size={15} className="text-amber-600 dark:text-amber-400" />}<strong className="text-xs text-[var(--text-primary)]">{label}: {count}</strong></div><p className="mt-1 text-xs text-[var(--text-muted)]">{hint}</p></div>)}</div>
-            {detail.counts.actions === 0 && <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.055] p-3 text-xs font-semibold text-rose-700 dark:text-rose-300">No actions assigned. The plan has a target but no defined execution step.</p>}
+            ].map(([label, count, hint]) => <div key={String(label)} className={`rounded-xl border p-3 ${Number(count) > 0 ? 'border-emerald-500/20 bg-emerald-500/[0.055]' : 'border-amber-500/20 bg-amber-500/[0.055]'}`}><div className="flex items-center gap-2">{Number(count) > 0 ? <CheckCircle2 size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-amber-600" />}<strong className="text-xs text-[var(--text-primary)]">{label}: {count}</strong></div><p className="mt-1 text-xs text-[var(--text-muted)]">{hint}</p></div>)}</div>
+            {detail.counts.actions === 0 && <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.055] p-3 text-xs font-semibold text-rose-700">No actions assigned. The plan has a target but no defined execution step.</p>}
           </article>
 
           <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4">
@@ -329,13 +329,13 @@ export default function PlanningView() {
               <button type="button" onClick={() => setMobileDetail(false)} className="mb-3 inline-flex items-center gap-1 text-sm font-bold text-[var(--sgh-cyan-primary)] lg:hidden"><ChevronLeft size={16} />Plans</button>
               <div className="flex items-start justify-between gap-3">
                 <h2 className="min-w-0 text-lg font-extrabold leading-6 text-[var(--text-primary)]">{current.name}</h2>
-                {options.data.can_edit && <div className="flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => setEditOpen(true)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--sgh-cyan-primary)]/30 px-2 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:bg-[var(--sgh-cyan-primary)]/10 transition-colors"><Pencil size={13} />Edit</button><button type="button" onClick={() => setDeleteOpen(true)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-rose-500/25 px-2 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors"><Trash2 size={13} />Delete</button></div>}
+                {options.data.can_edit && <div className="flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => setEditOpen(true)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--sgh-cyan-primary)]/30 px-2 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:bg-[var(--sgh-cyan-primary)]/10 transition-colors"><Pencil size={13} />Edit</button><button type="button" onClick={() => setDeleteOpen(true)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-rose-500/25 px-2 text-xs font-bold text-rose-600 hover:bg-rose-500/10 transition-colors"><Trash2 size={13} />Delete</button></div>}
               </div>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 flex-wrap items-center gap-2"><span className={`rounded-full border px-2 py-0.5 text-xs font-extrabold ${statusStyle[current.status]}`}>{current.status}</span><p className="min-w-0 truncate text-xs text-[var(--text-muted)]">{current.team} · {current.scope} · Owner {current.owner.name}</p></div>
                 <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--bg-sunken)]/55 px-2 py-1"><div className="grid h-7 w-7 place-items-center rounded-md bg-[var(--sgh-cyan-primary)]/10 text-[var(--sgh-cyan-primary)]"><Gauge size={13} /></div><div><span className="block text-xs font-bold uppercase leading-none text-[var(--text-faint)]">Plan progress</span><strong className="text-sm leading-4 text-[var(--text-primary)]">{current.progress.overall}%</strong></div></div>
               </div>
-              {current.risk_reasons.length > 0 && <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.055] p-3 text-xs font-semibold text-rose-700 dark:text-rose-300"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{current.risk_reasons.join(' · ')}</span></div>}
+              {current.risk_reasons.length > 0 && <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.055] p-3 text-xs font-semibold text-rose-700"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span>{current.risk_reasons.join(' · ')}</span></div>}
               <div className="mt-3 flex gap-1 overflow-x-auto">{tabs.map((value) => <button type="button" key={value} onClick={() => setTab(value)} className={`min-h-10 whitespace-nowrap border-b-2 px-2.5 text-xs font-bold transition-colors ${tab === value ? 'border-[var(--sgh-cyan-primary)] text-[var(--sgh-cyan-primary)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{value}{value !== 'Overview' ? ` (${countFor(value)})` : ''}</button>)}</div>
             </header>
 

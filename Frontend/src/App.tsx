@@ -7,7 +7,6 @@ import BackToTop from './components/common/BackToTop';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/auth';
 import { RoleProvider } from './context/RoleContext';
-import { ThemeProvider } from './context/ThemeContext';
 import { useNotificationSocket } from './hooks/useNotificationSocket';
 import { REALTIME_ENABLED } from './config';
 import AppErrorBoundary from './components/common/AppErrorBoundary';
@@ -321,8 +320,7 @@ function AppRouter() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
+    <ToastProvider>
         <AuthProvider>
           <AiAvailabilityProvider>
             <RoleProvider>
@@ -332,8 +330,7 @@ function App() {
             </RoleProvider>
           </AiAvailabilityProvider>
         </AuthProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    </ToastProvider>
   );
 }
 

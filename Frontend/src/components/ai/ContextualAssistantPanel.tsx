@@ -53,7 +53,7 @@ function CompactAnswerCopy({ text }: { text: string }) {
   return (
     <span className="inline-flex items-center gap-2">
       <button type="button" onClick={() => void copyAnswer(text)} aria-label="Copy answer"
-        className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+        className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-slate-100">
         {copied ? <Check size={13} /> : <Copy size={13} />}
         {copied ? 'Copied' : 'Copy'}
       </button>
@@ -771,10 +771,10 @@ export function ContextualAssistantPanel({
           role="dialog"
           aria-label="PMS Contextual AI Assistant"
           data-testid="contextual-assistant-panel"
-          className="flex h-[min(720px,calc(100dvh-7rem))] w-[calc(100vw-1.5rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+          className="flex h-[min(720px,calc(100dvh-7rem))] w-[calc(100vw-1.5rem)] max-w-[440px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         >
           {/* Header & Scope Banner */}
-          <header className="border-b border-slate-200 bg-white px-4 py-3 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+          <header className="border-b border-slate-200 bg-white px-4 py-3 text-slate-900">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 shrink-0 text-blue-400" aria-hidden="true" />
@@ -793,7 +793,7 @@ export function ContextualAssistantPanel({
                   className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
                     showHistory
                       ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+                      : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
                   <History className="size-3" />
@@ -805,7 +805,7 @@ export function ContextualAssistantPanel({
                     onClick={handleNewChat}
                     data-testid="contextual-assistant-new-chat"
                     aria-label="Start new chat"
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
                   >
                     <RotateCcw className="size-3" />
                     <span>New chat</span>
@@ -813,7 +813,7 @@ export function ContextualAssistantPanel({
                 )}
                 {!conversationId && <Link
                   to="/ai"
-                  className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
                 >
                   <ArrowRight size={15} /><span className="sr-only">Full AI Workspace</span>
                 </Link>}
@@ -822,7 +822,7 @@ export function ContextualAssistantPanel({
                   onClick={() => setIsOpen(false)}
                   aria-label="Close PMS Contextual Assistant"
                   data-testid="contextual-assistant-close"
-                  className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100"
                 >
                   <X className="size-4" />
                 </button>
@@ -830,7 +830,7 @@ export function ContextualAssistantPanel({
             </div>
             <p
               data-testid="contextual-assistant-scope-banner"
-              className="mt-1.5 truncate text-xs text-slate-600 dark:text-slate-400"
+              className="mt-1.5 truncate text-xs text-slate-600"
               title={effectiveContextLabel}
             >
               {effectiveContextLabel}
@@ -842,7 +842,7 @@ export function ContextualAssistantPanel({
                   disabled={promotingConvId === conversationId}
                   data-testid="contextual-assistant-continue-workspace"
                   onClick={() => void handleContinueInWorkspace(conversationId)}
-                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-slate-800"
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50"
                 >
                   {promotingConvId === conversationId ? (
                     <>
@@ -865,7 +865,7 @@ export function ContextualAssistantPanel({
             <div
               role="status"
               data-testid="contextual-assistant-fallback-warning"
-              className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-3.5 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+              className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-3.5 py-2 text-xs text-amber-900"
             >
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
               <span>
@@ -898,7 +898,7 @@ export function ContextualAssistantPanel({
               <div data-testid="contextual-assistant-history-view" className="space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                    <h3 className="text-xs font-extrabold text-slate-900">
                       Recent page-assistant chats ({historyItems.length})
                     </h3>
                     <p className="text-xs font-medium text-slate-500">
@@ -908,7 +908,7 @@ export function ContextualAssistantPanel({
                   <button
                     type="button"
                     onClick={() => setShowHistory(false)}
-                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                   >
                     Back to chat
                   </button>
@@ -934,9 +934,9 @@ export function ContextualAssistantPanel({
 
                 {isLoadingHistory && historyItems.length === 0 ? (
                   <div className="space-y-2" aria-label="Loading recent page-assistant chats">
-                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
-                    <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
+                    <div className="h-14 animate-pulse rounded-xl bg-slate-100" />
                   </div>
                 ) : historyError && historyItems.length === 0 ? (
                   <div
@@ -954,7 +954,7 @@ export function ContextualAssistantPanel({
                     </button>
                   </div>
                 ) : historyItems.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs font-medium text-slate-500">
                     No saved page-assistant conversations yet.
                   </div>
                 ) : (
@@ -977,7 +977,7 @@ export function ContextualAssistantPanel({
                           className={`space-y-2 rounded-xl border p-2.5 transition-colors ${
                             isActive
                               ? 'border-blue-300 bg-blue-50/70'
-                              : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -988,7 +988,7 @@ export function ContextualAssistantPanel({
                               className="min-w-0 flex-1 cursor-pointer text-left disabled:opacity-60"
                             >
                               <div className="flex items-center gap-1.5">
-                                <p className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
+                                <p className="truncate text-xs font-bold text-slate-900">
                                   {conv.title || 'New conversation'}
                                 </p>
                                 {isActive && (
@@ -1073,11 +1073,11 @@ export function ContextualAssistantPanel({
                 <div
                   key={turn.id}
                   data-testid="contextual-assistant-turn"
-                  className="space-y-3 border-b border-slate-100 pb-4 last:border-b-0 dark:border-slate-800"
+                  className="space-y-3 border-b border-slate-100 pb-4 last:border-b-0"
                 >
                   {/* User question */}
                   <div className="flex justify-end">
-                    <span className="max-w-[88%] whitespace-pre-wrap break-words rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium text-slate-900 dark:bg-slate-800 dark:text-slate-100">
+                    <span className="max-w-[88%] whitespace-pre-wrap break-words rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium text-slate-900">
                       {turn.prompt}
                     </span>
                   </div>
@@ -1095,7 +1095,7 @@ export function ContextualAssistantPanel({
                   {turn.error && (
                     <div
                       role="alert"
-                      className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200"
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-800"
                     >
                       {turn.error}
                     </div>
@@ -1103,11 +1103,11 @@ export function ContextualAssistantPanel({
 
                   {/* Response payload */}
                   {res && answerText && (
-                    <div className="ai-answer-enter space-y-2.5 text-xs text-slate-700 dark:text-slate-200">
+                    <div className="ai-answer-enter space-y-2.5 text-xs text-slate-700">
                       {/* Effective context chip per response */}
                       {(res.effective_context_label || res.scope_banner) && (
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          <span className="rounded bg-slate-200/70 px-1.5 py-0.5 dark:bg-slate-800">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
+                          <span className="rounded bg-slate-200/70 px-1.5 py-0.5">
                             {res.effective_context_label || res.scope_banner}
                           </span>
                         </div>
@@ -1116,7 +1116,7 @@ export function ContextualAssistantPanel({
                       {/* 1-2 sentence direct answer */}
                       <p
                         data-testid="contextual-assistant-direct-answer"
-                        className="text-sm font-medium leading-relaxed text-slate-900 dark:text-slate-100"
+                        className="text-sm font-medium leading-relaxed text-slate-900"
                       >
                         {answerText.headline}
                       </p>
@@ -1128,7 +1128,7 @@ export function ContextualAssistantPanel({
                       {answerText.bullets.length > 0 && (
                         <ul
                           data-testid="contextual-assistant-bullets"
-                          className="space-y-1 text-sm leading-relaxed text-slate-700 dark:text-slate-200"
+                          className="space-y-1 text-sm leading-relaxed text-slate-700"
                         >
                           {answerText.bullets.slice(0, 3).map((bullet, bIdx) => (
                             <li key={bIdx} className="flex items-start gap-2">
@@ -1140,15 +1140,15 @@ export function ContextualAssistantPanel({
                       )}
 
                       {primaryEvidence && (
-                        <details className="rounded-lg border border-slate-200 p-2 dark:border-slate-800">
-                          <summary className="cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200">View evidence</summary>
+                        <details className="rounded-lg border border-slate-200 p-2">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-700">View evidence</summary>
                           <div className="mt-2"><VisualEvidenceCard card={primaryEvidence} /></div>
                         </details>
                       )}
 
                       {/* Material basis warning */}
                       {res.basis_warning && (
-                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900">
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
                           <span>{formatBasisWarning(res.basis_warning)}</span>
                         </div>
@@ -1156,16 +1156,16 @@ export function ContextualAssistantPanel({
 
                       {/* Page Help Section */}
                       {res.page_help && (
-                        <div className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-slate-950">
-                          <div className="flex items-center gap-1 font-bold text-slate-800 dark:text-slate-100">
+                        <div className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-2.5">
+                          <div className="flex items-center gap-1 font-bold text-slate-800">
                             <HelpCircle className="size-3 text-blue-600" />
                             <span>{res.page_help.page_title}</span>
                           </div>
-                          <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                          <p className="text-xs leading-relaxed text-slate-600">
                             {res.page_help.summary}
                           </p>
                           {res.page_help.metric_explanation && (
-                            <p className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                            <p className="text-xs font-medium text-blue-700">
                               {res.page_help.metric_explanation}
                             </p>
                           )}
@@ -1179,7 +1179,7 @@ export function ContextualAssistantPanel({
                             <Link
                               key={nav.route}
                               to={nav.route}
-                              className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-xs font-semibold text-blue-800 transition hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-200"
+                              className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-xs font-semibold text-blue-800 transition hover:bg-blue-100"
                             >
                               <span className="flex items-center gap-1.5">
                                 <Compass className="size-3.5 shrink-0 text-blue-600" />
@@ -1196,7 +1196,7 @@ export function ContextualAssistantPanel({
                         <div>
                           <Link
                             to={res.primary_source_link.route}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400"
+                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline"
                           >
                             <span>{res.primary_source_link.label}</span>
                             <ArrowRight className="size-3" />
@@ -1208,15 +1208,15 @@ export function ContextualAssistantPanel({
                       {proposal && (
                         <div
                           data-testid="contextual-assistant-proposal-card"
-                          className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/30"
+                          className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-wider text-indigo-800 dark:text-indigo-300">
+                            <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-wider text-indigo-800">
                               <ClipboardCheck className="size-3.5" />
                               <span>Evidence-Based Proposal ({proposal.team})</span>
                             </span>
                             {proposal.metric_display_name && (
-                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold text-indigo-800">
                                 {proposal.metric_display_name}
                               </span>
                             )}
@@ -1228,7 +1228,7 @@ export function ContextualAssistantPanel({
                               <span className="text-xs font-bold uppercase text-slate-500">
                                 Observed PMS Facts
                               </span>
-                              <ul className="list-disc space-y-0.5 pl-4 text-xs text-slate-700 dark:text-slate-200">
+                              <ul className="list-disc space-y-0.5 pl-4 text-xs text-slate-700">
                                 {proposal.observed_facts.map((fact, idx) => (
                                   <li key={idx}>{fact}</li>
                                 ))}
@@ -1241,7 +1241,7 @@ export function ContextualAssistantPanel({
                               <span className="text-xs font-bold uppercase text-slate-500">
                                 Hypothesis to Verify
                               </span>
-                              <p className="text-xs italic text-slate-600 dark:text-slate-300">
+                              <p className="text-xs italic text-slate-600">
                                 {proposal.hypothesis}
                               </p>
                             </div>
@@ -1251,7 +1251,7 @@ export function ContextualAssistantPanel({
                           {turn.savedAction ? (
                             <div
                               data-testid="contextual-assistant-saved-action-status"
-                              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200"
+                              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800"
                             >
                               <Check className="size-3.5 shrink-0 text-emerald-600" />
                               <span>
@@ -1272,11 +1272,11 @@ export function ContextualAssistantPanel({
                             ) : (
                               <div
                                 data-testid="contextual-assistant-proposal-form"
-                                className="space-y-2 border-t border-indigo-200/80 pt-2 dark:border-indigo-900/50"
+                                className="space-y-2 border-t border-indigo-200/80 pt-2"
                               >
                                 <div className="grid grid-cols-2 gap-2">
                                   <label className="block space-y-0.5">
-                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="text-xs font-bold text-slate-600">
                                       Action Type
                                     </span>
                                     <select
@@ -1293,7 +1293,7 @@ export function ContextualAssistantPanel({
                                             : prev,
                                         )
                                       }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                      className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
                                     >
                                       <option value="Coaching">Coaching</option>
                                       <option value="Training">Training</option>
@@ -1303,7 +1303,7 @@ export function ContextualAssistantPanel({
                                   </label>
 
                                   <label className="block space-y-0.5">
-                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="text-xs font-bold text-slate-600">
                                       Priority
                                     </span>
                                     <select
@@ -1320,7 +1320,7 @@ export function ContextualAssistantPanel({
                                             : prev,
                                         )
                                       }
-                                      className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                      className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
                                     >
                                       <option value="High">High</option>
                                       <option value="Medium">Medium</option>
@@ -1330,7 +1330,7 @@ export function ContextualAssistantPanel({
                                 </div>
 
                                 <label className="block space-y-0.5">
-                                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                  <span className="text-xs font-bold text-slate-600">
                                     Action Plan (Saved as Open Action)
                                   </span>
                                   <textarea
@@ -1342,12 +1342,12 @@ export function ContextualAssistantPanel({
                                         prev ? { ...prev, action_text: e.target.value } : prev,
                                       )
                                     }
-                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
                                   />
                                 </label>
 
                                 <label className="block space-y-0.5">
-                                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                  <span className="text-xs font-bold text-slate-600">
                                     Root Cause Note (To Verify)
                                   </span>
                                   <textarea
@@ -1359,14 +1359,14 @@ export function ContextualAssistantPanel({
                                         prev ? { ...prev, root_cause_note: e.target.value } : prev,
                                       )
                                     }
-                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-800"
                                   />
                                 </label>
 
                                 {saveError && (
                                   <p
                                     role="alert"
-                                    className="text-xs font-semibold text-rose-600 dark:text-rose-400"
+                                    className="text-xs font-semibold text-rose-600"
                                   >
                                     {saveError}
                                   </p>
@@ -1377,7 +1377,7 @@ export function ContextualAssistantPanel({
                                     type="button"
                                     data-testid="contextual-assistant-cancel-proposal-btn"
                                     onClick={cancelProposalReview}
-                                    className="cursor-pointer rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                    className="cursor-pointer rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                                   >
                                     Cancel
                                   </button>
@@ -1397,7 +1397,7 @@ export function ContextualAssistantPanel({
                               </div>
                             )
                           ) : (
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                            <p className="text-xs font-medium text-slate-500">
                               Read-only role: share this proposal with an authorized manager to log an
                               Open action.
                             </p>
@@ -1416,7 +1416,7 @@ export function ContextualAssistantPanel({
                               key={followup}
                               type="button"
                               onClick={() => sendPrompt(followup)}
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
                             >
                               <MessageSquare className="size-3 text-blue-500" />
                               <span>{followup}</span>
@@ -1426,7 +1426,7 @@ export function ContextualAssistantPanel({
                       )}
 
                       {/* Different Angle + Useful / Not Useful Feedback */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2 dark:border-slate-800">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {res.outcome === 'answer' && (
                             <CompactAnswerCopy text={formatAnswerForClipboard(answerText.headline, answerText.bullets.slice(0, 3))} />
@@ -1443,7 +1443,7 @@ export function ContextualAssistantPanel({
                                 variationSeed: (turn.variationSeed ?? 0) + 1,
                               })
                             }
-                            className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700"
                           >
                             <RefreshCw className="size-3" />
                             <span>Different angle</span>
@@ -1452,7 +1452,7 @@ export function ContextualAssistantPanel({
                         {turn.feedbackSubmitted ? (
                           <span
                             data-testid="contextual-assistant-feedback-recorded"
-                            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+                            className="text-xs font-semibold text-emerald-600"
                           >
                             Feedback recorded
                           </span>
@@ -1465,7 +1465,7 @@ export function ContextualAssistantPanel({
                               onClick={() =>
                                 submitFeedback(turn.id, res.trace_id, 'up', 'helpful')
                               }
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700"
                             >
                               <ThumbsUp className="size-2.5" />
                               <span>Useful</span>
@@ -1486,7 +1486,7 @@ export function ContextualAssistantPanel({
                                   ),
                                 )
                               }
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700"
                             >
                               <ThumbsDown className="size-2.5" />
                               <span>Not useful</span>
@@ -1509,7 +1509,7 @@ export function ContextualAssistantPanel({
                               onClick={() =>
                                 submitFeedback(turn.id, res.trace_id, 'down', cat.key)
                               }
-                              className="cursor-pointer rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200"
+                              className="cursor-pointer rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-800 hover:bg-rose-100"
                             >
                               {cat.label}
                             </button>
@@ -1532,7 +1532,7 @@ export function ContextualAssistantPanel({
                 e.preventDefault();
                 sendPrompt(input);
               }}
-              className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900"
+              className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2.5"
             >
               <input
                 type="text"
@@ -1541,7 +1541,7 @@ export function ContextualAssistantPanel({
                 placeholder="Ask about this page…"
                 aria-label="Ask PMS Contextual Assistant"
                 data-testid="contextual-assistant-input"
-                className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="submit"
@@ -1573,17 +1573,17 @@ export function ContextualAssistantPanel({
                 aria-labelledby="ctx-delete-conv-dialog-title"
                 aria-describedby="ctx-delete-conv-dialog-desc"
                 data-testid="contextual-assistant-delete-dialog"
-                className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+                className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
               >
                 <h3
                   id="ctx-delete-conv-dialog-title"
-                  className="text-sm font-extrabold text-slate-900 dark:text-slate-100"
+                  className="text-sm font-extrabold text-slate-900"
                 >
                   Delete "{confirmDeleteConv.title || 'New conversation'}"?
                 </h3>
                 <p
                   id="ctx-delete-conv-dialog-desc"
-                  className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300"
+                  className="mt-2 text-xs leading-relaxed text-slate-600"
                 >
                   This permanently removes this saved page-assistant conversation.
                 </p>
@@ -1593,7 +1593,7 @@ export function ContextualAssistantPanel({
                     type="button"
                     disabled={deletingConvId === confirmDeleteConv.conversation_id}
                     onClick={() => setConfirmDeleteId(null)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>

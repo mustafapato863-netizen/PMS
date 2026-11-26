@@ -16,7 +16,7 @@ const STATE_ICON: Record<StepState, LucideIcon> = {
 };
 
 const STATE_CLASS: Record<StepState, string> = {
-  done: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300',
+  done: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700',
   current: 'border-blue-500/40 bg-blue-500/10 text-[var(--text-primary)]',
   upcoming: 'border-[var(--border-light)] text-[var(--text-muted)]',
   locked: 'border-[var(--border-light)] text-[var(--text-muted)]',

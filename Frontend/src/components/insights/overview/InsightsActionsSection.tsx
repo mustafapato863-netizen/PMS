@@ -79,7 +79,7 @@ export default function InsightsActionsSection({
                   <td className="py-[8px] pr-[12px] align-top text-[var(--text-secondary)]">{action.owner?.name ?? 'Unassigned'}</td>
                   <td className="py-[8px] align-top">
                     {action.due_date ? (
-                      <span className={action.is_overdue ? 'font-semibold text-rose-600 dark:text-rose-400' : 'text-[var(--text-secondary)]'}>
+                      <span className={action.is_overdue ? 'font-semibold text-rose-600' : 'text-[var(--text-secondary)]'}>
                         {action.due_date}{action.is_overdue ? ' · overdue' : ''}
                       </span>
                     ) : (

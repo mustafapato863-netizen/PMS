@@ -33,11 +33,11 @@ const ACTION_TYPES: { value: ActionType; label: string; emoji: string; color: st
 ];
 
 const COLOR_MAP: Record<string, string> = {
-  blue:    'border-blue-500 bg-blue-500/15 text-blue-700 dark:text-blue-400',
-  emerald: 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-  red:     'border-red-500 bg-red-500/15 text-red-700 dark:text-red-400',
-  amber:   'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  purple:  'border-purple-500 bg-purple-500/15 text-purple-700 dark:text-purple-400',
+  blue:    'border-blue-500 bg-blue-500/15 text-blue-700',
+  emerald: 'border-emerald-500 bg-emerald-500/15 text-emerald-700',
+  red:     'border-red-500 bg-red-500/15 text-red-700',
+  amber:   'border-amber-500 bg-amber-500/15 text-amber-700',
+  purple:  'border-purple-500 bg-purple-500/15 text-purple-700',
 };
 
 const KPI_ISSUE_THRESHOLD = 80;
@@ -158,7 +158,7 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
   const changePlan = (value: string) => { setPlanId(value); touch('plan'); };
 
   const getScoreColor = (s: number) =>
-    s >= 90 ? 'text-emerald-600 dark:text-emerald-400' : s >= 80 ? 'text-blue-600 dark:text-blue-400' : s >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
+    s >= 90 ? 'text-emerald-600' : s >= 80 ? 'text-blue-600' : s >= 70 ? 'text-amber-600' : 'text-red-600';
 
   const kpis = useMemo(() => (employee ? getKPIsForAgent(employee.raw) : []), [employee]);
   const detectedRootCauseKpis = useMemo(() => extractKpiMentions(rootCauseNote), [rootCauseNote]);
@@ -410,8 +410,8 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
           <form onSubmit={handleSubmit} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:space-y-5 sm:p-6">
             {/* Auto Root Cause */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm">
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Auto Root Cause:</span>
-              <p className="font-semibold text-amber-700 dark:text-amber-300 mt-0.5">{employee.rootCauseAuto}</p>
+              <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">Auto Root Cause:</span>
+              <p className="font-semibold text-amber-700 mt-0.5">{employee.rootCauseAuto}</p>
             </div>
 
             {/* Root Cause Note */}
@@ -447,7 +447,7 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
               </div>
               <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                 {failedKpis.length === 0 ? (
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs font-semibold text-emerald-600">
                     All KPIs are meeting target.
                   </div>
                 ) : failedKpis.map((kpi) => {
@@ -462,8 +462,8 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
                       onClick={() => appendRootCause(line)}
                       className={`w-full text-left rounded-xl border px-3 py-2 text-sm transition-all cursor-pointer ${
                         isMet
-                          ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                          : 'border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10'
+                          ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700'
+                          : 'border-rose-500/20 bg-rose-500/5 text-rose-700 hover:bg-rose-500/10'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -575,12 +575,12 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
                 className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2.5"
               >
                 <div className="flex items-start gap-2.5">
-                  <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
                   <div>
-                    <h5 id="overwrite-confirm-title" className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                    <h5 id="overwrite-confirm-title" className="text-xs font-bold text-amber-800">
                       Replace Existing Action Description?
                     </h5>
-                    <p id="overwrite-confirm-desc" className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                    <p id="overwrite-confirm-desc" className="text-xs text-amber-700 mt-0.5">
                       You have already entered an action description. Inserting this suggestion will replace your current text:
                     </p>
                     <div className="mt-2 rounded-lg bg-[var(--bg-sunken)] p-2 text-xs font-mono text-[var(--text-secondary)] space-y-1">
@@ -589,7 +589,7 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
                         <span className="text-[var(--text-primary)]">{actionText}</span>
                       </div>
                       <div>
-                        <span className="font-bold text-purple-600 dark:text-purple-400 uppercase text-[10px]">Will replace with ({pendingDraft.actionType}): </span>
+                        <span className="font-bold text-purple-600 uppercase text-[10px]">Will replace with ({pendingDraft.actionType}): </span>
                         <span className="text-[var(--text-primary)]">{pendingDraft.actionDescription}</span>
                       </div>
                     </div>
@@ -634,8 +634,8 @@ const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSave
             {result && (
               <div className={`flex items-start gap-2.5 p-3 rounded-xl text-sm font-semibold ${
                 result.success
-                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400'
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600'
+                  : 'bg-red-500/10 border border-red-500/20 text-red-600'
               }`}>
                 {result.success
                   ? <CheckCircle2 size={16} className="shrink-0 mt-0.5" />

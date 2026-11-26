@@ -66,7 +66,7 @@ export function AiFeatureSwitch() {
                 <MessageSquareWarning size={13} aria-hidden="true" />
                 <span>Review AI feedback &amp; approved patterns</span>
               </Link>
-              {error && <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{error}</p>}
+              {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
             </div>
           </div>
           <button
@@ -132,7 +132,7 @@ export function AiFeatureSwitch() {
                 ? 'Pilot on for administrators only. Suggestions use authorized PMS evidence and must be reviewed and explicitly saved; nothing is saved automatically.'
                 : 'Pilot off. Standalone AI Workspace stays hidden whether this pilot is on or off.'}
             </p>
-            {error && <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{error}</p>}
+            {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
           </div>
         </div>
         <button

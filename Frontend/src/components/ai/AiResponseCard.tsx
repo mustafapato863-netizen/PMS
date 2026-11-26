@@ -170,7 +170,7 @@ export default function AiResponseCard({
 
       {/* Main Executive Response Card */}
       <div
-        className={`min-w-0 flex-1 text-slate-900 dark:text-slate-100 ${
+        className={`min-w-0 flex-1 text-slate-900 ${
           compact ? 'py-1' : 'py-0.5'
         }`}
       >
@@ -186,7 +186,7 @@ export default function AiResponseCard({
         <p
           dir="auto"
           data-testid={compact ? 'contextual-assistant-direct-answer' : undefined}
-          className={`font-medium leading-relaxed text-slate-900 dark:text-slate-100 ${
+          className={`font-medium leading-relaxed text-slate-900 ${
             compact ? 'text-sm' : 'text-[15px] sm:text-base'
           }`}
         >
@@ -200,7 +200,7 @@ export default function AiResponseCard({
           <ul
             dir="auto"
             data-testid={compact ? 'contextual-assistant-bullets' : undefined}
-            className="mt-2 space-y-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300"
+            className="mt-2 space-y-1.5 text-sm leading-relaxed text-slate-700"
           >
             {visibleBullets.map((bullet, idx) => (
               <li key={idx} className="flex items-start gap-2">

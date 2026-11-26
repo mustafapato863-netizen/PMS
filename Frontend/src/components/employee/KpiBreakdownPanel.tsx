@@ -193,10 +193,10 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
       {isScopedPreApprovalsTeam && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-500/15 bg-blue-500/5 px-3 py-2.5">
           <div className="min-w-0">
-            <div className="text-xs font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">Employee workstream</div>
+            <div className="text-xs font-extrabold uppercase tracking-wider text-blue-600">Employee workstream</div>
             <div className="truncate text-sm font-bold text-[var(--text-primary)]">{resolvePreApprovalsWorkstream(agent) === 'er' ? 'ER / IP Approval' : 'IP Elective'}</div>
           </div>
-          <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-xs font-bold text-[var(--text-secondary)] dark:bg-slate-800/60">2 KPIs · 60/40</span>
+          <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-xs font-bold text-[var(--text-secondary)]">2 KPIs · 60/40</span>
         </div>
       )}
       {/* Overall Score */}
@@ -223,8 +223,8 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
           {kpis.length === 0 ? (
             <div className="text-xs text-[var(--text-muted)] font-semibold mt-1">Source KPI breakdown unavailable</div>
           ) : issues.length === 0
-            ? <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1"><Minus size={10} /> All KPIs on target</div>
-            : <div className="text-xs text-red-500 dark:text-red-400 font-semibold mt-1">⚠ {issues.join(' · ')}</div>
+            ? <div className="text-xs text-emerald-600 font-semibold mt-1 flex items-center gap-1"><Minus size={10} /> All KPIs on target</div>
+            : <div className="text-xs text-red-500 font-semibold mt-1">⚠ {issues.join(' · ')}</div>
           }
         </div>
       </div>
@@ -243,12 +243,12 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
           return isPenaltyEntry ? (
             <div key={kpi.label} className="rounded-xl border border-red-500/15 bg-red-500/5 p-3">
               <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-red-600 dark:text-red-400">
+                <div className="flex items-center gap-1.5 font-bold text-red-600">
                   <TrendingDown size={12} />
                   {kpi.label}
                 </div>
                 <div className="text-right">
-                  <span className="block font-extrabold text-sm text-red-600 dark:text-red-400">
+                  <span className="block font-extrabold text-sm text-red-600">
                     {kpi.contribution !== undefined ? `${kpi.contribution.toFixed(1)}%` : '—'}
                   </span>
                   <span className="text-xs text-[var(--text-muted)] font-semibold">Deduction</span>

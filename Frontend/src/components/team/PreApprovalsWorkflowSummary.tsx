@@ -12,21 +12,21 @@ const WORKFLOWS: Exclude<PreApprovalsWorkflowFilter, 'all'>[] = ['ip_final', 'op
 const WORKFLOW_META: Record<Exclude<PreApprovalsWorkflowFilter, 'all'>, { icon: typeof Activity; tone: string; accent: string; glow: string }> = {
   ip_final: {
     icon: Activity,
-    tone: 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300',
+    tone: 'bg-violet-500/10 text-violet-600',
     accent: 'bg-violet-500',
-    glow: 'hover:border-violet-300/80 hover:shadow-[0_0_28px_rgba(139,92,246,0.24)] dark:hover:border-violet-400/60 dark:hover:shadow-[0_0_34px_rgba(167,139,250,0.25)]',
+    glow: 'hover:border-violet-300/80 hover:shadow-[0_0_28px_rgba(139,92,246,0.24)](167,139,250,0.25)]',
   },
   op_final: {
     icon: ClipboardCheck,
-    tone: 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
+    tone: 'bg-blue-500/10 text-blue-600',
     accent: 'bg-blue-500',
-    glow: 'hover:border-blue-300/80 hover:shadow-[0_0_28px_rgba(59,130,246,0.24)] dark:hover:border-blue-400/60 dark:hover:shadow-[0_0_34px_rgba(96,165,250,0.25)]',
+    glow: 'hover:border-blue-300/80 hover:shadow-[0_0_28px_rgba(59,130,246,0.24)](96,165,250,0.25)]',
   },
   ip_elective: {
     icon: Timer,
-    tone: 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
+    tone: 'bg-amber-500/10 text-amber-600',
     accent: 'bg-amber-500',
-    glow: 'hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(245,158,11,0.24)] dark:hover:border-amber-400/60 dark:hover:shadow-[0_0_34px_rgba(251,191,36,0.25)]',
+    glow: 'hover:border-amber-300/80 hover:shadow-[0_0_28px_rgba(245,158,11,0.24)](251,191,36,0.25)]',
   },
 };
 

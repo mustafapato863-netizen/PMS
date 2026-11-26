@@ -17,7 +17,7 @@ const MAIN_ISSUE_SUFFIX = /\s*\(main issue\)\s*$/i;
 // ─── Sort Icon ────────────────────────────────────────────────────────────────
 const SortIcon = ({ col, sortCol, sortDir }: { col: string; sortCol: string; sortDir: 'asc' | 'desc' }) => {
   if (col !== sortCol) return <ChevronsUpDown size={13} className="text-[var(--text-faint)]" />;
-  return sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-600 dark:text-blue-400" /> : <ChevronDown size={13} className="text-blue-600 dark:text-blue-400" />;
+  return sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-600" /> : <ChevronDown size={13} className="text-blue-600" />;
 };
 
 // ─── Trend Cell ───────────────────────────────────────────────────────────────
@@ -31,8 +31,8 @@ const TrendCell = ({ row, prevRows }: { row: TeamAgentRow; prevRows: Map<string,
     );
   }
   const delta = row.score - prev.score;
-  if (delta > 2) return <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">↑ +{delta.toFixed(1)}%</span>;
-  if (delta < -2) return <span className="text-xs font-bold text-red-500 dark:text-red-400">↓ {delta.toFixed(1)}%</span>;
+  if (delta > 2) return <span className="text-xs font-bold text-emerald-600">↑ +{delta.toFixed(1)}%</span>;
+  if (delta < -2) return <span className="text-xs font-bold text-red-500">↓ {delta.toFixed(1)}%</span>;
   return <span className="text-xs font-bold text-[var(--text-muted)]">→ Stable</span>;
 };
 
@@ -75,7 +75,7 @@ function RootCause({ row, href }: { row: TeamAgentRow; href: string }) {
     <Link
       to={href}
       title={full}
-      className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-blue-600 hover:underline dark:hover:text-blue-400"
+      className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-blue-600 hover:underline"
     >
       <span className="truncate">{kpi}</span>
       {isMainIssue && (
@@ -250,7 +250,7 @@ const TeamRosterSection = ({
                             to={profileHref(row)}
                             aria-label={row.name}
                             title={row.name}
-                            className="block truncate text-sm font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                            className="block truncate text-sm font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-blue-600"
                           >
                             {row.name}
                           </Link>
@@ -341,7 +341,7 @@ const TeamRosterSection = ({
                     to={profileHref(row)}
                     aria-label={row.name}
                     title={row.name}
-                    className="block truncate text-sm font-semibold text-[var(--text-primary)] hover:text-blue-600 dark:hover:text-blue-400"
+                    className="block truncate text-sm font-semibold text-[var(--text-primary)] hover:text-blue-600"
                   >
                     {row.name}
                   </Link>
@@ -434,16 +434,16 @@ const TeamRosterSection = ({
               <div className="grid grid-cols-[2rem_2.5rem_minmax(0,1fr)_auto] items-center gap-2.5 sm:grid-cols-[2.25rem_2.75rem_minmax(0,1fr)_5.25rem_3.75rem] sm:gap-3">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-extrabold sm:h-9 sm:w-9 ${
                   isTop
-                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                    ? 'bg-emerald-500/10 text-emerald-700'
+                    : 'bg-rose-500/10 text-rose-600'
                 }`}>
                   {idx + 1}
                 </div>
 
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-extrabold sm:h-11 sm:w-11 ${
                   isTop
-                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-300'
+                    ? 'bg-emerald-500/10 text-emerald-700'
+                    : 'bg-blue-500/10 text-blue-600'
                 }`}>
                   {initial}
                 </div>
@@ -451,7 +451,7 @@ const TeamRosterSection = ({
                 <div className="min-w-0">
                   <Link
                     to={profileHref(row)}
-                    className="block truncate text-xs font-extrabold leading-snug text-[var(--text-primary)] hover:text-blue-600 dark:hover:text-blue-400 sm:text-sm"
+                    className="block truncate text-xs font-extrabold leading-snug text-[var(--text-primary)] hover:text-blue-600 sm:text-sm"
                     title={row.name}
                   >
                     {row.name}
@@ -463,7 +463,7 @@ const TeamRosterSection = ({
 
                 <div className="text-right">
                   <div className={`text-sm font-extrabold sm:text-base ${
-                    isTop ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'
+                    isTop ? 'text-emerald-600' : 'text-rose-500'
                   }`}>
                     {score.toFixed(1)}%
                   </div>
@@ -471,8 +471,8 @@ const TeamRosterSection = ({
                     delta === null || Math.abs(delta) <= 2
                       ? 'text-[var(--text-faint)]'
                       : delta > 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-500 dark:text-rose-400'
+                        ? 'text-emerald-600'
+                        : 'text-rose-500'
                   }`}>
                     {delta === null ? 'No trend' : `${delta > 2 ? '↑ +' : delta < -2 ? '↓ ' : '→ '}${Math.abs(delta) <= 2 ? 'Stable' : `${delta.toFixed(1)}%`}`}
                   </div>
@@ -596,11 +596,11 @@ const TeamRosterSection = ({
           {/* Top 3 Performers */}
           <div className="space-y-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/25 p-3 sm:p-4">
             <div className="flex items-center gap-3 pb-1">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <Award className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h4 className="truncate text-sm font-semibold text-emerald-700 dark:text-emerald-400">Top 3 performers</h4>
+                <h4 className="truncate text-sm font-semibold text-emerald-700">Top 3 performers</h4>
                 <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Highest performance scores</p>
               </div>
             </div>
@@ -610,11 +610,11 @@ const TeamRosterSection = ({
           {/* Bottom 3 Performers */}
           <div className="space-y-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/25 p-3 sm:p-4">
             <div className="flex items-center gap-3 pb-1">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-500 dark:text-rose-400">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-500">
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h4 className="truncate text-sm font-semibold text-rose-600 dark:text-rose-400">Bottom 3 performers</h4>
+                <h4 className="truncate text-sm font-semibold text-rose-600">Bottom 3 performers</h4>
                 <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Lowest performance scores</p>
               </div>
             </div>
@@ -622,13 +622,13 @@ const TeamRosterSection = ({
             {rosterData.allMeetStandards ? (
               /* Encouraging Card */
               <div className="flex flex-col items-center justify-center p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-center min-h-[126px] shadow-sm">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3 shadow-inner">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600 mb-3 shadow-inner">
                   <Award className="w-6 h-6" />
                 </div>
-                <h5 className="text-sm font-bold text-emerald-700 dark:text-emerald-450 mb-1">
+                <h5 className="text-sm font-bold text-emerald-700 mb-1">
                   All Active Agents Meet Corporate Standards
                 </h5>
-                <p className="text-xs text-emerald-600 dark:text-emerald-400/90 font-medium">
+                <p className="text-xs text-emerald-600 font-medium">
                   Every active agent has achieved a grade of A or B (score &ge; 80%).
                 </p>
               </div>

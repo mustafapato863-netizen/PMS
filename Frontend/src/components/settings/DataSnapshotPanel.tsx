@@ -35,8 +35,8 @@ function StatusBanner({ status }: { status: Status }) {
       role="status"
       className={`flex items-start gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
         status.type === 'success'
-          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-          : 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400'
+          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600'
+          : 'border-red-500/20 bg-red-500/10 text-red-600'
       }`}
     >
       {status.type === 'success' ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertCircle size={16} className="mt-0.5 shrink-0" />}
@@ -56,7 +56,7 @@ function CheckResult({ report }: { report: SnapshotReport }) {
   const cleared = Object.entries(report.user_references?.cleared ?? {});
   return (
     <div className="space-y-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4" aria-label="Snapshot check">
-      <p className={`text-xs font-black ${report.importable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+      <p className={`text-xs font-black ${report.importable ? 'text-emerald-600' : 'text-red-600'}`}>
         {report.importable
           ? `Ready to import: ${report.totals?.new ?? 0} new rows, ${report.totals?.existing_ids ?? 0} existing ids (${report.policy === 'skip' ? 'skipped' : 'replaced'}).`
           : `${report.blocking_conflict_count} conflict(s) block this import. Nothing can be saved until they are resolved.`}
@@ -198,7 +198,7 @@ export function DataSnapshotPanel() {
   return (
     <section className="glass-panel mt-6 space-y-5 rounded-3xl p-6 shadow-sm" aria-labelledby="data-snapshot-title">
       <header className="flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400"><DatabaseBackup size={19} /></span>
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-500/10 text-blue-600"><DatabaseBackup size={19} /></span>
         <div>
           <h2 id="data-snapshot-title" className="text-lg font-black text-[var(--text-primary)]">Data snapshot</h2>
           <p className="mt-1 text-xs text-[var(--text-muted)]">Copy the business data to another environment, or bring it in from one.</p>
@@ -206,7 +206,7 @@ export function DataSnapshotPanel() {
       </header>
 
       <div className="flex items-start gap-3 rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4">
-        <ShieldCheck size={20} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+        <ShieldCheck size={20} className="mt-0.5 shrink-0 text-blue-600" />
         <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
           The file holds teams, employees, performance records, evaluation settings, plans and actions. It never holds passwords, sessions or account
           details: users are named by username only, and an import matches them to the accounts that already exist here. The file is not stored on
@@ -280,7 +280,7 @@ export function DataSnapshotPanel() {
               type="button"
               onClick={() => void checkSnapshot()}
               disabled={busy !== null || !file || !policy}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-500/25 bg-blue-500/10 px-4 text-xs font-extrabold text-blue-700 transition-colors hover:bg-blue-500/15 dark:text-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-500/25 bg-blue-500/10 px-4 text-xs font-extrabold text-blue-700 transition-colors hover:bg-blue-500/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy === 'check' ? <Loader2 size={15} className="animate-spin" /> : <SearchCheck size={15} />}
               {busy === 'check' ? 'Checking…' : 'Check file'}

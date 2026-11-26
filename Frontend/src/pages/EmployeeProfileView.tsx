@@ -546,10 +546,10 @@ const EmployeeProfileView = () => {
     });
   }, [orderedProfileHistory, comparisonMode, benchmarkProfile, comparisonAgent, analytics, teamWeights]);
   const gradeColor = (g: TeamAgentRow['gradeClass']) =>
-    g === 'A' ? 'text-emerald-600 dark:text-emerald-400' : g === 'B' ? 'text-blue-600 dark:text-blue-400' : g === 'C' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
+    g === 'A' ? 'text-emerald-600' : g === 'B' ? 'text-blue-600' : g === 'C' ? 'text-amber-600' : 'text-red-600';
 
   const statusColor = (s: string) =>
-    s === 'Meet' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20' : s === 'Average' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' : 'bg-red-500/10 text-red-500 dark:text-red-400 border border-red-500/20';
+    s === 'Meet' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/20' : s === 'Average' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20';
 
   const activeMonth = month === 'All'
     ? (orderedProfileHistory[0]?.month || 'January')
@@ -605,7 +605,7 @@ const EmployeeProfileView = () => {
         >
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-500/10 text-blue-600">
                 <Users size={17} />
               </span>
               <div>
@@ -696,7 +696,7 @@ const EmployeeProfileView = () => {
           <AlertTriangle size={32} className="mx-auto text-amber-400 mb-3" />
           <h3 className="text-lg font-bold text-[var(--text-primary)]">Employee not found</h3>
           <p className="text-sm text-[var(--text-secondary)] mt-1">No data for ID: {employeeId} in selected month.</p>
-          <button onClick={() => navigate(-1)} className="mt-4 text-blue-600 dark:text-blue-400 font-semibold text-sm hover:underline cursor-pointer">
+          <button onClick={() => navigate(-1)} className="mt-4 text-blue-600 font-semibold text-sm hover:underline cursor-pointer">
             Go back
           </button>
         </div>
@@ -732,7 +732,7 @@ const EmployeeProfileView = () => {
               </div>
               <h3 className="mx-auto max-w-[18rem] break-words text-balance text-xl font-bold leading-tight text-[var(--text-primary)]">{employee.name}</h3>
               <p className="text-sm text-[var(--text-secondary)] font-medium mt-1 leading-snug">{employee.team}</p>
-              <span className="inline-flex mt-2 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400">
+              <span className="inline-flex mt-2 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-bold text-blue-600">
                 {profileScopeLabel}
               </span>
               <p className="text-xs text-[var(--text-faint)] font-semibold mt-0.5">ID: {employee.id}</p>
@@ -796,7 +796,7 @@ const EmployeeProfileView = () => {
                   <p className="mt-1 text-xs font-medium text-[var(--text-faint)]">Canonical employee score and weighted contribution</p>
                 </div>
                 {profileAgent && isPreApprovalsIpElectiveTeam(profileAgent.identity.team) && (
-                  <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-xs font-bold text-blue-600 dark:text-blue-400">Scoped KPIs</span>
+                  <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-xs font-bold text-blue-600">Scoped KPIs</span>
                 )}
               </div>
               <KpiBreakdownPanel
@@ -842,7 +842,7 @@ const EmployeeProfileView = () => {
                       key={mode}
                       onClick={() => setComparisonMode(mode)}
                       className={`relative z-10 px-2 sm:px-3 md:px-3.5 py-1 text-xs font-extrabold rounded-xl transition-all duration-200 cursor-pointer h-full flex items-center justify-center gap-1 ${isActive
-                        ? 'text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 shadow-sm border border-[var(--border-light)]'
+                        ? 'text-blue-600 bg-white shadow-sm border border-[var(--border-light)]'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-transparent border border-transparent'
                         }`}
                     >
@@ -893,7 +893,7 @@ const EmployeeProfileView = () => {
                   <div className="flex items-center gap-4 z-10 border-t md:border-t-0 pt-3 md:pt-0 border-[var(--border-light)] self-end md:self-auto">
                     <div className="text-right">
                       <div className="text-xs text-[var(--text-muted)] font-semibold uppercase">Benchmark Score</div>
-                      <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400">
+                      <div className="text-xl font-extrabold text-indigo-600">
                         {(() => {
                           const score = comparisonAgent.evaluation?.score || 0;
                           return normalizeScore(score).toFixed(1);
@@ -936,7 +936,7 @@ const EmployeeProfileView = () => {
               {comparisonMode !== 'actuals' && (analytics?.rootCauseNarrative?.length ?? 0) > 0 && (
                 <div className="mb-5 space-y-2">
                   {analytics?.rootCauseNarrative?.map((narrative: string, idx: number) => (
-                    <div key={idx} className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm font-medium">
+                    <div key={idx} className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-700 rounded-lg text-sm font-medium">
                       {narrative}
                     </div>
                   ))}
@@ -949,7 +949,7 @@ const EmployeeProfileView = () => {
                   : 'bg-amber-500/10 border-amber-500/20'
                   }`}>
                   <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Auto Detected</div>
-                  <p className={`text-sm font-bold ${employee.rootCauseAuto.includes('good') ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  <p className={`text-sm font-bold ${employee.rootCauseAuto.includes('good') ? 'text-emerald-600' : 'text-amber-600'}`}>
                     {employee.rootCauseAuto}
                   </p>
                 </div>
@@ -973,10 +973,10 @@ const EmployeeProfileView = () => {
                       return (
                         <div key={kpi.label} className="flex items-center justify-between py-1.5 border-b border-[var(--border-light)] last:border-none">
                           <div className="flex flex-col">
-                            <span className="text-red-600 dark:text-red-400 font-semibold">{kpi.label}</span>
+                            <span className="text-red-600 font-semibold">{kpi.label}</span>
                             <span className="text-xs text-[var(--text-faint)] font-medium">Deduction</span>
                           </div>
-                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 border border-red-500/20">
                             {kpi.contribution !== undefined ? `${kpi.contribution.toFixed(1)}%` : '—'}
                           </span>
                         </div>
@@ -1023,8 +1023,8 @@ const EmployeeProfileView = () => {
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             className={`inline-flex items-center gap-1 text-xs font-extrabold px-2 py-0.5 rounded-full border ${isPositive
-                              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30'
-                              : 'bg-rose-500/10 text-rose-600 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30'
+                              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
                               }`}
                           >
                             <span>{icon}</span>
@@ -1037,7 +1037,7 @@ const EmployeeProfileView = () => {
                           <motion.span
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="inline-flex items-center gap-1 text-xs font-extrabold px-2 py-0.5 rounded-full border bg-slate-500/10 text-slate-600 border-slate-500/20 dark:bg-slate-500/20 dark:text-slate-400 dark:border-slate-500/30 font-mono"
+                            className="inline-flex items-center gap-1 text-xs font-extrabold px-2 py-0.5 rounded-full border bg-slate-500/10 text-slate-600 border-slate-500/20 font-mono"
                           >
                             <span>Equal</span>
                           </motion.span>
@@ -1064,10 +1064,10 @@ const EmployeeProfileView = () => {
                           <div className="flex items-center gap-2">
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
                               targetRequiresReview
-                                ? 'border border-slate-500/20 bg-slate-500/10 text-slate-600 dark:text-slate-300'
+                                ? 'border border-slate-500/20 bg-slate-500/10 text-slate-600'
                                 : isMet
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                                  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                                  : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
                             }`}>
                               {formatVal(kpi.actual)}
                             </span>
@@ -1115,7 +1115,7 @@ const EmployeeProfileView = () => {
                     <div className="mt-5 pt-4 border-t border-[var(--border-light)] space-y-3">
                       <div className="flex items-center justify-between py-1.5 border-b border-[var(--border-light)] last:border-none">
                         <span className="text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider">Territory Team</span>
-                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                        <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 border border-indigo-500/20">
                           {territoryTeam}
                         </span>
                       </div>
@@ -1126,8 +1126,8 @@ const EmployeeProfileView = () => {
                         <div className="flex flex-col items-end gap-0.5">
                           <div className="flex items-center gap-2">
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${totalCensusAch >= 100
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
                               }`}>
                               {totalCensusAch.toFixed(1)}%
                             </span>
@@ -1145,8 +1145,8 @@ const EmployeeProfileView = () => {
                         <div className="flex flex-col items-end gap-0.5">
                           <div className="flex items-center gap-2">
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${totalRevenueAch >= 100
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
                               }`}>
                               {totalRevenueAch.toFixed(1)}%
                             </span>
@@ -1188,7 +1188,7 @@ const EmployeeProfileView = () => {
                   {(role === 'Admin' || role === 'General Manager' || role === 'Manager') && (
                     <button
                       onClick={() => setShowModal(true)}
-                      className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline transition-colors cursor-pointer"
+                      className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline transition-colors cursor-pointer"
                     >
                       <Plus size={13} /> Add
                     </button>

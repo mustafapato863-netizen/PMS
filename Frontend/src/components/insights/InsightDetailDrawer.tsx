@@ -109,7 +109,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
           )}
 
           {insight.detail.warnings.length > 0 && (
-            <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200">
+            <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800">
               <div className="flex items-center gap-2 font-extrabold"><AlertTriangle size={17} /> Data-quality warnings</div>
               <ul className="mt-2 space-y-1 pl-5 list-disc">{insight.detail.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
             </section>
@@ -133,7 +133,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
                 <button type="button" onClick={() => { sessionStorage.setItem('pms_planning_draft', JSON.stringify(insight.planning_context)); setDraftPrepared(true); }} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white hover:bg-indigo-700"><CheckCircle2 size={16} /> Confirm and prepare draft</button>
               ) : (
                 <div role="status" className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
-                  <p className="flex items-center gap-2 text-sm font-bold text-emerald-700 dark:text-emerald-300"><CheckCircle2 size={17} /> Draft context prepared with KPI evidence and recommended action.</p>
+                  <p className="flex items-center gap-2 text-sm font-bold text-emerald-700"><CheckCircle2 size={17} /> Draft context prepared with KPI evidence and recommended action.</p>
                   <button type="button" onClick={() => { onClose(); navigate('/planning'); }} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white hover:bg-indigo-700">Open Planning to assign owner and due date <ArrowRight size={16} /></button>
                 </div>
               )}

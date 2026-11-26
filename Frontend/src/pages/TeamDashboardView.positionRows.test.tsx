@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ThemeProvider } from '../context/ThemeContext';
 import type { TeamAgentRow } from '../hooks/usePerformanceData';
 import type { AgentRecord } from '../types';
 import TeamDashboardView from './TeamDashboardView';
@@ -157,13 +156,13 @@ function agentRow(options: {
 
 function renderTeam(path: string) {
   return render(
-    <ThemeProvider>
+    <>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/team/:teamId" element={<TeamDashboardView />} />
         </Routes>
       </MemoryRouter>
-    </ThemeProvider>,
+    </>,
   );
 }
 

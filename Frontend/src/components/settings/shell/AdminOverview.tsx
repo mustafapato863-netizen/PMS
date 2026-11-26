@@ -154,7 +154,7 @@ function AccessSummary({ users }: { users: UserSummary }) {
         {users.disabled} disabled · {users.mustChangePassword} must change password
       </p>
       {users.needsReassignment > 0 && (
-        <p className="text-[13px] font-semibold leading-[1.5] text-amber-800 dark:text-amber-300">
+        <p className="text-[13px] font-semibold leading-[1.5] text-amber-800">
           {users.needsReassignment} need a role reassignment
         </p>
       )}
@@ -546,8 +546,8 @@ export function AdminOverview() {
                     checking
                       ? 'bg-slate-500/10 text-[var(--text-secondary)]'
                       : attention.length === 0 && unavailable.length === 0
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        ? 'bg-emerald-500/10 text-emerald-600'
+                        : 'bg-amber-500/10 text-amber-700'
                   }`}
                 >
                   <Sparkles size={11} aria-hidden="true" />
@@ -743,8 +743,8 @@ export function AdminOverview() {
                     aria-hidden="true"
                     className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-bold uppercase ${
                       item.severity === 'critical'
-                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        ? 'bg-rose-500/10 text-rose-600'
+                        : 'bg-amber-500/10 text-amber-700'
                     }`}
                   >
                     {item.category}
@@ -807,8 +807,8 @@ export function AdminOverview() {
                       check.loading
                         ? 'bg-slate-500/10 text-[var(--text-muted)]'
                         : check.ok
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                          ? 'bg-emerald-500/10 text-emerald-600'
+                          : 'bg-amber-500/10 text-amber-700'
                     }`}
                   >
                     {check.loading ? 'Pending' : check.ok ? 'Verified' : 'Review'}
@@ -882,12 +882,12 @@ export function AdminOverview() {
                       <span
                         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                           event.badgeTone === 'emerald'
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            ? 'bg-emerald-500/10 text-emerald-600'
                             : event.badgeTone === 'rose'
-                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                              ? 'bg-rose-500/10 text-rose-600'
                               : event.badgeTone === 'amber'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                ? 'bg-amber-500/10 text-amber-700'
+                                : 'bg-blue-500/10 text-blue-600'
                         }`}
                       >
                         {event.badge}

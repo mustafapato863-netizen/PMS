@@ -3,15 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/auth';
-import { useTheme } from '../context/ThemeContext';
 import ThinkingDots from '../components/common/ThinkingDots';
 import SghAnimatedLogo from '../components/common/SghAnimatedLogo';
-import ThemeToggle from '../components/common/ThemeToggle';
 
 const LoginView: React.FC = () => {
   const { login } = useAuth();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
   const navigate = useNavigate();
 
   const [username, setUsername] = useState('');
@@ -65,16 +61,11 @@ const LoginView: React.FC = () => {
   return (
     <main className="login-shell">
       {/* 1. Animated Ambient Background Canvas */}
-      <ThinkingDots isDark={isDark} />
+      <ThinkingDots isDark={false} />
 
       {/* 2. Ambient Color Atmosphere Orbs */}
       <div className="login-orb login-orb--cyan" aria-hidden="true" />
       <div className="login-orb login-orb--emerald" aria-hidden="true" />
-
-      {/* 3. Top Floating Theme Switcher */}
-      <div className="absolute top-5 right-5 z-20">
-        <ThemeToggle variant="icon" />
-      </div>
 
       {/* 4. Login Glass Card with Staggered Entrance and Dynamic Error Shake */}
       <motion.div

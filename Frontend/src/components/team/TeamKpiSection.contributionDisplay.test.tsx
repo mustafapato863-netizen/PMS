@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { ThemeProvider } from '../../context/ThemeContext';
 import { calculateAggregatedTeamPerformance } from '../../features/team/teamKpiAggregator';
 import { mapScopedPerformanceRecord } from '../../hooks/usePerformanceData';
 import { validateTeamConfig } from '../../schemas/teamConfig.schema';
@@ -88,7 +87,7 @@ function renderTeam(agents: AgentRecord[]) {
   expect(rollup).not.toBeNull();
   const dynamicKpis = [...rollup!.kpis.values()];
   render(
-    <ThemeProvider>
+    <>
       <TeamKpiSection
         totalAgents={agents.length}
         avgScore={rollup!.score}
@@ -119,7 +118,7 @@ function renderTeam(agents: AgentRecord[]) {
         avgAHTSec={0}
         teamWeights={{ Attend: 0.7 }}
       />
-    </ThemeProvider>,
+    </>,
   );
   return { rollup: rollup!, dynamicKpis };
 }

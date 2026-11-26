@@ -214,9 +214,9 @@ export default function ReportConfigModal({
             <div className="rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-extrabold text-blue-800 dark:text-[var(--sgh-cyan-light,#38BDF8)]">Output format</p>
-                <p className="text-xs text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">PowerPoint is selected by default.</p>
-                <p className="mt-0.5 text-xs text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">Preview is required before export.</p>
+                  <p className="text-xs font-extrabold text-blue-800(--sgh-cyan-light,#38BDF8)]">Output format</p>
+                <p className="text-xs text-blue-700(--sgh-cyan-primary,#00A3E0)]">PowerPoint is selected by default.</p>
+                <p className="mt-0.5 text-xs text-blue-700(--sgh-cyan-primary,#00A3E0)]">Preview is required before export.</p>
                 </div>
                 <Presentation size={20} className="text-[var(--sgh-cyan-primary,#00A3E0)]" />
               </div>
@@ -231,7 +231,7 @@ export default function ReportConfigModal({
                       onClick={() => update('output_format', format.value)}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${
                         selected
-                          ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]'
+                          ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)](--sgh-cyan-light,#38BDF8)]'
                           : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/40'
                       }`}
                     >
@@ -312,7 +312,7 @@ export default function ReportConfigModal({
                     </div>
                   ))}
                 </div>
-                {previewMutation.data.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-500/10 p-3 text-xs font-semibold text-amber-700 dark:text-amber-300">{warning}</p>)}
+                {previewMutation.data.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-500/10 p-3 text-xs font-semibold text-amber-700">{warning}</p>)}
                 {previewMutation.data.table_preview.length > 0 && (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border-light)]">
                     <table className="min-w-full text-left text-xs">
