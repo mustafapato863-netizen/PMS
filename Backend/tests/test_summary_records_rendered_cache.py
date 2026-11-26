@@ -17,6 +17,7 @@ from config.database import Base, get_db
 from models.models import Employee, PerformanceRecord, Team
 from services import response_cache
 from services.cache_invalidation_service import CacheInvalidationService
+from services.cache_service import in_memory_cache
 from services.response_cache import (
     encoded_body_response,
     pack_gzip_body,
@@ -94,7 +95,9 @@ def client(monkeypatch):
             record_payload={"raw_data": {"x": 0.00009 * (i + 1)}},
         ))
     db.commit()
-    CacheInvalidationService.bump_data_version()  # no entry from another test can match this key
+    CacheInvalidationService.bump_data_version()
+    in_memory_cache.cache.clear()  # no entry from another test can match this key
+    in_memory_cache.current_bytes = 0
     scope = {"role": "Admin", "user_id": "u1", "has_unrestricted_team_access": True, "is_self_only": False,
              "accessible_teams": [], "accessible_team_levels": []}
     monkeypatch.setattr(performance, "require_authenticated_scope", lambda *_a, **_k: scope)
