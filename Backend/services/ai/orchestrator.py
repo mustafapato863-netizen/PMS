@@ -891,6 +891,20 @@ class PmsAiOrchestrator:
             or (p.employee_name and p.employee_name.casefold() in prompt_lower)
         )
         team_level_compound = asks_team_trend_and_rank and not has_explicit_employee_in_prompt
+        _wordnum = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+        _count_m = re.search(
+            r"\b(?:(?:lowest|bottom|top|best|highest|worst|weakest)(?:\s+scoring)?\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
+            r"|(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:lowest|bottom|top|best|highest|worst|weakest))",
+            prompt_lower,
+        )
+        _raw_count = (_count_m.group(1) or _count_m.group(2)) if _count_m else None
+        requested_rank_count = None
+        if _raw_count:
+            requested_rank_count = _wordnum.get(_raw_count) or int(_raw_count)
+            requested_rank_count = max(1, min(requested_rank_count, 20))
+        # A single "lowest person" ask also fetches the next row, so the answer can state it is the lowest
+        # of a list instead of claiming only one employee exists.
+        single_rank_limit = 2 if (p.ranking_direction == "worst" and requested_rank_count is None) else 1
         op_kind_override = routed.confirmed_context.last_operation_kind
         branches_list = list(p.branches)
         if not branches_list:
@@ -933,7 +947,7 @@ class PmsAiOrchestrator:
                     metric_id=p.metric,
                     dimension="employee",
                     direction=p.ranking_direction,
-                    limit=1 if (team_level_compound or p.single_person) else 3,
+                    limit=(single_rank_limit if (team_level_compound or p.single_person) else (requested_rank_count or 3)),
                 )
             )
         else:
@@ -982,7 +996,7 @@ class PmsAiOrchestrator:
                     kind=effective_kind,  # type: ignore[arg-type]
                     metric_id=p.metric,
                     direction=p.ranking_direction if effective_kind == "ranking" else None,
-                    limit=1 if p.single_person else 3,
+                    limit=(single_rank_limit if p.single_person else (requested_rank_count or 3)),
                 )
             )
         res_src = routed.route_used if routed.route_used in {"nvidia_router", "local_model_router", "local_classifier", "clarification_choice"} else "local_rules"
