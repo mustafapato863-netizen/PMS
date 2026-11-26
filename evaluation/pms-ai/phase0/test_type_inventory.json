@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 78,
-  "case_count": 938,
+  "file_count": 79,
+  "case_count": 941,
   "files_by_label": {
-    "synthetic": 23,
+    "synthetic": 24,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -66,6 +66,16 @@
         "synthetic"
       ],
       "cases": 2,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_capability_prefix.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
       "evidence_status": "not applicable",
       "note": ""
     },

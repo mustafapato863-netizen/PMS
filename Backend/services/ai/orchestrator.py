@@ -703,6 +703,29 @@ def _extract_evidence_teams_and_functions(
     return teams, functions
 
 
+CAPABILITY_SUMMARY = (
+    "I can answer questions about verified PMS performance: scores, KPI targets, trends, "
+    "comparisons, rankings and likely causes."
+)
+_LEADING_CAPABILITY_RE = re.compile(
+    r"^\s*(?:what\s+(?:can|do)\s+you\s+(?:do|help\s+(?:me\s+)?with)|how\s+can\s+you\s+help(?:\s+me)?|what\s+are\s+you\s+able\s+to\s+do)"
+    r"\s*[?.!]*\s*(?:,|;)?\s*(?:(?:also|and|then|plus)\b[,:]?\s*)?(?P<rest>\S.{7,})$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def split_leading_capability_question(prompt: str | None) -> str | None:
+    """Return the remaining question when a prompt opens with 'what can you do?' and asks more."""
+    match = _LEADING_CAPABILITY_RE.match(prompt or "")
+    if not match:
+        return None
+    rest = match.group("rest").strip()
+    # Only split when the remainder is itself a real question (has a question word or a data ask).
+    if not re.search(r"\b(?:who|what|which|how|why|show|give|compare|list|top|bottom|score|lowest|highest|best|worst)\b", rest, re.IGNORECASE):
+        return None
+    return rest
+
+
 class PmsAiOrchestrator:
     """Coordinates zero-token 'AI is watching' alerts and multi-tool analytical chat turns."""
 
@@ -4328,6 +4351,17 @@ class PmsAiOrchestrator:
         return resp_payload
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
+        help_rest = split_leading_capability_question(req.prompt)
+        if help_rest:
+            # "What can you do? Also <real question>": answer the real question through the normal
+            # pipeline, then say what the assistant can do, so neither half is dropped.
+            response = self._run_chat_turn_single(req.model_copy(update={"prompt": help_rest}))
+            if response.outcome == "answer":
+                response.headline = f"{CAPABILITY_SUMMARY} {response.headline}".strip()
+            return response
+        return self._run_chat_turn_single(req)
+
+    def _run_chat_turn_single(self, req: AiChatRequest) -> AiChatResponsePayload:
         claim_state: dict[str, Any] = {}
         try:
             return self._execute_chat_turn(req, _claim_state=claim_state)
