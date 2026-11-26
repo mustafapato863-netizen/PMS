@@ -3302,6 +3302,7 @@ class PmsAiOrchestrator:
                 "When score_basis is average employee score, use those words for the measure. "
                 "If ranking_entity is 'role', label the ranked items as roles (not teams) and mention evaluated_count when 1 employee is measured. "
                 "Disclose any tied scores clearly. Do NOT invent numbers or names. "
+                "The rows are only the requested slice of a longer list: never say how many employees were ranked or that only N exist or were found. "
                 "Read `rank_order` literally: when rank 1 is the LOWEST score, the first row is the weakest and needs the most attention; "
                 "never call a higher-scoring entity the one to prioritize or say the lowest-scoring one 'ranked 1st' without saying it is the lowest. "
                 "If `period_note` is present, mention it in one short bullet. "
@@ -3356,6 +3357,7 @@ class PmsAiOrchestrator:
                     "You are the PMS AI Assistant. State the verified employee rankings directly and concisely in 1-2 sentences. "
                     "Use ONLY the exact employee names, metric name, period, values, and unit in `verified_facts`. "
                     "Disclose any ties clearly. Do NOT invent numbers. "
+                    "The rows are only the requested slice: never say how many employees were ranked or that only N exist. "
                     'Return JSON with {"headline": "...", "narrative_bullets": [...]}'
                 )
         elif is_history and len(ev_items) >= 2:

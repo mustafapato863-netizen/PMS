@@ -8,7 +8,7 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 81. Test functions or `it` blocks: 947.
+Test files: 81. Test functions or `it` blocks: 948.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
@@ -72,7 +72,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_pilot_readiness_script.py` | test | `mocked` | 13 | partial |
 | `Backend/tests/test_ai_product_guide.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_provider_configs.py` | test | `mocked` | 20 | partial |
-| `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 71 | partial |
+| `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 72 | partial |
 | `Backend/tests/test_ai_quality_judge.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_quality_lessons.py` | test | `synthetic` | 5 | not applicable |
 | `Backend/tests/test_ai_quality_scoring.py` | test | `synthetic` | 7 | not applicable |

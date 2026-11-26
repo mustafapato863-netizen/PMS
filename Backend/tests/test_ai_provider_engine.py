@@ -163,7 +163,11 @@ def test_model_led_output_limit_and_reasoning_wire_settings(
             assert "max_tokens" not in body
         else:
             assert body["max_tokens"] == 300
-        assert body.get("chat_template_kwargs") == (reasoning if model_led else None)
+        expected = reasoning
+        if reasoning == {"enable_thinking": True} and purpose == "model_led_synthesis":
+            # Synthesis only rewords verified facts, so it skips the slow reasoning tokens by default.
+            expected = {"enable_thinking": False}
+        assert body.get("chat_template_kwargs") == (expected if model_led else None)
     else:
         assert body["response_format"] == {"type": "json_object"}
         assert body["stream"] is False
@@ -1962,3 +1966,21 @@ def test_nvidia_primary_failure_modes_and_fallback_attribution():
     assert r_empty.is_success is True
     assert r_empty.outcome == "fallback_success"
     assert [a.status for a in r_empty.attempts] == ["empty_response", "success"]
+
+
+def test_cloudflare_thinking_env_override(sample_config, monkeypatch):
+    request = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="x")], purpose="model_led_synthesis", response_format="json",
+        max_tokens=None,
+    )
+    for mode, purpose, want in (("on", "model_led_synthesis", True), ("off", "model_led_router", False), ("auto", "model_led_router", True)):
+        monkeypatch.setenv("PMS_AI_CF_THINKING", mode)
+        request.purpose = purpose
+        bodies = []
+
+        def transport(http_request, *, timeout):
+            bodies.append(json.loads(http_request.data))
+            return io.BytesIO(json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}).encode())
+
+        CloudflareAIProviderAdapter(transport).execute(request, sample_config, timeout=5, model="@cf/zai-org/glm-4.7-flash")
+        assert bodies[0]["chat_template_kwargs"] == {"enable_thinking": want}
