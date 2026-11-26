@@ -80,6 +80,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_causal_period_guard.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_chat_scenarios_and_variation.py",
       "kind": "test",
       "labels": [
