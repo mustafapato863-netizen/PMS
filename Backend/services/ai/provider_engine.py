@@ -294,6 +294,23 @@ class ProviderAttempt:
 MODEL_LED_REQUEST_PURPOSES = frozenset({"model_led_router", "model_led_synthesis"})
 
 
+def _cloudflare_thinking_enabled(config: Any, request: Any) -> bool:
+    """Whether the Cloudflare model should spend reasoning tokens on this request.
+
+    PMS_AI_CF_THINKING=on|off|auto. "auto" (default) turns thinking off for synthesis, which only rewords
+    already verified facts and was spending ~4000 reasoning tokens (30+ s) per turn, and keeps it for routing.
+    Task routing, when enabled, keeps its own rule that only "routine" requests skip thinking.
+    """
+    mode = os.getenv("PMS_AI_CF_THINKING", "auto").strip().casefold()
+    if mode in {"on", "true", "1"}:
+        return True
+    if mode in {"off", "false", "0"}:
+        return False
+    if getattr(request, "purpose", None) == "model_led_synthesis":
+        return False
+    return not (getattr(config, "task_routing_enabled", False) and request.task_role == "routine")
+
+
 @dataclass
 class ProviderRequest:
     messages: list[ProviderMessage] = field(default_factory=list)
@@ -1032,7 +1049,7 @@ class CloudflareAIProviderAdapter:
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens or 2048
         if request.purpose in MODEL_LED_REQUEST_PURPOSES and resolved_model == "@cf/zai-org/glm-4.7-flash":
-            payload["chat_template_kwargs"] = {"enable_thinking": not (config.task_routing_enabled and request.task_role == "routine")}
+            payload["chat_template_kwargs"] = {"enable_thinking": _cloudflare_thinking_enabled(config, request)}
         if request.response_format == "json":
             payload["response_format"] = {"type": "json_object"}
 
