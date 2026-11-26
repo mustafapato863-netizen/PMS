@@ -20,7 +20,7 @@ from services.ai.quality_scoring import quality_loop_enabled
 
 MAX_LESSONS_IN_PROMPT = 5
 CACHE_SECONDS = 60.0
-_cache: dict[str, Any] = {"at": 0.0, "lessons": []}
+_cache: dict[str, Any] = {"at": None, "lessons": []}
 _lock = threading.Lock()
 _PCT_RE = re.compile(r"\d{1,3}(?:\.\d+)?\s*%")
 
@@ -39,7 +39,7 @@ def approved_lessons(db: Session, limit: int = MAX_LESSONS_IN_PROMPT) -> list[st
     if not quality_loop_enabled():
         return []
     with _lock:
-        if time.monotonic() - _cache["at"] < CACHE_SECONDS:
+        if _cache["at"] is not None and time.monotonic() - _cache["at"] < CACHE_SECONDS:
             return list(_cache["lessons"])[:limit]
     out: list[str] = []
     try:
@@ -83,7 +83,7 @@ def set_lesson_status(db: Session, trace_id: str, status: str) -> bool:
     db.add(row)
     db.commit()
     with _lock:
-        _cache["at"] = 0.0
+        _cache["at"] = None
     return True
 
 

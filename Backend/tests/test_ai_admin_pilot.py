@@ -161,6 +161,8 @@ def _body_for(path: str) -> dict | None:
         return {"preferences": {"detail_level": "brief"}}
     if path.endswith("/analyze"):
         return {}
+    if "/quality/lessons/" in path:
+        return {"status": "approved"}
     return None
 
 
@@ -184,6 +186,10 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "NemotronFeedbackAnalyzerService", Boom)
     monkeypatch.setattr(ai_workspace, "get_analyzer_status", boom)
     monkeypatch.setattr("services.ai.quality_summary.sampled_quality", boom)
+    monkeypatch.setattr("services.ai.quality_admin.quality_summary", boom)
+    monkeypatch.setattr("services.ai.quality_admin.judged_failures", boom)
+    monkeypatch.setattr("services.ai.quality_lessons.regression_cases", boom)
+    monkeypatch.setattr("services.ai.quality_lessons.set_lesson_status", boom)
     monkeypatch.setattr(ai_workspace, "ApprovedPatternMatcher", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
@@ -224,6 +230,9 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "GET /api/ai/memory/",
         "GET /api/ai/memory/me",
         "GET /api/ai/memory/{user_id}",
+        "GET /api/ai/quality/failures",
+        "GET /api/ai/quality/regressions",
+        "GET /api/ai/quality/summary",
         "GET /api/ai/traces/export",
         "GET /api/ai/watching",
         "POST /api/ai/agent-360/what-if",
@@ -233,6 +242,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "POST /api/ai/feedback",
         "POST /api/ai/feedback/clusters/analyze",
         "POST /api/ai/proposals/confirm",
+        "POST /api/ai/quality/lessons/{trace_id}",
         "POST /api/ai/traces/purge",
         "POST /api/ai/traces/{trace_id}/analyze",
         "POST /api/ai/traces/{trace_id}/approve-pattern",
@@ -248,6 +258,10 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "/ai/traces/{trace_id}/review",
         "/ai/feedback/clusters",
         "/ai/feedback/quality",
+        "/ai/quality/summary",
+        "/ai/quality/failures",
+        "/ai/quality/regressions",
+        "/ai/quality/lessons/{trace_id}",
         "/ai/feedback/patterns",
         "/ai/feedback/traces/{trace_id}/regression-template",
         "/ai/traces/{trace_id}/approve-pattern",

@@ -5,6 +5,8 @@ import threading
 import time
 from typing import Literal
 
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -740,6 +742,46 @@ def get_feedback_quality(db: Session = Depends(get_db)):
     payload = sampled_quality(db)
     release_read_transaction(db)
     return payload
+
+
+@admin_governance_router.get("/quality/summary")
+def get_answer_quality_summary(db: Session = Depends(get_db)):
+    from services.ai.quality_admin import quality_summary
+
+    payload = quality_summary(db)
+    release_read_transaction(db)
+    return payload
+
+
+@admin_governance_router.get("/quality/failures")
+def get_answer_quality_failures(db: Session = Depends(get_db), limit: int = Query(default=30, ge=1, le=100)):
+    from services.ai.quality_admin import judged_failures
+
+    payload = {"failures": judged_failures(db, limit=limit)}
+    release_read_transaction(db)
+    return payload
+
+
+@admin_governance_router.get("/quality/regressions")
+def get_answer_quality_regressions(db: Session = Depends(get_db)):
+    from services.ai.quality_lessons import regression_cases
+
+    payload = {"cases": regression_cases(db)}
+    release_read_transaction(db)
+    return payload
+
+
+class _LessonStatusBody(BaseModel):
+    status: Literal["approved", "rejected", "pending"]
+
+
+@admin_governance_router.post("/quality/lessons/{trace_id}")
+def set_answer_quality_lesson(trace_id: str, body: _LessonStatusBody, db: Session = Depends(get_db)):
+    from services.ai.quality_lessons import set_lesson_status
+
+    if not set_lesson_status(db, trace_id, body.status):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+    return {"trace_id": trace_id, "status": body.status}
 
 
 @admin_governance_router.get("/feedback/clusters", response_model=AiFeedbackClustersResponse)
