@@ -511,6 +511,16 @@ def _resolved_capability_mode(
     return capability_mode
 
 
+def _quality_lessons_block(db: Any) -> str:
+    """Admin-approved quality lessons for the synthesis prompt (empty unless the loop flag is on)."""
+    try:
+        from services.ai.quality_lessons import lessons_prompt_block
+
+        return lessons_prompt_block(db)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _ranking_candidates_from_digests(
     digests: list[dict[str, Any]] | None,
 ) -> list[dict[str, str]]:
@@ -3494,6 +3504,7 @@ class PmsAiOrchestrator:
                 instruction = (
                     f"{self.scope.get('passport_xml', '')}\n"
                     f"{self.scope.get('user_memory_text', '')}\n"
+                    f"{_quality_lessons_block(self.db)}"
                     f"[User Context]\n{self.user_rules_spec.get('summary_text', '')}\n\n"
                     "You are a Senior Performance Management Analyst for a healthcare PMS dashboard. "
                     "Answer the user's question directly and naturally in 1-2 crisp sentences. "

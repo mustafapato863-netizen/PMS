@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 74,
-  "case_count": 927,
+  "file_count": 75,
+  "case_count": 931,
   "files_by_label": {
-    "synthetic": 19,
+    "synthetic": 20,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -499,6 +499,16 @@
       ],
       "cases": 7,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_quality_lessons.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 4,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {

@@ -4663,6 +4663,12 @@ class HybridQueryRouter:
                 from services.ai.shared_feedback_learning import shared_planner_guidance
 
                 shared_guidance_block = shared_planner_guidance(self.db)
+                try:
+                    from services.ai.quality_lessons import lessons_prompt_block
+
+                    shared_guidance_block += lessons_prompt_block(self.db)
+                except Exception:
+                    pass
 
             # Call provider with structured tool schemas
             from services.ai.provider_engine import ProviderMessage, ProviderRequest, get_unified_provider_engine
