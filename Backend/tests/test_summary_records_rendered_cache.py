@@ -1,5 +1,7 @@
 """summary-records caches the finished gzip body: same bytes, same headers, one computation per key."""
 import gzip
+import json
+import re
 import threading
 import time
 import uuid
@@ -123,4 +125,5 @@ def test_miss_and_hit_return_identical_bodies_and_headers(client):
         assert response.headers["cache-control"] == "private, max-age=60"
     body = miss.json()
     assert body["success"] is True and len(body["data"]) == 2
-    assert b"e-0" not in miss.content  # small numbers print as the pydantic writer always did (0.0001, not 1e-04)
+    raw = re.findall(rb'"raw_data":\{[^}]*\}', miss.content)  # small numbers print as the pydantic writer always did (0.00018, not 1.8e-04)
+    assert raw and all(b"e-" not in part for part in raw)
