@@ -63,3 +63,17 @@ def test_unknown_trace_or_bad_status(db):
     assert ql.set_lesson_status(db, "not-a-uuid", "approved") is False
     with pytest.raises(ValueError):
         ql.set_lesson_status(db, str(uuid.uuid4()), "weird")
+
+
+def test_admin_read_models(db):
+    from services.ai.quality_admin import judged_failures, quality_summary
+
+    t = _trace(db, FAIL)
+    t.structured_response = {**t.structured_response, "quality": {"score": 40, "low": True, "flags": ["ranking_lead_mismatch"]}}
+    db.add(t)
+    db.commit()
+    s = quality_summary(db)
+    assert s["enabled"] and s["scored_answers"] == 1 and s["low_score_answers"] == 1 and s["judge_failures"] == 1
+    assert s["top_flags"][0]["flag"] == "ranking_lead_mismatch"
+    f = judged_failures(db)
+    assert f[0]["correction"]["headline"].startswith("Outbound") and f[0]["lesson"]["status"] == "pending"
