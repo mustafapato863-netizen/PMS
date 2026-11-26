@@ -66,8 +66,9 @@ def score(case, resp) -> list[str]:
     return failures
 
 
-def run(selected: set[str] | None = None) -> list[dict]:
-    cases = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
+def run(selected: set[str] | None = None, cases: list[dict] | None = None) -> list[dict]:
+    if cases is None:
+        cases = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
     records = build_records()
     DatabaseRecordSource.get_all = lambda *a, **kw: list(records)
     DashboardRecordService.list_records = lambda *a, **kw: list(records)

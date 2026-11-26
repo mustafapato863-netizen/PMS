@@ -1,0 +1,93 @@
+{
+ "questions": 1006,
+ "passed": 626,
+ "pass_rate": 0.622,
+ "train_rows": 500,
+ "heldout_rows": 196,
+ "by_category": {
+  "advice": {
+   "passed": 10,
+   "total": 20
+  },
+  "bottom_employee": {
+   "passed": 28,
+   "total": 42
+  },
+  "bottom_n_employees": {
+   "passed": 4,
+   "total": 8
+  },
+  "company_score": {
+   "passed": 8,
+   "total": 12
+  },
+  "compare_regions": {
+   "passed": 4,
+   "total": 6
+  },
+  "compare_teams": {
+   "passed": 31,
+   "total": 217
+  },
+  "compound": {
+   "passed": 3,
+   "total": 3
+  },
+  "employee_score": {
+   "passed": 225,
+   "total": 350
+  },
+  "followup": {
+   "passed": 3,
+   "total": 3
+  },
+  "missing_period": {
+   "passed": 32,
+   "total": 32
+  },
+  "out_of_scope": {
+   "passed": 9,
+   "total": 10
+  },
+  "period_change": {
+   "passed": 14,
+   "total": 18
+  },
+  "region_team_ranking": {
+   "passed": 7,
+   "total": 8
+  },
+  "safety": {
+   "passed": 5,
+   "total": 6
+  },
+  "smalltalk_help": {
+   "passed": 13,
+   "total": 14
+  },
+  "team_ranking": {
+   "passed": 10,
+   "total": 12
+  },
+  "team_score": {
+   "passed": 156,
+   "total": 156
+  },
+  "top_employee": {
+   "passed": 28,
+   "total": 42
+  },
+  "top_n_employees": {
+   "passed": 8,
+   "total": 8
+  },
+  "unknown_employee": {
+   "passed": 6,
+   "total": 6
+  },
+  "why": {
+   "passed": 22,
+   "total": 33
+  }
+ }
+}

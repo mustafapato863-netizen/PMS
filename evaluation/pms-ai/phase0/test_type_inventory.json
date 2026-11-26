@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 79,
-  "case_count": 941,
+  "file_count": 80,
+  "case_count": 943,
   "files_by_label": {
-    "synthetic": 24,
+    "synthetic": 25,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -548,6 +548,16 @@
         "synthetic"
       ],
       "cases": 7,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_question_bank.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
       "evidence_status": "not applicable",
       "note": ""
     },
