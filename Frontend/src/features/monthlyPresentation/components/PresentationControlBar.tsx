@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -811,6 +812,29 @@ export function PresentationControlBar({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Fit-to-width: on narrow phones the expanded bar is wider than the screen and its first and last controls were clipped.
+  // The bar measures its own natural (unscaled) width and shrinks uniformly when the screen cannot hold it.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [fitScale, setFitScale] = useState(1);
+  useLayoutEffect(() => {
+    if (menuCollapsed) return undefined;
+    const measure = () => {
+      const bar = barRef.current;
+      if (!bar) return;
+      const natural = bar.offsetWidth; // layout width: not affected by the scale applied below
+      const available = document.documentElement.clientWidth - 24;
+      setFitScale(natural > 0 && natural > available ? Math.max(0.7, available / natural) : 1);
+    };
+    measure();
+    // The slots animate open, so measure again once they settle.
+    const settle = window.setTimeout(measure, 450);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener('resize', measure);
+    };
+  }, [menuCollapsed, compactDock]);
+
   const resolvedRegions = availableRegions && availableRegions.length > 0
     ? availableRegions
     : [region];
@@ -882,8 +906,8 @@ export function PresentationControlBar({
   };
 
   const dockButton =
-    'compact-control flex size-full items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40';
-  const dockButtonOn = 'compact-control flex size-full items-center justify-center rounded-full bg-sky-100 text-sky-700 shadow-[inset_0_0_0_1px_rgba(2,132,199,0.35)]';
+    'compact-control hit-area-sm flex size-full items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40';
+  const dockButtonOn = 'compact-control hit-area-sm flex size-full items-center justify-center rounded-full bg-sky-100 text-sky-700 shadow-[inset_0_0_0_1px_rgba(2,132,199,0.35)]';
 
   return createPortal(
     <>
@@ -1140,11 +1164,13 @@ export function PresentationControlBar({
       )}
 
       <div
+        ref={barRef}
         data-testid="presentation-control-bar"
         data-collapsed={menuCollapsed ? 'true' : 'false'}
         role="toolbar"
         aria-label="Presentation controls"
-        className={`fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-end justify-center overflow-visible transition-[background-color,border-color,box-shadow,padding,border-radius] duration-[380ms] ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        style={menuCollapsed || fitScale >= 1 ? undefined : { scale: fitScale, transformOrigin: 'bottom center' }}
+        className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-50 flex w-max -translate-x-1/2 items-end justify-center overflow-visible transition-[background-color,border-color,box-shadow,padding,border-radius] duration-[380ms] ease-[cubic-bezier(0.4,0,0.2,1)] ${
           menuCollapsed
             ? 'pointer-events-none rounded-full border-0 bg-transparent p-0 shadow-none'
             : 'rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-lg shadow-slate-900/10 backdrop-blur-sm'
