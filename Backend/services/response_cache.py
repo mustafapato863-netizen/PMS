@@ -114,3 +114,91 @@ def apply_private_cache_headers(
         return
     response.headers["Cache-Control"] = f"private, max-age={max_age}"
     response.headers["X-Cache"] = "HIT" if hit else "MISS"
+
+
+# ---------------------------------------------------------------------------
+# Pre-rendered (gzip) response bodies and single-flight recomputation
+# ---------------------------------------------------------------------------
+# Large read responses (summary-records is ~7 MB of JSON) used to be re-encoded
+# and re-gzipped on every cache hit. With one worker process that CPU work is
+# serialized behind the GIL, so parallel dashboard calls queued behind each
+# other. The cached entry now carries the finished gzip body.
+import base64
+import gzip
+import threading
+from contextlib import contextmanager
+from collections.abc import Iterator
+
+# Level 6 is the zlib default; level 9 (the middleware default) costs about
+# twice the CPU for a few percent smaller output.
+_GZIP_LEVEL = 6
+SINGLE_FLIGHT_WAIT_SECONDS = 30.0
+
+_flights_guard = threading.Lock()
+_flights: dict[str, tuple[threading.Lock, int]] = {}
+
+
+def render_json_body(payload: Any) -> bytes:
+    """The bytes FastAPI sends for a ``response_model`` response carrying ``payload``.
+
+    FastAPI serializes a validated model with pydantic's JSON writer, which is
+    also why numbers print exactly as before (0.0000995, not 9.95e-05).
+    """
+    return payload.model_dump_json(by_alias=True).encode("utf-8")
+
+
+def pack_gzip_body(body: bytes) -> str:
+    """Cache-safe (JSON/Redis text) form of a gzip body."""
+    return base64.b64encode(gzip.compress(body, _GZIP_LEVEL, mtime=0)).decode("ascii")
+
+
+def unpack_gzip_body(packed: str) -> bytes:
+    return base64.b64decode(packed)
+
+
+def accepts_gzip(accept_encoding: str | None) -> bool:
+    """Whether the client accepts gzip (same rule the gzip middleware applies)."""
+    return "gzip" in (accept_encoding or "")
+
+
+def encoded_body_response(
+    packed_gzip: str,
+    *,
+    accept_encoding: str | None,
+    headers: dict[str, str] | None = None,
+) -> Response:
+    """A response from a packed gzip body, decompressing only for clients without gzip."""
+    gz = unpack_gzip_body(packed_gzip)
+    out_headers = dict(headers or {})
+    out_headers["Vary"] = "Accept-Encoding"
+    if accepts_gzip(accept_encoding):
+        out_headers["Content-Encoding"] = "gzip"
+        return Response(content=gz, media_type="application/json", headers=out_headers)
+    return Response(content=gzip.decompress(gz), media_type="application/json", headers=out_headers)
+
+
+@contextmanager
+def single_flight(key: str, *, wait_seconds: float = SINGLE_FLIGHT_WAIT_SECONDS) -> Iterator[bool]:
+    """Serialize recomputation of one cache key inside this process.
+
+    Yields True when the caller holds the key. Callers re-read the cache after
+    entering, so concurrent identical cold requests compute once and the rest
+    reuse the result. A waiter that times out yields False and computes anyway,
+    so a stuck computation can never block a request for longer than
+    ``wait_seconds``.
+    """
+    with _flights_guard:
+        lock, users = _flights.get(key) or (threading.Lock(), 0)
+        _flights[key] = (lock, users + 1)
+    held = lock.acquire(timeout=wait_seconds)
+    try:
+        yield held
+    finally:
+        if held:
+            lock.release()
+        with _flights_guard:
+            lock, users = _flights[key]
+            if users <= 1:
+                del _flights[key]
+            else:
+                _flights[key] = (lock, users - 1)
