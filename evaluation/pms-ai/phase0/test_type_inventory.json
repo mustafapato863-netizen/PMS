@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 73,
-  "case_count": 920,
+  "file_count": 74,
+  "case_count": 927,
   "files_by_label": {
     "synthetic": 19,
-    "mocked": 51,
+    "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -488,6 +488,16 @@
         "mocked"
       ],
       "cases": 71,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_quality_judge.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
       "evidence_status": "partial",
       "note": ""
     },
