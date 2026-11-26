@@ -1,8 +1,8 @@
 {
  "questions": 1006,
- "passed": 915,
- "pass_rate": 0.91,
- "train_rows": 734,
+ "passed": 947,
+ "pass_rate": 0.941,
+ "train_rows": 759,
  "heldout_rows": 196,
  "by_category": {
   "advice": {
@@ -10,11 +10,11 @@
    "total": 20
   },
   "bottom_employee": {
-   "passed": 28,
+   "passed": 42,
    "total": 42
   },
   "bottom_n_employees": {
-   "passed": 4,
+   "passed": 8,
    "total": 8
   },
   "company_score": {
@@ -74,7 +74,7 @@
    "total": 156
   },
   "top_employee": {
-   "passed": 28,
+   "passed": 42,
    "total": 42
   },
   "top_n_employees": {

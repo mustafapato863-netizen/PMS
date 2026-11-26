@@ -31,3 +31,16 @@ def test_named_employee_without_score_keyword_is_answered_and_strangers_are_not(
     known, stranger = json.loads(out.strip().splitlines()[-1])
     assert "Nadia Mansour" in known and "96.0" in known
     assert "I can only help" in stranger
+
+
+def test_best_and_lowest_person_phrasings_name_one_employee():
+    code = (
+        "import json, scripts.eval_assistant_quality as E; "
+        "qs = ['best performer in Inbound September 2026', 'lowest scoring person in Pharmacy June 2026']; "
+        "r = E.run(cases=[{'id': f't{i}', 'cat': 'x', 'prompt': q} for i, q in enumerate(qs)]); "
+        "print(json.dumps([x['answer'] for x in r]))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, check=True, capture_output=True, text=True, timeout=100).stdout
+    best, worst = json.loads(out.strip().splitlines()[-1])
+    assert "Nadia Mansour" in best
+    assert "Mariam Al-Shamsi" in worst

@@ -3265,6 +3265,7 @@ class HybridQueryRouter:
             or asks_month_extremum
             or asks_plural_ranking
             or re.search(r"\b(?:ranks?|ranked|ranking)\s*(?:#\s*1|first|lowest|highest)\b", lower)
+            or re.search(r"\b(?:best|top|highest(?:\s+scoring)?|lowest(?:\s+scoring)?|bottom|worst|weakest)\s+(?:performers?|persons?|people|employees?|agents?|staff|members?)\b", lower)
             or re.search(r"\b(?:leading|leads)\b.{0,25}\bbookings?\b", lower)
             or any(
                 phrase in lower
@@ -3412,6 +3413,7 @@ class HybridQueryRouter:
                 or possessive_person_match
                 or asks_month_extremum
                 or resolved_employee_id
+                or re.search(r"\b(?:best|top|highest(?:\s+scoring)?|lowest(?:\s+scoring)?|bottom|worst|weakest)\s+(?:performers?|persons?|people|employees?|agents?|staff|members?)\b", lower)
                 or re.search(r"\b(?:leading|leads)\b.{0,25}\bbookings?\b", lower)
                 or any(
                     phrase in lower
