@@ -314,6 +314,14 @@ _DET_FIRST_RE = re.compile(
 )
 
 
+_DET_FIRST_TEAMS_RE = re.compile(
+    r"^\W*(?:(?:what\s+(?:are|is)|which\s+(?:are|is)|show(?:\s+me)?)\s+)?(?:the\s+)?"
+    r"(?:top|best|weakest|strongest|lowest|highest|worst)\s+(?:\d+\s+|two\s+|three\s+)?(?:teams?|departments?)\s+in\s+"
+    r"(?:the\s+)?(?:egypt|uae|ksa|saudi(?:\s+arabia)?)\b(?:\s+(?:(?:in|for|during)\s+)?[a-z]+\s+\d{4})?\W*$",
+    re.I,
+)
+
+
 def _deterministic_first_question(lower: str) -> bool:
     """Short company-wide and ranking questions that the rule router answers exactly; skip the slow model planner."""
     if os.getenv("PMS_AI_DETERMINISTIC_FIRST", "on").strip().casefold() in {"off", "false", "0"}:
@@ -321,7 +329,7 @@ def _deterministic_first_question(lower: str) -> bool:
     text = (lower or "").strip()
     if len(text) > 90 or re.search(r"\b(?:why|compare|versus|vs|trend|and then|also)\b", text):
         return False
-    return bool(_DET_FIRST_RE.match(text) or re.match(r"^\W*how\s+is\s+the\s+(?:whole\s+|entire\s+)?company\s+doing\b", text))
+    return bool(_DET_FIRST_RE.match(text) or _DET_FIRST_TEAMS_RE.match(text) or re.match(r"^\W*how\s+is\s+the\s+(?:whole\s+|entire\s+)?company\s+doing\b", text))
 
 @dataclass
 class RouterValidationResult:
@@ -4834,6 +4842,13 @@ class HybridQueryRouter:
 
             engine = get_unified_provider_engine()
             planner_timeout = max(cfg.provider_timeout_seconds, 24.0)
+            try:
+                _planner_cap = float(os.getenv("PMS_AI_PLANNER_TIMEOUT_SECONDS") or 12.0)
+            except ValueError:
+                _planner_cap = 12.0
+            if _planner_cap > 0:
+                # A slow planner only delays the rule-based answer that follows it, so fail over sooner.
+                planner_timeout = min(planner_timeout, _planner_cap)
             if turn_deadline is not None:
                 planner_timeout = min(planner_timeout, turn_deadline - perf_counter())
             req = ProviderRequest(

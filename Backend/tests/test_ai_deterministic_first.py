@@ -30,3 +30,12 @@ def test_structured_routing_timeout_is_capped(monkeypatch):
     assert _routing_timeout(15, 3) == 3
     monkeypatch.setenv("PMS_AI_NVIDIA_ROUTING_TIMEOUT_SECONDS", "0")
     assert _routing_timeout(15, 40) == 15
+
+
+@pytest.mark.parametrize("q", [
+    "top teams in egypt october 2026",
+    "what is the weakest team in uae in october 2026",
+    "best 3 teams in egypt",
+])
+def test_country_team_rankings_are_deterministic_first(q):
+    assert det_first(q) is True
