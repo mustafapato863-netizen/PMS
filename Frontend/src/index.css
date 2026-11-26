@@ -2441,7 +2441,61 @@ and official SGH brand identity.
   font-size: 12px;
   font-weight: 650;
   line-height: 1.45;
-}.login-form { display: flex; flex-direction: column; gap: 14px; }.login-field-group { display: flex; flex-direction: column; gap: 6.5px; }.login-field-group > label { color: #94a8c7; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }.login-field { position: relative; }.login-field__icon { position: absolute; top: 16px; left: 14px; z-index: 1; color: #7f96bf; pointer-events: none; transition: color .2s ease; }.login-field:focus-within .login-field__icon { color: var(--sgh-cyan-primary, #00A3E0); }.login-field input {
+}
+
+/* Login is light-only (dark mode was removed in #146); restores the pre-#146 light look. */
+.login-shell .login-card {
+  background: rgba(255, 255, 255, .82);
+  border-color: rgba(0, 163, 224, .32);
+  box-shadow:
+    0 24px 70px rgba(0, 105, 180, .14),
+    0 0 0 1px rgba(0, 163, 224, .18),
+    0 0 50px rgba(0, 163, 224, .10);
+}
+
+.login-shell .login-card__content {
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, .96), rgba(248, 250, 252, .95)),
+    rgba(255, 255, 255, .96);
+  border-color: rgba(0, 163, 224, .18);
+  color: #0F172A;
+}
+
+.login-shell .login-field-group > label {
+  color: #475569;
+}
+
+.login-shell .login-field input {
+  color: #0F172A;
+  background: rgba(241, 245, 249, .75);
+  border-color: rgba(203, 213, 225, .85);
+}
+
+.login-shell .login-field input:focus {
+  background: #ffffff;
+  border-color: var(--sgh-cyan-primary, #00A3E0);
+}
+
+.login-shell .login-field__icon {
+  color: #64748B;
+}
+
+.login-shell .login-security-note {
+  color: #64748B;
+}
+
+.login-shell .login-remember,
+.login-shell .login-field__toggle {
+  color: #475569;
+}
+
+.login-shell .login-alert {
+  color: #9f1239;
+  border-color: rgba(225, 29, 72, .45);
+  background: linear-gradient(105deg, rgba(255, 228, 236, .95), rgba(255, 241, 245, .95));
+  box-shadow: none;
+}
+.login-form { display: flex; flex-direction: column; gap: 14px; }.login-field-group { display: flex; flex-direction: column; gap: 6.5px; }.login-field-group > label { color: #94a8c7; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }.login-field { position: relative; }.login-field__icon { position: absolute; top: 16px; left: 14px; z-index: 1; color: #7f96bf; pointer-events: none; transition: color .2s ease; }.login-field:focus-within .login-field__icon { color: var(--sgh-cyan-primary, #00A3E0); }.login-field input {
   display: block;
   width: 100%;
   min-height: 47px;
