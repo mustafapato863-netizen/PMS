@@ -141,6 +141,23 @@ REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
 
 
 
+def _headline_leads_with_first_ranked(headline: str, rows: list[dict]) -> bool:
+    """True unless the headline names another ranked row before the first-ranked row.
+
+    Guards against a model re-ordering a weakest-first ranking into best-first prose.
+    """
+    low = str(headline or "").casefold()
+    positions = {}
+    for row in rows or []:
+        name = str(row.get("name") or "").strip().casefold()
+        if name and name in low:
+            positions[name] = low.index(name)
+    if not positions:
+        return True
+    first = str(rows[0].get("name") or "").strip().casefold()
+    return first in positions and positions[first] == min(positions.values())
+
+
 _RELATIVE_PERIOD_RE = re.compile(
     r"\b(?:last|previous|this|current)\s+month\b|\bthis\s+(?:past\s+)?month\b|الشهر\s+(?:ده|دا|هذا|الماضي|اللي فات)",
     re.IGNORECASE,
@@ -3735,6 +3752,8 @@ class PmsAiOrchestrator:
                         qr_rows_check = ((tool_result.digest or {}).get("query_rankings") or {}).get("rows") or []
                         top_name_check = str(qr_rows_check[0].get("name") or "").casefold() if qr_rows_check else ""
                         has_val = bool(cand_h) and (not top_name_check or top_name_check in candidate_text)
+                        if has_val and not _headline_leads_with_first_ranked(cand_h, qr_rows_check):
+                            has_val = False  # model reordered the ranking: use the verified fallback text
                     else:
                         has_val = True
                     has_unit = True
@@ -3752,6 +3771,10 @@ class PmsAiOrchestrator:
                 if check.valid and has_val and has_unit and has_compound_facts:
                     final_headline = cand_h
                     final_bullets = cand_b if cand_b else fallback_bullets
+                    if tool_name == "query_rankings":
+                        _note = _relative_period_note(req.prompt, str(((tool_result.digest or {}).get("query_rankings") or {}).get("period") or ""))
+                        if _note and _note not in final_bullets:
+                            final_bullets = [*final_bullets, _note]
                     if is_history and len(ev_items) >= 2 and not compound_trend_ready and not any(f"{abs(delta):.1f}" in b for b in final_bullets) and not (f"{abs(delta):.1f}" in final_headline):
                         final_bullets.append(f"Change: {abs(delta):.1f} {unit} ({diff_word})")
                     final_provider = resp_synth.provider

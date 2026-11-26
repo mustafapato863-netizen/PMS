@@ -671,3 +671,12 @@ def test_concern_phrasing_ranks_weakest_first():
         spec = parse_query_rankings_spec(prompt)
         assert spec is not None and spec.sort_order == "asc" and spec.entity == "team"
     assert parse_query_rankings_spec("which team is best").sort_order == "desc"
+
+
+def test_headline_must_lead_with_first_ranked_row():
+    from services.ai.orchestrator import _headline_leads_with_first_ranked
+
+    rows = [{"name": "Outbound"}, {"name": "Support Positions"}, {"name": "Inbound"}]
+    assert _headline_leads_with_first_ranked("Outbound is the lowest team at 87.0%, behind Inbound.", rows)
+    assert not _headline_leads_with_first_ranked("Inbound ranks first at 92.6% ahead of Outbound.", rows)
+    assert _headline_leads_with_first_ranked("No team matched.", rows)
