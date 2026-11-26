@@ -925,6 +925,12 @@ input[type="submit"] {
   .hit-area::after { content: ""; position: absolute; inset: -10px -4px; }
 }
 
+/* Same idea for 36px round dock buttons: 4px on every side gives a 44px tap zone. */
+@media (max-width: 768px) {
+  .hit-area-sm { position: relative; }
+  .hit-area-sm::after { content: ""; position: absolute; inset: -4px; border-radius: 9999px; }
+}
+
 /* Opt-out for the 44px small-screen control floor above. Add it to a control whose
    shape breaks at 44px: switches, segmented controls, tab pills, calendar cells,
    chips, dense icon buttons. Restores the natural height only; widths and padding
