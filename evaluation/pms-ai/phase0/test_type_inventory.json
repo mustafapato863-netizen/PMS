@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 72,
-  "case_count": 913,
+  "file_count": 75,
+  "case_count": 931,
   "files_by_label": {
-    "synthetic": 18,
-    "mocked": 51,
+    "synthetic": 20,
+    "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
     "browser": 0
@@ -489,6 +489,36 @@
       ],
       "cases": 71,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_quality_judge.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_quality_lessons.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 4,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_quality_scoring.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 7,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {

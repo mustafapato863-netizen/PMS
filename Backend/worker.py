@@ -328,6 +328,13 @@ def _run_feedback_maintenance() -> None:
             run_feedback_tick(learning_db)
     except Exception:
         logger.exception("Daily AI feedback analysis could not finish")
+    try:
+        from services.ai.quality_judge import run_quality_tick
+
+        with SessionLocal() as quality_db:
+            run_quality_tick(quality_db)
+    except Exception:
+        logger.exception("AI quality judge tick could not finish")
 
 
 def run_worker(*, once: bool = False) -> None:
@@ -354,7 +361,8 @@ def run_worker(*, once: bool = False) -> None:
             if not once and time.monotonic() >= next_learning_check:
                 next_learning_check = time.monotonic() + 600
                 from services.ai.learning_worker import learning_enabled
-                if learning_enabled() and (learning_thread is None or not learning_thread.is_alive()):
+                from services.ai.quality_scoring import quality_loop_enabled
+                if (learning_enabled() or quality_loop_enabled()) and (learning_thread is None or not learning_thread.is_alive()):
                     learning_thread = threading.Thread(target=_run_feedback_maintenance, name="ai-feedback", daemon=True)
                     learning_thread.start()
             if once:
