@@ -299,22 +299,81 @@ def get_all_records(
         if team and not user_can_access_team(scope, team_name_for_country(team, region)):
             raise HTTPException(status_code=403, detail="Access denied for this team")
 
-        records = _get_dashboard_records(
-            db,
-            team=team,
-            month=month,
-            performance_level=_level_filter(performance_level),
-            year=year,
-            position=position,
-            region=region,
-            scope=scope,
-        )
-        records = filter_records_by_scope(records, scope)
+        def compute_body() -> bytes:
+            records = _get_dashboard_records(
+                db,
+                team=team,
+                month=month,
+                performance_level=_level_filter(performance_level),
+                year=year,
+                position=position,
+                region=region,
+                scope=scope,
+            )
+            records = filter_records_by_scope(records, scope)
+            return render_json_body(
+                StandardResponse(
+                    success=True,
+                    message=f"Retrieved {len(records)} performance records",
+                    data=[serialize_performance_record(r) for r in records],
+                )
+            )
 
-        return StandardResponse(
-            success=True,
-            message=f"Retrieved {len(records)} performance records",
-            data=[serialize_performance_record(r) for r in records]
+        if not isinstance(db, Session) or request is None:
+            records = _get_dashboard_records(
+                db, team=team, month=month, performance_level=_level_filter(performance_level),
+                year=year, position=position, region=region, scope=scope,
+            )
+            records = filter_records_by_scope(records, scope)
+            return StandardResponse(
+                success=True,
+                message=f"Retrieved {len(records)} performance records",
+                data=[serialize_performance_record(r) for r in records],
+            )
+
+        accept_encoding = request.headers.get("accept-encoding")
+        headers = {
+            "Deprecation": "true",
+            "X-PMS-Performance-Route": "legacy",
+        }
+        cache_key = build_scoped_response_cache_key(
+            db,
+            namespace="performance-legacy-all",
+            scope=scope,
+            schema_version=1,
+            params={
+                "team": team,
+                "month": month,
+                "performance_level": performance_level,
+                "year": year,
+                "position": position,
+                "region": region,
+            },
+        )
+
+        def cached_response(entry):
+            if not isinstance(entry, dict) or not isinstance(entry.get("gz"), str):
+                return None
+            return encoded_body_response(
+                entry["gz"], accept_encoding=accept_encoding, headers={**headers, "X-Cache": "HIT"}
+            )
+
+        hit = cached_response(read_cached_response(cache_key, cache_type="performance_legacy_all"))
+        if hit is not None:
+            release_read_transaction(db)
+            return hit
+        release_read_transaction(db)
+        with single_flight(cache_key):
+            hit = cached_response(read_cached_response(cache_key, cache_type="performance_legacy_all"))
+            if hit is not None:
+                release_read_transaction(db)
+                return hit
+            body = compute_body()
+            packed = pack_gzip_body(body)
+            write_cached_response(cache_key, {"gz": packed}, cache_type="performance_legacy_all")
+        release_read_transaction(db)
+        return Response(
+            content=body, media_type="application/json", headers={**headers, "X-Cache": "MISS"}
         )
     except HTTPException as he:
         raise he
