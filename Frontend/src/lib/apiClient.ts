@@ -160,30 +160,46 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   return response;
 }
 
-async function requestRefreshAccessToken(): Promise<boolean> {
-  const csrfToken = getCsrfToken();
-  const headers: Record<string, string> = {};
-  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+/** Gap before retrying a refresh that failed for a transient reason (network blip, timeout, 5xx). */
+const REFRESH_RETRY_DELAY_MS = 700;
 
-  try {
-    const response = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers,
-    });
-    // A rate-limited refresh is not a dead session. Surface it, so the caller does not end the session.
-    if (response.status === RATE_LIMIT_STATUS) throw rejectRateLimited(response, { notify: true });
-    if (!response.ok) return false;
-    const payload = await response.json() as AccessTokenResponse;
-    const accessToken = payload.data?.access_token;
-    if (!payload.success || !accessToken) return false;
-    setAccessToken(accessToken);
-    if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
-    return true;
-  } catch (error) {
-    if (error instanceof RateLimitError) throw error;
-    return false;
+async function requestRefreshAccessToken(): Promise<boolean> {
+  // A refresh that fails for a transient reason must not end the session: the server session is still valid,
+  // and bouncing to the login page on a reload is the worst outcome. Retry once; 4xx answers are final.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const csrfToken = getCsrfToken();
+    const headers: Record<string, string> = {};
+    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+      });
+      // A rate-limited refresh is not a dead session. Surface it, so the caller does not end the session.
+      if (response.status === RATE_LIMIT_STATUS) throw rejectRateLimited(response, { notify: true });
+      if (response.status >= 500 && attempt === 0) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, REFRESH_RETRY_DELAY_MS));
+        continue;
+      }
+      if (!response.ok) return false;
+      const payload = await response.json() as AccessTokenResponse;
+      const accessToken = payload.data?.access_token;
+      if (!payload.success || !accessToken) return false;
+      setAccessToken(accessToken);
+      if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
+      return true;
+    } catch (error) {
+      if (error instanceof RateLimitError) throw error;
+      if (attempt === 0) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, REFRESH_RETRY_DELAY_MS));
+        continue;
+      }
+      return false;
+    }
   }
+  return false;
 }
 
 export function refreshAccessToken(): Promise<boolean> {

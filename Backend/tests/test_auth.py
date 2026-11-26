@@ -288,7 +288,8 @@ class TestAuthRouterAndMiddleware:
         assert test_client.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
         assert db_session.query(RefreshSession).count() == 1
 
-    def test_login_honors_remember_me_and_rotates_refresh_token(self, test_client, db_session):
+    def test_login_honors_remember_me_and_rotates_refresh_token(self, test_client, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "AUTH_REFRESH_REUSE_GRACE_SECONDS", 0)
         AuthenticationService.create_user(db_session, "rotateuser", "rotate@test.com", "SecurePassword123!")
 
         login_response = test_client.post(
@@ -324,6 +325,38 @@ class TestAuthRouterAndMiddleware:
             headers={"X-CSRF-Token": old_csrf},
         )
         assert reuse_response.status_code == 401
+        assert all(row.revoked_at is not None for row in db_session.query(RefreshSession).all())
+
+    def test_recently_rotated_refresh_token_is_accepted_once_more(self, test_client, db_session):
+        """A reload that drops the refresh response must not log the user out."""
+        AuthenticationService.create_user(db_session, "graceuser", "grace@test.com", "SecurePassword123!")
+        login = test_client.post("/api/auth/login", json={"username": "graceuser", "password": "SecurePassword123!"})
+        old_refresh = test_client.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        old_csrf = login.json()["data"]["csrf_token"]
+        assert test_client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf}).status_code == 200
+
+        test_client.cookies.set(settings.AUTH_REFRESH_COOKIE_NAME, old_refresh)
+        replay = test_client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf})
+        assert replay.status_code == 200
+        assert replay.json()["data"]["access_token"]
+        assert any(row.revoked_at is None for row in db_session.query(RefreshSession).all())
+
+    def test_rotated_refresh_token_replayed_after_grace_revokes_family(self, test_client, db_session):
+        from datetime import timedelta
+
+        AuthenticationService.create_user(db_session, "lateuser", "late@test.com", "SecurePassword123!")
+        login = test_client.post("/api/auth/login", json={"username": "lateuser", "password": "SecurePassword123!"})
+        old_refresh = test_client.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        old_csrf = login.json()["data"]["csrf_token"]
+        first = db_session.query(RefreshSession).one()
+        assert test_client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf}).status_code == 200
+        db_session.refresh(first)
+        first.revoked_at = first.revoked_at - timedelta(seconds=settings.AUTH_REFRESH_REUSE_GRACE_SECONDS + 60)
+        db_session.commit()
+
+        test_client.cookies.set(settings.AUTH_REFRESH_COOKIE_NAME, old_refresh)
+        late = test_client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_csrf})
+        assert late.status_code == 401
         assert all(row.revoked_at is not None for row in db_session.query(RefreshSession).all())
 
     def test_new_login_access_token_reaches_protected_route(self, test_client, db_session):
