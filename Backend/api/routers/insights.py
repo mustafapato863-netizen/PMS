@@ -16,6 +16,7 @@ from services.response_cache import (
     apply_private_cache_headers,
     build_scoped_response_cache_key,
     read_cached_response,
+    single_flight,
     write_cached_response,
 )
 
@@ -119,42 +120,62 @@ def get_insights_workspace(
                 message="Authorized insights generated",
                 data=InsightsWorkspace.model_validate(cached),
             )
-    try:
-        source = DatabaseRecordSource(db)
-        workspace = InsightsService(
-            source,
-            PlanningService(source, db=db),
-            db=db,
-        ).generate_workspace(
-            scope,
-            priority_only=view == "priority",
-            sections=sections,
-            month=month,
-            year=year,
-            region=region,
-            team=team,
-            function=function,
-            performance_level=performance_level,
-            position=position,
-            employee_id=employee_id,
-            kpi=kpi,
-            severity=severity,
-            insight_type=insight_type,
-            insight_status=status_filter,
-            branch=normalized_branch,
+    def generate() -> InsightsWorkspaceResponse:
+        try:
+            source = DatabaseRecordSource(db)
+            workspace = InsightsService(
+                source,
+                PlanningService(source, db=db),
+                db=db,
+            ).generate_workspace(
+                scope,
+                priority_only=view == "priority",
+                sections=sections,
+                month=month,
+                year=year,
+                region=region,
+                team=team,
+                function=function,
+                performance_level=performance_level,
+                position=position,
+                employee_id=employee_id,
+                kpi=kpi,
+                severity=severity,
+                insight_type=insight_type,
+                insight_status=status_filter,
+                branch=normalized_branch,
+            )
+        except InsightAccessError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except InsightValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        if view == "priority":
+            workspace = _priority_workspace(workspace)
+        if cache_key is not None:
+            write_cached_response(
+                cache_key,
+                workspace.model_dump(mode="json"),
+                cache_type="insights_workspace",
+            )
+        release_read_transaction(db)
+        apply_private_cache_headers(response, hit=False)
+        return InsightsWorkspaceResponse(success=True, message="Authorized insights generated", data=workspace)
+
+    def cached_workspace() -> InsightsWorkspaceResponse | None:
+        cached = read_cached_response(cache_key, cache_type="insights_workspace")
+        if not isinstance(cached, dict):
+            return None
+        release_read_transaction(db)
+        apply_private_cache_headers(response, hit=True)
+        return InsightsWorkspaceResponse(
+            success=True,
+            message="Authorized insights generated",
+            data=InsightsWorkspace.model_validate(cached),
         )
-    except InsightAccessError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except InsightValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    if view == "priority":
-        workspace = _priority_workspace(workspace)
-    if cache_key is not None:
-        write_cached_response(
-            cache_key,
-            workspace.model_dump(mode="json"),
-            cache_type="insights_workspace",
-        )
+
+    if cache_key is None:
+        return generate()
+    # Identical cold requests (the dashboards fire several at once) compute once.
     release_read_transaction(db)
-    apply_private_cache_headers(response, hit=False)
-    return InsightsWorkspaceResponse(success=True, message="Authorized insights generated", data=workspace)
+    with single_flight(cache_key):
+        return cached_workspace() or generate()
