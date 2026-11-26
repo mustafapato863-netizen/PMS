@@ -623,8 +623,8 @@ class PerformanceDashboardReadService:
         year, month = parse_period(period)
         if detail not in {"table", "full"}:
             raise HTTPException(status_code=422, detail="detail must be table or full")
-        if not 1 <= page_size <= 100:
-            raise HTTPException(status_code=422, detail="page_size must be between 1 and 100")
+        if not 1 <= page_size <= 500:
+            raise HTTPException(status_code=422, detail="page_size must be between 1 and 500")
         if str(sort or "name").casefold() not in {"name", "score_desc", "score_asc"}:
             raise HTTPException(status_code=422, detail="sort must be name, score_desc, or score_asc")
         if str(location or "all").casefold() not in _LOCATION_KEYS:
