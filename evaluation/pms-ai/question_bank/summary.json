@@ -1,8 +1,8 @@
 {
  "questions": 1006,
- "passed": 626,
- "pass_rate": 0.622,
- "train_rows": 500,
+ "passed": 915,
+ "pass_rate": 0.91,
+ "train_rows": 734,
  "heldout_rows": 196,
  "by_category": {
   "advice": {
@@ -26,7 +26,7 @@
    "total": 6
   },
   "compare_teams": {
-   "passed": 31,
+   "passed": 186,
    "total": 217
   },
   "compound": {
@@ -34,7 +34,7 @@
    "total": 3
   },
   "employee_score": {
-   "passed": 225,
+   "passed": 348,
    "total": 350
   },
   "followup": {
@@ -86,7 +86,7 @@
    "total": 6
   },
   "why": {
-   "passed": 22,
+   "passed": 33,
    "total": 33
   }
  }

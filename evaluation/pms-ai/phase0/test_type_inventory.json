@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 80,
-  "case_count": 943,
+  "file_count": 81,
+  "case_count": 945,
   "files_by_label": {
-    "synthetic": 25,
+    "synthetic": 26,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -659,6 +659,16 @@
       ],
       "cases": 7,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_team_compare_plain.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {

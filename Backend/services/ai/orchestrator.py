@@ -4503,6 +4503,23 @@ class PmsAiOrchestrator:
                 intent_context=bounded_intent_context,
                 scope=self.scope,
             )
+            if capability_mode in ("off_topic", "clarification") and re.search(
+                r"\b[A-Z][a-z]+(?:[-'][A-Za-z]+)*\s+[A-Z][a-z]+(?:[-'][A-Za-z]+)*\b", req.prompt
+            ):
+                # A prompt that names a tracked employee ("how is Nadia Mansour doing") is a
+                # performance question even without a keyword such as "score".
+                try:
+                    _, _named_candidates = self._get_published_periods_and_candidates()
+                    release_read_transaction(self.db)
+                except Exception:
+                    _named_candidates = []
+                _lp = req.prompt.casefold()
+                if any(
+                    len((c.employee_name or "").split()) >= 2
+                    and re.search(rf"(?<![a-z0-9]){re.escape(c.employee_name.casefold())}(?![a-z0-9])", _lp)
+                    for c in _named_candidates
+                ):
+                    capability_mode, cap_source = "performance_query", "named_employee"
 
         if conversation_ready:
             is_gate_non_perf = roster_query is not None or capability_mode in (
