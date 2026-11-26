@@ -4351,6 +4351,25 @@ class PmsAiOrchestrator:
         return resp_payload
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
+        if req.prompt and re.fullmatch(r"\s*(?:and|what about|how about)?\s*(?:for\s+)?(?:the\s+)?(?:whole\s+|entire\s+)?company\s*\??\s*", req.prompt, re.I):
+            # A bare "and for the whole company?" drops the previous team or person scope.
+            req = req.model_copy(update={"prompt": "what is the overall score across the company"})
+        if req.prompt and re.search(r"\b(?:whole|entire)\s+company\b", req.prompt, re.I):
+            # "the whole company" is the company-wide overview, the same as "the company".
+            req = req.model_copy(update={"prompt": re.sub(r"\b(?:whole|entire)\s+company\b", "company", req.prompt, flags=re.I)})
+        if req.prompt:
+            _nw = {"two": "2", "three": "3", "four": "4", "five": "5"}
+            _m = re.search(
+                r"\b(?:the\s+)?(two|three|four|five|\d+)\s+(lowest|highest|best|worst|weakest|top|bottom)(?:\s+scoring)?\s+(?:people|persons|agents|performers|staff|employees)\b",
+                req.prompt, re.I,
+            )
+            if _m:
+                # "the two lowest scoring people" -> "lowest 2 employees" (the count form that already works).
+                _n = _nw.get(_m.group(1).casefold(), _m.group(1))
+                req = req.model_copy(update={"prompt": req.prompt[: _m.start()] + f"{_m.group(2).casefold()} {_n} employees" + req.prompt[_m.end():]})
+        if req.prompt and re.search(r"\b(?:weakest|strongest)\s+(?:teams?|departments?)\b", req.prompt, re.I):
+            # Same ranking as "lowest/best team", which already resolves to a team (not a person).
+            req = req.model_copy(update={"prompt": re.sub(r"\bstrongest(?=\s+(?:teams?|departments?)\b)", "best", re.sub(r"\bweakest(?=\s+(?:teams?|departments?)\b)", "lowest", req.prompt, flags=re.I), flags=re.I)})
         help_rest = split_leading_capability_question(req.prompt)
         if help_rest:
             # "What can you do? Also <real question>": answer the real question through the normal
@@ -5896,7 +5915,7 @@ class PmsAiOrchestrator:
         region_compare = bool(
             re.search(r"\b(?:egy|egypt)\b", _plower)
             and re.search(r"\b(?:uae|emirates)\b", _plower)
-            and re.search(r"\b(?:compare|compared|comparison|vs\.?|versus|better|stronger|higher|lower|difference|between|or|and)\b", _plower)
+            and re.search(r"\b(?:compare|compared|comparison|vs\.?|versus|better|stronger|higher|lower|difference|between|or|and|ahead|weaker|worse|leads|leading)\b", _plower)
             and not re.search(r"\b(?:why|team|teams|employee|employees|agent|agents|top|bottom|best|worst|weakest|lowest|highest)\b", _plower)
             and not shared_choice_team
         )

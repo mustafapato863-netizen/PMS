@@ -1182,6 +1182,15 @@ def has_pms_performance_signal(prompt: str) -> bool:
     if re.search(r"\bwho\s+(?:is|are|was|were)\s+[A-Z][a-z]+", text):
         return True
     if re.search(
+        r"\b(?:whole|entire)\s+company\b|\bpms\s+(?:average|score)\b"
+        r"|\b(?:weakest|strongest|best|worst)\s+teams?\b|\bteams?\s+(?:below|above|under|over)\s+\d+"
+        r"|\b(?:egypt|uae)\b.{0,30}\b(?:ahead|stronger|weaker|better|worse)\b"
+        r"|\b(?:ahead|stronger|weaker)\b.{0,30}\b(?:egypt|uae)\b",
+        text,
+        re.I,
+    ):
+        return True
+    if re.search(
         r"\b[A-Za-z]+(?:'s|’s)\s+(?:score|performance|position|role|trend|best|worst|highest|lowest)\b",
         text,
         re.I,
