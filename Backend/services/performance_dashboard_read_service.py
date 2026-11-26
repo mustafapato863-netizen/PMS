@@ -22,6 +22,7 @@ from models.models import PerformanceRecord, KPIValue
 from repositories.performance_repository import PerformanceRepository
 from services.cache_invalidation_service import CacheInvalidationService
 from services.cache_service import CacheService
+from services.response_cache import single_flight
 from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.clinical_scorecards import can_recompute, compute_clinical_score
@@ -591,7 +592,13 @@ class PerformanceDashboardReadService:
         excluded = [row["record_id"] for row in candidates if not _has_real_activity(_summary_record(row))]
         return excluded
 
-    def records_page(
+    def records_page(self, **kwargs) -> dict[str, Any]:
+        """Identical cold requests (the dashboards fire several at once) compute once."""
+        flight_key = self._cache_key("records-flight", {k: v for k, v in kwargs.items()})
+        with single_flight(flight_key):
+            return self._records_page_uncached(**kwargs)
+
+    def _records_page_uncached(
         self,
         *,
         period: str,
