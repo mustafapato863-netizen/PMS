@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '../lib/apiClient';
-import { mapScopedPerformanceRecord, usePerformanceData, useTeamData } from './usePerformanceData';
+import { usePerformanceData, useTeamData } from './usePerformanceData';
 
 vi.mock('../lib/apiClient', () => ({ apiFetch: vi.fn() }));
 vi.mock('./api/usePerformanceDashboard', () => ({ scopedPerformanceApiEnabled: false }));
@@ -18,8 +18,8 @@ function wrapperFor() {
   );
 }
 
-function agent(id: string, name: string, month: string, year: number) {
-  return mapScopedPerformanceRecord({
+function rawAgent(id: string, name: string, month: string, year: number) {
+  return {
     employee_id: id,
     employee_name: name,
     team: 'Inbound',
@@ -27,19 +27,31 @@ function agent(id: string, name: string, month: string, year: number) {
     year,
     calls: { inbound: 10 },
     score: year,
-  });
+  };
 }
 
-const july2025 = agent('E2025', 'July 2025', 'July', 2025);
-const july2026 = agent('E2026', 'July 2026', 'July', 2026);
-const june2025 = agent('J2025', 'June 2025', 'June', 2025);
-const june2026 = agent('J2026', 'June 2026', 'June', 2026);
+
+
 
 beforeEach(() => {
   localStorage.setItem('pms_session_v1', JSON.stringify({ id: crypto.randomUUID(), role: 'Admin' }));
   vi.mocked(apiFetch).mockReset();
   vi.mocked(apiFetch).mockImplementation(async (url) => {
-    if (String(url).startsWith('/api/performance')) return { success: true, data: [july2025, july2026, june2025, june2026] };
+    const href = String(url);
+    if (href.startsWith('/api/performance/catalog')) {
+      return { success: true, data: { periods: [
+        { key: '2026-07', year: 2026, month: 'July' },
+        { key: '2026-06', year: 2026, month: 'June' },
+        { key: '2025-07', year: 2025, month: 'July' },
+        { key: '2025-06', year: 2025, month: 'June' },
+      ] } };
+    }
+    if (href.startsWith('/api/performance/records')) {
+      const period = new URL(href, 'http://x').searchParams.get('period');
+      const all = [rawAgent('E2025', 'July 2025', 'July', 2025), rawAgent('E2026', 'July 2026', 'July', 2026), rawAgent('J2025', 'June 2025', 'June', 2025), rawAgent('J2026', 'June 2026', 'June', 2026)];
+      const items = all.filter((item) => `${item.year}-${item.month === 'July' ? '07' : '06'}` === period);
+      return { success: true, data: { items, has_more: false } };
+    }
     if (String(url).startsWith('/api/config/teams')) return { success: true, data: [] };
     return { success: false, message: String(url) };
   });
@@ -50,7 +62,7 @@ afterEach(() => {
   localStorage.removeItem('pms_session_v1');
 });
 
-describe('legacy performance period selection', () => {
+describe('default bounded performance period selection', () => {
   it('keeps July 2025 and July 2026 apart for an exact period', async () => {
     const exact = renderHook(() => usePerformanceData('2025-07', 'all'), { wrapper: wrapperFor() });
     await waitFor(() => expect(exact.result.current.agents.map((item) => item.identity.employee_id)).toEqual(['E2025']));
