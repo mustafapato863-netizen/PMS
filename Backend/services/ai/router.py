@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import os
 import re
 from time import perf_counter
 from dataclasses import dataclass, field
@@ -304,6 +305,23 @@ POSITION_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("PMO", "Enterprise Project Management Office Manager", ("enterprise project management office manager", "pmo manager")),
 )
 
+
+_DET_FIRST_RE = re.compile(
+    r"^\W*(?:(?:how\s+(?:is|are)|what(?:'s|\s+is)|show(?:\s+me)?|give\s+me)\s+)?(?:the\s+)?"
+    r"(?:company(?:\s+wide)?|overall|(?:lowest|highest|best|worst|top|bottom)\s+(?:\d+\s+|two\s+|three\s+|five\s+)?"
+    r"(?:scoring\s+)?(?:employees?|people))\b[^?]*\??\W*$",
+    re.I,
+)
+
+
+def _deterministic_first_question(lower: str) -> bool:
+    """Short company-wide and ranking questions that the rule router answers exactly; skip the slow model planner."""
+    if os.getenv("PMS_AI_DETERMINISTIC_FIRST", "on").strip().casefold() in {"off", "false", "0"}:
+        return False
+    text = (lower or "").strip()
+    if len(text) > 90 or re.search(r"\b(?:why|compare|versus|vs|trend|and then|also)\b", text):
+        return False
+    return bool(_DET_FIRST_RE.match(text) or re.match(r"^\W*how\s+is\s+the\s+(?:whole\s+|entire\s+)?company\s+doing\b", text))
 
 @dataclass
 class RouterValidationResult:
@@ -4601,6 +4619,7 @@ class HybridQueryRouter:
             and not explicit_kpi_question_kind(text)
             and not (asks_corrective_actions and re.search(r"\bopen\s+corrective\s+actions?\b", lower))
             and matched_pattern is None
+            and not _deterministic_first_question(lower)
         ):
             from services.ai.roster_comparison import ROSTER_TOOL_NAME, ROSTER_TOOL_SCHEMA
             from services.ai.tool_registry import DeterministicToolRegistry
