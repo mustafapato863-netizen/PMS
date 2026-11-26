@@ -1606,6 +1606,135 @@ class DeterministicToolRegistry:
         )
 
     @_read_only_tool
+    def execute_region_comparison(
+        self,
+        *,
+        month: str | None = None,
+        year: int | None = None,
+    ) -> ToolExecutionResult:
+        """Egypt vs UAE overall score for one period.
+
+        Each region averages the stored evaluation score of its own
+        Employee-level records, the same single averaging rule as the shared
+        scorecard. Records whose effective region is 'All' (Finance, RCM) are
+        never counted in either region; the answer says so.
+        """
+        names = {"EGY": "Egypt", "UAE": "UAE"}
+        by_region: dict[str, list[Any]] = {"EGY": [], "UAE": []}
+        shared_count = 0
+        for record in self.ctx.get_scoped_records():
+            level = str(_record_field(record, "performance_level", "") or "Employee").strip().casefold()
+            if level != "employee":
+                continue
+            team_name = str(_record_field(record, "team", "") or "").strip()
+            region = _shared_record_region(record, team_name).strip().upper()
+            if region == "ALL":
+                shared_count += 1
+            elif region in by_region:
+                by_region[region].append(record)
+
+        def _period_of(r: Any) -> tuple[int, int]:
+            return (
+                int(_record_field(r, "year", 0) or 0),
+                MONTH_ORDER.get(str(_record_field(r, "month", "") or "").strip(), 0),
+            )
+
+        if month and year:
+            res_month, res_year = str(month).strip(), int(year)
+            want = (res_year, MONTH_ORDER.get(res_month, 0))
+        else:
+            # No period named: use the latest period where both regions have
+            # records, falling back to the latest period of either region.
+            per_region = [
+                {d for d in (_period_of(r) for r in rs) if d[0] >= 2000 and d[1] >= 1}
+                for rs in by_region.values()
+            ]
+            dated = list(per_region[0] & per_region[1]) or [d for ds in per_region for d in ds]
+            if dated:
+                want = max(dated)
+                res_year = want[0]
+                res_month = next(name for name, num in MONTH_ORDER.items() if num == want[1])
+            else:
+                want, res_month, res_year = None, None, None
+        period_label = f"{res_month} {res_year}" if res_month and res_year else "Latest Period"
+
+        averages: dict[str, tuple[float, int] | None] = {}
+        for code, records in by_region.items():
+            scores = [
+                sc for r in records if want and _period_of(r) == want
+                if (sc := _record_evaluation_score(r)) is not None
+            ]
+            averages[code] = (min(100.0, round(sum(scores) / len(scores), 1)), len(scores)) if scores else None
+
+        egy, uae = averages["EGY"], averages["UAE"]
+        if egy and uae:
+            diff = round(egy[0] - uae[0], 1)
+            if diff == 0:
+                verdict = "The regions are tied."
+            else:
+                lead, trail = ("Egypt", "UAE") if diff > 0 else ("UAE", "Egypt")
+                verdict = f"{lead} leads {trail} by {abs(diff):.1f} percentage points."
+            headline = (
+                f"In {period_label}, Egypt averaged {egy[0]:.1f}% ({egy[1]} evaluated employees) and "
+                f"UAE averaged {uae[0]:.1f}% ({uae[1]} evaluated employees). {verdict}"
+            )
+        else:
+            parts = [
+                f"{names[c]} {averages[c][0]:.1f}% ({averages[c][1]} evaluated employees)"
+                for c in ("EGY", "UAE") if averages[c]
+            ]
+            missing = [names[c] for c in ("EGY", "UAE") if not averages[c]]
+            headline = (
+                f"No published overall scores for {' and '.join(missing)} in {period_label}, so the regions cannot be compared."
+                + (f" Available: {'; '.join(parts)}." if parts else "")
+            )
+        if shared_count:
+            headline += " Shared All-region teams (Finance, RCM) are not counted in either region."
+
+        typed: list[TypedMetricEvidence] = []
+        for code in ("EGY", "UAE"):
+            if averages[code]:
+                typed.append(TypedMetricEvidence(
+                    metric_id=f"region_compare:{code.lower()}:overall_score",
+                    kpi_key="overall_score",
+                    display_name=f"{names[code]} Overall Score",
+                    team=names[code],
+                    performance_level="Employee",
+                    branch="all",
+                    period=period_label,
+                    actual=averages[code][0],
+                    actual_display=f"{averages[code][0]:.1f}%",
+                    unit="%",
+                    direction="higher_better",
+                    sample_size=averages[code][1],
+                    source_link=build_verified_deep_link("/insights", month=res_month, year=res_year),
+                ))
+        total = sum(a[1] for a in averages.values() if a)
+        return ToolExecutionResult(
+            tool_name="get_region_comparison",
+            arguments={"month": res_month, "year": res_year},
+            records_evaluated=total,
+            digest={
+                "period": period_label,
+                "scope": "Egypt vs UAE",
+                "branch": "All Branches",
+                "total_records": total,
+                "comparison_headline": headline,
+                **({"verified_answer_family": "region_scores"} if egy and uae else {}),
+            },
+            visual_cards=[],
+            citations=[
+                SourceCitationPill(label=f"Period · {period_label}", category="period"),
+                SourceCitationPill(label="Scope · Egypt vs UAE", category="scope"),
+                SourceCitationPill(label=f"Evaluated · {total}", category="metric"),
+            ],
+            deep_links=[],
+            typed_evidence=typed,
+            resolved_month=res_month,
+            resolved_year=res_year,
+        )
+
+    @_read_only_tool
     def execute_kpi_diagnosis_and_trends(
         self,
         *,
