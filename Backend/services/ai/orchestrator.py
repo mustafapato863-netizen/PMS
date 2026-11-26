@@ -5823,8 +5823,17 @@ class PmsAiOrchestrator:
             str(req.clarification_choice_id or "")
         )
 
+        _plower = (req.prompt or "").casefold()
+        region_compare = bool(
+            re.search(r"\b(?:egy|egypt)\b", _plower)
+            and re.search(r"\b(?:uae|emirates)\b", _plower)
+            and re.search(r"\b(?:compare|compared|comparison|vs\.?|versus|better|stronger|higher|lower|difference|between|or|and)\b", _plower)
+            and not re.search(r"\b(?:why|team|teams|employee|employees|agent|agents|top|bottom|best|worst|weakest|lowest|highest)\b", _plower)
+            and not shared_choice_team
+        )
         det_threshold_spec = parse_score_threshold_query(req.prompt)
         cache_sig = {
+            "region_compare": region_compare,
             "verified_comparison": routed.plan.verified_comparison,
             "verified_cohort_score": routed.plan.verified_cohort_score,
             "score_measure": routed.plan.score_measure or "official",
@@ -5872,6 +5881,13 @@ class PmsAiOrchestrator:
         if cached_results is not None:
             tool_results = cached_results
             cache_hit = True
+        elif region_compare:
+            # Only a period named in the prompt pins the comparison; otherwise the tool
+            # picks the latest period where both regions have data and names it.
+            tool_results = [registry.execute_region_comparison(
+                month=signals.detected_month if signals.asks_specific_month_in_prompt else None,
+                year=signals.detected_year if signals.asks_specific_month_in_prompt else None,
+            )]
         elif routed.plan.verified_comparison:
             tool_results = [read_score_comparison(registry, routed.plan)]
         elif use_composable and composable_spec is not None:

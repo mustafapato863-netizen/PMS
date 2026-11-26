@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 75,
-  "case_count": 932,
+  "file_count": 76,
+  "case_count": 934,
   "files_by_label": {
-    "synthetic": 20,
+    "synthetic": 21,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -518,6 +518,16 @@
         "synthetic"
       ],
       "cases": 7,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_region_comparison.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
       "evidence_status": "not applicable",
       "note": ""
     },
