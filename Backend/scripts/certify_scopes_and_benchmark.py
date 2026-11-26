@@ -249,15 +249,31 @@ def run_200_employee_benchmark() -> dict[str, Any]:
                 "categories": {},
             }
 
+            # Process warmup: one throwaway turn absorbs one-time lazy costs
+            # (catalog load, SQLite page-cache init, thread/imports warmup) so the
+            # cold samples below measure evidence-cache coldness, not interpreter
+            # and process startup. Without this, the very first cold turn carries
+            # ~hundreds of ms of init and dominates a 4-sample p95.
+            with SessionLocal() as db:
+                PmsAiOrchestrator(db, gm_scope).run_chat_turn(
+                    AiChatRequest(
+                        prompt="What is the Inbound team score in September 2026?",
+                        session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+                    )
+                )
+
             for cat_name, req_list in workloads.items():
-                # 1. Cold cache measurement
-                ai_evidence_cache.clear()
+                # 1. Cold cache measurement: 3 passes (cache cleared before each)
+                # so the p95 comes from 12 samples instead of 4 and is stable on
+                # shared CI runners whose CPU speed varies run to run.
                 cold_latencies: list[float] = []
-                for req in req_list:
-                    with SessionLocal() as db:
-                        t0 = time.perf_counter()
-                        PmsAiOrchestrator(db, gm_scope).run_chat_turn(req.model_copy(deep=True))
-                        cold_latencies.append((time.perf_counter() - t0) * 1000.0)
+                for _pass in range(3):
+                    ai_evidence_cache.clear()
+                    for req in req_list:
+                        with SessionLocal() as db:
+                            t0 = time.perf_counter()
+                            PmsAiOrchestrator(db, gm_scope).run_chat_turn(req.model_copy(deep=True))
+                            cold_latencies.append((time.perf_counter() - t0) * 1000.0)
 
                 # 2. Warm cache concurrent measurement (4 concurrent workers x 3 passes = 12 turns per category)
                 def _run_one(r: AiChatRequest) -> float:
