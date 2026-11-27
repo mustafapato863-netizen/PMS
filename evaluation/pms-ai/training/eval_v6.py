@@ -10,7 +10,7 @@ exec("def call"+open('/tmp/ev.py').read().split("def call",1)[1].split("MODELS="
 SYS=("You are the PMS performance assistant. Use ONLY the verified facts given in the message. "
 "If no verified facts are given, say you need to look the data up and do not state any score, rank or name. Never invent numbers.")
 MODELS={"granite":("@cf/ibm-granite/granite-4.0-h-micro",None),"v4":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v4"),
-"v5":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v5"),"v6":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v6")}
+"v5":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v5"),"v6":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v6"),"v7":("@cf/mistral/mistral-7b-instruct-v0.2-lora","pms-assistant-v7")}
 num=re.compile(r'\d+(?:\.\d+)?')
 HELD=sys.argv[4] if len(sys.argv)>4 else '/tmp/heldout_v6.jsonl'
 def score(r,a):
