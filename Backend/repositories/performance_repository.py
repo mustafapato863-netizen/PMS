@@ -12,6 +12,7 @@ from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team
 from utils.team_identity import logical_team_name, team_country_filter_values, team_name_for_country
 from utils.months import MONTH_NUMBERS
 from utils.regions import REGION_WHITESPACE, first_region
+from utils.id_twins import exclude_id_twins_enabled, find_id_twin_rows, normalize_name
 import logging
 
 logger = logging.getLogger(__name__)
@@ -158,8 +159,32 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             logger.info("Egypt Re-Submission duplicate resolved: selected_record=%s selected_upload=%s discarded_records=%s", winner.id, winner.upload_id, [str(record_id) for record_id, _ in discarded])
         return excluded
 
+    def _id_twin_duplicate_keys(self, scope: dict | None) -> list[tuple]:
+        """(id, year) of bare-ID rows that duplicate a prefixed-ID row; empty unless PMS_EXCLUDE_ID_TWINS is on."""
+        if not exclude_id_twins_enabled():
+            return []
+        query = (
+            self.db.query(
+                PerformanceRecord.id, PerformanceRecord.year, PerformanceRecord.month,
+                PerformanceRecord.performance_level, PerformanceRecord.team_id,
+                PerformanceRecord.score, Employee.employee_id.label("emp_code"), Employee.name.label("emp_name"),
+            )
+            .join(Team, PerformanceRecord.team_id == Team.id)
+            .join(Employee, PerformanceRecord.employee_id == Employee.id)
+            .filter(Team.team_level == "employee", PerformanceRecord.performance_level == "Employee")
+        )
+        rows = [
+            {"key": (r.id, r.year), "employee_id": r.emp_code, "name": r.emp_name, "year": r.year, "month": r.month,
+             "team_id": r.team_id, "level": r.performance_level, "score": r.score}
+            for r in self._apply_scope(query, scope).all()
+        ]
+        excluded = find_id_twin_rows(rows)
+        if excluded:
+            logger.info("ID twin rows excluded from read paths: %d", len(excluded))
+        return excluded
+
     def _exclude_egypt_resubmission_duplicates(self, query, scope: dict | None):
-        excluded = self._egypt_resubmission_duplicate_keys(scope)
+        excluded = self._egypt_resubmission_duplicate_keys(scope) + self._id_twin_duplicate_keys(scope)
         return query.filter(tuple_(PerformanceRecord.id, PerformanceRecord.year).not_in(excluded)) if excluded else query
 
     def _dashboard_query(self, *, kpi_values: bool = True):
@@ -269,9 +294,12 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             query = query.filter(Employee.employee_id.in_(employee_ids)) if employee_ids else query.filter(false())
         if employee_search:
             pattern = f"%{str(employee_search).strip().casefold()}%"
+            name_pattern = f"%{normalize_name(employee_search)}%"
             query = query.filter(
                 or_(
+                    # Names are stored with stray double spaces; match on single-spaced names too.
                     func.lower(Employee.name).like(pattern),
+                    func.replace(func.lower(Employee.name), "  ", " ").like(name_pattern),
                     func.lower(Employee.employee_id).like(pattern),
                 )
             )
