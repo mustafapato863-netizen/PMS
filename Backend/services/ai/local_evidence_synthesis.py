@@ -20,6 +20,7 @@ from services.ai.llm_client import (
     synthesis_timeout_seconds,
 )
 from services.ai.config import get_ai_runtime_config
+from services.ai.custom_model_shadow import maybe_shadow
 from services.ai.prompt_versions import (
     EXECUTIVE_VARIATION_PROMPT_VERSION,
     NARROW_EVIDENCE_SYNTHESIS_PROMPT_VERSION,
@@ -272,6 +273,7 @@ def _generate_local_answer(
     metrics.provider_used = provider_used
     metrics.model_used = model_used
     metrics.fallback_outcome = "none"
+    maybe_shadow(question, facts_payload, str(answer))  # no-op unless PMS_AI_CUSTOM_MODEL=shadow
     return NarrativeSynthesisResult(
         headline=str(answer).strip(),
         narrative_bullets=[],
