@@ -168,6 +168,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 PerformanceRecord.id, PerformanceRecord.year, PerformanceRecord.month,
                 PerformanceRecord.performance_level, PerformanceRecord.team_id,
                 PerformanceRecord.score, Employee.employee_id.label("emp_code"), Employee.name.label("emp_name"),
+                Team.name.label("team_name"), Team.display_name.label("team_display"),
             )
             .join(Team, PerformanceRecord.team_id == Team.id)
             .join(Employee, PerformanceRecord.employee_id == Employee.id)
@@ -175,12 +176,12 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         )
         rows = [
             {"key": (r.id, r.year), "employee_id": r.emp_code, "name": r.emp_name, "year": r.year, "month": r.month,
-             "team_id": r.team_id, "level": r.performance_level, "score": r.score}
+             "team_id": str(r.team_display or r.team_name or "").strip().casefold(), "level": r.performance_level,
+             "score": r.score}
             for r in self._apply_scope(query, scope).all()
         ]
         excluded = find_id_twin_rows(rows)
-        if excluded:
-            logger.info("ID twin rows excluded from read paths: %d", len(excluded))
+        logger.info("ID twin scan: employee_rows=%d excluded=%d", len(rows), len(excluded))
         return excluded
 
     def _exclude_egypt_resubmission_duplicates(self, query, scope: dict | None):
