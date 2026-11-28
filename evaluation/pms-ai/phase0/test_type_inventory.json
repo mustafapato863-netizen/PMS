@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 83,
-  "case_count": 956,
+  "file_count": 84,
+  "case_count": 959,
   "files_by_label": {
-    "synthetic": 28,
+    "synthetic": 29,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -279,6 +279,16 @@
       ],
       "cases": 7,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_followup_period_carryover.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
