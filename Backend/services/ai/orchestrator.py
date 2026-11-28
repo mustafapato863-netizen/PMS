@@ -726,6 +726,15 @@ def split_leading_capability_question(prompt: str | None) -> str | None:
     return rest
 
 
+def _unsupported_tool_headline(tool_name: str) -> str:
+    """User-facing copy when the planner picked no usable data tool. Never show internal tool names."""
+    return "I could not turn that into a PMS lookup yet. Tell me the team and the month you want to see."
+
+
+def _unsupported_tool_bullets(tool_name: str) -> list[str]:
+    return ["For example: the overall score for a team in a given month, or who is leading a team."]
+
+
 class PmsAiOrchestrator:
     """Coordinates zero-token 'AI is watching' alerts and multi-tool analytical chat turns."""
 
@@ -1635,8 +1644,8 @@ class PmsAiOrchestrator:
                 context_version=active_context_version,
                 outcome="clarification",
                 answer_detail=effective_detail,  # type: ignore[arg-type]
-                headline=f"The requested tool '{tool_name}' is not supported.",
-                narrative_bullets=[f"Tool '{tool_name}' is not an authorized data tool."],
+                headline=_unsupported_tool_headline(tool_name),
+                narrative_bullets=_unsupported_tool_bullets(tool_name),
                 visual_cards=[],
                 citations=[],
                 deep_links=[],
