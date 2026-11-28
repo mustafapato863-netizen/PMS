@@ -99,3 +99,71 @@ def test_country_clarification_keeps_the_month_the_user_asked_for():
     undated = _route("What is the Coding score?")
     assert undated.outcome == "clarification"
     assert undated.confirmed_context.periods == []
+
+
+def test_model_planner_cannot_move_a_relative_month_follow_up(monkeypatch):
+    """Live probe: the planner turned 'the month before' after August into June. The router decides the month."""
+    import json
+
+    from services.ai.provider_engine import ProviderResponse
+
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+
+    class WrongMonthPlanner:
+        def generate(self, req):
+            return ProviderResponse(
+                content=json.dumps({
+                    "response_type": "tool_call",
+                    "tool_name": "get_kpi_diagnosis",
+                    "tool_arguments": {"team": "Marketing", "metric_id": "overall_score", "period": "2026-06"},
+                }),
+                provider="mock", model="mock-v1", latency_ms=1.0, outcome="success",
+            )
+
+    monkeypatch.setattr("services.ai.provider_engine.get_unified_provider_engine", lambda: WrongMonthPlanner())
+    _patch_records(monkeypatch, _multi_department_records())
+    ai_evidence_cache.clear()
+    db = _in_memory_db()
+    try:
+        orch = PmsAiOrchestrator(db, {"role": "Admin", "user_id": "planner-1", "has_unrestricted_team_access": True})
+        r1 = orch.run_chat_turn(AiChatRequest(prompt="how did Marketing do in October 2026", session_state=SessionFilterContext(), provider_override="deterministic"))
+        r2 = orch.run_chat_turn(
+            AiChatRequest(prompt="what about the month before?", session_state=r1.resolved_session_state, history=[])
+        )
+        calls = [c for c in (r2.tool_calls or [])]
+        periods = [str((getattr(c, "arguments", None) or getattr(c, "tool_arguments", None) or {}).get("period")) for c in calls]
+        assert periods and all(p == "2026-09" for p in periods), (periods, r2.headline)
+    finally:
+        db.close()
+
+
+def test_team_follow_up_without_a_metric_does_not_ask_for_a_metric(monkeypatch):
+    """Live probe: 'last month' after a team score turn got 'missing required metric argument'."""
+    import json
+
+    from services.ai.provider_engine import ProviderResponse
+
+    monkeypatch.setenv("PMS_AI_MODEL_LED_PILOT_ENABLED", "true")
+
+    class NoMetricPlanner:
+        def generate(self, req):
+            return ProviderResponse(
+                content=json.dumps({
+                    "response_type": "tool_call",
+                    "tool_name": "read_employee_metric",
+                    "tool_arguments": {"team": "Marketing", "period": "2026-09"},
+                }),
+                provider="mock", model="mock-v1", latency_ms=1.0, outcome="success",
+            )
+
+    monkeypatch.setattr("services.ai.provider_engine.get_unified_provider_engine", lambda: NoMetricPlanner())
+    _patch_records(monkeypatch, _multi_department_records())
+    ai_evidence_cache.clear()
+    db = _in_memory_db()
+    try:
+        orch = PmsAiOrchestrator(db, {"role": "Admin", "user_id": "planner-2", "has_unrestricted_team_access": True})
+        r1 = orch.run_chat_turn(AiChatRequest(prompt="what is the overall score for Marketing in October 2026", session_state=SessionFilterContext(), provider_override="deterministic"))
+        r2 = orch.run_chat_turn(AiChatRequest(prompt="and last month?", session_state=r1.resolved_session_state, history=[]))
+        assert "missing required metric" not in _text(r2), r2.headline
+    finally:
+        db.close()

@@ -4836,6 +4836,13 @@ class HybridQueryRouter:
                 )
                 if ranked_items:
                     context_parts.append(f"Remembered Ranking Results: [{ranked_items}]")
+            relative_month_step = (
+                _step_back_periods(lower, list(prior_eff.periods))
+                if (prior_eff is not None and prior_eff.periods and not has_explicit_month)
+                else []
+            )
+            if relative_month_step:
+                context_parts.append(f"Period: {relative_month_step[0]} (the month before the previous turn)")
             context_summary = "; ".join(context_parts)
 
             recent_dialogue = []
@@ -5017,6 +5024,9 @@ class HybridQueryRouter:
                                     call_args["metric_id"] = m_val
                             if str(call_args.get("metric_id") or "").strip().casefold() in ("performance", "score", "overall score", "pms score", "overall"):
                                 call_args["metric_id"] = "overall_score"
+                            if relative_month_step and "period" in call_args:
+                                # The planner mis-counts "the month before"; the previous turn's month decides it.
+                                call_args["period"] = relative_month_step[0]
                         tool_name = parsed_calls[0]["tool_name"]
                         tool_args = parsed_calls[0]["tool_arguments"]
                         plan.model_led_tool_call = {
