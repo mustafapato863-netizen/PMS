@@ -69,3 +69,11 @@ def test_clarification_wording_drops_the_follow_up_lead_in():
     assert _strip_followup_lead_in("and January?") == "January"
     assert _strip_followup_lead_in("What about March 2026?") == "March 2026"
     assert _strip_followup_lead_in("show me March") == "show me March"
+
+
+def test_step_back_uses_the_latest_period_when_the_previous_turn_covered_two():
+    from services.ai.router import _step_back_periods
+
+    assert _step_back_periods("what about the month before?", ["2026-07", "2026-08"]) == ["2026-07"]
+    assert _step_back_periods("and last month?", ["2026-01"]) == ["2025-12"]
+    assert _step_back_periods("and for finance?", ["2026-03"]) == []
