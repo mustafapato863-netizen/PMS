@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import re
 import threading
 import time
 from typing import Literal
@@ -323,6 +325,38 @@ def get_ai_watching_workspace(
     return AiWatchingResponse(success=True, message="AI watching workspace loaded", data=payload)
 
 
+_traffic_logger = logging.getLogger("pms.ai.traffic")
+_LABEL_RE = re.compile(r"[^a-z0-9_\-]")
+
+
+def _label(value: object) -> str:
+    """Enum-like label safe for logs: lowercase letters, digits, _ and - only, max 40 chars."""
+    text = _LABEL_RE.sub("", str(value or "none").strip().lower())
+    return text[:40] or "none"
+
+
+def log_ai_chat_traffic(payload: object) -> None:
+    """One metrics line per chat turn: how it was answered and what kind of question it was.
+
+    Only enum-like labels are logged. Never the question, answer, names, ids or scope.
+    """
+    try:
+        plan = getattr(payload, "structured_query", None)
+        _traffic_logger.info(
+            "ai_chat_traffic answer_source=%s outcome=%s intent=%s operation=%s turn_kind=%s capability=%s cache_hit=%s latency_ms=%d",
+            _label(getattr(payload, "answer_source", None)),
+            _label(getattr(payload, "outcome", None)),
+            _label(getattr(plan, "intent", None)),
+            _label(getattr(plan, "operation_kind_v2", None)),
+            _label(getattr(plan, "turn_kind_v2", None)),
+            _label(getattr(payload, "capability_mode", None)),
+            bool(getattr(payload, "cache_hit", False)),
+            int(getattr(payload, "latency_ms", 0) or 0),
+        )
+    except Exception:  # metrics must never break a chat turn
+        pass
+
+
 @router.post("/chat", response_model=AiChatResponse)
 def post_ai_chat_turn(
     body: AiChatRequest,
@@ -382,6 +416,7 @@ def post_ai_chat_turn(
         total_tokens = int(getattr(usage, "input_tokens", 0) or 0) + int(getattr(usage, "output_tokens", 0) or 0)
         if total_tokens > 0:
             record_user_tokens(user_id, total_tokens)
+    log_ai_chat_traffic(payload)
     if payload.answer_source == "model_synthesis":
         resp_msg = "AI analytical response generated"
     elif payload.answer_source == "fallback":
