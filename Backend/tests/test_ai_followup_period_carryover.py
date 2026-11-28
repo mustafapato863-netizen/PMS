@@ -61,3 +61,11 @@ def test_bare_month_follow_up_keeps_the_previous_team(monkeypatch, follow_up):
     text = _text(r2)
     assert "marketing" in text, r2.headline
     assert "august" in text, r2.headline
+
+
+def test_clarification_wording_drops_the_follow_up_lead_in():
+    from services.ai.router import _strip_followup_lead_in
+
+    assert _strip_followup_lead_in("and January?") == "January"
+    assert _strip_followup_lead_in("What about March 2026?") == "March 2026"
+    assert _strip_followup_lead_in("show me March") == "show me March"

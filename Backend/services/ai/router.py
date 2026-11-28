@@ -379,6 +379,11 @@ _RELATIVE_PRIOR_MONTH = re.compile(
 )
 
 
+def _strip_followup_lead_in(text: str) -> str:
+    """'and January?' reads as 'inspect for January', not 'inspect for and January'."""
+    return re.sub(r"^\s*(?:and|what about|how about)\s+", "", text.rstrip("?.! "), flags=re.I)
+
+
 def _step_back_periods(text_lower: str, prior_periods: list[str]) -> list[str]:
     """'and last month?' after a turn about March means February, not the month before today."""
     if not prior_periods or not _RELATIVE_PRIOR_MONTH.search(text_lower):
@@ -4140,8 +4145,9 @@ class HybridQueryRouter:
                 r"\b(?:check|look|show|data|numbers?|stats|figures|analyze|review|summary|overview|anything|update|status)\b",
                 lower,
             ):
+                bare_topic = _strip_followup_lead_in(text)
                 q_txt = (
-                    f"What metric, team, or performance question would you like me to inspect for {text.rstrip('?.!')}?"
+                    f"What metric, team, or performance question would you like me to inspect for {bare_topic}?"
                     if bare_refinement_without_prior
                     else "Which team, KPI, person, or performance overview would you like me to inspect?"
                 )
