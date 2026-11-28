@@ -374,6 +374,29 @@ def clean_planner_tool_arguments(value: Any) -> dict[str, Any]:
     )}
 
 
+_RELATIVE_PRIOR_MONTH = re.compile(
+    r"\b(?:(?:last|prev(?:ious)?|prior|preceding)\s+month|the\s+month\s+(?:before|prior)|month\s+before)\b"
+)
+
+
+def _strip_followup_lead_in(text: str) -> str:
+    """'and January?' reads as 'inspect for January', not 'inspect for and January'."""
+    return re.sub(r"^\s*(?:and|what about|how about)\s+", "", text.rstrip("?.! "), flags=re.I)
+
+
+def _step_back_periods(text_lower: str, prior_periods: list[str]) -> list[str]:
+    """'and last month?' after a turn about March means February, not the month before today."""
+    if not prior_periods or not _RELATIVE_PRIOR_MONTH.search(text_lower):
+        return []
+    anchor = min(prior_periods)
+    match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", anchor)
+    if not match:
+        return []
+    year, month = int(match.group(1)), int(match.group(2))
+    year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return [f"{year:04d}-{month:02d}"]
+
+
 def _extract_periods(
     text_lower: str,
     default_month: str | None,
@@ -2026,7 +2049,7 @@ class HybridQueryRouter:
                 eff_periods = combined
                 inherited_filters.append("periods")
             elif not has_explicit_month:
-                eff_periods = list(prior_eff.periods)
+                eff_periods = _step_back_periods(lower, prior_eff.periods) or list(prior_eff.periods)
                 inherited_filters.append("periods")
 
         # 4. Clarification Checks
@@ -4122,8 +4145,9 @@ class HybridQueryRouter:
                 r"\b(?:check|look|show|data|numbers?|stats|figures|analyze|review|summary|overview|anything|update|status)\b",
                 lower,
             ):
+                bare_topic = _strip_followup_lead_in(text)
                 q_txt = (
-                    f"What metric, team, or performance question would you like me to inspect for {text.rstrip('?.!')}?"
+                    f"What metric, team, or performance question would you like me to inspect for {bare_topic}?"
                     if bare_refinement_without_prior
                     else "Which team, KPI, person, or performance overview would you like me to inspect?"
                 )
