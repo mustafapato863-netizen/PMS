@@ -634,7 +634,8 @@ def test_model_led_pilot_rejects_unknown_tool_before_data_access(monkeypatch):
     assert resp.tool_calls == []
     assert resp.provider_usage.fallback_outcome == "unknown_tool"
     assert resp.outcome == "clarification"
-    assert "not supported" in resp.headline
+    assert "could not turn that into a PMS lookup" in resp.headline
+    assert "unauthorized_custom_tool" not in resp.headline + " ".join(resp.narrative_bullets)
     assert resp.answer_source == "deterministic"
 
 
