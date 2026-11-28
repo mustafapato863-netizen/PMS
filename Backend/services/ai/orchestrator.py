@@ -1692,6 +1692,16 @@ class PmsAiOrchestrator:
             metric_arg_raw = None
         else:
             metric_arg_raw = tool_args.get("metric_id") or requested_metric or routed.plan.metric or (prior.metric_id if prior else None)
+        if (
+            requires_metric
+            and not metric_arg_raw
+            and routed.plan.team
+            and not routed.plan.employee_id
+            and not prompt_employee_matches
+        ):
+            # A team-level follow-up with no metric of its own keeps asking for the team score.
+            metric_arg_raw = "overall_score"
+            tool_args["metric_id"] = "overall_score"
         if requires_metric and not metric_arg_raw and prompt_employee_matches:
             prompt_kpi = extract_prompt_signals(req.prompt, registry.ctx.session_state).detected_kpi
             if prompt_kpi and prompt_kpi != "Other":
