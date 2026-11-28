@@ -77,3 +77,25 @@ def test_step_back_uses_the_latest_period_when_the_previous_turn_covered_two():
     assert _step_back_periods("what about the month before?", ["2026-07", "2026-08"]) == ["2026-07"]
     assert _step_back_periods("and last month?", ["2026-01"]) == ["2025-12"]
     assert _step_back_periods("and for finance?", ["2026-03"]) == []
+
+
+def test_unsupported_tool_copy_never_shows_internal_tool_names():
+    from services.ai.orchestrator import _unsupported_tool_bullets, _unsupported_tool_headline
+
+    for name in ("", "get_kpi_diagnosis_v9"):
+        text = _unsupported_tool_headline(name) + " " + " ".join(_unsupported_tool_bullets(name))
+        assert "tool" not in text.casefold().replace("lookup", "")
+        assert name not in text or name == ""
+        assert "authorized" not in text.casefold()
+
+
+def test_country_clarification_keeps_the_month_the_user_asked_for():
+    from tests.test_ai_phase2_reconciliation import _route
+
+    dated = _route("What is the Coding score in March 2026?")
+    assert dated.outcome == "clarification"
+    assert dated.confirmed_context.periods == ["2026-03"]
+
+    undated = _route("What is the Coding score?")
+    assert undated.outcome == "clarification"
+    assert undated.confirmed_context.periods == []
