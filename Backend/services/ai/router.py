@@ -388,7 +388,7 @@ def _step_back_periods(text_lower: str, prior_periods: list[str]) -> list[str]:
     """'and last month?' after a turn about March means February, not the month before today."""
     if not prior_periods or not _RELATIVE_PRIOR_MONTH.search(text_lower):
         return []
-    anchor = min(prior_periods)
+    anchor = max(prior_periods)
     match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", anchor)
     if not match:
         return []
