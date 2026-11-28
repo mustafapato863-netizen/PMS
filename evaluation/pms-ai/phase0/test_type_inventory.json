@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 82,
-  "case_count": 953,
+  "file_count": 83,
+  "case_count": 956,
   "files_by_label": {
-    "synthetic": 27,
+    "synthetic": 28,
     "mocked": 52,
     "live-model": 5,
     "source-parity": 2,
@@ -107,6 +107,16 @@
       ],
       "cases": 16,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_chat_traffic_log.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
